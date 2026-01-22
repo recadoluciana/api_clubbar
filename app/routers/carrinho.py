@@ -38,6 +38,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             Carrinho.cliente_id == payload.cliente_id,
             Carrinho.organizacao_id == payload.organizacao_id,
             Carrinho.loja_id == payload.loja_id,
+            Produto.sitproduto == "ATIVO",
         )
         .first()
     )
@@ -86,6 +87,7 @@ def get_qt_carrinho(cliente_id: int, organizacao_id: int, loja_id: int, db: Sess
             Carrinho.cliente_id == cliente_id,
             Carrinho.organizacao_id == organizacao_id,
             Carrinho.loja_id == loja_id,
+            Produto.sitproduto == "ATIVO",
         )
         .first()
     )

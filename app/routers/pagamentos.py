@@ -71,7 +71,7 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
         prod = produtos_map.get(it.produto_id)
         if not prod:
             raise HTTPException(400, f"Produto {it.produto_id} não encontrado")
-        total += float(prod.precoprod) * int(it.qtitcarrinho)
+        total += float(prod.vrprecoprod) * int(it.qtitcarrinho)
 
     # 3) transação no banco
     try:
@@ -93,7 +93,7 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
                 venda_id=venda.venda_id,
                 produto_id=it.produto_id,
                 qtitvenda=int(it.qtitcarrinho),
-                vrunititvenda=float(prod.precoprod),
+                vrunititvenda=float(prod.vrprecoprod),
                 dsobsitvenda=getattr(it, "dsobsitcar", None),
                 identregaitvenda="NAO",
                 qrtokenitvenda=gerar_token_qr(),
