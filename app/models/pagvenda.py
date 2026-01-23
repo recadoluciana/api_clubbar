@@ -17,7 +17,7 @@ class PagVenda(Base):
     dsmetodopag = Column(Enum("PIX", "CREDITO", "DEBITO", "DINHEIRO", "OUTRO", name="dsmetodopag_enum"), nullable=False)
     vrpagvenda = Column(Numeric(10, 2), nullable=False)
 
-    sitpagvenda = Column(Enum("PENDENTE", "CONFIRMADO", "CANCELADO", name="sitpagvenda_enum"), nullable=False, server_default="PENDENTE")
+    sitpagvenda = Column(Enum("PENDENTE", "PAGO", "CANCELADO", name="sitpagvenda_enum"), nullable=False, server_default="PENDENTE")
 
     idtransacaopagvenda = Column(String(120), nullable=True)
     dtconftranspagvenda = Column(DateTime, nullable=True)

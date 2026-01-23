@@ -18,6 +18,6 @@ class CheckoutCreateOut(BaseModel):
 
 class VendaStatusOut(BaseModel):
     venda_id: int
-    sitvenda: Literal["ABERTA", "PAGA", "CANCELADA"]
-    sitpagvenda: Optional[Literal["PENDENTE", "CONFIRMADO", "CANCELADO"]] = None
+    sitvenda: Literal["PENDENTE", "PAGA", "CANCELADA"]
+    sitpagvenda: Optional[Literal["PENDENTE", "PAGO", "CANCELADO"]] = None
     totalvenda: float

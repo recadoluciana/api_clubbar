@@ -38,7 +38,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             Carrinho.cliente_id == payload.cliente_id,
             Carrinho.organizacao_id == payload.organizacao_id,
             Carrinho.loja_id == payload.loja_id,
-            Produto.sitproduto == "ATIVO",
+            Carrinho.sitcarrinho == "ABERTO",
         )
         .first()
     )
@@ -87,7 +87,7 @@ def get_qt_carrinho(cliente_id: int, organizacao_id: int, loja_id: int, db: Sess
             Carrinho.cliente_id == cliente_id,
             Carrinho.organizacao_id == organizacao_id,
             Carrinho.loja_id == loja_id,
-            Produto.sitproduto == "ATIVO",
+            Carrinho.sitcarrinho == "ABERTO",
         )
         .first()
     )
@@ -123,6 +123,7 @@ def listar_itens(
             Carrinho.cliente_id == int(cliente_id),
             Carrinho.organizacao_id == int(organizacao_id),
             Carrinho.loja_id == int(loja_id),
+            Carrinho.sitcarrinho == "ABERTO",
         )
         .first()
     )
@@ -237,6 +238,7 @@ def get_itens_carrinho(
         .filter(Carrinho.cliente_id == int(cliente_id))
         .filter(Carrinho.organizacao_id == int(organizacao_id))
         .filter(Carrinho.loja_id == int(loja_id))
+        .filter(Carrinho.sitcarrinho == 'ABERTO')
         .group_by(
             Carrinho.organizacao_id,
             Carrinho.loja_id,

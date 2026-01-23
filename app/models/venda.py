@@ -14,10 +14,12 @@ class Venda(Base):
 
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
-    cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
+    cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
+
+    carrinho_id = Column(BigInteger, ForeignKey("carrinho.carrinho_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
 
     dsplataforma = Column(Enum("ANDROID", "TOTEM", "IOS", "OUTROS", name="dsplataforma_enum"), nullable=False, server_default="OUTROS")
-    sitvenda = Column(Enum("ABERTA", "PAGA", "CANCELADA", name="sitvenda_enum"), nullable=False, server_default="ABERTA")
+    sitvenda = Column(Enum("PENDENTE", "PAGA", "CANCELADA", name="sitvenda_enum"), nullable=False, server_default="PENDENTE")
 
     totalvenda = Column(Numeric(10, 2), nullable=False, server_default="0")
 
