@@ -59,6 +59,13 @@ async def criar_checkout_externo(
             headers=_headers(),
             json=payload,
         )
+        
+        print("\n========= PAGBANK DEBUG =========")
+        print("STATUS:", resp.status_code)
+        print("RESPONSE TEXT:", resp.text)
+        print("REQUEST PAYLOAD:", payload)
+        print("=================================\n")
+
         resp.raise_for_status()
         data = resp.json()
 

@@ -12,6 +12,7 @@ from app.schemas.pagamentos import CheckoutCreateIn, CheckoutCreateOut, VendaSta
 from app.services.pagbank import criar_checkout_externo
 
 # Ajuste estes imports para os seus models reais:
+from app.models.usuario import Usuario
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
@@ -50,6 +51,7 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
             Carrinho.organizacao_id == payload.organizacao_id,
             Carrinho.loja_id == payload.loja_id,
             Carrinho.cliente_id == payload.cliente_id,
+            Carrinho.sitcarrinho == "ABERTO"
         )
         .first()
     )
@@ -79,8 +81,9 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
             organizacao_id=payload.organizacao_id,
             loja_id=payload.loja_id,
             cliente_id=payload.cliente_id,
+            carrinho_id=carrinho.carrinho_id,
             dsplataforma=payload.plataforma,
-            sitvenda="ABERTA",
+            sitvenda="PENDENTE",
             totalvenda=total,
         )
         db.add(venda)
@@ -118,7 +121,7 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
         items_pagbank = []
         for it in itens_car:
             prod = produtos_map[it.produto_id]
-            unit_amount_cents = int(round(float(prod.precoprod) * 100))
+            unit_amount_cents = int(round(float(prod.vrprecoprod) * 100))
             items_pagbank.append(
                 {
                     "reference_id": str(prod.produto_id),
