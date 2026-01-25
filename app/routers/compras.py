@@ -19,7 +19,7 @@ def listar_compras(
         db.query(Venda)
         .filter(
             Venda.cliente_id == cliente_id,
-            Venda.sitvenda.in_(("PENDENTE", "PAGA", "CANCELADA")),
+            Venda.sitvenda.in_(("PAGA", "CANCELADA")),
         )
         .order_by(Venda.dtcriacao.desc())
         .all()

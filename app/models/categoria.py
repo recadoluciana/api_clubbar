@@ -14,3 +14,9 @@ class Categoria(Base):
 
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu  = Column(DateTime, nullable=True, onupdate=func.now())
+
+    idordcategoria = Column(
+        BigInteger,
+        nullable=False,
+        default=1,                 # lado Python
+    )

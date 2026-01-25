@@ -17,7 +17,6 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
 
-    # 2) busca categorias ATIVAS da loja
     rows = (
         db.query(
             Categoria.categoria_id,
@@ -28,10 +27,13 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
             Categoria.loja_id == loja_id,
             Categoria.sitcategoria == "ATIVA",
         )
-        .order_by(Categoria.nmcategoria.asc())
+        .order_by(
+            Categoria.idordcategoria.asc(),
+            Categoria.nmcategoria.asc(),
+        )
         .all()
     )
-
+    
     # 3) monta JSON manual
     return [
         {

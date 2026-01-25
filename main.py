@@ -12,6 +12,7 @@ from app.routers.compras import router as compras_router
 
 from app.routers.pagamentos import router as pagamentos_router
 from app.routers.pagbank_webhook import router as pagbank_webhook_router
+from app.routers.entregas import router as entregas_router
 
 app = FastAPI(title="Balada$ API")
 
@@ -25,6 +26,7 @@ app.include_router(compras_router)
 app.include_router(pagamentos_router)
 app.include_router(pagbank_webhook_router)
 app.include_router(pagamento_retorno_router)
+app.include_router(entregas_router)
 
 @app.get("/health")
 def health():
