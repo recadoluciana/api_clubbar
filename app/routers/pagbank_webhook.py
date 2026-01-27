@@ -189,7 +189,9 @@ async def pagbank_webhook(request: Request, db: Session = Depends(get_db)):
         # recarrega pra confirmar o que ficou no DB
         db.refresh(venda)
         db.refresh(pag)
-        db.refresh(carrinho)
+        if carrinho_id:
+            if carrinho:
+                db.refresh(carrinho)
 
         return {
             "ok": True,

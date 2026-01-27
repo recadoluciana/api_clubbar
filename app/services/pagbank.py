@@ -27,6 +27,7 @@ def _headers() -> Dict[str, str]:
     }
 
 
+# app/services/pagbank.py
 async def criar_checkout_externo(
     *,
     reference_id: str,
@@ -34,28 +35,57 @@ async def criar_checkout_externo(
     redirect_url: Optional[str],
     notification_urls: List[str],
     payment_notification_urls: Optional[List[str]] = None,
+    # novos controles:
+    aceitar_cartao: bool = True,
+    aceitar_pix: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Cria checkout e retorna {checkout_id, pay_url, raw}
-    Endpoint: POST {base}/checkouts :contentReference[oaicite:4]{index=4}
-    PAY URL: vem em links[] com rel=PAY :contentReference[oaicite:5]{index=5}
-    Webhook: notification_urls / payment_notification_urls :contentReference[oaicite:6]{index=6}
-    """
+
     payload: Dict[str, Any] = {
         "reference_id": reference_id,
         "items": items,
-        "notification_urls": notification_urls,  # webhook do checkout :contentReference[oaicite:7]{index=7}
+        "notification_urls": notification_urls,
     }
 
     if payment_notification_urls:
-        payload["payment_notification_urls"] = payment_notification_urls  # webhook do pagamento :contentReference[oaicite:8]{index=8}
+        payload["payment_notification_urls"] = payment_notification_urls
 
     if redirect_url:
         payload["redirect_url"] = redirect_url
 
+    # --- ✅ métodos permitidos ---
+    payment_methods = []
+    if aceitar_pix:
+        payment_methods.append({"type": "PIX"})
+    if aceitar_cartao:
+        payment_methods.append({"type": "CREDIT_CARD"})
+
+        # --- ✅ trava parcelamento no cartão ---
+        payload["payment_methods_configs"] = [
+            {
+                "type": "CREDIT_CARD",
+                "config_options": [
+                    {"option": "INSTALLMENTS_LIMIT", "value": "1"},
+                ],
+            }
+        ]
+
+    if not payment_methods:
+        raise RuntimeError("Selecione pelo menos um método: PIX e/ou CARTÃO")
+        
+    if payment_methods:
+        payload["payment_methods"] = payment_methods
+
     async with httpx.AsyncClient(timeout=25) as client:
+
+        print("PAGBANK_ENV:", PAGBANK_ENV)
+
+        url = f"{pagbank_base_url()}/checkouts"
+        
+        print("PAGBANK URL:", url)
+
+        # aqui é chamado a página do pagbank
         resp = await client.post(
-            f"{pagbank_base_url()}/checkouts",
+            url,
             headers=_headers(),
             json=payload,
         )
