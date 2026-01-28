@@ -13,6 +13,7 @@ from app.database import get_db
 from app.schemas.pagamentos import CheckoutCreateIn, CheckoutCreateOut, VendaStatusOut
 from app.services.pagbank import criar_checkout_externo
 
+from app.models.usuario import Usuario
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
@@ -85,6 +86,7 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
             Carrinho.cliente_id == payload.cliente_id,
             Carrinho.sitcarrinho == "ABERTO",
         )
+        .with_for_update()
         .first()
     )
     if not carrinho:

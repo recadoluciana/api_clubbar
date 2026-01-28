@@ -41,7 +41,7 @@ def listar_itens_nao_entregues(
             Venda.sitvenda == "PAGA",
             ItVenda.identregaitvenda == "NAO",
         )
-        .order_by(Venda.dtcriacao.asc())
+        .order_by(Venda.dtcriacao.desc())
         .all()
     )
 
