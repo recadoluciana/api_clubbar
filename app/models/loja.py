@@ -11,6 +11,8 @@ class Loja(Base):
     nmloja = Column(String(120), nullable=False)
     endloja = Column(String(255))
     sitloja = Column(String(15), nullable=False, default="ATIVA")
+    
+    nrdiavalidade = Column(BigInteger,nullable=False, default=90)
 
     dshorarioloja = Column(String(255))
     aberto24x7 = Column(CHAR(1), nullable=False, default="N")

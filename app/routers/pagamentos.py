@@ -156,6 +156,10 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
                 qtd = int(it.qtitcarrinho)
                 vr = float(prod.vrprecoprod)
 
+                agora = datetime.now()                 # = SYSDATE
+                fim   = agora + timedelta(days=30)     # +30 dias
+
+                print("passei na data de validade do produto", agora, fim)
                 db.add(
                     ItVenda(
                         venda_id=venda.venda_id,
@@ -165,6 +169,9 @@ async def criar_checkout(payload: CheckoutCreateIn, db: Session = Depends(get_db
                         dsobsitvenda=getattr(it, "dsobsitcar", None),
                         identregaitvenda="NAO",
                         qrtokenitvenda=gerar_token_qr(),
+                        dtinivalidade= agora,
+                        dtfimvalidade= fim,
+
                     )
                 )
 

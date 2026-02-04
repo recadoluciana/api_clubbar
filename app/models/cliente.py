@@ -12,3 +12,5 @@ class Cliente(Base):
     emailconf    = Column(String(1), nullable=False, server_default=text("'N'"))
     dtcriacao    = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu     = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
+    nrtelcliente = Column(String(15), nullable=True)
+    nrcpfcliente = Column(String(15), nullable=True)

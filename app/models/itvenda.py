@@ -1,8 +1,10 @@
 # app/models/itvenda.py
 from sqlalchemy import (
-    BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
+    BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String,Date
 )
 from sqlalchemy.sql import func
+
+from datetime import datetime, timedelta
 
 from app.database import Base
 
@@ -28,3 +30,5 @@ class ItVenda(Base):
     qrtokenitvenda = Column(String(120), nullable=True)
 
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+
+    dtexpiraitvenda = Column(Date, nullable=True)

@@ -1,10 +1,13 @@
 # app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 
 class ClienteRegister(BaseModel):
-    nome: str = Field(min_length=2, max_length=120)
-    email: EmailStr
-    senha: str = Field(min_length=6, max_length=72)
+    nome: str
+    email: str
+    senha: str
+    nrtelcliente: Optional[str] = None
+    nrcpfcliente: Optional[str] = None
 
 class ClienteLogin(BaseModel):
     email: EmailStr

@@ -17,9 +17,11 @@ def register(data: ClienteRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
     cli = Cliente(
-        nmcliente=data.nome.strip(),
-        emailcliente=email,
-        senhahashcli=hash_senha(data.senha),
+        nmcliente     = data.nome.strip(),
+        emailcliente  = email,
+        senhahashcli  = hash_senha(data.senha),
+        nrtelcliente  = data.nrtelcliente.strip(),
+        nrcpfcliente  = data.nrcpfcliente.strip(),
         # emailconf fica "N" por padrão
     )
     db.add(cli)
@@ -40,6 +42,9 @@ def register(data: ClienteRegister, db: Session = Depends(get_db)):
 
 @router.post("/login")
 def login(data: ClienteLogin, db: Session = Depends(get_db)):
+    
+    print('entrei na api login ')
+
     email = data.email.lower().strip()
 
     cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
@@ -53,6 +58,28 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Senha inválida")
 
     token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"})
+
+    print('retorno um json com access_token, cliente_id, nmcliente', token, cli.cliente_id,cli.nmcliente)
+
     return {"access_token": token,
             "cliente_id": cli.cliente_id,
             "nmcliente": cli.nmcliente}
+
+
+@router.get("/perfil")
+def perfil_cliente(cliente_id: int, db: Session = Depends(get_db)):
+    
+    print('entrei na api pefil cliente ')
+
+    cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cli:
+        raise HTTPException(status_code=401, detail="Cliente não cadastrado")
+
+    if cli.sitcliente != "ATIVO":
+        raise HTTPException(status_code=403, detail="Cliente inativo")
+
+    return {"cliente_id"    : cli.cliente_id,
+            "nmcliente"     : cli.nmcliente,
+            "emailcliente"  : cli.emailcliente,
+            "nrtelcliente"  : cli.nrtelcliente,
+            "nrcpfcliente"  : cli.nrcpfcliente}

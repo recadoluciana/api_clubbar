@@ -58,12 +58,12 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
     if qt <= 0:
         raise HTTPException(status_code=422, detail="qt deve ser >= 1")
 
-    print('passei aqui na api')
+    print('passei aqui na api ---------- adiciona item na venda')
     item = ItCarrinho(
-        carrinho_id=int(carr.carrinho_id),
-        produto_id=int(payload.produto_id),
-        qtitcarrinho=qt,
-        dsobsitcar=(payload.obs or None),
+        carrinho_id   =int(carr.carrinho_id),
+        produto_id    =int(payload.produto_id),
+        qtitcarrinho  =qt,
+        dsobsitcar    =(payload.obs or None),
     )
 
     db.add(item)

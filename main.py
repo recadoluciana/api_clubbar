@@ -14,7 +14,7 @@ from app.routers.pagamentos import router as pagamentos_router
 from app.routers.pagbank_webhook import router as pagbank_webhook_router
 from app.routers.entregas import router as entregas_router
 
-app = FastAPI(title="Balada$ API")
+app = FastAPI(title="clubbar API")
 
 app.include_router(auth_router)
 app.include_router(lojas_router)
