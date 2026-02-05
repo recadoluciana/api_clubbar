@@ -1,5 +1,5 @@
 # app/routers/entregas.py
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 from sqlalchemy import or_
@@ -70,3 +70,31 @@ def listar_itens_nao_entregues(
         }
         for row in itens
     ]
+
+
+@router.post("/{itvenda_id}/entregarproduto")
+def entregar_produto(itvenda_id: int, usuario_id: int, db: Session = Depends(get_db)):
+    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+
+    # evita entregar 2x
+    if getattr(item, "sititvenda", None) == "SIM":
+        return {"ok": True, "msg": "Produto já foi entregue", "itvenda_id": itvenda_id}
+
+    item.identregaitvenda     = "SIM"
+    item.dtentregaitvenda     = datetime.now()
+    item.userentregaitvenda   = usuario_id  # ou item.usuario_id_entregou (ajuste conforme sua coluna)
+    item.nmuserentregaitvenda = str(usuario_id)
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "itvenda_id"           : itvenda_id,
+        "identregaitvenda"     : item.identregaitvenda,
+        "dtentregaitvenda"     : item.dtentregaitvenda.isoformat(),
+        "userentregaitvenda"   : usuario_id,
+        "nmuserentregaitvenda" : item.nmuserentregaitvenda,
+    }
