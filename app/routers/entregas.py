@@ -79,8 +79,16 @@ def entregar_produto(itvenda_id: int, usuario_id: int, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Item não encontrado")
 
     # evita entregar 2x
-    if getattr(item, "sititvenda", None) == "SIM":
-        return {"ok": True, "msg": "Produto já foi entregue", "itvenda_id": itvenda_id}
+    if getattr(item, "identregaitvenda", None) == "SIM":
+        return {
+            "ok": True,
+            "already": True,
+            "msg": "Este produto já foi entregue.",
+            "itvenda_id": itvenda_id,
+            "dtentregaitvenda": item.dtentregaitvenda.isoformat() if item.dtentregaitvenda else None,
+            "userentregaitvenda": getattr(item, "userentregaitvenda", None),
+            "nmuserentregaitvenda": getattr(item, "nmuserentregaitvenda", None),
+        }
 
     item.identregaitvenda     = "SIM"
     item.dtentregaitvenda     = datetime.now()
@@ -97,4 +105,25 @@ def entregar_produto(itvenda_id: int, usuario_id: int, db: Session = Depends(get
         "dtentregaitvenda"     : item.dtentregaitvenda.isoformat(),
         "userentregaitvenda"   : usuario_id,
         "nmuserentregaitvenda" : item.nmuserentregaitvenda,
+    }
+
+@router.get("/{itvenda_id}/status")
+def status_entrega(itvenda_id: int, db: Session = Depends(get_db)):
+    
+    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+    
+    if not item:
+        print("deu status_code 404, nao achou o item", itvenda_id)
+        raise HTTPException(status_code=404, detail="Item não encontrado")
+
+    entregue = (item.identregaitvenda == "SIM")
+
+    return {
+        "ok": True,
+        "itvenda_id": itvenda_id,
+        "entregue": entregue,
+        "identregaitvenda": item.identregaitvenda,
+        "dtentregaitvenda": item.dtentregaitvenda.isoformat() if item.dtentregaitvenda else None,
+        "userentregaitvenda": item.userentregaitvenda,
+        "nmuserentregaitvenda": item.nmuserentregaitvenda,
     }
