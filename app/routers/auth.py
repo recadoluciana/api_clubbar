@@ -3,8 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.cliente import Cliente
-from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic
+from app.models.usuario import Usuario
+from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic, UserLogin
 from app.security import hash_senha, verificar_senha, criar_jwt
+
+from passlib.exc import UnknownHashError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -83,3 +86,40 @@ def perfil_cliente(cliente_id: int, db: Session = Depends(get_db)):
             "emailcliente"  : cli.emailcliente,
             "nrtelcliente"  : cli.nrtelcliente,
             "nrcpfcliente"  : cli.nrcpfcliente}
+
+@router.post("/loginuser")
+def loginuser(data: UserLogin, db: Session = Depends(get_db)):
+    
+    print('entrei na api loginuser')
+
+    email = data.email.lower().strip()
+
+    user = db.query(Usuario).filter(Usuario.emailuser == email).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="E-mail não cadastrado")
+
+    if user.situsuario != "ATIVO":
+        raise HTTPException(status_code=403, detail="Usuário inativo")
+
+    try:
+        ok = verificar_senha(data.senha, user.senhahashuser)
+    except UnknownHashError:
+        raise HTTPException(status_code=401, detail="Senha inválida (hash inválido no banco)")
+
+    if not ok:
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
+
+
+    token = criar_jwt({"sub": str(user.usuario_id), "role": "usuario"})
+
+    print('retorno um json com access_token, usuario_id, nmusuario', token, user.usuario_id,user.nmusuario)
+
+    return {"access_token": token,
+            "usuario_id": user.usuario_id,
+            "nmusuario" : user.nmusuario}
+
+
+
+
+
+

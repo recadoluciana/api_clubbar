@@ -7,11 +7,11 @@ from app.config import MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL
 
 DATABASE_URL = URL.create(
     drivername="mysql+pymysql",
-    username=MYSQL_USER,
-    password=MYSQL_PASSWORD,   # pode ter @ que funciona
-    host=MYSQL_HOST,
-    port=int(MYSQL_PORT),
-    database=MYSQL_DB,
+    username = MYSQL_USER,
+    password = MYSQL_PASSWORD,   # pode ter @ que funciona
+    host     = MYSQL_HOST,
+    port     = int(MYSQL_PORT),
+    database = MYSQL_DB,
 )
 
 engine = create_engine(

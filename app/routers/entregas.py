@@ -127,3 +127,68 @@ def status_entrega(itvenda_id: int, db: Session = Depends(get_db)):
         "userentregaitvenda": item.userentregaitvenda,
         "nmuserentregaitvenda": item.nmuserentregaitvenda,
     }
+
+@router.get("/entregues")
+def listar_entregues_por_usuario(
+    usuario_id: int = Query(...),
+    organizacao_id: int = Query(...),
+    loja_id: int = Query(...),
+    horas: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+):
+    """
+    Lista itens entregues pelo usuário logado nas últimas X horas (padrão 24h),
+    mais recentes primeiro.
+    """
+
+    desde = datetime.now() - timedelta(hours=horas)
+
+    itens = (
+        db.query(
+            ItVenda.itvenda_id.label("itvenda_id"),
+            ItVenda.venda_id.label("venda_id"),
+            ItVenda.qtitvenda.label("qtitvenda"),
+            ItVenda.vrunititvenda.label("vrunititvenda"),
+            ItVenda.dsobsitvenda.label("dsobsitvenda"),
+            ItVenda.dtentregaitvenda.label("dtentregaitvenda"),
+            ItVenda.userentregaitvenda.label("userentregaitvenda"),
+            ItVenda.nmuserentregaitvenda.label("nmuserentregaitvenda"),
+            Produto.produto_id.label("produto_id"),
+            Produto.nmproduto.label("nmproduto"),
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .filter(
+            Venda.organizacao_id == organizacao_id,
+            Venda.loja_id == loja_id,
+
+            # entregue (você usa SIM / ENTREGUE em lugares diferentes — aceito ambos)
+            or_(
+                ItVenda.identregaitvenda == "SIM",
+                ItVenda.identregaitvenda == "ENTREGUE",
+            ),
+
+            ItVenda.userentregaitvenda == usuario_id,
+            ItVenda.dtentregaitvenda != None,
+            ItVenda.dtentregaitvenda >= desde,
+        )
+        .order_by(ItVenda.dtentregaitvenda.desc())
+        .all()
+    )
+
+    return [
+        {
+            "itvenda_id": r.itvenda_id,
+            "venda_id": r.venda_id,
+            "qtitvenda": int(r.qtitvenda or 0),
+            "vrunititvenda": float(r.vrunititvenda or 0.0),
+            "dsobsitvenda": r.dsobsitvenda,
+            "dtentregaitvenda": r.dtentregaitvenda.isoformat() if r.dtentregaitvenda else None,
+            "dtentregaitvenda_fmt": r.dtentregaitvenda.strftime("%d/%m/%Y %H:%M") if r.dtentregaitvenda else None,
+            "userentregaitvenda": r.userentregaitvenda,
+            "nmuserentregaitvenda": r.nmuserentregaitvenda,
+            "produto_id": r.produto_id,
+            "nmproduto": r.nmproduto,
+        }
+        for r in itens
+    ]

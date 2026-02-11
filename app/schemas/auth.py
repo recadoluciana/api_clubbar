@@ -13,6 +13,10 @@ class ClienteLogin(BaseModel):
     email: EmailStr
     senha: str = Field(min_length=6, max_length=72)
 
+class UserLogin(BaseModel):
+    email: EmailStr
+    senha: str = Field(min_length=6, max_length=72)
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

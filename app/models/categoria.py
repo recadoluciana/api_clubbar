@@ -18,5 +18,5 @@ class Categoria(Base):
     idordcategoria = Column(
         BigInteger,
         nullable=False,
-        default=1,                 # lado Python
+        default=1,     
     )
