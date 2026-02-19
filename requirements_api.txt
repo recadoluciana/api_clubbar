@@ -1,12 +1,10 @@
 fastapi
 uvicorn[standard]
-mysql-connector-python
+sqlalchemy
+pymysql
 python-dotenv
 passlib[bcrypt]
 python-jose[cryptography]
-pydantic
-twilio
-sqlalchemy
-pymysql
 email-validator
 httpx
+twilio
