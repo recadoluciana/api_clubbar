@@ -1,32 +1,48 @@
 from fastapi import FastAPI
 from sqlalchemy import text
+from app.database import engine, Base
 
-from app.database import engine
-from app.routers.auth  import router as auth_router
-from app.routers.lojas import router as lojas_router
-from app.routers.produtos import router as produtos_router
-from app.routers.categoria import router as categoria_router
-from app.routers.pagamento_retorno import router as pagamento_retorno_router
+# 🔥 garante que TODOS os models sejam carregados (Pais, Estado, Cidade etc.)
+import app.models  # precisa existir app/models/__init__.py importando os models
+
+#from app.routers.pais  import pais
+#from app.routers.estado import estado
+#from app.routers.cidade import cidade
+
+from app.routers import auth
+from app.routers import lojas
+from app.routers import produtos
+from app.routers import categoria
+
 from app.routers import carrinho
-from app.routers.compras import router as compras_router
-
-from app.routers.pagamentos import router as pagamentos_router
-from app.routers.pagbank_webhook import router as pagbank_webhook_router
-from app.routers.entregas import router as entregas_router
+from app.routers import pagamento_retorno
+from app.routers import compras
+from app.routers import pagamentos
+from app.routers import pagbank_webhook
+from app.routers import entregas
 
 app = FastAPI(title="clubbar API")
 
-app.include_router(auth_router)
-app.include_router(lojas_router)
-app.include_router(produtos_router)
-app.include_router(categoria_router)                                                                    
+# ✅ cria as tabelas automaticamente (DEV)
+@app.on_event("startup")
+def startup():
+    Base.metadata.create_all(bind=engine)
+
+#app.include_router(pais.router)
+#app.include_router(estado.router)
+#app.include_router(cidade.router)
+
+app.include_router(auth.router)
+app.include_router(lojas.router)
+app.include_router(produtos.router)
+app.include_router(categoria.router)                                                                    
 app.include_router(carrinho.router)
 
-app.include_router(compras_router)
-app.include_router(pagamentos_router)
-app.include_router(pagbank_webhook_router)
-app.include_router(pagamento_retorno_router)
-app.include_router(entregas_router)
+app.include_router(compras.router)
+app.include_router(pagamentos.router)
+app.include_router(pagbank_webhook.router)
+app.include_router(pagamento_retorno.router)
+app.include_router(entregas.router)
 
 @app.get("/health")
 def health():

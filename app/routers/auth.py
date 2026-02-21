@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic, UserLogin
-from app.security import hash_senha, verificar_senha, criar_jwt
+from app.core.security import hash_senha, verificar_senha, criar_jwt, get_usuario_logado    
 
 from passlib.exc import UnknownHashError
 
@@ -46,8 +46,6 @@ def register(data: ClienteRegister, db: Session = Depends(get_db)):
 @router.post("/login")
 def login(data: ClienteLogin, db: Session = Depends(get_db)):
     
-    print('entrei na api login ')
-
     email = data.email.lower().strip()
 
     cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
@@ -64,15 +62,29 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
 
     print('retorno um json com access_token, cliente_id, nmcliente', token, cli.cliente_id,cli.nmcliente)
 
-    return {"access_token": token,
-            "cliente_id": cli.cliente_id,
-            "nmcliente": cli.nmcliente}
+    return {
+        "access_token": token,
+        "cliente": {
+            "cliente_id"  : cli.cliente_id,
+            "nmcliente"   : cli.nmcliente,
+            "emailcliente": cli.emailcliente,
+            "emailconf"   : cli.emailconf,
+        }
+    }
 
 
 @router.get("/perfil")
-def perfil_cliente(cliente_id: int, db: Session = Depends(get_db)):
-    
-    print('entrei na api pefil cliente ')
+def perfil_cliente(
+    usuario=Depends(get_usuario_logado),  # 👈 vem do token
+    db: Session = Depends(get_db)
+):
+    role = usuario.get("role")
+    sub = usuario.get("sub")
+
+    if role != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
+
+    cliente_id = int(sub)
 
     cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
     if not cli:
@@ -81,11 +93,13 @@ def perfil_cliente(cliente_id: int, db: Session = Depends(get_db)):
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
-    return {"cliente_id"    : cli.cliente_id,
-            "nmcliente"     : cli.nmcliente,
-            "emailcliente"  : cli.emailcliente,
-            "nrtelcliente"  : cli.nrtelcliente,
-            "nrcpfcliente"  : cli.nrcpfcliente}
+    return {
+        "cliente_id": cli.cliente_id,
+        "nmcliente": cli.nmcliente,
+        "emailcliente": cli.emailcliente,
+        "nrtelcliente": cli.nrtelcliente,
+        "nrcpfcliente": cli.nrcpfcliente,
+    }
 
 @router.post("/loginuser")
 def loginuser(data: UserLogin, db: Session = Depends(get_db)):
