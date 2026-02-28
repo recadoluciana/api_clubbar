@@ -8,6 +8,7 @@ class AddItemIn(BaseModel):
     produto_id: int
     qt: int = Field(default=1, ge=1)
     obs: Optional[str] = None
+    idtipoproduto: str = 'PRODUTO'
 
 class AddItemOut(BaseModel):
     carrinho_id: int

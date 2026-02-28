@@ -22,7 +22,7 @@ def listar_lojas(db: Session = Depends(get_db)):
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
-        .order_by(Organizacao.nmorganizacao, Loja.nmloja)
+        .order_by(Loja.loja_id)
         .all()
     )
 

@@ -8,18 +8,8 @@ from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.loja import Loja
 
+from app.utils.datetime_utils import formatar_data_br
 
-def formatar_data_br(dt):
-    if not dt:
-        return ""
-
-    if isinstance(dt, str):
-        try:
-            dt = datetime.fromisoformat(dt.replace("Z", ""))
-        except:
-            return dt
-
-    return dt.strftime("%d/%m/%Y %H:%M")
 
 router = APIRouter(prefix="/compras", tags=["compras"])
 

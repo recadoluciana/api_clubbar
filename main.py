@@ -20,6 +20,8 @@ from app.routers import compras
 from app.routers import pagamentos
 from app.routers import pagbank_webhook
 from app.routers import entregas
+from app.routers import eventos
+from app.routers import eventolotes
 
 app = FastAPI(title="clubbar API")
 
@@ -43,6 +45,8 @@ app.include_router(pagamentos.router)
 app.include_router(pagbank_webhook.router)
 app.include_router(pagamento_retorno.router)
 app.include_router(entregas.router)
+app.include_router(eventos.router)
+app.include_router(eventolotes.router)
 
 @app.get("/health")
 def health():
