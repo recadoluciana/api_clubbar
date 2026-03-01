@@ -1,14 +1,25 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal, Union
 
-class AddItemIn(BaseModel):
+class AddProdutoIn(BaseModel):
     cliente_id: int
     organizacao_id: int
     loja_id: int
+    idtipoproduto: Literal["P"] = "P"
     produto_id: int
-    qt: int = Field(default=1, ge=1)
+    qt: int = Field(ge=1, default=1)
     obs: Optional[str] = None
-    idtipoproduto: str = 'PRODUTO'
+
+class AddIngressoIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
+    idtipoproduto: Literal["I"] = "I"
+    lote_id: int
+    qt: int = Field(ge=1, default=1)
+    obs: Optional[str] = None
+
+AddItemIn = Union[AddProdutoIn, AddIngressoIn]
 
 class AddItemOut(BaseModel):
     carrinho_id: int
@@ -27,3 +38,14 @@ class CarrinhoItemAgrupadoOut(BaseModel):
     nmproduto: Optional[str] = None
     vrprecoprod: Optional[float] = None
     img: Optional[str] = None
+
+class CarrinhoItemIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
+    idtipoproduto: str  # <- em vez de Literal
+
+    produto_id: Optional[int] = None
+    lote_id: Optional[int] = None
+    qt: int = 1
+    obs: Optional[str] = None

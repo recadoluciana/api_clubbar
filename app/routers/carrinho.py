@@ -2,74 +2,70 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
+from app.models.eventolote import EventoLote
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
 
 @router.post("/itens", response_model=AddItemOut)
 def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
-    
-    from sqlalchemy.orm import Session
-    from sqlalchemy.exc import IntegrityError
 
-    def get_or_create_produto_por_lote(
-        db: Session,
-        organizacao_id: int,
-        loja_id: int,
-        lote_id: int,
-    ):
-    
-        # 1) valida lote
+
+    def get_or_create_produto_por_lote(organizacao_id: int, loja_id: int, lote_id: int) -> Produto:
+
+
+        # valida lote
         lote = (
-            db.query(LoteEvento)
+            db.query(EventoLote)
             .filter(
-                LoteEvento.lote_id == lote_id,
-                LoteEvento.organizacao_id == organizacao_id,
-                LoteEvento.loja_id == loja_id,
-                LoteEvento.sitlote == "ATIVO",   # ajuste conforme seu campo
+                EventoLote.lote_id == lote_id,
+                EventoLote.organizacao_id == organizacao_id,
+                EventoLote.loja_id == loja_id,
+                EventoLote.statuslote == "ATIVO",
             )
             .first()
         )
         if not lote:
             raise HTTPException(status_code=404, detail="Lote não encontrado ou inativo")
 
-        # 2) tenta achar produto já existente para este lote
+        # procura produto “espelho” pelo lote_id
         produto = (
             db.query(Produto)
             .filter(
                 Produto.organizacao_id == organizacao_id,
                 Produto.loja_id == loja_id,
                 Produto.lote_id == lote_id,
+                Produto.sitproduto == "ATIVO",
             )
             .first()
         )
         if produto:
+            print("entrei na funcao produto por loja", produto)
             return produto
 
-        # 3) cria produto "espelho" do lote
-        # Ajuste nomes/colunas para o seu model
+
+        # cria produto “espelho”
         produto = Produto(
             organizacao_id=organizacao_id,
             loja_id=loja_id,
-            idtipoproduto="INGRESSO",
             lote_id=lote_id,
-            nmproduto=getattr(lote, "nmlote", "Ingresso"),
-            vrproduto=getattr(lote, "vrlote", 0),
+            idtipoproduto="I",
+            nmproduto=lote.nmlote,
+            vrprecoprod=lote.vrprecolote,
             sitproduto="ATIVO",
-            # se você tiver: estoque, imagem, etc...
         )
-
         db.add(produto)
+
         try:
-            db.flush()  # pega produto_id sem commitar ainda
+            db.flush()  # garante produto_id aqui
         except IntegrityError:
-            # outra request criou ao mesmo tempo -> busca de novo
             db.rollback()
             produto = (
                 db.query(Produto)
@@ -84,8 +80,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 raise
         return produto
 
-    if payload.idtipoproduto == "PRODUTO":
-        # 1) valida produto do tipo produto
+    # 1) define produto_id_final dependendo do tipo
+    if payload.idtipoproduto == "P":
         produto = (
             db.query(Produto)
             .filter(
@@ -97,30 +93,21 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             )
             .first()
         )
-
-        produto_inc = payload.produto_id
-
         if not produto:
             raise HTTPException(status_code=404, detail="Produto não encontrado ou inativo")
+        produto_id_final = int(produto.produto_id)
+        lote_id_final = None
 
-    elif payload.idtipoproduto == "INGRESSO":
-        
-        if not payload.lote_id:
-            raise HTTPException(status_code=400, detail="lote_id é obrigatório para INGRESSO")
-
+    else:  # "I"
         produto_ingresso = get_or_create_produto_por_lote(
-            db=db,
             organizacao_id=payload.organizacao_id,
             loja_id=payload.loja_id,
             lote_id=payload.lote_id,
         )
-        produto_id_final = produto_ingresso.produto_id
+        produto_id_final = int(produto_ingresso.produto_id)
+        lote_id_final = int(payload.lote_id)
 
-    else:
-        raise HTTPException(status_code=400, detail="idtipoproduto inválido")
-
-
-    # 3) acha o carrinho único do cliente nessa loja/org
+    # 2) carrinho aberto do cliente
     carr = (
         db.query(Carrinho)
         .filter(
@@ -131,8 +118,6 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         )
         .first()
     )
-
-    # 4) se não existir, cria
     if not carr:
         carr = Carrinho(
             organizacao_id=payload.organizacao_id,
@@ -140,19 +125,15 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             cliente_id=payload.cliente_id,
         )
         db.add(carr)
-        db.flush()  # gera carrinho_id sem precisar commit ainda
+        db.flush()
 
-    # 5) sempre cria um item novo (não soma)
-    qt = int(payload.qt or 1)
-    if qt <= 0:
-        raise HTTPException(status_code=422, detail="qt deve ser >= 1")
-
-    print('passei aqui na api ---------- adiciona item na venda')
+    # 3) cria item (produto_id NOT NULL garantido)
     item = ItCarrinho(
-        carrinho_id   = int(carr.carrinho_id),
-        produto_id    = produto_id_final,
-        qtitcarrinho  = qt,
-        dsobsitcar    = (payload.obs or None),
+        carrinho_id=int(carr.carrinho_id),
+        produto_id=produto_id_final,
+        qtitcarrinho=int(payload.qt),
+        dsobsitcar=(payload.obs or None),
+        lote_id=lote_id_final,  # ✅ NUNCA "" (string)
     )
 
     db.add(item)

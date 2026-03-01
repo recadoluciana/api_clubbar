@@ -16,4 +16,5 @@ class Produto(Base):
     skuproduto     = Column(String(100))
     dtcriacao      = Column(DateTime, server_default=func.now(), nullable=False)
     dtultatu       = Column(DateTime, onupdate=func.now())
-
+    lote_id        = Column(BigInteger, nullable=True)
+    idtipoproduto  = Column(String(50), nullable=False, default="P")

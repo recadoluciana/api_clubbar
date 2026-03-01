@@ -27,12 +27,6 @@ class EventoLote(Base):
         nullable=False,
     )
 
-    produto_id = Column(
-        BigInteger,
-        ForeignKey("produto.produto_id", ondelete="RESTRICT", onupdate="CASCADE"),
-        nullable=False,
-    )
-
     nmlote = Column(String(80), nullable=False)
 
     vrprecolote = Column(DECIMAL(10, 2), nullable=False, default=0.00)
@@ -54,7 +48,6 @@ class EventoLote(Base):
 
     # relationships (opcionais)
     evento = relationship("Evento")
-    produto = relationship("Produto")
 
     def __repr__(self) -> str:
         return (

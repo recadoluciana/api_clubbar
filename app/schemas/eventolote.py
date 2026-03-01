@@ -8,8 +8,6 @@ class EventoLoteOut(BaseModel):
     organizacao_id: int
     loja_id: int
     evento_id: int
-    produto_id: int
-
     nmlote: str
     vrprecolote: float
 
