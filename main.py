@@ -9,6 +9,8 @@ import app.models  # precisa existir app/models/__init__.py importando os models
 #from app.routers.estado import estado
 #from app.routers.cidade import cidade
 
+from app.routers import cidades
+
 from app.routers import auth
 from app.routers import lojas
 from app.routers import produtos
@@ -23,6 +25,7 @@ from app.routers import entregas
 from app.routers import eventos
 from app.routers import eventolotes
 
+
 app = FastAPI(title="clubbar API")
 
 # ✅ cria as tabelas automaticamente (DEV)
@@ -32,7 +35,8 @@ def startup():
 
 #app.include_router(pais.router)
 #app.include_router(estado.router)
-#app.include_router(cidade.router)
+
+app.include_router(cidades.router)
 
 app.include_router(auth.router)
 app.include_router(lojas.router)

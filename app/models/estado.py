@@ -21,5 +21,3 @@ class Estado(Base):
         UniqueConstraint("pais_id", "estado_id", name="uk_estado_pais_estadoid"),  # p/ FK composta da cidade
     )
 
-    pais = relationship("Pais", back_populates="estados")
-    cidades = relationship("Cidade", back_populates="estado", cascade="all, delete-orphan")

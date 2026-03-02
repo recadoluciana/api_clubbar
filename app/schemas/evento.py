@@ -20,3 +20,6 @@ class EventoOutBR(BaseModel):
     urlbannerevento: Optional[str] = None
 
     statusevento: str
+
+class ListaEventoIn(BaseModel):
+    cidade_id: int

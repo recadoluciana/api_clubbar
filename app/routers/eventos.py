@@ -4,12 +4,17 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
+
+from typing import Optional
+from fastapi import Query
 
 from app.database import get_db
+from app.models.loja import Loja
 from app.models.evento import Evento
-from app.schemas.evento import EventoOutBR
+from app.schemas.evento import EventoOutBR, ListaEventoIn
 from app.models.eventolote import EventoLote
-from app.schemas.eventolote import EventoLoteOut
+from app.schemas.eventolote import EventoLoteOut 
 
 from app.utils.datetime_utils import formatar_data_br
 
@@ -60,17 +65,22 @@ def listar_eventos_proximos(
 
 @router.get("/proximos", response_model=list[EventoOutBR])
 def listar_eventos_proximos_global(
+    cidade_id: int | None = None,
     db: Session = Depends(get_db),
 ):
     hi = hoje_inicio_br()
 
-    eventos = (
+    q = (
         db.query(Evento)
+        .join(Loja, Loja.loja_id == Evento.loja_id)
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
-        .order_by(Evento.dtinicioevento.asc())
-        .all()
     )
+
+    if cidade_id:
+        q = q.filter(Loja.cidade_id == cidade_id)
+
+    eventos = q.order_by(Evento.dtinicioevento.asc()).all()
 
     return [evento_to_out_br(ev) for ev in eventos]
 

@@ -8,7 +8,8 @@ from app.models.organizacao import Organizacao
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 @router.get("")
-def listar_lojas(db: Session = Depends(get_db)):
+def listar_lojas(cidade_id: int | None = None, db: Session = Depends(get_db)):
+   
     rows = (
         db.query(
             Loja.loja_id,
@@ -22,9 +23,12 @@ def listar_lojas(db: Session = Depends(get_db)):
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
-        .order_by(Loja.loja_id)
-        .all()
+        .order_by(Loja.nmloja)
     )
+    if cidade_id:
+        rows = rows.filter(Loja.cidade_id == cidade_id)
+
+    lojas = rows.order_by(Loja.nmloja.asc()).all()
 
     return [
         {

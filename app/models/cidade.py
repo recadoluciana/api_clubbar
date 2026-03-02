@@ -28,6 +28,3 @@ class Cidade(Base):
         ),
         UniqueConstraint("estado_id", "nmcidade", name="uk_cidade_estado_nome"),
     )
-
-    pais = relationship("Pais", back_populates="cidades")
-    estado = relationship("Estado", back_populates="cidades")

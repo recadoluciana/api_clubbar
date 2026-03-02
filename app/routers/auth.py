@@ -32,7 +32,7 @@ def register(data: ClienteRegister, db: Session = Depends(get_db)):
     db.refresh(cli)
 
     # token já loga após cadastrar (se quiser, dá pra não logar e pedir confirmação de e-mail)
-    token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"})
+    token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=30))
     return {
         "access_token": token,
         "cliente": {
@@ -78,8 +78,12 @@ def perfil_cliente(
     usuario=Depends(get_usuario_logado),  # 👈 vem do token
     db: Session = Depends(get_db)
 ):
+    print (usuario)
+
     role = usuario.get("role")
     sub = usuario.get("sub")
+
+    print (role,sub)
 
     if role != "cliente":
         raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
@@ -88,7 +92,7 @@ def perfil_cliente(
 
     cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
     if not cli:
-        raise HTTPException(status_code=401, detail="Cliente não cadastrado")
+        raise HTTPException(status_code=404, detail="Cliente não cadastrado")
 
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")

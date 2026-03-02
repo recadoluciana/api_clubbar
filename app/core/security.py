@@ -20,9 +20,13 @@ def hash_senha(senha: str) -> str:
 def verificar_senha(senha: str, senha_hash: str) -> bool:
     return pwd_context.verify(senha, senha_hash)
 
-def criar_jwt(payload: dict) -> str:
+def criar_jwt(payload: dict, expires_delta: timedelta | None = None) -> str:
     now = datetime.now(timezone.utc)
-    exp = now + timedelta(minutes=JWT_EXPIRES_MIN)
+
+    if expires_delta is None:
+        expires_delta = timedelta(days=7)  # padrão 7 dias
+
+    exp = now + expires_delta
 
     data = {
         **payload,
@@ -40,20 +44,20 @@ def verificar_jwt(token: str) -> dict:
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+        raise HTTPException(status_code=402, detail="Token inválido")
 
 
 def get_usuario_logado(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:
     if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="Não autenticado")
+        raise HTTPException(status_code=403, detail="Não autenticado")
 
     token = credentials.credentials
     payload = verificar_jwt(token)
 
     # (opcional, mas eu recomendo) garante que tem "sub"
     if "sub" not in payload:
-        raise HTTPException(status_code=401, detail="Token sem 'sub'")
+        raise HTTPException(status_code=404, detail="Token sem 'sub'")
 
     return payload
