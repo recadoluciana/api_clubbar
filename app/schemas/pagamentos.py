@@ -1,5 +1,5 @@
 # app/schemas/pagamentos.py
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 
 
@@ -21,3 +21,23 @@ class VendaStatusOut(BaseModel):
     sitvenda: Literal["PENDENTE", "PAGA", "CANCELADA"]
     sitpagvenda: Optional[Literal["PENDENTE", "PAGO", "CANCELADO"]] = None
     totalvenda: float
+
+# 🔐 Tipos validados
+EncryptedStr = constr(min_length=20)
+CVVStr       = constr(pattern=r"^\d{3,4}$")
+
+class PagarNovoIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
+
+    encrypted_card: EncryptedStr
+    security_code: CVVStr
+
+    idempotency_key: Optional[str] = None
+
+
+class PagarNovoOut(BaseModel):
+    venda_id: int
+    pagbank_order_id: Optional[str] = None
+    status: str
