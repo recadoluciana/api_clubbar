@@ -36,13 +36,12 @@ def listar_itens_nao_entregues(
             ItVenda.dsobsitvenda.label("dsobsitvenda"),
             ItVenda.dtexpiraitvenda.label("dtexpiraitvenda"),
             Venda.dtcriacao.label("dtcriacao"),
+            Venda.loja_id.label("loja_id"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .filter(
             Venda.cliente_id == cliente_id,
-            Venda.organizacao_id == organizacao_id,
-            Venda.loja_id == loja_id,
             Venda.sitvenda == "PAGA",
             ItVenda.identregaitvenda == "NAO",
             or_(
@@ -50,7 +49,7 @@ def listar_itens_nao_entregues(
                 ItVenda.dtexpiraitvenda >= hoje,          # ainda válido
             )
         )
-        .order_by(Venda.dtcriacao.desc())
+        .order_by(Venda.loja_id.asc(),Venda.dtcriacao.desc())
         .all()
     )
 
@@ -67,6 +66,7 @@ def listar_itens_nao_entregues(
             "dtexpiraitvenda_fmt": row.dtexpiraitvenda.strftime("%d/%m/%Y") if row.dtexpiraitvenda else None,
             "dtcriacao": row.dtcriacao,
             "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y") if row.dtcriacao else None,
+            "loja_id": row.loja_id,
         }
         for row in itens
     ]

@@ -7,7 +7,7 @@ from app.models.produto import Produto
 
 def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int) -> dict:
     # 1) acha carrinho ABERTO do cliente (trava o registro)
-    carrinho = (
+    carrinho_selec = (
         db.query(Carrinho)
         .filter(
             Carrinho.organizacao_id == organizacao_id,
@@ -24,7 +24,10 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
     # 2) busca itens do carrinho
     itens_car = (
         db.query(ItCarrinho)
-        .filter(ItCarrinho.carrinho_id == Carrinho.carrinho_id)
+        .filter(
+            ItCarrinho.carrinho_id == carrinho_selec.carrinho_id,
+            ItCarrinho.carrinho_id == Carrinho.carrinho_id
+        )
         .all()
     )
     if not itens_car:
@@ -73,7 +76,7 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
         )
 
     return {
-        "carrinho_id": carrinho.carrinho_id,
+        "carrinho_id": carrinho_selec.carrinho_id,
         "qt_total": qt_total,
         "total": total,
         "itens": itens_out,

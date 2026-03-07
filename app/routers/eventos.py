@@ -12,6 +12,7 @@ from fastapi import Query
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.evento import Evento
+from app.models.cidade import Cidade
 from app.schemas.evento import EventoOutBR, ListaEventoIn
 from app.models.eventolote import EventoLote
 from app.schemas.eventolote import EventoLoteOut 
@@ -20,20 +21,27 @@ from app.utils.datetime_utils import formatar_data_br
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
-def evento_to_out_br(ev: Evento) -> dict:
+def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None = None):
     return {
-        "evento_id"          : ev.evento_id,
-        "organizacao_id"     : ev.organizacao_id,
-        "loja_id"            : ev.loja_id,
+        "evento_id": ev.evento_id,
+        "organizacao_id": ev.organizacao_id,
+        "loja_id": ev.loja_id,
         "produto_id_ingresso": ev.produto_id_ingresso,
-        "nmtituloevento"     : ev.nmtituloevento,
-        "dsdescevento"       : ev.dsdescevento,
-        "dtinicioevento"     : formatar_data_br(ev.dtinicioevento),
-        "dtfimvevento"       : formatar_data_br(ev.dtfimvevento),
-        "nmlocalevento"      : ev.nmlocalevento,
-        "dsendlocevento"     : ev.dsendlocevento,
-        "urlbannerevento"    : ev.urlbannerevento,
-        "statusevento"       : ev.statusevento,
+
+        "nmtituloevento": ev.nmtituloevento,
+        "dsdescevento": ev.dsdescevento,
+
+        "dtinicioevento": ev.dtinicioevento,
+        "dtfimevento": ev.dtfimevento,
+
+        "nmlocalevento": ev.nmlocalevento,
+        "dsendlocevento": ev.dsendlocevento,
+        "urlbannerevento": ev.urlbannerevento,
+
+        "statusevento": ev.statusevento,
+
+        "nmloja": nmloja,
+        "nmcidade": nmcidade,
     }
 
 
@@ -51,16 +59,17 @@ def listar_eventos_proximos(
     hi = hoje_inicio_br()
 
     eventos = (
-        db.query(Evento)
+        db.query(Evento, Loja.nmloja, Cidade.nmcidade)
+        .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .filter(Evento.organizacao_id == organizacao_id)
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
         .order_by(Evento.dtinicioevento.asc())
-        .all()
     )
 
-    return [evento_to_out_br(ev) for ev in eventos]
+    return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
 
 
 @router.get("/proximos", response_model=list[EventoOutBR])
@@ -71,8 +80,9 @@ def listar_eventos_proximos_global(
     hi = hoje_inicio_br()
 
     q = (
-        db.query(Evento)
+        db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
     )
@@ -82,7 +92,7 @@ def listar_eventos_proximos_global(
 
     eventos = q.order_by(Evento.dtinicioevento.asc()).all()
 
-    return [evento_to_out_br(ev) for ev in eventos]
+    return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
 
 @router.get("/{evento_id}")
 def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):

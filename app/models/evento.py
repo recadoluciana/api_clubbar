@@ -26,7 +26,7 @@ class Evento(Base):
     dsdescevento = Column(Text, nullable=True)
 
     dtinicioevento = Column(DateTime, nullable=False)
-    dtfimvevento = Column(DateTime, nullable=True)
+    dtfimevento = Column(DateTime, nullable=True)
 
     nmlocalevento = Column(String(120), nullable=True)
     dsendlocevento = Column(String(200), nullable=True)

@@ -12,14 +12,17 @@ class EventoOutBR(BaseModel):
     nmtituloevento: str
     dsdescevento: Optional[str] = None
 
-    dtinicioevento: str
-    dtfimvevento: str
+    dtinicioevento: datetime
+    dtfimevento: datetime
 
     nmlocalevento: Optional[str] = None
     dsendlocevento: Optional[str] = None
     urlbannerevento: Optional[str] = None
 
     statusevento: str
+
+    nmloja: Optional[str] = None
+    nmcidade: Optional[str] = None
 
 class ListaEventoIn(BaseModel):
     cidade_id: int
