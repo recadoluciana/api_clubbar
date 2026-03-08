@@ -18,7 +18,7 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
         .with_for_update()
         .first()
     )
-    if not carrinho:
+    if not carrinho_selec:
         raise HTTPException(status_code=404, detail="Carrinho não encontrado (ABERTO)")
 
     # 2) busca itens do carrinho

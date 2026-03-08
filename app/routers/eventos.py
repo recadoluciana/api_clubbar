@@ -96,15 +96,23 @@ def listar_eventos_proximos_global(
 
 @router.get("/{evento_id}")
 def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
-    
-    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
-    
+
+    evento = (
+        db.query(Evento, Loja.nmloja, Cidade.nmcidade)
+        .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .filter(Evento.evento_id == evento_id)
+        .first()
+    )
+
     print("passei aqui no get_evento_por_id")
-    
+
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-    # (opcional) buscar lotes
+    evento_obj, nmloja, nmcidade = evento
+
+    # buscar lotes
     lotes = (
         db.query(EventoLote)
         .filter(EventoLote.evento_id == evento_id)
@@ -113,21 +121,26 @@ def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
     )
 
     return {
-        "evento_id": evento.evento_id,
-        "nmtituloevento" : getattr(evento, "nmtituloevento", None),
-        "dtinicioevento" : getattr(evento, "dtinicioevento", None),
-        "nmlocalevento"  : getattr(evento, "nmlocalevento", None),
-        "dsendlocevento" : getattr(evento, "dsendlocevento", None),
-        "dsdescevento"   : getattr(evento, "dsdescevento", None),
-        "urlbannerevento": getattr(evento, "urlbannerevento", None),
+        "evento_id": evento_obj.evento_id,
+        "nmtituloevento": getattr(evento_obj, "nmtituloevento", None),
+        "dtinicioevento": getattr(evento_obj, "dtinicioevento", None),
+        "nmlocalevento": getattr(evento_obj, "nmlocalevento", None),
+        "dsendlocevento": getattr(evento_obj, "dsendlocevento", None),
+        "dsdescevento": getattr(evento_obj, "dsdescevento", None),
+        "urlbannerevento": getattr(evento_obj, "urlbannerevento", None),
+
+        # ✅ novos campos
+        "nmloja": nmloja,
+        "nmcidade": nmcidade,
+
         "lotes": [
             {
-                "lote_id"       : lista_lotes.lote_id,
-                "nmlote"        : getattr(lista_lotes, "nmlote", None),
-                "vrprecolote"   : float(getattr(lista_lotes, "vrprecolote", 0) or 0),
-                "qttotallote"   : int(getattr(lista_lotes, "qttotallote", 0) or 0),
-                "qtvendidalote" : int(getattr(lista_lotes, "qtvendidalote", 0) or 0),
-                "statuslote"    : getattr(lista_lotes, "statuslote", None),
+                "lote_id": lista_lotes.lote_id,
+                "nmlote": getattr(lista_lotes, "nmlote", None),
+                "vrprecolote": float(getattr(lista_lotes, "vrprecolote", 0) or 0),
+                "qttotallote": int(getattr(lista_lotes, "qttotallote", 0) or 0),
+                "qtvendidalote": int(getattr(lista_lotes, "qtvendidalote", 0) or 0),
+                "statuslote": getattr(lista_lotes, "statuslote", None),
             }
             for lista_lotes in lotes
         ],

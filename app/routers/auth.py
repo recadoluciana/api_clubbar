@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+
+from datetime import datetime, timedelta
+
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic, UserLogin
@@ -32,7 +35,7 @@ def register(data: ClienteRegister, db: Session = Depends(get_db)):
     db.refresh(cli)
 
     # token já loga após cadastrar (se quiser, dá pra não logar e pedir confirmação de e-mail)
-    token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=30))
+    token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=90))
     return {
         "access_token": token,
         "cliente": {
