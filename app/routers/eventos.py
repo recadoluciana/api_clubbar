@@ -26,7 +26,6 @@ def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None
         "evento_id": ev.evento_id,
         "organizacao_id": ev.organizacao_id,
         "loja_id": ev.loja_id,
-        "produto_id_ingresso": ev.produto_id_ingresso,
 
         "nmtituloevento": ev.nmtituloevento,
         "dsdescevento": ev.dsdescevento,
@@ -50,9 +49,8 @@ def hoje_inicio_br() -> datetime:
     return datetime.combine(datetime.now(tz).date(), time.min).replace(tzinfo=None)
 
 
-@router.get("/lojas/{organizacao_id}/{loja_id}/proximos", response_model=list[EventoOutBR])
+@router.get("/lojas/{loja_id}/proximos", response_model=list[EventoOutBR])
 def listar_eventos_proximos(
-    organizacao_id: int,
     loja_id: int,
     db: Session = Depends(get_db),
 ):
@@ -62,7 +60,6 @@ def listar_eventos_proximos(
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
-        .filter(Evento.organizacao_id == organizacao_id)
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)

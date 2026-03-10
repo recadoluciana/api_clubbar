@@ -183,7 +183,6 @@ def get_qt_carrinho(cliente_id: int, organizacao_id: int, loja_id: int, db: Sess
 @router.get("/itens")
 def listar_itens(
     cliente_id: int,
-    organizacao_id: int,
     loja_id: int,
     db: Session = Depends(get_db),
 ):
@@ -191,7 +190,6 @@ def listar_itens(
         db.query(Carrinho)
         .filter(
             Carrinho.cliente_id == int(cliente_id),
-            Carrinho.organizacao_id == int(organizacao_id),
             Carrinho.loja_id == int(loja_id),
             Carrinho.sitcarrinho == "ABERTO",
         )

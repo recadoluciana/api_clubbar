@@ -15,13 +15,6 @@ class Evento(Base):
     organizacao_id = Column(BigInteger, nullable=False)
     loja_id = Column(BigInteger, nullable=False)
 
-    # produto automático do ingresso do evento
-    produto_id_ingresso = Column(
-        BigInteger,
-        ForeignKey("produto.produto_id", ondelete="RESTRICT", onupdate="CASCADE"),
-        nullable=False,
-    )
-
     nmtituloevento = Column(String(120), nullable=False)
     dsdescevento = Column(Text, nullable=True)
 

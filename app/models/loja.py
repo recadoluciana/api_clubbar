@@ -10,7 +10,11 @@ class Loja(Base):
 
     nmloja = Column(String(120), nullable=False)
     endloja = Column(String(255))
+    dsbairroloja = Column(String(120))
+    dsinstaloja = Column(String(255))
     sitloja = Column(String(15), nullable=False, default="ATIVA")
+    
+    dsrefeloja = Column(String(255))
     
     nrdiavalidade = Column(BigInteger,nullable=False, default=90)
 
@@ -23,6 +27,8 @@ class Loja(Base):
     cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=True)
     
     dtultatu = Column(DateTime, onupdate=func.now())
+
+    cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=False, index=True)
 
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),

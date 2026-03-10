@@ -7,13 +7,12 @@ class EventoOutBR(BaseModel):
     evento_id: int
     organizacao_id: int
     loja_id: int
-    produto_id_ingresso: int
 
     nmtituloevento: str
     dsdescevento: Optional[str] = None
 
     dtinicioevento: datetime
-    dtfimevento: datetime
+    dtfimevento: datetime | None = None
 
     nmlocalevento: Optional[str] = None
     dsendlocevento: Optional[str] = None

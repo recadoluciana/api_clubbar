@@ -49,7 +49,7 @@ def listar_itens_nao_entregues(
                 ItVenda.dtexpiraitvenda >= hoje,          # ainda válido
             )
         )
-        .order_by(Venda.loja_id.asc(),Venda.dtcriacao.desc())
+        .order_by(ItVenda.dtexpiraitvenda.asc())
         .all()
     )
 
