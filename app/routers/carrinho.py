@@ -270,6 +270,50 @@ def remover_uma_unidade(carrinho_id: int, produto_id: int, db: Session = Depends
     return {"ok": True, "msg": "Removida 1 unidade do produto do carrinho"}
 
 
+@router.post("/itens/{itcarrinho_id}/adicionar-um")
+def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("""
+            SELECT itcarrinho_id
+            FROM itcarrinho
+            WHERE itcarrinho_id = :itcarrinho_id
+        """),
+        {"itcarrinho_id": itcarrinho_id}
+    ).first()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Item do carrinho não encontrado")
+
+    db.execute(
+        text("""
+            INSERT INTO itcarrinho (
+                carrinho_id,
+                produto_id,
+                lote_id,
+                qtitcarrinho,
+                dsobsitcar
+            )
+            SELECT
+                carrinho_id,
+                produto_id,
+                lote_id,
+                1,
+                dsobsitcar
+            FROM itcarrinho
+            WHERE itcarrinho_id = :itcarrinho_id
+        """),
+        {"itcarrinho_id": itcarrinho_id}
+    )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "mensagem": "Uma unidade adicionada ao carrinho"
+    }
+
+
+
 @router.get("/itens/agrupados", response_model=list[CarrinhoItemAgrupadoOut])
 def get_itens_carrinho(
     cliente_id: int,
