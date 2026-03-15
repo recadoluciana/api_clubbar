@@ -168,6 +168,9 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         with db.begin():
             carrinho = get_carrinho(db, payload.cliente_id, payload.organizacao_id, payload.loja_id)
             itens = carrinho.get("itens", [])
+
+            print ("carrinho", itens)
+
             if not itens:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Carrinho vazio")
 
@@ -224,31 +227,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             detail=f"Falha ao chamar PagBank ({type(e).__name__}): {e}"
         )
 
-    paid, charge_status = _is_paid(data)
-
-    try:
-        with db.begin():
-            if paid:
-                set_venda_como_paga(db=db, venda_id=venda_id, gateway="PAGBANK", payload=data)
-            elif charge_status in {"CANCELED", "CANCELLED"}:
-                set_venda_como_cancelada(db=db, venda_id=venda_id, gateway="PAGBANK", payload=data)
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        print("[PAGAR_NOVO][ERRO_FINALIZAR]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"Pagamento ok, mas falhou ao salvar no banco ({type(e).__name__}): {e}"
-        )
-
-    return PagarNovoOut(
-        venda_id=venda_id,
-        pagbank_order_id=data.get("id"),
-        status=charge_status or "UNKNOWN",
-    )
-
     # =========================
     # FASE 2 (sem DB/lock): chama PagBank
     # =========================
@@ -274,7 +252,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao preparar pagamento ({type(e).__name__}): {e}"
+            detail=f"Pagamento via pagbank ok, mas falhou ao salvar venda como paga. ({type(e).__name__}): {e}"
         )
 
     return PagarNovoOut(
@@ -290,7 +268,16 @@ async def cartao_web(
     organizacao_id: int = Query(...),
     loja_id: int = Query(...),
 ):
+  
     public_key = os.getenv("PAGBANK_PUBLIC_KEY", "")
+
+    nmcliente  = "Angela Binatto"
+    nmloja     = "Remelexo Brasil"
+    cpfcliente = "29419781860" 
+    telcliente = "35999881045" 
+    nrcartao   = "4539620659922097"
+    mescartao  = '12'
+    anocartao  = '2030'
 
     html = f"""
 <!DOCTYPE html>
@@ -352,12 +339,16 @@ async def cartao_web(
 </head>
 <body>
   <div class="box">
-    <h2>Pagar com cartão</h2>
+    <h2>Pagar com Cartão</h2>
 
-    <input id="holder" placeholder="Nome no cartão" />
-    <input id="number" placeholder="Número do cartão" inputmode="numeric" />
-    <input id="exp_month" placeholder="MM" inputmode="numeric" />
-    <input id="exp_year" placeholder="AAAA" inputmode="numeric" />
+    <input id="nmloja"      value="{nmloja}"     placeholder="Nome do Estabelecimento" readonly/>
+    <input id="nmcliente"   value="{nmcliente}"  placeholder="Nome do Cliente" readonly />
+    <input id="cpfcliente"  value="{cpfcliente}" placeholder="CPF do Cliente" />
+    <input id="telcliente"  value="{telcliente}" placeholder="Telefone do Cliente" />    
+    <input id="holder"      value="{nmcliente}"  placeholder="Nome no cartão" />    
+    <input id="number"      value="{nrcartao}"   placeholder="Número do cartão" inputmode="numeric" />
+    <input id="exp_month"   value="{mescartao}"  placeholder="MM" inputmode="numeric" />
+    <input id="exp_year"    value="{anocartao}"  placeholder="AAAA" inputmode="numeric" />
     <input id="cvv" placeholder="CVV" inputmode="numeric" />
 
     <button id="btnPagar" onclick="pagar()">Pagar agora</button>

@@ -35,8 +35,11 @@ async def criar_ou_obter_venda_idempotente(
     - Não faz commit/rollback (rota controla com db.begin()).
     """
     carrinho_id = int(carrinho.get("carrinho_id") or 0)
+
     itens = carrinho.get("itens", [])
     total = float(carrinho.get("total") or 0)
+
+    print ("aqui é o ultimo print", itens)
 
     if not carrinho_id:
         raise HTTPException(status_code=400, detail="carrinho_id inválido")
@@ -63,11 +66,13 @@ async def criar_ou_obter_venda_idempotente(
         agora = datetime.now()
         fim = agora + timedelta(days=30)
 
+        print("estou no _sync_itens_venda", itens)
+
         for it in itens:
             produto_id = int(it["produto_id"])
-            qtd = int(it.get("qt", 1) or 1)
+            qtd = int(it.get("qtitcarrinho", 1) or 1)
             vr_unit = float(it.get("vrprecoprod", 0) or 0)
-            obs = it.get("obs")
+            dsobsitcar = it.get("dsobsitcar")
 
             db.add(
                 ItVenda(
@@ -75,7 +80,7 @@ async def criar_ou_obter_venda_idempotente(
                     produto_id=produto_id,
                     qtitvenda=qtd,
                     vrunititvenda=vr_unit,
-                    dsobsitvenda=obs,
+                    dsobsitvenda=dsobsitcar,
                     identregaitvenda="NAO",
                     qrtokenitvenda=gerar_token_qr(),
                     dtexpiraitvenda=fim,

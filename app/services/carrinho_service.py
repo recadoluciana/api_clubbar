@@ -47,7 +47,7 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
     total = 0.0
 
     for it in itens_car:
-        qt = int(getattr(it, "qt", 1) or 1)
+        qt_aux = int(getattr(it, "qtitcarrinho", 1) or 1)
 
         prod = map_prod.get(it.produto_id)
         if not prod:
@@ -59,8 +59,8 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
         nmproduto = getattr(prod, "nmproduto", "Produto")
         vrprecoprod = float(getattr(prod, "vrprecoprod", 0) or 0)
 
-        subtotal = vrprecoprod * qt
-        qt_total += qt
+        subtotal = vrprecoprod * qt_aux
+        qt_total += qt_aux
         total += subtotal
 
         itens_out.append(
@@ -69,8 +69,8 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
                 "produto_id": it.produto_id,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
-                "qt": qt,
-                "obs": getattr(it, "obs", None),
+                "qtitcarrinho": qt_aux,
+                "dsobsitcar": getattr(it, "dsobsitcar", None),
                 "subtotal": subtotal,
             }
         )

@@ -149,13 +149,12 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
     )
 
 @router.get("/qt")
-def get_qt_carrinho(cliente_id: int, organizacao_id: int, loja_id: int, db: Session = Depends(get_db)):
+def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)):
     # 1) encontra carrinho único
     carr = (
         db.query(Carrinho)
         .filter(
             Carrinho.cliente_id == cliente_id,
-            Carrinho.organizacao_id == organizacao_id,
             Carrinho.loja_id == loja_id,
             Carrinho.sitcarrinho == "ABERTO",
         )

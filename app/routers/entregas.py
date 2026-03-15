@@ -1,13 +1,17 @@
 # app/routers/entregas.py
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+
 from datetime import datetime, date
-from sqlalchemy import or_
+from sqlalchemy import or_, case
 
 from app.database import get_db
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
+from app.models.loja import Loja
+from app.models.cliente import Cliente
 
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 
@@ -15,43 +19,51 @@ router = APIRouter(prefix="/entregas", tags=["entregas"])
 @router.get("/pendentes")
 def listar_itens_nao_entregues(
     cliente_id: int = Query(...),
-    organizacao_id: int = Query(...),
     loja_id: int = Query(...),
     db: Session = Depends(get_db),
 ):
     """
     Lista itens de vendas PAGAS que ainda NÃO foram entregues
+    loja_id = 0 -> todas as lojas
     """
 
     hoje = date.today()
 
-    itens = (
+    query = (
         db.query(
-            ItVenda.itvenda_id.label("itvenda_id"),
-            ItVenda.venda_id.label("venda_id"),
-            Produto.produto_id.label("produto_id"),
-            Produto.nmproduto.label("nmproduto"),
-            ItVenda.qtitvenda.label("qtitvenda"),
-            ItVenda.vrunititvenda.label("vrunititvenda"),
-            ItVenda.dsobsitvenda.label("dsobsitvenda"),
-            ItVenda.dtexpiraitvenda.label("dtexpiraitvenda"),
-            Venda.dtcriacao.label("dtcriacao"),
-            Venda.loja_id.label("loja_id"),
+            ItVenda.itvenda_id,
+            ItVenda.venda_id,
+            Produto.produto_id,
+            Produto.nmproduto,
+            Loja.nmloja,
+            Cliente.nmcliente,
+            ItVenda.qtitvenda,
+            ItVenda.vrunititvenda,
+            ItVenda.dsobsitvenda,
+            ItVenda.dtexpiraitvenda,
+            Venda.dtcriacao,
+            Venda.loja_id,
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .filter(Venda.cliente_id == cliente_id)
+        .filter(Venda.sitvenda == "PAGA")
+        .filter(ItVenda.identregaitvenda == "NAO")
         .filter(
-            Venda.cliente_id == cliente_id,
-            Venda.sitvenda == "PAGA",
-            ItVenda.identregaitvenda == "NAO",
             or_(
-                ItVenda.dtexpiraitvenda == None,          # sem validade => deixa passar
-                ItVenda.dtexpiraitvenda >= hoje,          # ainda válido
+                ItVenda.dtexpiraitvenda.is_(None),
+                ItVenda.dtexpiraitvenda >= date.today()
             )
         )
-        .order_by(ItVenda.dtexpiraitvenda.asc())
-        .all()
     )
+
+    # 🔹 filtro opcional por loja
+    if loja_id != 0:
+        query = query.filter(Venda.loja_id == loja_id)
+
+    itens = query.order_by(ItVenda.dtexpiraitvenda.asc()).all()
 
     return [
         {
@@ -62,11 +74,13 @@ def listar_itens_nao_entregues(
             "qtitvenda": row.qtitvenda,
             "vrunititvenda": float(row.vrunititvenda or 0.0),
             "dsobsitvenda": row.dsobsitvenda,
-            "dtexpiraitvenda": row.dtexpiraitvenda,  # ISO padrão (ex: 2026-05-03)
+            "dtexpiraitvenda": row.dtexpiraitvenda,
             "dtexpiraitvenda_fmt": row.dtexpiraitvenda.strftime("%d/%m/%Y") if row.dtexpiraitvenda else None,
             "dtcriacao": row.dtcriacao,
             "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y") if row.dtcriacao else None,
             "loja_id": row.loja_id,
+            "nmloja" : row.nmloja,
+            "nmcliente" : row.nmcliente,
         }
         for row in itens
     ]
@@ -192,3 +206,54 @@ def listar_entregues_por_usuario(
         }
         for r in itens
     ]
+
+@router.get("/get_carteira_qt")
+def get_qt_itens_naoentregues(
+    cliente_id: int = Query(...),
+    loja_id: int = Query(0),
+    db: Session = Depends(get_db),
+):
+    """
+    Retorna a quantidade de itens ainda não entregues na carteira do cliente.
+
+    Regras:
+    - identregaitvenda = 'NAO'
+    - se loja_id = 0, soma todas as lojas
+    - se loja_id > 0, filtra pela loja informada
+    """
+    try:
+        query = (
+            db.query(
+                func.coalesce(func.sum(ItVenda.qtitvenda), 0).label("qt_total"),
+                func.coalesce(
+                    func.sum(ItVenda.qtitvenda * ItVenda.vrunititvenda), 0
+                ).label("valor_total"),
+            )
+            .join(Venda, Venda.venda_id == ItVenda.venda_id)
+            .filter(
+                Venda.cliente_id == cliente_id,
+                ItVenda.identregaitvenda == "NAO",
+            )
+        )
+
+        if loja_id != 0:
+            query = query.filter(Venda.loja_id == loja_id)
+
+        resultado = query.first()
+
+        qt_total = int(resultado.qt_total or 0)
+        valor_total = float(resultado.valor_total or 0)
+        valor_total = round(valor_total, 2)
+        valor_total_fmt = f"{valor_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        return {
+            "ok": True,
+            "cliente_id": cliente_id,
+            "loja_id": loja_id,
+            "qt_total": qt_total,
+            "valor_total": round(valor_total, 2),
+            "valor_total_fmt": valor_total_fmt,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar quantidade da carteira: {e}")
