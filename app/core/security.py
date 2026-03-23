@@ -23,16 +23,15 @@ def verificar_senha(senha: str, senha_hash: str) -> bool:
 def criar_jwt(payload: dict, expires_delta: timedelta | None = None) -> str:
     now = datetime.now(timezone.utc)
 
-    if expires_delta is None:
-        expires_delta = timedelta(days=7)  # padrão 7 dias
-
-    exp = now + expires_delta
-
     data = {
         **payload,
         "iat": int(now.timestamp()),
-        "exp": int(exp.timestamp()),
     }
+
+    # 👇 só adiciona exp se quiser expiração
+    if expires_delta is not None:
+        exp = now + expires_delta
+        data["exp"] = int(exp.timestamp())
 
     return jwt.encode(data, JWT_SECRET, algorithm="HS256")
 

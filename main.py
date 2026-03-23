@@ -1,3 +1,4 @@
+# mysql -u bitbeer_user -p bitbeer
 from fastapi import FastAPI
 from sqlalchemy import text
 from app.database import engine, Base

@@ -5,11 +5,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
-from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut
+
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
+from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+
+from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
@@ -382,4 +385,38 @@ def get_itens_carrinho(
             "img": r.img,
         }
         for r in rows
+    ]
+
+
+@router.get("/lojas", response_model=list[LojaCarrinhoOut])
+def get_lojas_com_carrinho(
+    cliente_id: int,
+    db: Session = Depends(get_db)
+):
+    rows = (
+        db.query(
+            Loja.loja_id.label("loja_id"),
+            Loja.organizacao_id.label("organizacao_id"),
+            Loja.nmloja.label("nmloja"),
+            Loja.dsbairroloja.label("dsbairroloja"),
+            func.count(ItCarrinho.itcarrinho_id).label("total_itens"),
+        )
+        .join(Carrinho, Carrinho.loja_id == Loja.loja_id)
+        .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
+        .filter(Carrinho.cliente_id == cliente_id)
+        .filter(Carrinho.sitcarrinho == "ABERTO")
+        .group_by(Loja.loja_id, Loja.nmloja)
+        .order_by(Loja.nmloja.asc())
+        .all()
+    )
+
+    return [
+        LojaCarrinhoOut(
+            loja_id=row.loja_id,
+            organizacao_id=row.organizacao_id,
+            nmloja=row.nmloja,
+            dsbairroloja=row.dsbairroloja,
+            total_itens=row.total_itens,
+        )
+        for row in rows
     ]

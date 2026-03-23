@@ -161,18 +161,38 @@ def _is_paid(data: Dict[str, Any]) -> tuple[bool, str]:
 
 @router.post("/pagar-novo", response_model=PagarNovoOut)
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
+    
+    
+    print( "pagar-novo", payload.organizacao_id)
+
     if not PAGBANK_TOKEN:
         raise HTTPException(status_code=500, detail="PAGBANK_TOKEN não configurado")
 
     try:
         with db.begin():
-            carrinho = get_carrinho(db, payload.cliente_id, payload.organizacao_id, payload.loja_id)
-            itens = carrinho.get("itens", [])
+            carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
 
-            print ("carrinho", itens)
+            if not carrinho:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Carrinho não encontrado"
+                )
+
+            itens = carrinho.get("itens") or []
+
+            if not isinstance(itens, list):
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Formato inválido dos itens do carrinho"
+                )
+
+            print("[PAGAR_NOVO] itens =", itens)
 
             if not itens:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Carrinho vazio")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Carrinho vazio"
+                )
 
             minha_chave = payload.idempotency_key or str(uuid.uuid4())
 
@@ -184,9 +204,21 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 carrinho=carrinho,
                 chave=minha_chave,
             )
+
+            if not venda:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Não foi possível criar/obter a venda"
+                )
+
             venda_id = int(venda["venda_id"])
 
             cliente = get_cliente(db, payload.cliente_id)
+            if not cliente:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Cliente não encontrado"
+                )
 
             order_body = _build_order_body(
                 venda_id=venda_id,
@@ -204,7 +236,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
         print("[PAGAR_NOVO][ERRO_PREPARO]", repr(e))
         print(traceback.format_exc())
         raise HTTPException(
@@ -486,7 +517,6 @@ async def pagamento_pendente(cliente_id: int, organizacao_id: int, loja_id: int,
         db.query(Venda)
         .filter(
             Venda.cliente_id == cliente_id,
-            Venda.organizacao_id == organizacao_id,
             Venda.loja_id == loja_id,
             Venda.sitvenda.in_(["PENDENTE", "PAGA"]),
         )

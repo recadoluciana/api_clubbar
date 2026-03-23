@@ -13,6 +13,8 @@ from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.cliente import Cliente
 
+from app.schemas.entregas import LojaRetiradaOut
+
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 
 
@@ -257,3 +259,40 @@ def get_qt_itens_naoentregues(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao buscar quantidade da carteira: {e}")
+
+
+@router.get("/lojas", response_model=list[LojaRetiradaOut])
+def listar_lojas_com_retirada_pendente(
+    cliente_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna as lojas onde o cliente tem itens pendentes de retirada.
+    """
+
+    rows = (
+        db.query(
+            Loja.loja_id.label("loja_id"),
+            Loja.nmloja.label("nmloja"),
+            Loja.dsbairroloja.label("dsbairroloja"),
+            func.count(ItVenda.itvenda_id).label("total_itens"),
+        )
+        .join(Venda, Venda.loja_id == Loja.loja_id)
+        .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
+        .filter(Venda.cliente_id == cliente_id)
+        .filter(Venda.sitvenda == "PAGA")
+        .filter(ItVenda.identregaitvenda == "NAO")
+        .group_by(Loja.loja_id, Loja.nmloja)
+        .order_by(Loja.nmloja.asc())
+        .all()
+    )
+
+    return [
+        LojaRetiradaOut(
+            loja_id=row.loja_id,
+            nmloja=row.nmloja,
+            dsbairroloja=row.dsbairroloja,
+            total_itens=row.total_itens,
+        )
+        for row in rows
+    ]

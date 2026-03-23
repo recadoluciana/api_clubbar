@@ -20,8 +20,8 @@ async def criar_ou_obter_venda_idempotente(
     db: Session,
     *,
     cliente_id: int,
-    organizacao_id: int,
     loja_id: int,
+    organizacao_id: int,
     carrinho: Dict[str, Any],
     chave: Optional[str] = None,
     plataforma: str = "ANDROID",
@@ -50,7 +50,6 @@ async def criar_ou_obter_venda_idempotente(
     venda = (
         db.query(Venda)
         .filter(
-            Venda.organizacao_id == organizacao_id,
             Venda.loja_id == loja_id,
             Venda.cliente_id == cliente_id,
             Venda.carrinho_id == carrinho_id,
@@ -69,10 +68,11 @@ async def criar_ou_obter_venda_idempotente(
         print("estou no _sync_itens_venda", itens)
 
         for it in itens:
-            produto_id = int(it["produto_id"])
+            produto_id     = int(it["produto_id"])
             qtd = int(it.get("qtitcarrinho", 1) or 1)
             vr_unit = float(it.get("vrprecoprod", 0) or 0)
             dsobsitcar = it.get("dsobsitcar")
+
 
             db.add(
                 ItVenda(
@@ -138,8 +138,8 @@ async def criar_ou_obter_venda_idempotente(
 
     # 3) se não existe venda pendente -> cria venda + itens + pagvenda
     venda = Venda(
-        organizacao_id=organizacao_id,
         loja_id=loja_id,
+        organizacao_id=organizacao_id,
         cliente_id=cliente_id,
         carrinho_id=carrinho_id,
         sitvenda="PENDENTE",

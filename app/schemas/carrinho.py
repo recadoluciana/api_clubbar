@@ -49,3 +49,10 @@ class CarrinhoItemIn(BaseModel):
     lote_id: Optional[int] = None
     qt: int = 1
     obs: Optional[str] = None
+
+class LojaCarrinhoOut(BaseModel):
+    loja_id: int
+    organizacao_id: int
+    nmloja: str
+    dsbairroloja: str | None = None
+    total_itens: int

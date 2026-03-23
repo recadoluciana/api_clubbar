@@ -5,12 +5,11 @@ from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 
-def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int) -> dict:
+def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
     # 1) acha carrinho ABERTO do cliente (trava o registro)
     carrinho_selec = (
         db.query(Carrinho)
         .filter(
-            Carrinho.organizacao_id == organizacao_id,
             Carrinho.loja_id == loja_id,
             Carrinho.cliente_id == cliente_id,
             Carrinho.sitcarrinho == "ABERTO",
@@ -77,6 +76,7 @@ def get_carrinho(db: Session, cliente_id: int, organizacao_id: int, loja_id: int
 
     return {
         "carrinho_id": carrinho_selec.carrinho_id,
+        "organizacao_id": carrinho_selec.organizacao_id,
         "qt_total": qt_total,
         "total": total,
         "itens": itens_out,
