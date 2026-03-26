@@ -130,9 +130,11 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
 
     print('retorno um json com access_token, usuario_id, nmusuario', token, user.usuario_id,user.nmusuario)
 
-    return {"access_token": token,
-            "usuario_id": user.usuario_id,
-            "nmusuario" : user.nmusuario}
+    return {"access_token"   : token,
+            "usuario_id"     : user.usuario_id,
+            "nmusuario"      : user.nmusuario,
+            "loja_id"        : user.loja_id,
+            "organizacao_id" : user.organizacao_id,}
 
 
 

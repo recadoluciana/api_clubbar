@@ -387,124 +387,110 @@ async def cartao_web(
     <div class="msg" id="msg"></div>
   </div>
 
-  <script>
-    const PUBLIC_KEY = "{public_key}";
-    const cliente_id = {cliente_id};
-    const organizacao_id = {organizacao_id};
-    const loja_id = {loja_id};
+    <script>
+      const PUBLIC_KEY = "{public_key}";
+      const cliente_id = {cliente_id};
+      const organizacao_id = {organizacao_id};
+      const loja_id = {loja_id};
 
-    let pagando = false;
+      let pagando = false;
 
-    function setMsg(text) {{
-      document.getElementById("msg").innerText = text || "";
-    }}
-
-    async function pagar() {{
-      if (pagando) {{
-        return;
+      function setMsg(text) {{
+        document.getElementById("msg").innerText = text || "";
       }}
 
-      pagando = true;
-
-      const btn = document.getElementById("btnPagar");
-      btn.disabled = true;
-      setMsg("Gerando cartão criptografado...");
-
-      try {{
-        const holder = document.getElementById("holder").value.trim();
-        const number = document.getElementById("number").value.replace(/\\D/g, "");
-        const expMonth = document.getElementById("exp_month").value.replace(/\\D/g, "");
-        const expYear = document.getElementById("exp_year").value.replace(/\\D/g, "");
-        const cvv = document.getElementById("cvv").value.replace(/\\D/g, "");
-
-        if (!holder || !number || !expMonth || !expYear || !cvv) {{
-          setMsg("Preencha todos os campos.");
-          btn.disabled = false;
-          pagando = false;
+      async function pagar() {{
+        if (pagando) {{
           return;
         }}
 
-        const card = PagSeguro.encryptCard({{
-          publicKey: PUBLIC_KEY,
-          holder: holder,
-          number: number,
-          expMonth: expMonth,
-          expYear: expYear,
-          securityCode: cvv
-        }});
+        pagando = true;
 
-        if (!card || card.hasErrors || !card.encryptedCard) {{
-          console.log("ERRO ENCRYPT:", card);
-          setMsg("Dados do cartão inválidos.");
-          btn.disabled = false;
-          pagando = false;
-          return;
-        }}
+        const btn = document.getElementById("btnPagar");
+        btn.disabled = true;
+        setMsg("Gerando cartão criptografado...");
 
-        setMsg("Processando pagamento...");
-        console.log("POST /pagamentos/pagar-novo");
-        console.log("encrypted len:", (card.encryptedCard || "").length);
+        try {{
+          const holder = document.getElementById("holder").value.trim();
+          const number = document.getElementById("number").value.replace(/\D/g, "");
+          const expMonth = document.getElementById("exp_month").value.replace(/\D/g, "");
+          const expYear = document.getElementById("exp_year").value.replace(/\D/g, "");
+          const cvv = document.getElementById("cvv").value.replace(/\D/g, "");
 
-        const resp = await fetch("/pagamentos/pagar-novo", {{
-          method: "POST",
-          headers: {{
-            "Content-Type": "application/json"
-          }},
-          body: JSON.stringify({{
-            cliente_id: cliente_id,
-            organizacao_id: organizacao_id,
-            loja_id: loja_id,
-            encrypted_card: card.encryptedCard,
-            security_code: cvv,
-            idempotency_key: null
-          }})
-        }});
-
-        const data = await resp.json();
-
-        if (!resp.ok) {{
-          let msg = "Erro ao pagar.";
-
-          try {{
-            if (data && data.detail) {{
-              msg = (typeof data.detail === "string")
-                ? data.detail
-                : JSON.stringify(data.detail);
-            }} else {{
-              msg = JSON.stringify(data);
-            }}
-          }} catch (e) {{
-            console.log("Erro ao montar mensagem:", e);
+          if (!holder || !number || !expMonth || !expYear || !cvv) {{
+            setMsg("Preencha todos os campos.");
+            return;
           }}
 
-          setMsg(msg);
-          console.log("ERRO PAGAR:", data);
+          const card = PagSeguro.encryptCard({{
+            publicKey: PUBLIC_KEY,
+            holder: holder,
+            number: number,
+            expMonth: expMonth,
+            expYear: expYear,
+            securityCode: cvv
+          }});
 
+          if (!card || card.hasErrors || !card.encryptedCard) {{
+            console.log("ERRO ENCRYPT:", card);
+            setMsg("Dados do cartão inválidos.");
+            return;
+          }}
+
+          setMsg("Processando pagamento...");
+          console.log("POST /pagamentos/pagar-novo");
+          console.log("encrypted len:", (card.encryptedCard || "").length);
+
+          const resp = await fetch("/pagamentos/pagar-novo", {{
+            method: "POST",
+            headers: {{
+              "Content-Type": "application/json"
+            }},
+            body: JSON.stringify({{
+              cliente_id: cliente_id,
+              organizacao_id: organizacao_id,
+              loja_id: loja_id,
+              encrypted_card: card.encryptedCard,
+              security_code: cvv,
+              idempotency_key: null
+            }})
+          }});
+
+          const data = await resp.json();
+          console.log("HTTP status:", resp.status);
+          console.log("Resposta do backend:", data);
+
+          if (!resp.ok) {{
+            const msg =
+              data?.detail?.mensagem ||
+              data?.detail?.message ||
+              data?.mensagem ||
+              data?.message ||
+              "Erro no pagamento";
+            throw new Error(msg);
+          }}
+
+          const statusPagamento =
+            data?.status ||
+            data?.sitpagvenda ||
+            data?.situacao ||
+            (data?.ok ? "PAID" : null);
+
+          if (statusPagamento === "PAID" || statusPagamento === "PAGO") {{
+            setMsg("Pagamento aprovado com sucesso");
+          }} else {{
+            setMsg(statusPagamento || "Pagamento concluído. Pode voltar para o seu app");
+          }}
+
+        }} catch (err) {{
+          console.error("Erro no pagamento:", err);
+          setMsg(err.message || "Erro ao processar pagamento");
+        }} finally {{
           btn.disabled = false;
           pagando = false;
-          return;
         }}
-
-        const status = (data.status || "").toUpperCase();
-
-        if (status === "PAID" || status === "AUTHORIZED") {{
-          setMsg("Pagamento aprovado! Você já pode voltar ao app.");
-          return;
-        }} else {{
-          setMsg("Pagamento retornou: " + status);
-          btn.disabled = false;
-          pagando = false;
-          return;
-        }}
-
-      }} catch (e) {{
-        console.error("Falha no pagamento:", e);
-        setMsg("Falha ao processar pagamento: " + (e?.message || e));
-        btn.disabled = false;
-        pagando = false;
       }}
-    }}
-  </script>
+    </script>
 </body>
 </html>
 """

@@ -11,8 +11,9 @@ import app.models  # precisa existir app/models/__init__.py importando os models
 #from app.routers.cidade import cidade
 
 from app.routers import cidades
-
 from app.routers import auth
+
+from app.routers import organizacao
 from app.routers import lojas
 from app.routers import produtos
 from app.routers import categoria
@@ -25,8 +26,11 @@ from app.routers import entregas
 from app.routers import eventos
 from app.routers import eventolotes
 
-
 app = FastAPI(title="clubbar API")
+
+from fastapi.staticfiles import StaticFiles
+
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ✅ cria as tabelas automaticamente (DEV)
 @app.on_event("startup")
@@ -39,6 +43,8 @@ def startup():
 app.include_router(cidades.router)
 
 app.include_router(auth.router)
+
+app.include_router(organizacao.router)
 app.include_router(lojas.router)
 app.include_router(produtos.router)
 app.include_router(categoria.router)                                                                    
@@ -50,6 +56,10 @@ app.include_router(pagbank_webhook.router)
 app.include_router(entregas.router)
 app.include_router(eventos.router)
 app.include_router(eventolotes.router)
+
+# 👇 COLOCA AQUI
+from fastapi.staticfiles import StaticFiles
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/health")
 def health():

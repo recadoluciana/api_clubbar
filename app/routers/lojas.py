@@ -8,8 +8,82 @@ from app.models.organizacao import Organizacao
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
-@router.get("")
-def listar_lojas(cidade_id: int | None = None, db: Session = Depends(get_db)):
+@router.get("/listar_todas_ativas")
+def listar_todas_lojas_ativas(db: Session = Depends(get_db)):
+   
+    rows = (
+        db.query(
+            Loja.loja_id,
+            Loja.organizacao_id,
+            Organizacao.nmorganizacao,
+            Loja.nmloja,
+            Loja.endloja,
+            Loja.aberto24x7,
+            Loja.dshorarioloja,
+            Loja.nrtelloja,
+        )
+        .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
+        .filter(Loja.sitloja == "ATIVA")
+        .order_by(Loja.nmloja)
+    )
+    if cidade_id:
+        rows = rows.filter(Loja.cidade_id == cidade_id)
+
+    lojas = rows.order_by(Loja.nmloja.asc()).all()
+
+    return [
+        {
+            "loja_id": r.loja_id,
+            "organizacao_id": r.organizacao_id,
+            "nmorganizacao": r.nmorganizacao,
+            "nmloja": r.nmloja,
+            "endloja": r.endloja,
+            "aberto24x7": r.aberto24x7,
+            "dshorarioloja": r.dshorarioloja,
+            "nrtelloja": r.nrtelloja,
+        }
+        for r in rows
+    ]
+
+@router.get("/listar_todas_lojas")
+def listar_todas_lojas(db: Session = Depends(get_db)):
+   
+    rows = (
+        db.query(
+            Loja.loja_id,
+            Loja.organizacao_id,
+            Organizacao.nmorganizacao,
+            Loja.nmloja,
+            Loja.endloja,
+            Loja.aberto24x7,
+            Loja.dshorarioloja,
+            Loja.nrtelloja,
+        )
+        .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
+        .order_by(Loja.nmloja)
+    )
+    if cidade_id:
+        rows = rows.filter(Loja.cidade_id == cidade_id)
+
+    lojas = rows.order_by(Loja.nmloja.asc()).all()
+
+    return [
+        {
+            "loja_id": r.loja_id,
+            "organizacao_id": r.organizacao_id,
+            "nmorganizacao": r.nmorganizacao,
+            "nmloja": r.nmloja,
+            "endloja": r.endloja,
+            "aberto24x7": r.aberto24x7,
+            "dshorarioloja": r.dshorarioloja,
+            "nrtelloja": r.nrtelloja,
+        }
+        for r in rows
+    ]
+
+
+@router.get("/cidades")
+def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_db)):
    
     rows = (
         db.query(
