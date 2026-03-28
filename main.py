@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 app = FastAPI(title="clubbar API")
 
 # garante que TODOS os models sejam carregados
-import app.models
+import app.models as app_models
 
 from app.routers import cidades
 from app.routers import auth
