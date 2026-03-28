@@ -1,6 +1,48 @@
-from fastapi import FastAPI
+mysql -h ballast.proxy.rlwy.net -P 48770 -u root -p railway < bitbeer.sql
 
-app = FastAPI()
+
+import os
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI(title="clubbar API")
+
+# garante que TODOS os models sejam carregados
+import app.models
+
+from app.routers import cidades
+from app.routers import auth
+from app.routers import organizacao
+from app.routers import lojas
+from app.routers import produtos
+from app.routers import categoria
+from app.routers import carrinho
+from app.routers import compras
+from app.routers import pagamentos
+from app.routers import pagbank_webhook
+from app.routers import entregas
+from app.routers import eventos
+from app.routers import eventolotes
+
+# cria a pasta uploads se não existir
+os.makedirs("uploads", exist_ok=True)
+
+# monta arquivos estáticos uma vez só
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+app.include_router(cidades.router)
+app.include_router(auth.router)
+app.include_router(organizacao.router)
+app.include_router(lojas.router)
+app.include_router(produtos.router)
+app.include_router(categoria.router)
+app.include_router(carrinho.router)
+app.include_router(compras.router)
+app.include_router(pagamentos.router)
+app.include_router(pagbank_webhook.router)
+app.include_router(entregas.router)
+app.include_router(eventos.router)
+app.include_router(eventolotes.router)
 
 @app.get("/health")
 def health():
