@@ -44,3 +44,7 @@ app.include_router(eventolotes.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/teste-deploy")
+def teste_deploy():
+    return {"msg": "deploy novo funcionando"}
