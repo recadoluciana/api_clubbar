@@ -26,9 +26,6 @@ def listar_todas_lojas_ativas(db: Session = Depends(get_db)):
         .filter(Loja.sitloja == "ATIVA")
         .order_by(Loja.nmloja)
     )
-    if cidade_id:
-        rows = rows.filter(Loja.cidade_id == cidade_id)
-
     lojas = rows.order_by(Loja.nmloja.asc()).all()
 
     return [
@@ -42,12 +39,14 @@ def listar_todas_lojas_ativas(db: Session = Depends(get_db)):
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
         }
-        for r in rows
+        for r in lojas
     ]
 
-@router.get("/listar_todas_lojas")
-def listar_todas_lojas(db: Session = Depends(get_db)):
-   
+@router.get("/listar_todas_ativas")
+def listar_todas_lojas_ativas(
+    cidade_id: int | None = None,
+    db: Session = Depends(get_db)
+):
     rows = (
         db.query(
             Loja.loja_id,
@@ -60,8 +59,9 @@ def listar_todas_lojas(db: Session = Depends(get_db)):
             Loja.nrtelloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
-        .order_by(Loja.nmloja)
+        .filter(Loja.sitloja == "ATIVA")
     )
+
     if cidade_id:
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
@@ -78,13 +78,12 @@ def listar_todas_lojas(db: Session = Depends(get_db)):
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
         }
-        for r in rows
+        for r in lojas
     ]
 
 
 @router.get("/cidades")
 def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_db)):
-   
     rows = (
         db.query(
             Loja.loja_id,
@@ -100,6 +99,7 @@ def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_
         .filter(Loja.sitloja == "ATIVA")
         .order_by(Loja.nmloja)
     )
+
     if cidade_id:
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
@@ -116,7 +116,7 @@ def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
         }
-        for r in rows
+        for r in lojas
     ]
 
 @router.get("/dados_loja/{loja_id}")
