@@ -6,11 +6,11 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("MYSQL_URL")
 
 if not DATABASE_URL:
-    MYSQL_HOST = os.getenv("MYSQL_HOST") or os.getenv("MYSQLHOST") or "127.0.0.1"
-    MYSQL_PORT = os.getenv("MYSQL_PORT") or os.getenv("MYSQLPORT") or "3306"
-    MYSQL_USER = os.getenv("MYSQL_USER") or os.getenv("MYSQLUSER") or "root"
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD") or os.getenv("MYSQLPASSWORD") or ""
-    MYSQL_DB = os.getenv("MYSQL_DB") or os.getenv("MYSQLDATABASE") or "bitbeer"
+    MYSQL_HOST     = os.getenv("MYSQLHOST")
+    MYSQL_PORT     = os.getenv("MYSQLPORT")
+    MYSQL_USER     = os.getenv("MYSQLUSER")
+    MYSQL_PASSWORD = os.getenv("MYSQLPASSWORD")
+    MYSQL_DB       = os.getenv("MYSQLDATABASE")
 
     DATABASE_URL = (
         f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
