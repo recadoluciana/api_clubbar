@@ -2,7 +2,21 @@ import os
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(title="clubbar API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://clubbaradmin-production.up.railway.app",
+        "https://admin.clubbar.com.br",
+        "https://www.clubbar.com.br",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # garante que TODOS os models sejam carregados
 import app.models as app_models
