@@ -1,6 +1,8 @@
-# app/routers/lojas.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+import os
+import uuid
+import shutil
 import traceback
 
 from app.database import get_db
@@ -12,6 +14,23 @@ from app.models.produto import Produto
 from app.schemas.loja import LojaCreate, LojaUpdate
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
+
+UPLOAD_DIR = "uploads/lojas"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
+    if not arquivo or not arquivo.filename:
+        return None
+
+    extensao = os.path.splitext(arquivo.filename)[1].lower()
+    nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
+    caminho_fisico = os.path.join(UPLOAD_DIR, nome_arquivo)
+
+    with open(caminho_fisico, "wb") as buffer:
+        shutil.copyfileobj(arquivo.file, buffer)
+
+    return f"/uploads/lojas/{nome_arquivo}"
 
 @router.get("/listar_todas")
 def listar_todas_lojas(db: Session = Depends(get_db)):
@@ -170,27 +189,47 @@ def dados_loja(loja_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
+def criar_loja(
+    organizacao_id: int = Form(...),
+    cidade_id: int = Form(...),
+    nmloja: str = Form(...),
+    dsbairroloja: str | None = Form(None),
+    nrtelloja: str | None = Form(None),
+    dshorarioloja: str | None = Form(None),
+    nrdiavalidade: int | None = Form(None),
+    logo: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        urllogoloja = salvar_logo_loja(logo)
 
-    nova_loja = Loja(
-        organizacao_id=data.organizacao_id,
-        cidade_id=data.cidade_id,
-        nmloja=data.nmloja,
-        dsbairroloja=data.dsbairroloja,
-        nrtelloja=data.nrtelloja,
-        dshorarioloja=data.dshorarioloja,
-        nrdiavalidade=data.nrdiavalidade,
-        urllogoloja=data.urllogoloja,
-    )
+        nova = Loja(
+            organizacao_id=organizacao_id,
+            cidade_id=cidade_id,
+            nmloja=nmloja,
+            dsbairroloja=dsbairroloja,
+            nrtelloja=nrtelloja,
+            dshorarioloja=dshorarioloja,
+            nrdiavalidade=nrdiavalidade,
+            urllogoloja=urllogoloja,
+            sitloja="ATIVA",
+        )
 
-    db.add(nova_loja)
-    db.commit()
-    db.refresh(nova_loja)
+        db.add(nova)
+        db.commit()
+        db.refresh(nova)
 
-    return {
-        "message": "Loja criada com sucesso",
-        "loja_id": nova_loja.loja_id
-    }
+        return {
+            "mensagem": "Loja cadastrada com sucesso",
+            "loja_id": nova.loja_id,
+            "urllogoloja": nova.urllogoloja,
+        }
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao criar loja: {str(e)}")
+
 
 @router.get("/organizacoes/{organizacao_id}/lojas_todas")
 def listar_lojas_por_organizacao_todas(
@@ -223,23 +262,46 @@ def listar_lojas_por_organizacao_todas(
 @router.put("/{loja_id}")
 def atualizar_loja(
     loja_id: int,
-    data: LojaUpdate,
-    db: Session = Depends(get_db)
+    organizacao_id: int | None = Form(None),
+    cidade_id: int | None = Form(None),
+    nmloja: str | None = Form(None),
+    dsbairroloja: str | None = Form(None),
+    nrtelloja: str | None = Form(None),
+    dshorarioloja: str | None = Form(None),
+    nrdiavalidade: int | None = Form(None),
+    logo: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
 ):
     try:
-        loja = (
-            db.query(Loja)
-            .filter(Loja.loja_id == loja_id)
-            .first()
-        )
+        loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
 
-        dados_update = data.dict(exclude_unset=True)
+        if organizacao_id is not None:
+            loja.organizacao_id = organizacao_id
 
-        for campo, valor in dados_update.items():
-            setattr(loja, campo, valor)
+        if cidade_id is not None:
+            loja.cidade_id = cidade_id
+
+        if nmloja is not None:
+            loja.nmloja = nmloja
+
+        if dsbairroloja is not None:
+            loja.dsbairroloja = dsbairroloja
+
+        if nrtelloja is not None:
+            loja.nrtelloja = nrtelloja
+
+        if dshorarioloja is not None:
+            loja.dshorarioloja = dshorarioloja
+
+        if nrdiavalidade is not None:
+            loja.nrdiavalidade = nrdiavalidade
+
+        if logo is not None and logo.filename:
+            nova_url_logo = salvar_logo_loja(logo)
+            loja.urllogoloja = nova_url_logo
 
         db.commit()
         db.refresh(loja)
@@ -249,6 +311,7 @@ def atualizar_loja(
             "loja": {
                 "loja_id": loja.loja_id,
                 "organizacao_id": loja.organizacao_id,
+                "cidade_id": loja.cidade_id,
                 "nmloja": loja.nmloja,
                 "dsbairroloja": loja.dsbairroloja,
                 "nrtelloja": loja.nrtelloja,
@@ -265,12 +328,7 @@ def atualizar_loja(
     except Exception as e:
         db.rollback()
         traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erro ao atualizar loja: {str(e)}"
-        )
-
-
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar loja: {str(e)}")
 
 
 @router.delete("/{loja_id}")
