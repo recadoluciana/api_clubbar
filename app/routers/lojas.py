@@ -185,3 +185,5 @@ def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
         "loja_id": nova_loja.loja_id
     }
 
+
+
