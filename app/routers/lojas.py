@@ -268,3 +268,78 @@ def atualizar_loja(
         )
 
 
+from app.models.produto import Produto
+
+@router.delete("/lojas/{loja_id}")
+def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
+    try:
+        loja = (
+            db.query(Loja)
+            .filter(Loja.loja_id == loja_id)
+            .first()
+        )
+
+        if not loja:
+            raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+        existe_produto = (
+            db.query(Produto)
+            .filter(Produto.loja_id == loja_id)
+            .first()
+        )
+
+        if existe_produto:
+            raise HTTPException(
+                status_code=400,
+                detail="Não é possível deletar a loja, pois existem produtos vinculados"
+            )
+
+        db.delete(loja)
+        db.commit()
+
+        return {"mensagem": "Loja deletada com sucesso"}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao deletar loja: {str(e)}"
+        )
+
+@router.patch("/lojas/{loja_id}/inativar")
+def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
+    loja = (
+        db.query(Loja)
+        .filter(Loja.loja_id == loja_id)
+        .first()
+    )
+
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+    loja.sitloja = "INATIVA"
+    db.commit()
+    db.refresh(loja)
+
+    return {"mensagem": "Loja inativada com sucesso"}
+
+@router.patch("/lojas/{loja_id}/reativar")
+def reativar_loja(loja_id: int, db: Session = Depends(get_db)):
+    loja = (
+        db.query(Loja)
+        .filter(Loja.loja_id == loja_id)
+        .first()
+    )
+
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+    loja.sitloja = "ATIVA"
+    db.commit()
+    db.refresh(loja)
+
+    return {"mensagem": "Loja reativada com sucesso"}
