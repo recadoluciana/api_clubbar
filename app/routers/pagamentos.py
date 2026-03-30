@@ -243,6 +243,9 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             detail=f"Erro ao preparar pagamento ({type(e).__name__}): {e}"
         )
 
+    # =========================
+    # FASE 2 (sem DB/lock): chama PagBank
+    # =========================
     try:
         data = await _pagbank_create_order(order_body, minha_chave)
     except HTTPException as e:
@@ -257,11 +260,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             status_code=502,
             detail=f"Falha ao chamar PagBank ({type(e).__name__}): {e}"
         )
-
-    # =========================
-    # FASE 2 (sem DB/lock): chama PagBank
-    # =========================
-    data = await _pagbank_create_order(order_body, minha_chave)
 
     # =========================
     # FASE 3 (DB curto): grava status / marca como paga
@@ -310,7 +308,7 @@ async def cartao_web(
     mescartao  = '12'
     anocartao  = '2030'
 
-    html = f"""
+    html = rf"""
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>

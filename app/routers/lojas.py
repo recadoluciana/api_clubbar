@@ -1,13 +1,15 @@
 # app/routers/lojas.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import traceback
+
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.cidade import Cidade
 from app.models.organizacao import Organizacao
+from app.models.produto import Produto
 
-from app.schemas.loja import LojaCreate
-from app.schemas.loja import LojaUpdate
+from app.schemas.loja import LojaCreate, LojaUpdate
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -167,7 +169,7 @@ def dados_loja(loja_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("/lojas")
+@router.post("")
 def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
 
     nova_loja = Loja(
@@ -217,7 +219,7 @@ def listar_lojas_por_organizacao_todas(
     ]
 
 
-@router.put("/lojas/{loja_id}")
+@router.put("/{loja_id}")
 def atualizar_loja(
     loja_id: int,
     data: LojaUpdate,
@@ -268,9 +270,9 @@ def atualizar_loja(
         )
 
 
-from app.models.produto import Produto
 
-@router.delete("/lojas/{loja_id}")
+
+@router.delete("/{loja_id}")
 def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
     try:
         loja = (
@@ -310,7 +312,7 @@ def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
             detail=f"Erro ao deletar loja: {str(e)}"
         )
 
-@router.patch("/lojas/{loja_id}/inativar")
+@router.patch("/{loja_id}/inativar")
 def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
     loja = (
         db.query(Loja)
@@ -327,7 +329,7 @@ def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
 
     return {"mensagem": "Loja inativada com sucesso"}
 
-@router.patch("/lojas/{loja_id}/reativar")
+@router.patch("/{loja_id}/reativar")
 def reativar_loja(loja_id: int, db: Session = Depends(get_db)):
     loja = (
         db.query(Loja)
