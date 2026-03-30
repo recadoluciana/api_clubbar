@@ -82,16 +82,28 @@ def cadastrar_organizacao(
     dados: OrganizacaoCreate,
     db: Session = Depends(get_db)
 ):
-    nova = Organizacao(
-        nmorganizacao=dados.nmorganizacao,
-        cnpjorganizacao=dados.cnpjorganizacao,
-    )
+    try:
+        nova = Organizacao(
+            nmorganizacao=dados.nmorganizacao,
+            cnpjorganizacao=dados.cnpjorganizacao,
+            emailorganizacao=dados.emailorganizacao,
+            telorganizacao=dados.telorganizacao,
+            sitorganizacao="ATIVA"
+        )
 
-    db.add(nova)
-    db.commit()
-    db.refresh(nova)
+        db.add(nova)
+        db.commit()
+        db.refresh(nova)
 
-    return {
-        "mensagem": "Organização cadastrada com sucesso",
-        "organizacao_id": nova.organizacao_id
-    }
+        return {
+            "mensagem": "Organização cadastrada com sucesso",
+            "organizacao_id": nova.organizacao_id
+        }
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+        

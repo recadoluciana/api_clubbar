@@ -8,7 +8,9 @@ from typing import Literal
 
 class OrganizacaoCreate(BaseModel):
     nmorganizacao: str
-    cnpjorganizacao: Optional[str] = None
+    cnpjorganizacao: str | None = None
+    emailorganizacao: str | None = None
+    telorganizacao: str | None = None
     
 class OrganizacaoUpdate(BaseModel):
     nmorganizacao: Optional[str] = None
