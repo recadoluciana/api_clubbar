@@ -186,4 +186,27 @@ def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
     }
 
 
+@router.post("/lojas_teste")
+def loja_teste(data: LojaCreate, db: Session = Depends(get_db)):
+
+    nova_loja = Loja(
+        organizacao_id=data.organizacao_id,
+        nmloja=data.nmloja,
+        dsbairroloja=data.dsbairroloja,
+        nrtelloja=data.nrtelloja,
+        dshorarioloja=data.dshorarioloja,
+        nrdiavalidade=data.nrdiavalidade,
+    )
+
+    db.add(nova_loja)
+    db.commit()
+    db.refresh(nova_loja)
+
+    return {
+        "message": "Loja criada com sucesso",
+        "loja_id": nova_loja.loja_id
+    }
+
+
+
 
