@@ -174,6 +174,7 @@ def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
 
     nova_loja = Loja(
         organizacao_id=data.organizacao_id,
+        cidade_id=data.cidade_id,
         nmloja=data.nmloja,
         dsbairroloja=data.dsbairroloja,
         nrtelloja=data.nrtelloja,
