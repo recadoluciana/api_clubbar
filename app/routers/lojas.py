@@ -6,6 +6,8 @@ from app.models.loja import Loja
 from app.models.cidade import Cidade
 from app.models.organizacao import Organizacao
 
+from app.schemas.loja import LojaCreate
+
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 @router.get("/listar_todas_ativas")
