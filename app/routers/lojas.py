@@ -7,11 +7,12 @@ from app.models.cidade import Cidade
 from app.models.organizacao import Organizacao
 
 from app.schemas.loja import LojaCreate
+from app.schemas.loja import LojaUpdate
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
-@router.get("/listar_todas_ativas")
-def listar_todas_lojas_ativas(db: Session = Depends(get_db)):
+@router.get("/listar_todas")
+def listar_todas_lojas(db: Session = Depends(get_db)):
    
     rows = (
         db.query(
@@ -176,6 +177,7 @@ def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
         nrtelloja=data.nrtelloja,
         dshorarioloja=data.dshorarioloja,
         nrdiavalidade=data.nrdiavalidade,
+        urllogoloja=data.urllogoloja,
     )
 
     db.add(nova_loja)
@@ -187,28 +189,82 @@ def criar_loja(data: LojaCreate, db: Session = Depends(get_db)):
         "loja_id": nova_loja.loja_id
     }
 
-
-@router.post("/lojas_teste")
-def loja_teste(data: LojaCreate, db: Session = Depends(get_db)):
-
-    nova_loja = Loja(
-        organizacao_id=data.organizacao_id,
-        nmloja=data.nmloja,
-        dsbairroloja=data.dsbairroloja,
-        nrtelloja=data.nrtelloja,
-        dshorarioloja=data.dshorarioloja,
-        nrdiavalidade=data.nrdiavalidade,
+@router.get("/organizacoes/{organizacao_id}/lojas_todas")
+def listar_lojas_por_organizacao_todas(
+    organizacao_id: int,
+    db: Session = Depends(get_db)
+):
+    lojas = (
+        db.query(Loja)
+        .filter(Loja.organizacao_id == organizacao_id)
+        .order_by(Loja.nmloja.asc())
+        .all()
     )
 
-    db.add(nova_loja)
-    db.commit()
-    db.refresh(nova_loja)
+    return [
+        {
+            "loja_id": loja.loja_id,
+            "organizacao_id": loja.organizacao_id,
+            "nmloja": loja.nmloja,
+            "dsbairroloja": loja.dsbairroloja,
+            "nrtelloja": loja.nrtelloja,
+            "dshorarioloja": loja.dshorarioloja,
+            "nrdiavalidade": loja.nrdiavalidade,
+            "sitloja": loja.sitloja,
+            "urllogoloja": loja.urllogoloja, 
+        }
+        for loja in lojas
+    ]
 
-    return {
-        "message": "Loja criada com sucesso",
-        "loja_id": nova_loja.loja_id
-    }
 
+@router.put("/lojas/{loja_id}")
+def atualizar_loja(
+    loja_id: int,
+    data: LojaUpdate,
+    db: Session = Depends(get_db)
+):
+    try:
+        loja = (
+            db.query(Loja)
+            .filter(Loja.loja_id == loja_id)
+            .first()
+        )
 
+        if not loja:
+            raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+        dados_update = data.dict(exclude_unset=True)
+
+        for campo, valor in dados_update.items():
+            setattr(loja, campo, valor)
+
+        db.commit()
+        db.refresh(loja)
+
+        return {
+            "mensagem": "Loja atualizada com sucesso",
+            "loja": {
+                "loja_id": loja.loja_id,
+                "organizacao_id": loja.organizacao_id,
+                "nmloja": loja.nmloja,
+                "dsbairroloja": loja.dsbairroloja,
+                "nrtelloja": loja.nrtelloja,
+                "dshorarioloja": loja.dshorarioloja,
+                "nrdiavalidade": loja.nrdiavalidade,
+                "sitloja": loja.sitloja,
+                "urllogoloja": loja.urllogoloja,
+            }
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao atualizar loja: {str(e)}"
+        )
 
 

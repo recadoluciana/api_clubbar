@@ -30,6 +30,10 @@ class Loja(Base):
 
     cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=False, index=True)
 
+    urllogoloja = Column(String(255), nullable=True)
+    
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),
+
+
     )
