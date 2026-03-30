@@ -269,7 +269,7 @@ def atualizar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
-    logo: UploadFile | None = File(None),
+    urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -299,8 +299,8 @@ def atualizar_loja(
         if nrdiavalidade is not None:
             loja.nrdiavalidade = nrdiavalidade
 
-        if logo is not None and logo.filename:
-            nova_url_logo = salvar_logo_loja(logo)
+        if urllogoloja is not None and urllogoloja.filename:
+            nova_url_logo = salvar_logo_loja(urllogoloja)
             loja.urllogoloja = nova_url_logo
 
         db.commit()
