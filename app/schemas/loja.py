@@ -4,6 +4,7 @@ from typing import Optional
 
 class LojaCreate(BaseModel):
     organizacao_id: int
+    cidade_id: int  # 👈 obrigatório
     nmloja: str
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
@@ -14,6 +15,7 @@ class LojaCreate(BaseModel):
 
 class LojaUpdate(BaseModel):
     organizacao_id: Optional[int] = None
+    cidade_id: int  # 👈 obrigatório
     nmloja: Optional[str] = None
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
