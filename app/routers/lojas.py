@@ -1,18 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 import os
 import uuid
 import shutil
 import traceback
-from fastapi import Request
 
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.cidade import Cidade
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
-
-from app.schemas.loja import LojaCreate, LojaUpdate
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -33,9 +30,9 @@ def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
 
     return f"/uploads/lojas/{nome_arquivo}"
 
+
 @router.get("/listar_todas")
-def listar_todas_lojas(db: Session = Depends(get_db)):
-   
+def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
     rows = (
         db.query(
             Loja.loja_id,
@@ -46,12 +43,15 @@ def listar_todas_lojas(db: Session = Depends(get_db)):
             Loja.aberto24x7,
             Loja.dshorarioloja,
             Loja.nrtelloja,
+            Loja.urllogoloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
-        .order_by(Loja.nmloja)
+        .order_by(Loja.nmloja.asc())
+        .all()
     )
-    lojas = rows.order_by(Loja.nmloja.asc()).all()
+
+    base_url = str(request.base_url).rstrip("/")
 
     return [
         {
@@ -63,12 +63,15 @@ def listar_todas_lojas(db: Session = Depends(get_db)):
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
+            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
         }
-        for r in lojas
+        for r in rows
     ]
+
 
 @router.get("/listar_todas_ativas")
 def listar_todas_lojas_ativas(
+    request: Request,
     cidade_id: int | None = None,
     db: Session = Depends(get_db)
 ):
@@ -82,15 +85,17 @@ def listar_todas_lojas_ativas(
             Loja.aberto24x7,
             Loja.dshorarioloja,
             Loja.nrtelloja,
+            Loja.urllogoloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
     )
 
-    if cidade_id:
+    if cidade_id is not None:
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
     lojas = rows.order_by(Loja.nmloja.asc()).all()
+    base_url = str(request.base_url).rstrip("/")
 
     return [
         {
@@ -102,13 +107,18 @@ def listar_todas_lojas_ativas(
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
+            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
         }
         for r in lojas
     ]
 
 
 @router.get("/cidades")
-def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_db)):
+def listar_lojas_cidade(
+    request: Request,
+    cidade_id: int | None = None,
+    db: Session = Depends(get_db)
+):
     rows = (
         db.query(
             Loja.loja_id,
@@ -119,16 +129,17 @@ def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_
             Loja.aberto24x7,
             Loja.dshorarioloja,
             Loja.nrtelloja,
+            Loja.urllogoloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
-        .order_by(Loja.nmloja)
     )
 
-    if cidade_id:
+    if cidade_id is not None:
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
     lojas = rows.order_by(Loja.nmloja.asc()).all()
+    base_url = str(request.base_url).rstrip("/")
 
     return [
         {
@@ -140,13 +151,14 @@ def listar_lojas_cidade(cidade_id: int | None = None, db: Session = Depends(get_
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
+            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
         }
         for r in lojas
     ]
 
+
 @router.get("/dados_loja/{loja_id}")
-def dados_loja(loja_id: int, db: Session = Depends(get_db)):
-   
+def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
     row = (
         db.query(
             Loja.loja_id,
@@ -162,6 +174,7 @@ def dados_loja(loja_id: int, db: Session = Depends(get_db)):
             Loja.dsinstaloja,
             Loja.dsrefeloja,
             Loja.cidade_id,
+            Loja.urllogoloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
@@ -172,20 +185,23 @@ def dados_loja(loja_id: int, db: Session = Depends(get_db)):
     if not row:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
 
+    base_url = str(request.base_url).rstrip("/")
+
     return {
-        "loja_id"         : row.loja_id,
-        "organizacao_id"  : row.organizacao_id,
-        "nmorganizacao"   : row.nmorganizacao,
-        "nmloja"          : row.nmloja,
-        "endloja"         : row.endloja,
-        "dsbairroloja"    : row.dsbairroloja,
-        "aberto24x7"      : row.aberto24x7,
-        "dshorarioloja"   : row.dshorarioloja,
-        "nrtelloja"       : row.nrtelloja,
-        "dsinstaloja"     : row.dsinstaloja,
-        "dsrefeloja"      : row.dsrefeloja,
-        "cidade_id"       : row.cidade_id,
-        "nmcidade"        : row.nmcidade,
+        "loja_id": row.loja_id,
+        "organizacao_id": row.organizacao_id,
+        "nmorganizacao": row.nmorganizacao,
+        "nmloja": row.nmloja,
+        "endloja": row.endloja,
+        "dsbairroloja": row.dsbairroloja,
+        "aberto24x7": row.aberto24x7,
+        "dshorarioloja": row.dshorarioloja,
+        "nrtelloja": row.nrtelloja,
+        "dsinstaloja": row.dsinstaloja,
+        "dsrefeloja": row.dsrefeloja,
+        "cidade_id": row.cidade_id,
+        "nmcidade": row.nmcidade,
+        "urllogoloja": f"{base_url}{row.urllogoloja}" if row.urllogoloja else None,
     }
 
 
@@ -198,11 +214,11 @@ def criar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
-    urllogoloja: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
-        urllogoloja_aux = salvar_logo_loja(urllogoloja)
+        urllogoloja_aux = salvar_logo_loja(file)
 
         nova = Loja(
             organizacao_id=organizacao_id,
@@ -236,7 +252,7 @@ def criar_loja(
 def listar_lojas_por_organizacao_todas(
     organizacao_id: int,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     lojas = (
         db.query(Loja)
@@ -273,7 +289,7 @@ def atualizar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
-    urllogoloja: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -303,9 +319,12 @@ def atualizar_loja(
         if nrdiavalidade is not None:
             loja.nrdiavalidade = nrdiavalidade
 
-        if urllogoloja is not None and urllogoloja.filename:
-            nova_url_logo = salvar_logo_loja(urllogoloja)
+        print("arquivo recebido:", file.filename if file else None)
+
+        if file is not None and file.filename:
+            nova_url_logo = salvar_logo_loja(file)
             loja.urllogoloja = nova_url_logo
+            print("nova_url_logo:", nova_url_logo)
 
         db.commit()
         db.refresh(loja)
@@ -340,20 +359,12 @@ def atualizar_loja(
 @router.delete("/{loja_id}")
 def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
     try:
-        loja = (
-            db.query(Loja)
-            .filter(Loja.loja_id == loja_id)
-            .first()
-        )
+        loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
 
-        existe_produto = (
-            db.query(Produto)
-            .filter(Produto.loja_id == loja_id)
-            .first()
-        )
+        existe_produto = db.query(Produto).filter(Produto.loja_id == loja_id).first()
 
         if existe_produto:
             raise HTTPException(
@@ -377,13 +388,10 @@ def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
             detail=f"Erro ao deletar loja: {str(e)}"
         )
 
+
 @router.patch("/{loja_id}/inativar")
 def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
-    loja = (
-        db.query(Loja)
-        .filter(Loja.loja_id == loja_id)
-        .first()
-    )
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
@@ -394,13 +402,10 @@ def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
 
     return {"mensagem": "Loja inativada com sucesso"}
 
+
 @router.patch("/{loja_id}/reativar")
 def reativar_loja(loja_id: int, db: Session = Depends(get_db)):
-    loja = (
-        db.query(Loja)
-        .filter(Loja.loja_id == loja_id)
-        .first()
-    )
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
