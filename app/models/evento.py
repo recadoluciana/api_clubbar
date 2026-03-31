@@ -1,10 +1,9 @@
-#evento
 from sqlalchemy import (
-    Column, BigInteger, String, Text, DateTime, Enum, ForeignKey
+    Column, BigInteger, String, Text, DateTime, Enum
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-from app.database import Base  # ajuste se necessário
+from app.database import Base
 
 
 class Evento(Base):
@@ -28,7 +27,7 @@ class Evento(Base):
     statusevento = Column(
         Enum("RASCUNHO", "ATIVO", "ENCERRADO", "CANCELADO", name="evento_statusevento"),
         nullable=False,
-        default="RASCUNHO",
+        server_default="RASCUNHO",
     )
 
     dtcriacao = Column(
