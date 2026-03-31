@@ -198,11 +198,11 @@ def criar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
-    logo: UploadFile | None = File(None),
+    urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
-        urllogoloja = salvar_logo_loja(logo)
+        urllogoloja_aux = salvar_logo_loja(urllogoloja)
 
         nova = Loja(
             organizacao_id=organizacao_id,
@@ -212,7 +212,7 @@ def criar_loja(
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
             nrdiavalidade=nrdiavalidade,
-            urllogoloja=urllogoloja,
+            urllogoloja=urllogoloja_aux,
             sitloja="ATIVA",
         )
 
@@ -311,7 +311,7 @@ def atualizar_loja(
         db.refresh(loja)
 
         print("url final no banco:", loja.urllogoloja)
-        
+
         return {
             "mensagem": "Loja atualizada com sucesso",
             "loja": {
