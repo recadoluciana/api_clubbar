@@ -1,29 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import exists
+import os
+import uuid
+import shutil
+
 from app.database import get_db
 from app.models.categoria import Categoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
-
-from app.schemas.produto import ProdutoUpdate
-
-from sqlalchemy import exists
-
-from fastapi import Request
-
-import os
-import uuid
+from app.config import UPLOAD_PRODUTOS
 
 router = APIRouter(tags=["Produtos"])
 
-UPLOAD_DIR = "/app/uploads/produtos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
+
 
 @router.delete("/produtos/{produto_id}")
 def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
-
-    # 1. verifica se produto existe
     produto = db.query(Produto).filter(
         Produto.produto_id == produto_id
     ).first()
@@ -31,12 +26,10 @@ def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    # 2. verifica se já foi usado em carrinho
     usado_itcarrinho = db.query(
         exists().where(ItCarrinho.produto_id == produto_id)
     ).scalar()
 
-    # 2. verifica se já foi usado em vendas
     usado_itvenda = db.query(
         exists().where(ItVenda.produto_id == produto_id)
     ).scalar()
@@ -47,37 +40,22 @@ def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
             detail="Este produto já foi utilizado em vendas/carrinhos e não pode ser excluído"
         )
 
-    # 3. pode excluir
     db.delete(produto)
     db.commit()
 
     return {"message": "Produto excluído com sucesso"}
 
 
-from fastapi import UploadFile, File, Form
-import os
-import shutil
-from uuid import uuid4
-
-UPLOAD_DIR = "uploads/produtos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-
 @router.put("/produtos/{produto_id}")
 def atualizar_produto(
     produto_id: int,
-
-    # 👇 substitui o ProdutoUpdate por Form
-    categoria_id: int = Form(None),
-    nmproduto: str = Form(None),
-    dsproduto: str = Form(None),
-    vrprecoprod: float = Form(None),
-    sitproduto: str = Form(None),
-    skuproduto: str = Form(None),
-
-    # 👇 NOVO campo de upload
-    file: UploadFile = File(None),
-
+    categoria_id: int | None = Form(None),
+    nmproduto: str | None = Form(None),
+    dsproduto: str | None = Form(None),
+    vrprecoprod: float | None = Form(None),
+    sitproduto: str | None = Form(None),
+    skuproduto: str | None = Form(None),
+    file: UploadFile | None = File(None),
     db: Session = Depends(get_db)
 ):
     produto = db.query(Produto).filter(
@@ -87,27 +65,19 @@ def atualizar_produto(
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    # -------------------------
-    # 📸 UPLOAD DA IMAGEM
-    # -------------------------
     if file:
-        if not file.content_type.startswith("image/"):
+        if not file.content_type or not file.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
 
-        extensao = file.filename.split(".")[-1]
-        nome_arquivo = f"{uuid4()}.{extensao}"
-
-        caminho_arquivo = os.path.join(UPLOAD_DIR, nome_arquivo)
+        extensao = os.path.splitext(file.filename)[1].lower()
+        nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
+        caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
 
         with open(caminho_arquivo, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # 👇 salva no banco
         produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
 
-    # -------------------------
-    # 🔄 SUA LÓGICA ORIGINAL
-    # -------------------------
     if categoria_id is not None:
         produto.categoria_id = categoria_id
 
@@ -130,14 +100,14 @@ def atualizar_produto(
     db.refresh(produto)
 
     return {
-        "mensagem"   : "Produto atualizado com sucesso",
-        "produto_id" : produto.produto_id,
-        "urlfoto"    : produto.urlfotoproduto
+        "mensagem": "Produto atualizado com sucesso",
+        "produto_id": produto.produto_id,
+        "urlfoto": produto.urlfotoproduto
     }
+
 
 @router.get("/lojas/{loja_id}/produtos")
 def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
-
     rows = (
         db.query(
             Produto.organizacao_id,
@@ -179,7 +149,6 @@ def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
             "vrprecoprod": float(r.vrprecoprod) if r.vrprecoprod is not None else 0.0,
             "sitproduto": r.sitproduto,
             "skuproduto": r.skuproduto,
-            "nmcategoria": r.nmcategoria,
             "idtipoproduto": r.idtipoproduto,
             "lote_id": r.lote_id,
             "urlfotoproduto": r.urlfotoproduto,
@@ -245,23 +214,18 @@ async def criar_produto(
         )
 
     nome_arquivo_foto = None
-    
-    base_url = str(request.base_url).rstrip("/")
 
     if foto:
         extensao = os.path.splitext(foto.filename)[1].lower()
-        nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
+        nome_arquivo_foto = f"{uuid.uuid4().hex}{extensao}"
 
-        caminho = os.path.join("uploads/produtos", nome_arquivo)
+        caminho = os.path.join(UPLOAD_PRODUTOS, nome_arquivo_foto)
 
         conteudo = await foto.read()
         with open(caminho, "wb") as f:
             f.write(conteudo)
 
-        url_foto = f"{base_url}/uploads/produtos/{nome_arquivo}"
-
-        print(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>url_foto",url_foto)
-
+        url_foto = f"/uploads/produtos/{nome_arquivo_foto}"
     else:
         url_foto = None
 
@@ -276,7 +240,7 @@ async def criar_produto(
         skuproduto=skuproduto,
         idtipoproduto=idtipoproduto,
         lote_id=lote_id,
-        urlfotoproduto=url_foto,  # descomente se existir esse campo no model
+        urlfotoproduto=url_foto,
     )
 
     db.add(novo_produto)
@@ -297,4 +261,5 @@ async def criar_produto(
         "idtipoproduto": novo_produto.idtipoproduto,
         "lote_id": novo_produto.lote_id,
         "foto": nome_arquivo_foto,
+        "urlfotoproduto": novo_produto.urlfotoproduto,
     }

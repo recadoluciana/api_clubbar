@@ -1,13 +1,13 @@
 import os
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="clubbar API")
 
-# 🔥 CORREÇÃO DEFINITIVA PARA PREFLIGHT (FLUTTER WEB)
+
 @app.middleware("http")
 async def cors_fix(request: Request, call_next):
     if request.method == "OPTIONS":
@@ -21,40 +21,17 @@ async def cors_fix(request: Request, call_next):
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 🔥 LIBERA TUDO PRA TESTE
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 🔥 CORS AJUSTADO PARA WEB + MOBILE + PRODUÇÃO
-#app.add_middleware(
-#    CORSMiddleware,
-#    allow_origins=[
-#        "https://clubbaradmin-production.up.railway.app",
-#        "https://admin.clubbar.com.br",
-#        "https://www.clubbar.com.br",
-#
-#        # DEV
-#        "http://localhost:50945",
-#        "http://localhost:3000",
-#        "http://localhost:8000",
-#        "http://127.0.0.1:50945",
-#        "http://127.0.0.1:3000",
-#        "http://127.0.0.1:8000",
-#    ],
-#    allow_credentials=True,
-#    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-#    allow_headers=["*"],
-#    expose_headers=["*"],
-#)
-
-# 🔥 IMPORTA TODOS OS MODELS
 import app.models as app_models
 
-# 🔥 IMPORTA ROTAS
 from app.routers import cidades
 from app.routers import auth
 from app.routers import organizacao
@@ -69,13 +46,13 @@ from app.routers import entregas
 from app.routers import eventos
 from app.routers import eventolotes
 
-# 🔥 GARANTE PASTA DE UPLOAD
-os.makedirs("uploads", exist_ok=True)
+os.makedirs("/app/uploads", exist_ok=True)
+os.makedirs("app/static", exist_ok=True)
+os.makedirs("app/static/assets", exist_ok=True)
 
-# 🔥 SERVE IMAGENS
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
+app.mount("/assets", StaticFiles(directory="app/static/assets"), name="assets")
 
-# 🔥 REGISTRA ROTAS
 app.include_router(cidades.router)
 app.include_router(auth.router)
 app.include_router(organizacao.router)
@@ -90,12 +67,24 @@ app.include_router(entregas.router)
 app.include_router(eventos.router)
 app.include_router(eventolotes.router)
 
-# 🔥 HEALTH CHECK
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-# 🔥 TESTE DE DEPLOY
-@app.get("/teste-deploy")
-def teste_deploy():
-    return {"msg": "deploy novo funcionando"}
+
+@app.get("/")
+def serve_flutter():
+    return FileResponse("app/static/index.html")
+
+
+@app.get("/favicon.png")
+def serve_favicon():
+    return FileResponse("app/static/favicon.png")
+
+
+@app.get("/{full_path:path}")
+def serve_flutter_routes(full_path: str):
+    if full_path.startswith("uploads") or full_path.startswith("assets") or full_path == "health":
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+    return FileResponse("app/static/index.html")
