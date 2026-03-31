@@ -11,31 +11,45 @@ app = FastAPI(title="clubbar API")
 @app.middleware("http")
 async def cors_fix(request: Request, call_next):
     if request.method == "OPTIONS":
-        return JSONResponse(content={"ok": True})
+        response = Response()
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
     response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
-# 🔥 CORS AJUSTADO PARA WEB + MOBILE + PRODUÇÃO
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://clubbaradmin-production.up.railway.app",
-        "https://admin.clubbar.com.br",
-        "https://www.clubbar.com.br",
-
-        # DEV
-        "http://localhost:50945",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:50945",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origins=["*"],  # 🔥 LIBERA TUDO PRA TESTE
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
+
+# 🔥 CORS AJUSTADO PARA WEB + MOBILE + PRODUÇÃO
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=[
+#        "https://clubbaradmin-production.up.railway.app",
+#        "https://admin.clubbar.com.br",
+#        "https://www.clubbar.com.br",
+#
+#        # DEV
+#        "http://localhost:50945",
+#        "http://localhost:3000",
+#        "http://localhost:8000",
+#        "http://127.0.0.1:50945",
+#        "http://127.0.0.1:3000",
+#        "http://127.0.0.1:8000",
+#    ],
+#    allow_credentials=True,
+#    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+#    allow_headers=["*"],
+#    expose_headers=["*"],
+#)
 
 # 🔥 IMPORTA TODOS OS MODELS
 import app.models as app_models

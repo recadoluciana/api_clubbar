@@ -136,8 +136,3 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
             "loja_id"        : user.loja_id,
             "organizacao_id" : user.organizacao_id,}
 
-
-
-
-
-
