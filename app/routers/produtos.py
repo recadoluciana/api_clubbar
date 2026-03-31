@@ -10,7 +10,8 @@ from app.models.categoria import Categoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
-from app.config import UPLOAD_PRODUTOS
+
+from app.core.config import UPLOAD_PRODUTOS
 
 router = APIRouter(tags=["Produtos"])
 

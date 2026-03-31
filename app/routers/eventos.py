@@ -19,7 +19,8 @@ from app.models.produto import Produto
 from app.schemas.evento import EventoOutBR, ListaEventoIn
 from app.models.eventolote import EventoLote
 from app.schemas.eventolote import EventoLoteOut
-from app.config import UPLOAD_EVENTOS
+
+from app.core.config import UPLOAD_EVENTOS
 
 from app.utils.datetime_utils import formatar_data_br
 
