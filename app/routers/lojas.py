@@ -4,6 +4,7 @@ import os
 import uuid
 import shutil
 import traceback
+from fastapi import Request
 
 from app.database import get_db
 from app.models.loja import Loja
@@ -234,6 +235,7 @@ def criar_loja(
 @router.get("/organizacoes/{organizacao_id}/lojas_todas")
 def listar_lojas_por_organizacao_todas(
     organizacao_id: int,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     lojas = (
@@ -242,6 +244,8 @@ def listar_lojas_por_organizacao_todas(
         .order_by(Loja.nmloja.asc())
         .all()
     )
+
+    base_url = str(request.base_url).rstrip("/")
 
     return [
         {
@@ -253,7 +257,7 @@ def listar_lojas_por_organizacao_todas(
             "dshorarioloja": loja.dshorarioloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
-            "urllogoloja": loja.urllogoloja, 
+            "urllogoloja": f"{base_url}{loja.urllogoloja}" if loja.urllogoloja else None,
         }
         for loja in lojas
     ]
@@ -306,6 +310,8 @@ def atualizar_loja(
         db.commit()
         db.refresh(loja)
 
+        print("url final no banco:", loja.urllogoloja)
+        
         return {
             "mensagem": "Loja atualizada com sucesso",
             "loja": {
