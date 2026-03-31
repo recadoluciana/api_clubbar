@@ -48,7 +48,6 @@ def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None
         "evento_id": ev.evento_id,
         "organizacao_id": ev.organizacao_id,
         "loja_id": ev.loja_id,
-        "produto_id_ingresso": getattr(ev, "produto_id_ingresso", None),
 
         "nmtituloevento": ev.nmtituloevento,
         "dsdescevento": ev.dsdescevento,
@@ -136,7 +135,6 @@ def listar_eventos_da_loja(
             "evento_id": evento.evento_id,
             "organizacao_id": evento.organizacao_id,
             "loja_id": evento.loja_id,
-            "produto_id_ingresso": evento.produto_id_ingresso,
             "nmtituloevento": evento.nmtituloevento,
             "dsdescevento": evento.dsdescevento,
             "dtinicioevento": evento.dtinicioevento,
@@ -178,7 +176,6 @@ def get_evento_por_id(evento_id: int, request: Request, db: Session = Depends(ge
         "evento_id": evento_obj.evento_id,
         "organizacao_id": evento_obj.organizacao_id,
         "loja_id": evento_obj.loja_id,
-        "produto_id_ingresso": getattr(evento_obj, "produto_id_ingresso", None),
         "nmtituloevento": getattr(evento_obj, "nmtituloevento", None),
         "dtinicioevento": getattr(evento_obj, "dtinicioevento", None),
         "dtfimevento": getattr(evento_obj, "dtfimevento", None),
@@ -209,7 +206,6 @@ def get_evento_por_id(evento_id: int, request: Request, db: Session = Depends(ge
 def criar_evento(
     organizacao_id: int = Form(...),
     loja_id: int = Form(...),
-    produto_id_ingresso: int = Form(...),
     nmtituloevento: str = Form(...),
     dsdescevento: str | None = Form(None),
     dtinicioevento: str = Form(...),
@@ -225,16 +221,11 @@ def criar_evento(
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
 
-        produto = db.query(Produto).filter(Produto.produto_id == produto_id_ingresso).first()
-        if not produto:
-            raise HTTPException(status_code=404, detail="Produto ingresso não encontrado")
-
         banner_url = salvar_banner_evento(urlbannerevento)
 
         novo = Evento(
             organizacao_id=organizacao_id,
             loja_id=loja_id,
-            produto_id_ingresso=produto_id_ingresso,
             nmtituloevento=nmtituloevento,
             dsdescevento=dsdescevento,
             dtinicioevento=datetime.fromisoformat(dtinicioevento),
@@ -269,7 +260,6 @@ def atualizar_evento(
     evento_id: int,
     organizacao_id: int | None = Form(None),
     loja_id: int | None = Form(None),
-    produto_id_ingresso: int | None = Form(None),
     nmtituloevento: str | None = Form(None),
     dsdescevento: str | None = Form(None),
     dtinicioevento: str | None = Form(None),
@@ -294,12 +284,6 @@ def atualizar_evento(
             if not loja:
                 raise HTTPException(status_code=404, detail="Loja não encontrada")
             evento.loja_id = loja_id
-
-        if produto_id_ingresso is not None:
-            produto = db.query(Produto).filter(Produto.produto_id == produto_id_ingresso).first()
-            if not produto:
-                raise HTTPException(status_code=404, detail="Produto ingresso não encontrado")
-            evento.produto_id_ingresso = produto_id_ingresso
 
         if nmtituloevento is not None:
             evento.nmtituloevento = nmtituloevento
@@ -334,7 +318,6 @@ def atualizar_evento(
                 "evento_id": evento.evento_id,
                 "organizacao_id": evento.organizacao_id,
                 "loja_id": evento.loja_id,
-                "produto_id_ingresso": evento.produto_id_ingresso,
                 "nmtituloevento": evento.nmtituloevento,
                 "dsdescevento": evento.dsdescevento,
                 "dtinicioevento": evento.dtinicioevento,
