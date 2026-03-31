@@ -67,6 +67,7 @@ app.include_router(entregas.router)
 app.include_router(eventos.router)
 app.include_router(eventolotes.router)
 
+#teste de deploay
 
 @app.get("/health")
 def health():
