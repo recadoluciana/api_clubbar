@@ -1,31 +1,54 @@
 # app/routers/eventos.py
 from datetime import datetime, time
 from zoneinfo import ZoneInfo
+import os
+import uuid
+import shutil
+import traceback
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
 from typing import Optional
-from fastapi import Query
 
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.evento import Evento
 from app.models.cidade import Cidade
+from app.models.produto import Produto
 from app.schemas.evento import EventoOutBR, ListaEventoIn
 from app.models.eventolote import EventoLote
-from app.schemas.eventolote import EventoLoteOut 
+from app.schemas.eventolote import EventoLoteOut
 
 from app.utils.datetime_utils import formatar_data_br
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
+
+UPLOAD_DIR = "uploads/eventos"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def salvar_banner_evento(arquivo: UploadFile | None) -> str | None:
+    if not arquivo or not arquivo.filename:
+        return None
+
+    extensao = os.path.splitext(arquivo.filename)[1].lower()
+    nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
+    caminho_fisico = os.path.join(UPLOAD_DIR, nome_arquivo)
+
+    with open(caminho_fisico, "wb") as buffer:
+        shutil.copyfileobj(arquivo.file, buffer)
+
+    return f"/uploads/eventos/{nome_arquivo}"
+
 
 def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None = None):
     return {
         "evento_id": ev.evento_id,
         "organizacao_id": ev.organizacao_id,
         "loja_id": ev.loja_id,
+        "produto_id_ingresso": getattr(ev, "produto_id_ingresso", None),
 
         "nmtituloevento": ev.nmtituloevento,
         "dsdescevento": ev.dsdescevento,
@@ -64,6 +87,7 @@ def listar_eventos_proximos(
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
         .order_by(Evento.dtinicioevento.asc())
+        .all()
     )
 
     return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
@@ -91,9 +115,43 @@ def listar_eventos_proximos_global(
 
     return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
 
-@router.get("/{evento_id}")
-def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
 
+@router.get("/loja/{loja_id}")
+def listar_eventos_da_loja(
+    loja_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    eventos = (
+        db.query(Evento)
+        .filter(Evento.loja_id == loja_id)
+        .order_by(Evento.dtinicioevento.desc())
+        .all()
+    )
+
+    base_url = str(request.base_url).rstrip("/")
+
+    return [
+        {
+            "evento_id": evento.evento_id,
+            "organizacao_id": evento.organizacao_id,
+            "loja_id": evento.loja_id,
+            "produto_id_ingresso": evento.produto_id_ingresso,
+            "nmtituloevento": evento.nmtituloevento,
+            "dsdescevento": evento.dsdescevento,
+            "dtinicioevento": evento.dtinicioevento,
+            "dtfimevento": evento.dtfimevento,
+            "nmlocalevento": evento.nmlocalevento,
+            "dsendlocevento": evento.dsendlocevento,
+            "urlbannerevento": f"{base_url}{evento.urlbannerevento}" if evento.urlbannerevento else None,
+            "statusevento": evento.statusevento,
+        }
+        for evento in eventos
+    ]
+
+
+@router.get("/{evento_id}")
+def get_evento_por_id(evento_id: int, request: Request, db: Session = Depends(get_db)):
     evento = (
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
@@ -102,14 +160,11 @@ def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
         .first()
     )
 
-    print("passei aqui no get_evento_por_id")
-
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
     evento_obj, nmloja, nmcidade = evento
 
-    # buscar lotes
     lotes = (
         db.query(EventoLote)
         .filter(EventoLote.evento_id == evento_id)
@@ -117,16 +172,22 @@ def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
+    base_url = str(request.base_url).rstrip("/")
+
     return {
         "evento_id": evento_obj.evento_id,
+        "organizacao_id": evento_obj.organizacao_id,
+        "loja_id": evento_obj.loja_id,
+        "produto_id_ingresso": getattr(evento_obj, "produto_id_ingresso", None),
         "nmtituloevento": getattr(evento_obj, "nmtituloevento", None),
         "dtinicioevento": getattr(evento_obj, "dtinicioevento", None),
+        "dtfimevento": getattr(evento_obj, "dtfimevento", None),
         "nmlocalevento": getattr(evento_obj, "nmlocalevento", None),
         "dsendlocevento": getattr(evento_obj, "dsendlocevento", None),
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
-        "urlbannerevento": getattr(evento_obj, "urlbannerevento", None),
+        "urlbannerevento": f"{base_url}{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
+        "statusevento": getattr(evento_obj, "statusevento", None),
 
-        # ✅ novos campos
         "nmloja": nmloja,
         "nmcidade": nmcidade,
 
@@ -142,3 +203,175 @@ def get_evento_por_id(evento_id: int, db: Session = Depends(get_db)):
             for lista_lotes in lotes
         ],
     }
+
+
+@router.post("")
+def criar_evento(
+    organizacao_id: int = Form(...),
+    loja_id: int = Form(...),
+    produto_id_ingresso: int = Form(...),
+    nmtituloevento: str = Form(...),
+    dsdescevento: str | None = Form(None),
+    dtinicioevento: str = Form(...),
+    dtfimevento: str | None = Form(None),
+    nmlocalevento: str | None = Form(None),
+    dsendlocevento: str | None = Form(None),
+    statusevento: str = Form("RASCUNHO"),
+    urlbannerevento: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+        if not loja:
+            raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+        produto = db.query(Produto).filter(Produto.produto_id == produto_id_ingresso).first()
+        if not produto:
+            raise HTTPException(status_code=404, detail="Produto ingresso não encontrado")
+
+        banner_url = salvar_banner_evento(urlbannerevento)
+
+        novo = Evento(
+            organizacao_id=organizacao_id,
+            loja_id=loja_id,
+            produto_id_ingresso=produto_id_ingresso,
+            nmtituloevento=nmtituloevento,
+            dsdescevento=dsdescevento,
+            dtinicioevento=datetime.fromisoformat(dtinicioevento),
+            dtfimevento=datetime.fromisoformat(dtfimevento) if dtfimevento else None,
+            nmlocalevento=nmlocalevento,
+            dsendlocevento=dsendlocevento,
+            urlbannerevento=banner_url,
+            statusevento=statusevento,
+        )
+
+        db.add(novo)
+        db.commit()
+        db.refresh(novo)
+
+        return {
+            "mensagem": "Evento cadastrado com sucesso",
+            "evento_id": novo.evento_id,
+            "urlbannerevento": novo.urlbannerevento,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao criar evento: {str(e)}")
+
+
+@router.put("/{evento_id}")
+def atualizar_evento(
+    evento_id: int,
+    organizacao_id: int | None = Form(None),
+    loja_id: int | None = Form(None),
+    produto_id_ingresso: int | None = Form(None),
+    nmtituloevento: str | None = Form(None),
+    dsdescevento: str | None = Form(None),
+    dtinicioevento: str | None = Form(None),
+    dtfimevento: str | None = Form(None),
+    nmlocalevento: str | None = Form(None),
+    dsendlocevento: str | None = Form(None),
+    statusevento: str | None = Form(None),
+    urlbannerevento: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    try:
+        evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+
+        if organizacao_id is not None:
+            evento.organizacao_id = organizacao_id
+
+        if loja_id is not None:
+            loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+            if not loja:
+                raise HTTPException(status_code=404, detail="Loja não encontrada")
+            evento.loja_id = loja_id
+
+        if produto_id_ingresso is not None:
+            produto = db.query(Produto).filter(Produto.produto_id == produto_id_ingresso).first()
+            if not produto:
+                raise HTTPException(status_code=404, detail="Produto ingresso não encontrado")
+            evento.produto_id_ingresso = produto_id_ingresso
+
+        if nmtituloevento is not None:
+            evento.nmtituloevento = nmtituloevento
+
+        if dsdescevento is not None:
+            evento.dsdescevento = dsdescevento
+
+        if dtinicioevento is not None:
+            evento.dtinicioevento = datetime.fromisoformat(dtinicioevento)
+
+        if dtfimevento is not None:
+            evento.dtfimevento = datetime.fromisoformat(dtfimevento) if dtfimevento else None
+
+        if nmlocalevento is not None:
+            evento.nmlocalevento = nmlocalevento
+
+        if dsendlocevento is not None:
+            evento.dsendlocevento = dsendlocevento
+
+        if statusevento is not None:
+            evento.statusevento = statusevento
+
+        if urlbannerevento is not None and urlbannerevento.filename:
+            evento.urlbannerevento = salvar_banner_evento(urlbannerevento)
+
+        db.commit()
+        db.refresh(evento)
+
+        return {
+            "mensagem": "Evento atualizado com sucesso",
+            "evento": {
+                "evento_id": evento.evento_id,
+                "organizacao_id": evento.organizacao_id,
+                "loja_id": evento.loja_id,
+                "produto_id_ingresso": evento.produto_id_ingresso,
+                "nmtituloevento": evento.nmtituloevento,
+                "dsdescevento": evento.dsdescevento,
+                "dtinicioevento": evento.dtinicioevento,
+                "dtfimevento": evento.dtfimevento,
+                "nmlocalevento": evento.nmlocalevento,
+                "dsendlocevento": evento.dsendlocevento,
+                "urlbannerevento": evento.urlbannerevento,
+                "statusevento": evento.statusevento,
+            }
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar evento: {str(e)}")
+
+
+@router.delete("/{evento_id}")
+def deletar_evento(evento_id: int, db: Session = Depends(get_db)):
+    try:
+        evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+
+        if not evento:
+            raise HTTPException(status_code=404, detail="Evento não encontrado")
+
+        db.delete(evento)
+        db.commit()
+
+        return {"mensagem": "Evento deletado com sucesso"}
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar evento: {str(e)}")
