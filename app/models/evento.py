@@ -31,5 +31,15 @@ class Evento(Base):
         default="RASCUNHO",
     )
 
-    dtcriacao = Column(DateTime, nullable=False)
-    dtultatu = Column(DateTime, nullable=True)
+    dtcriacao = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now()
+    )
+
+    dtultatu = Column(
+        DateTime,
+        nullable=True,
+        server_default=func.now(),
+        onupdate=func.now()
+    )
