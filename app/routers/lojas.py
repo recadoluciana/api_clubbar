@@ -22,7 +22,7 @@ def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
 
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-    caminho_fisico = os.path.join(UPLOAD_DIR, nome_arquivo)
+    caminho_fisico = os.path.join(UPLOAD_DIR_LOJAS, nome_arquivo)
 
     with open(caminho_fisico, "wb") as buffer:
         shutil.copyfileobj(arquivo.file, buffer)
