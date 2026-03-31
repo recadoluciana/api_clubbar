@@ -25,7 +25,7 @@ from app.utils.datetime_utils import formatar_data_br
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
-UPLOAD_DIR = "uploads/eventos"
+UPLOAD_DIR = "/app/uploads/eventos"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 

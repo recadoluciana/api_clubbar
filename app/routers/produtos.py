@@ -17,9 +17,8 @@ import uuid
 
 router = APIRouter(tags=["Produtos"])
 
-UPLOAD_DIR = "uploads/produtos"
+UPLOAD_DIR = "/app/uploads/produtos"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 
 @router.delete("/produtos/{produto_id}")
 def excluir_produto(produto_id: int, db: Session = Depends(get_db)):

@@ -13,10 +13,8 @@ from app.models.produto import Produto
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-UPLOAD_DIR_LOJAS = os.path.join(BASE_DIR, "uploads", "lojas")
+UPLOAD_DIR_LOJAS = "/app/uploads/lojas"
 os.makedirs(UPLOAD_DIR_LOJAS, exist_ok=True)
-
 
 def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
     if not arquivo or not arquivo.filename:
