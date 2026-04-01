@@ -290,13 +290,6 @@ def atualizar_loja(
     urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
-    
-    form = await request.form()
-
-    # 🔥 fallback para 'image'
-    if urllogoloja is None:
-        urllogoloja = form.get("imagem")
-
     try:
         print("=== UPDATE LOJA ===")
         print("loja_id:", loja_id)
