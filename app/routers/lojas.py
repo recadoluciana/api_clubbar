@@ -10,7 +10,7 @@ from app.models.loja import Loja
 from app.models.cidade import Cidade
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
-from app.core.config import UPLOAD_PRODUTOS
+from app.core.config import UPLOAD_LOJAS
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
