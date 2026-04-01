@@ -16,7 +16,7 @@ from app.schemas.eventolote import EventoLoteOut
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
 
-@router.get("/{evento_id}/lotes",response_model=list[EventoLoteOut],)
+@router.get("/{evento_id}/lotes-evento", response_model=list[EventoLoteOut])
 def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
@@ -28,11 +28,11 @@ def listar_lotes_evento(
         .filter(EventoLote.evento_id == evento_id)
         .filter(EventoLote.statuslote == "ATIVO")
         .filter(
-            (EventoLote.dtiniciovenda == None)  # noqa: E711
+            (EventoLote.dtiniciovenda == None)
             | (EventoLote.dtiniciovenda <= agora)
         )
         .filter(
-            (EventoLote.dtfimvenda == None)  # noqa: E711
+            (EventoLote.dtfimvenda == None)
             | (EventoLote.dtfimvenda >= agora)
         )
         .order_by(EventoLote.vrprecolote.asc())
