@@ -9,8 +9,9 @@ from sqlalchemy import (
     ForeignKey,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-from app.database import Base  # ajuste se necessário
+from app.database import Base
 
 
 class EventoLote(Base):
@@ -29,10 +30,10 @@ class EventoLote(Base):
 
     nmlote = Column(String(80), nullable=False)
 
-    vrprecolote = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    vrprecolote = Column(DECIMAL(10, 2), nullable=False, server_default="0.00")
 
-    qttotallote = Column(Integer, nullable=False, default=0)
-    qtvendidalote = Column(Integer, nullable=False, default=0)
+    qttotallote = Column(Integer, nullable=False, server_default="0")
+    qtvendidalote = Column(Integer, nullable=False, server_default="0")
 
     dtiniciovenda = Column(DateTime, nullable=True)
     dtfimvenda = Column(DateTime, nullable=True)
@@ -40,13 +41,22 @@ class EventoLote(Base):
     statuslote = Column(
         Enum("ATIVO", "ESGOTADO", "ENCERRADO", "INATIVO", name="eventolote_statuslote"),
         nullable=False,
-        default="ATIVO",
+        server_default="ATIVO",
     )
 
-    dtcriacao = Column(DateTime, nullable=False)
-    dtultatu = Column(DateTime, nullable=True)
+    dtcriacao = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now()
+    )
 
-    # relationships (opcionais)
+    dtultatu = Column(
+        DateTime,
+        nullable=True,
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
     evento = relationship("Evento")
 
     def __repr__(self) -> str:
