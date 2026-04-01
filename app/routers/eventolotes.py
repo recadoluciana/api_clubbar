@@ -13,7 +13,7 @@ from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLot
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
 
-@router.get("/{evento_id}/lotes-evento", response_model=list[EventoLoteOut])
+@router.get("/{evento_id}/lotes", response_model=list[EventoLoteOut])
 def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
@@ -44,6 +44,11 @@ def listar_todos_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
 ):
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+
+    if not evento:
+        raise HTTPException(status_code=404, detail="Evento não encontrado")
+
     lotes = (
         db.query(EventoLote)
         .filter(EventoLote.evento_id == evento_id)
@@ -64,6 +69,8 @@ def listar_todos_lotes_evento(
             "dtiniciovenda": lote.dtiniciovenda,
             "dtfimvenda": lote.dtfimvenda,
             "statuslote": lote.statuslote,
+            "dtcriacao": lote.dtcriacao,
+            "dtultatu": lote.dtultatu,
         }
         for lote in lotes
     ]
@@ -168,7 +175,21 @@ def atualizar_lote_evento(
 
         return {
             "mensagem": "Lote atualizado com sucesso",
-            "lote_id": lote.lote_id,
+            "lote": {
+                "lote_id": lote.lote_id,
+                "organizacao_id": lote.organizacao_id,
+                "loja_id": lote.loja_id,
+                "evento_id": lote.evento_id,
+                "nmlote": lote.nmlote,
+                "vrprecolote": float(lote.vrprecolote or 0),
+                "qttotallote": int(lote.qttotallote or 0),
+                "qtvendidalote": int(lote.qtvendidalote or 0),
+                "dtiniciovenda": lote.dtiniciovenda,
+                "dtfimvenda": lote.dtfimvenda,
+                "statuslote": lote.statuslote,
+                "dtcriacao": lote.dtcriacao,
+                "dtultatu": lote.dtultatu,
+            }
         }
 
     except HTTPException:
