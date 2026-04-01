@@ -271,7 +271,7 @@ def listar_lojas_por_organizacao_todas(
             "dshorarioloja": loja.dshorarioloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
-            "imagem": f"{base_url}{loja.urllogoloja}" if loja.urllogoloja else None,
+            "urllogoloja": f"{base_url}{loja.urllogoloja}" if loja.urllogoloja else None,
         }
         for loja in lojas
     ]
