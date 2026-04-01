@@ -56,7 +56,7 @@ def atualizar_produto(
     vrprecoprod: float | None = Form(None),
     sitproduto: str | None = Form(None),
     skuproduto: str | None = Form(None),
-    file: UploadFile | None = File(None),
+    foto: UploadFile | None = File(None),
     db: Session = Depends(get_db)
 ):
     produto = db.query(Produto).filter(
@@ -66,11 +66,11 @@ def atualizar_produto(
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    if file:
-        if not file.content_type or not file.content_type.startswith("image/"):
+    if foto:
+        if not foto.content_type or not foto.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
 
-        extensao = os.path.splitext(file.filename)[1].lower()
+        extensao = os.path.splitext(foto.filename)[1].lower()
         nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
         caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
 
