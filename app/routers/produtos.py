@@ -56,55 +56,67 @@ def atualizar_produto(
     vrprecoprod: float | None = Form(None),
     sitproduto: str | None = Form(None),
     skuproduto: str | None = Form(None),
-    foto: UploadFile | None = File(None),
+    urlfotoproduto: UploadFile | None = File(None),  # 🔥 PADRONIZADO
     db: Session = Depends(get_db)
 ):
-    produto = db.query(Produto).filter(
-        Produto.produto_id == produto_id
-    ).first()
+    try:
+        produto = db.query(Produto).filter(
+            Produto.produto_id == produto_id
+        ).first()
 
-    if not produto:
-        raise HTTPException(status_code=404, detail="Produto não encontrado")
+        if not produto:
+            raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-    if foto:
-        if not foto.content_type or not foto.content_type.startswith("image/"):
-            raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
+        print("arquivo recebido:", urlfotoproduto.filename if urlfotoproduto else None)
 
-        extensao = os.path.splitext(foto.filename)[1].lower()
-        nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-        caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
+        # 🔥 FOTO
+        if urlfotoproduto is not None and urlfotoproduto.filename:
+            if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
+                raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
 
-        with open(caminho_arquivo, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
+            nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
+            caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
 
-        produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
+            with open(caminho_arquivo, "wb") as buffer:
+                shutil.copyfileobj(urlfotoproduto.file, buffer)  # ✅ CORRIGIDO
 
-    if categoria_id is not None:
-        produto.categoria_id = categoria_id
+            produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
 
-    if nmproduto is not None:
-        produto.nmproduto = nmproduto
+            print("nova url foto:", produto.urlfotoproduto)
 
-    if dsproduto is not None:
-        produto.dsproduto = dsproduto
+        # 🔥 CAMPOS
+        if categoria_id is not None:
+            produto.categoria_id = categoria_id
 
-    if vrprecoprod is not None:
-        produto.vrprecoprod = vrprecoprod
+        if nmproduto is not None:
+            produto.nmproduto = nmproduto
 
-    if sitproduto is not None:
-        produto.sitproduto = sitproduto
+        if dsproduto is not None:
+            produto.dsproduto = dsproduto
 
-    if skuproduto is not None:
-        produto.skuproduto = skuproduto
+        if vrprecoprod is not None:
+            produto.vrprecoprod = vrprecoprod
 
-    db.commit()
-    db.refresh(produto)
+        if sitproduto is not None:
+            produto.sitproduto = sitproduto
 
-    return {
-        "mensagem": "Produto atualizado com sucesso",
-        "produto_id": produto.produto_id,
-        "urlfoto": produto.urlfotoproduto
-    }
+        if skuproduto is not None:
+            produto.skuproduto = skuproduto
+
+        db.commit()
+        db.refresh(produto)
+
+        return {
+            "mensagem": "Produto atualizado com sucesso",
+            "produto_id": produto.produto_id,
+            "urlfotoproduto": produto.urlfotoproduto
+        }
+
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
 
 
 @router.get("/lojas/{loja_id}/produtos")
@@ -171,7 +183,7 @@ async def criar_produto(
     skuproduto: str = Form(""),
     idtipoproduto: str = Form(...),
     lote_id: int | None = Form(None),
-    foto: UploadFile | None = File(None),
+    urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     nmproduto = nmproduto.strip()
@@ -216,13 +228,13 @@ async def criar_produto(
 
     nome_arquivo_foto = None
 
-    if foto:
-        extensao = os.path.splitext(foto.filename)[1].lower()
+    if urlfotoproduto:
+        extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
         nome_arquivo_foto = f"{uuid.uuid4().hex}{extensao}"
 
         caminho = os.path.join(UPLOAD_PRODUTOS, nome_arquivo_foto)
 
-        conteudo = await foto.read()
+        conteudo = await urlfotoproduto.read()
         with open(caminho, "wb") as f:
             f.write(conteudo)
 
