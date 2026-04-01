@@ -5,24 +5,17 @@ import uuid
 import shutil
 import traceback
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
-
-from typing import Optional
 
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.evento import Evento
 from app.models.cidade import Cidade
-from app.models.produto import Produto
-from app.schemas.evento import EventoOutBR, ListaEventoIn
 from app.models.eventolote import EventoLote
+from app.schemas.evento import EventoOutBR
 from app.schemas.eventolote import EventoLoteOut
-
 from app.core.config import UPLOAD_EVENTOS
-
-from app.utils.datetime_utils import formatar_data_br
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -141,8 +134,69 @@ def listar_eventos_da_loja(
     ]
 
 
+# ROTAS MAIS ESPECÍFICAS PRIMEIRO, PARA NÃO DAR CONFLITO COM /{evento_id}
+@router.get("/{evento_id}/lotes", response_model=list[EventoLoteOut])
+def listar_lotes_evento(
+    evento_id: int,
+    db: Session = Depends(get_db),
+):
+    agora = datetime.now()
+
+    lotes = (
+        db.query(EventoLote)
+        .filter(EventoLote.evento_id == evento_id)
+        .filter(EventoLote.statuslote == "ATIVO")
+        .filter(
+            (EventoLote.dtiniciovenda == None)  # noqa: E711
+            | (EventoLote.dtiniciovenda <= agora)
+        )
+        .filter(
+            (EventoLote.dtfimvenda == None)  # noqa: E711
+            | (EventoLote.dtfimvenda >= agora)
+        )
+        .order_by(EventoLote.vrprecolote.asc())
+        .all()
+    )
+
+    return lotes
+
+
+@router.get("/{evento_id}/lotes_todos")
+def listar_todos_lotes_evento(
+    evento_id: int,
+    db: Session = Depends(get_db),
+):
+    lotes = (
+        db.query(EventoLote)
+        .filter(EventoLote.evento_id == evento_id)
+        .order_by(EventoLote.lote_id.asc())
+        .all()
+    )
+
+    return [
+        {
+            "lote_id": lote.lote_id,
+            "organizacao_id": lote.organizacao_id,
+            "loja_id": lote.loja_id,
+            "evento_id": lote.evento_id,
+            "nmlote": lote.nmlote,
+            "vrprecolote": float(lote.vrprecolote or 0),
+            "qttotallote": int(lote.qttotallote or 0),
+            "qtvendidalote": int(lote.qtvendidalote or 0),
+            "dtiniciovenda": lote.dtiniciovenda,
+            "dtfimvenda": lote.dtfimvenda,
+            "statuslote": lote.statuslote,
+        }
+        for lote in lotes
+    ]
+
+
 @router.get("/{evento_id}")
-def get_evento_por_id(evento_id: int, request: Request, db: Session = Depends(get_db)):
+def get_evento_por_id(
+    evento_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     evento = (
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
@@ -350,58 +404,3 @@ def deletar_evento(evento_id: int, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao deletar evento: {str(e)}")
 
-
-@router.get("/{evento_id}/lotes", response_model=list[EventoLoteOut])
-def listar_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
-    agora = datetime.now()
-
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .filter(EventoLote.statuslote == "ATIVO")
-        .filter(
-            (EventoLote.dtiniciovenda == None)  # noqa: E711
-            | (EventoLote.dtiniciovenda <= agora)
-        )
-        .filter(
-            (EventoLote.dtfimvenda == None)  # noqa: E711
-            | (EventoLote.dtfimvenda >= agora)
-        )
-        .order_by(EventoLote.vrprecolote.asc())
-        .all()
-    )
-
-    return lotes
-
-
-@router.get("/{evento_id}/lotes_todos")
-def listar_todos_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .order_by(EventoLote.lote_id.asc())
-        .all()
-    )
-
-    return [
-        {
-            "lote_id": lote.lote_id,
-            "organizacao_id": lote.organizacao_id,
-            "loja_id": lote.loja_id,
-            "evento_id": lote.evento_id,
-            "nmlote": lote.nmlote,
-            "vrprecolote": float(lote.vrprecolote or 0),
-            "qttotallote": int(lote.qttotallote or 0),
-            "qtvendidalote": int(lote.qtvendidalote or 0),
-            "dtiniciovenda": lote.dtiniciovenda,
-            "dtfimvenda": lote.dtfimvenda,
-            "statuslote": lote.statuslote,
-        }
-        for lote in lotes
-    ]

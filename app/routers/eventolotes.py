@@ -1,17 +1,14 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
 
-from fastapi import HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 import traceback
 
+from app.database import get_db
 from app.models.evento import Evento
 from app.models.loja import Loja
-from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate
-
-from app.database import get_db
 from app.models.eventolote import EventoLote
-from app.schemas.eventolote import EventoLoteOut
+from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -28,11 +25,11 @@ def listar_lotes_evento(
         .filter(EventoLote.evento_id == evento_id)
         .filter(EventoLote.statuslote == "ATIVO")
         .filter(
-            (EventoLote.dtiniciovenda == None)
+            (EventoLote.dtiniciovenda == None)  # noqa: E711
             | (EventoLote.dtiniciovenda <= agora)
         )
         .filter(
-            (EventoLote.dtfimvenda == None)
+            (EventoLote.dtfimvenda == None)  # noqa: E711
             | (EventoLote.dtfimvenda >= agora)
         )
         .order_by(EventoLote.vrprecolote.asc())
@@ -40,6 +37,7 @@ def listar_lotes_evento(
     )
 
     return lotes
+
 
 @router.get("/{evento_id}/lotes_todos")
 def listar_todos_lotes_evento(
@@ -70,6 +68,7 @@ def listar_todos_lotes_evento(
         for lote in lotes
     ]
 
+
 @router.post("/{evento_id}/lotes")
 def criar_lote_evento(
     evento_id: int,
@@ -80,6 +79,10 @@ def criar_lote_evento(
         evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
+
+        loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
+        if not loja:
+            raise HTTPException(status_code=404, detail="Loja não encontrada")
 
         novo = EventoLote(
             organizacao_id=data.organizacao_id,
@@ -105,6 +108,7 @@ def criar_lote_evento(
 
     except HTTPException:
         raise
+
     except Exception as e:
         db.rollback()
         traceback.print_exc()
@@ -127,9 +131,15 @@ def atualizar_lote_evento(
             lote.organizacao_id = data.organizacao_id
 
         if data.loja_id is not None:
+            loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
+            if not loja:
+                raise HTTPException(status_code=404, detail="Loja não encontrada")
             lote.loja_id = data.loja_id
 
         if data.evento_id is not None:
+            evento = db.query(Evento).filter(Evento.evento_id == data.evento_id).first()
+            if not evento:
+                raise HTTPException(status_code=404, detail="Evento não encontrado")
             lote.evento_id = data.evento_id
 
         if data.nmlote is not None:
@@ -163,10 +173,12 @@ def atualizar_lote_evento(
 
     except HTTPException:
         raise
+
     except Exception as e:
         db.rollback()
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar lote: {str(e)}")
+
 
 @router.delete("/lotes/{lote_id}")
 def deletar_lote_evento(
@@ -192,9 +204,8 @@ def deletar_lote_evento(
 
     except HTTPException:
         raise
+
     except Exception as e:
         db.rollback()
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao deletar lote: {str(e)}")
-
-
