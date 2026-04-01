@@ -271,7 +271,7 @@ def listar_lojas_por_organizacao_todas(
             "dshorarioloja": loja.dshorarioloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
-            "urllogoloja": f"{base_url}{loja.urllogoloja}" if loja.urllogoloja else None,
+            "imagem": f"{base_url}{loja.urllogoloja}" if loja.urllogoloja else None,
         }
         for loja in lojas
     ]
@@ -295,7 +295,7 @@ def atualizar_loja(
 
     # 🔥 fallback para 'image'
     if urllogoloja is None:
-        urllogoloja = form.get("image")
+        urllogoloja = form.get("imagem")
 
     try:
         print("=== UPDATE LOJA ===")
