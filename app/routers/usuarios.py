@@ -6,7 +6,7 @@ from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
 from app.core.security import gerar_hash_senha
 
-router = APIRouter(tags=["Usuários"])
+router = APIRouter(tags=["Usuarios"])
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
