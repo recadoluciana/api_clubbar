@@ -4,19 +4,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
-from app.core.security import gerar_hash_senha
-
-router = APIRouter(tags=["Usuarios"])
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
-from app.database import get_db
-from app.models.usuario import Usuario
-from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
-from app.core.security import gerar_hash_senha
+from app.core.security import hash_senha
 
 router = APIRouter(tags=["Usuários"])
+
 
 @router.get(
     "/organizacoes/{organizacao_id}/usuarios",
@@ -34,6 +25,7 @@ def listar_usuarios_por_organizacao(
     )
 
     return usuarios
+
 
 @router.post(
     "/organizacoes/{organizacao_id}/usuarios",
@@ -61,7 +53,7 @@ def criar_usuario_por_organizacao(
         loja_id=payload.loja_id,
         nmusuario=payload.nmusuario,
         emailuser=payload.emailuser,
-        senhahashuser=gerar_hash_senha(payload.senha),
+        senhahashuser=hash_senha(payload.senha),
         dscargo=payload.dscargo or "FUNCIONARIO",
         situsuario=payload.situsuario or "ATIVO",
     )
@@ -71,6 +63,7 @@ def criar_usuario_por_organizacao(
     db.refresh(novo)
 
     return novo
+
 
 @router.put(
     "/organizacoes/{organizacao_id}/usuarios/{usuario_id}",
@@ -128,12 +121,13 @@ def atualizar_usuario_por_organizacao(
         usuario.situsuario = payload.situsuario
 
     if payload.senha is not None and payload.senha.strip():
-        usuario.senhahashuser = gerar_hash_senha(payload.senha)
+        usuario.senhahashuser = hash_senha(payload.senha)
 
     db.commit()
     db.refresh(usuario)
 
     return usuario
+
 
 @router.delete(
     "/organizacoes/{organizacao_id}/usuarios/{usuario_id}",
@@ -164,4 +158,3 @@ def deletar_usuario_por_organizacao(
     db.refresh(usuario)
 
     return {"detail": "Usuário inativado com sucesso"}
-
