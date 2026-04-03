@@ -45,6 +45,7 @@ from app.routers import pagbank_webhook
 from app.routers import entregas
 from app.routers import eventos
 from app.routers import eventolotes
+from app.routers import usuarios
 
 os.makedirs("/app/uploads", exist_ok=True)
 os.makedirs("app/static", exist_ok=True)
@@ -66,6 +67,7 @@ app.include_router(pagbank_webhook.router)
 app.include_router(entregas.router)
 app.include_router(eventos.router)
 app.include_router(eventolotes.router)
+app.include_router(usuarios.router)
 
 #teste de deploay
 
