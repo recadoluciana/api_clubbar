@@ -183,74 +183,68 @@ def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)
     return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
 
 @router.get("/itens")
-def listar_itens(
+def obter_itens_carrinho(
     cliente_id: int,
+    organizacao_id: int,
     loja_id: int,
     db: Session = Depends(get_db),
 ):
-    carr = (
+    carrinho = (
         db.query(Carrinho)
         .filter(
-            Carrinho.cliente_id == int(cliente_id),
-            Carrinho.loja_id == int(loja_id),
-            Carrinho.sitcarrinho == "ABERTO",
+            Carrinho.cliente_id == cliente_id,
+            Carrinho.organizacao_id == organizacao_id,
+            Carrinho.loja_id == loja_id,
+            Carrinho.status == "ABERTO",
         )
         .first()
     )
 
-    if not carr:
+    if not carrinho:
         return {
-            "carrinho_id": None,
+            "carrinho_id": 0,
             "qt_total": 0,
-            "total": 0.0,
+            "total": 0,
             "itens": [],
         }
 
-    rows = (
+    itens = (
         db.query(
             ItCarrinho.itcarrinho_id,
-            ItCarrinho.carrinho_id,
             ItCarrinho.produto_id,
-            ItCarrinho.qtitcarrinho,
-            ItCarrinho.dsobsitcar,
             Produto.nmproduto,
+            Produto.dsproduto,
             Produto.vrprecoprod,
+            Produto.urlfotoproduto,   # 👈 AQUI
+            ItCarrinho.qt,
+            ItCarrinho.obs,
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
-        .filter(ItCarrinho.carrinho_id == carr.carrinho_id)
-        .order_by(ItCarrinho.itcarrinho_id.desc())
+        .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
         .all()
     )
 
-    itens = []
-    total = 0.0
-    qt_total = 0
-
-    for r in rows:
-        qtd = int(r.qtitcarrinho or 0)
-        preco = float(r.vrprecoprod or 0.0)
-        subtotal = preco * qtd
-
-        qt_total += qtd
-        total += subtotal
-
-        itens.append(
-            {
-                "itcarrinho_id": int(r.itcarrinho_id),
-                "produto_id": int(r.produto_id),
-                "nmproduto": r.nmproduto,
-                "vrprecoprod": preco,
-                "qt": qtd,
-                "obs": r.dsobsitcar,
-                "subtotal": float(subtotal),
-            }
-        )
+    total = sum((float(i.vrprecoprod or 0) * int(i.qt or 0)) for i in itens)
+    qt_total = sum(int(i.qt or 0) for i in itens)
 
     return {
-        "carrinho_id": int(carr.carrinho_id),
-        "qt_total": int(qt_total),
-        "total": float(total),
-        "itens": itens,
+        "carrinho_id": carrinho.carrinho_id,
+        "qt_total": qt_total,
+        "total": total,
+        "itens": [
+            {
+                "itcarrinho_id": i.itcarrinho_id,
+                "produto_id": i.produto_id,
+                "nmproduto": i.nmproduto,
+                "dsproduto": i.dsproduto,
+                "vrprecoprod": float(i.vrprecoprod or 0),
+                "urlfotoproduto": i.urlfotoproduto,   # 👈 AQUI
+                "qt": i.qt,
+                "obs": i.obs,
+                "subtotal": float(i.vrprecoprod or 0) * int(i.qt or 0),
+            }
+            for i in itens
+        ],
     }
 
 @router.delete("/{carrinho_id}/produto/{produto_id}/um")
