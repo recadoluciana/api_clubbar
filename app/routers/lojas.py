@@ -93,6 +93,7 @@ def listar_todas_lojas_ativas(
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
     lojas = rows.order_by(Loja.nmloja.asc()).all()
+    
     base_url = str(request.base_url).rstrip("/")
 
     return [

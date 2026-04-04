@@ -17,7 +17,7 @@ from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
 
-@router.post("/itens", response_model=AddItemOut)
+@router.post("/adicionar", response_model=AddItemOut)
 def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
 
 
