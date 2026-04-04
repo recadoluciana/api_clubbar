@@ -184,6 +184,7 @@ def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)
 
 @router.get("/itens")
 def obter_itens_carrinho(
+    request: Request,
     cliente_id: int,
     organizacao_id: int,
     loja_id: int,
@@ -215,7 +216,7 @@ def obter_itens_carrinho(
             Produto.nmproduto,
             Produto.dsproduto,
             Produto.vrprecoprod,
-            Produto.urlfotoproduto,   # 👈 AQUI
+            Produto.urlfotoproduto,
             ItCarrinho.qt,
             ItCarrinho.obs,
         )
@@ -226,6 +227,8 @@ def obter_itens_carrinho(
 
     total = sum((float(i.vrprecoprod or 0) * int(i.qt or 0)) for i in itens)
     qt_total = sum(int(i.qt or 0) for i in itens)
+
+    base_url = str(request.base_url).rstrip("/")
 
     return {
         "carrinho_id": carrinho.carrinho_id,
@@ -238,7 +241,7 @@ def obter_itens_carrinho(
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "vrprecoprod": float(i.vrprecoprod or 0),
-                "urlfotoproduto": i.urlfotoproduto,   # 👈 AQUI
+                "urlfotoproduto": f"{base_url}{i.urlfotoproduto}" if i.urlfotoproduto else None,
                 "qt": i.qt,
                 "obs": i.obs,
                 "subtotal": float(i.vrprecoprod or 0) * int(i.qt or 0),
