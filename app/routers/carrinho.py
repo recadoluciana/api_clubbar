@@ -182,6 +182,9 @@ def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)
 
     return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
+
 @router.get("/itens")
 def obter_itens_carrinho(
     request: Request,
@@ -196,7 +199,7 @@ def obter_itens_carrinho(
             Carrinho.cliente_id == cliente_id,
             Carrinho.organizacao_id == organizacao_id,
             Carrinho.loja_id == loja_id,
-            Carrinho.status == "ABERTO",
+            Carrinho.sitcarrinho == "ABERTO",
         )
         .first()
     )
