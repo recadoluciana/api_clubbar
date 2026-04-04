@@ -220,16 +220,16 @@ def obter_itens_carrinho(
             Produto.dsproduto,
             Produto.vrprecoprod,
             Produto.urlfotoproduto,
-            ItCarrinho.qt,
-            ItCarrinho.obs,
+            ItCarrinho.qtitcarrinho,
+            ItCarrinho.dsobsitcar,
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
         .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
         .all()
     )
 
-    total = sum((float(i.vrprecoprod or 0) * int(i.qt or 0)) for i in itens)
-    qt_total = sum(int(i.qt or 0) for i in itens)
+    total = sum((float(i.vrprecoprod or 0) * int(i.qtitcarrinho or 0)) for i in itens)
+    qt_total = sum(int(i.qtitcarrinho or 0) for i in itens)
 
     base_url = str(request.base_url).rstrip("/")
 
@@ -245,8 +245,8 @@ def obter_itens_carrinho(
                 "dsproduto": i.dsproduto,
                 "vrprecoprod": float(i.vrprecoprod or 0),
                 "urlfotoproduto": f"{base_url}{i.urlfotoproduto}" if i.urlfotoproduto else None,
-                "qt": i.qt,
-                "obs": i.obs,
+                "qt": i.qtitcarrinho,
+                "obs": i.dsobsitcar,
                 "subtotal": float(i.vrprecoprod or 0) * int(i.qt or 0),
             }
             for i in itens
