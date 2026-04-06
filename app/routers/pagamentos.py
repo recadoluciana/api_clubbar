@@ -253,7 +253,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         print("[PAGAR_NOVO][ERRO_PAGBANK] detail =", e.detail)
         raise
     except Exception as e:
-        import traceback
         print("[PAGAR_NOVO][ERRO_CALL_PAGBANK]", repr(e))
         print(traceback.format_exc())
         raise HTTPException(
