@@ -244,7 +244,7 @@ def obter_itens_carrinho(
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "vrprecoprod": float(i.vrprecoprod or 0),
-                "urlfotoproduto": f"{base_url}{i.urlfotoproduto}" if i.urlfotoproduto else None,
+                "urlfotoproduto": f"{i.urlfotoproduto}" if i.urlfotoproduto else None,
                 "qt": i.qtitcarrinho,
                 "obs": i.dsobsitcar,
                 "subtotal": float(i.vrprecoprod or 0) * int(i.qtitcarrinho or 0),
