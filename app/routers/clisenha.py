@@ -11,6 +11,8 @@ from app.models.clisenha import CliSenha
 from fastapi import HTTPException
 from passlib.context import CryptContext
 
+from app.services.email_service import enviar_email_codigo
+
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
@@ -48,7 +50,7 @@ def esqueci_senha(payload: dict, db: Session = Depends(get_db)):
     db.commit()
 
     # 🔥 TEMPORÁRIO (sem email ainda)
-    print(f"CODIGO RESET {email}: {codigo}")
+    enviar_email_codigo(cliente.emailcliente, codigo)
 
     return {"message": "Se o e-mail existir, o código foi enviado."}
 
