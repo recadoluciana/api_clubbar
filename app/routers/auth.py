@@ -14,18 +14,18 @@ from passlib.exc import UnknownHashError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-@router.post("/register")
-def register(data: ClienteRegister, db: Session = Depends(get_db)):
-    email = data.email.lower().strip()
+@router.post("/register_cliente")
+def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
+    email = data.emailcliente.lower().strip()
 
     existe = db.query(Cliente).filter(Cliente.emailcliente == email).first()
     if existe:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
     cli = Cliente(
-        nmcliente     = data.nome.strip(),
+        nmcliente     = data.nmcliente.strip(),
         emailcliente  = email,
-        senhahashcli  = hash_senha(data.senha),
+        senhahashcli  = hash_senha(data.senhahashcli),
         nrtelcliente  = data.nrtelcliente.strip(),
         nrcpfcliente  = data.nrcpfcliente.strip(),
         # emailconf fica "N" por padrão

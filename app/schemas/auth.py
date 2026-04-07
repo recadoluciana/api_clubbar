@@ -3,9 +3,9 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 class ClienteRegister(BaseModel):
-    nome: str
-    email: str
-    senha: str
+    nmcliente   : str
+    emailcliente: str
+    senhahashcli: str
     nrtelcliente: Optional[str] = None
     nrcpfcliente: Optional[str] = None
 
