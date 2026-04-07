@@ -61,7 +61,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
-            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
+            "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
         }
         for r in rows
     ]
@@ -106,7 +106,7 @@ def listar_todas_lojas_ativas(
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
-            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
+            "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
         }
         for r in lojas
     ]
@@ -150,7 +150,7 @@ def listar_lojas_cidade(
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
-            "urllogoloja": f"{base_url}{r.urllogoloja}" if r.urllogoloja else None,
+            "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
         }
         for r in lojas
     ]
@@ -200,7 +200,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "dsrefeloja": row.dsrefeloja,
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
-        "urllogoloja": f"{base_url}{row.urllogoloja}" if row.urllogoloja else None,
+        "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
     }
 
 
