@@ -27,7 +27,10 @@ def esqueci_senha(payload: dict, db: Session = Depends(get_db)):
     ).first()
 
     if not cliente:
-        return {"message": "Se o e-mail existir, o código foi enviado."}
+        raise HTTPException(
+            status_code=404,
+            detail="Não existe cliente cadastrado com este e-mail."
+        )
 
     codigo = f"{randint(0, 999999):06d}"
     expiracao = datetime.now() + timedelta(minutes=15)
