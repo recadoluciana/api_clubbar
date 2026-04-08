@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.cliente import Cliente
-from app.schemas.cliente import AlterarSenhaClienteRequest
+from app.schemas.cliente import AlterarSenhaClienteRequest, ClientePerfilUpdate
 from app.core.security import get_usuario_logado, verificar_senha, hash_senha
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
@@ -44,12 +44,12 @@ def alterar_minha_senha(
 
     return {"message": "Senha alterada com sucesso"}
 
+
 @router.get("/me")
 def perfil_cliente(
-    usuario=Depends(get_usuario_logado),  # 👈 vem do token
+    usuario=Depends(get_usuario_logado),
     db: Session = Depends(get_db)
 ):
-
     role = usuario.get("role")
     sub = usuario.get("sub")
 
@@ -72,6 +72,7 @@ def perfil_cliente(
         "nrtelcliente": cli.nrtelcliente,
         "nrcpfcliente": cli.nrcpfcliente,
     }
+
 
 @router.put("/me")
 def atualizar_perfil_cliente(
@@ -100,8 +101,11 @@ def atualizar_perfil_cliente(
             Cliente.cliente_id != cliente_id
         ).first()
 
-    if outro:
-        raise HTTPException(status_code=400, detail="Já existe outro cliente com este CPF")
+        if outro:
+            raise HTTPException(
+                status_code=400,
+                detail="Já existe outro cliente com este CPF"
+            )
 
     cli.nmcliente = payload.nmcliente.strip()
     cli.nrtelcliente = payload.nrtelcliente.strip() if payload.nrtelcliente else None
