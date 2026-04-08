@@ -95,10 +95,10 @@ def atualizar_perfil_cliente(
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
     if payload.nrcpfcliente:
-    outro = db.query(Cliente).filter(
-        Cliente.nrcpfcliente == payload.nrcpfcliente,
-        Cliente.cliente_id != cliente_id
-    ).first()
+        outro = db.query(Cliente).filter(
+            Cliente.nrcpfcliente == payload.nrcpfcliente,
+            Cliente.cliente_id != cliente_id
+        ).first()
 
     if outro:
         raise HTTPException(status_code=400, detail="Já existe outro cliente com este CPF")
