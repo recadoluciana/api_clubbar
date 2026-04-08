@@ -47,6 +47,7 @@ from app.routers import eventos
 from app.routers import eventolotes
 from app.routers import usuarios
 from app.routers import clisenha
+from app.routers import clientes
 
 os.makedirs("/app/uploads", exist_ok=True)
 os.makedirs("app/static", exist_ok=True)
@@ -70,6 +71,7 @@ app.include_router(eventos.router)
 app.include_router(eventolotes.router)
 app.include_router(usuarios.router)
 app.include_router(clisenha.router)
+app.include_router(clientes.router)
 
 #teste de deploay
 

@@ -43,7 +43,7 @@ def verificar_jwt(token: str) -> dict:
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except JWTError:
-        raise HTTPException(status_code=402, detail="Token inválido")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 
 def get_usuario_logado(
