@@ -76,35 +76,6 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
     }
 
 
-@router.get("/perfil")
-def perfil_cliente(
-    usuario=Depends(get_usuario_logado),  # 👈 vem do token
-    db: Session = Depends(get_db)
-):
-
-    role = usuario.get("role")
-    sub = usuario.get("sub")
-
-    if role != "cliente":
-        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
-
-    cliente_id = int(sub)
-
-    cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
-    if not cli:
-        raise HTTPException(status_code=404, detail="Cliente não cadastrado")
-
-    if cli.sitcliente != "ATIVO":
-        raise HTTPException(status_code=403, detail="Cliente inativo")
-
-    return {
-        "cliente_id": cli.cliente_id,
-        "nmcliente": cli.nmcliente,
-        "emailcliente": cli.emailcliente,
-        "nrtelcliente": cli.nrtelcliente,
-        "nrcpfcliente": cli.nrcpfcliente,
-    }
-
 @router.post("/loginuser")
 def loginuser(data: UserLogin, db: Session = Depends(get_db)):
     

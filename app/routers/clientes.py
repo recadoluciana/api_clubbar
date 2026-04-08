@@ -43,3 +43,77 @@ def alterar_minha_senha(
     db.commit()
 
     return {"message": "Senha alterada com sucesso"}
+
+@router.get("/me")
+def perfil_cliente(
+    usuario=Depends(get_usuario_logado),  # 👈 vem do token
+    db: Session = Depends(get_db)
+):
+
+    role = usuario.get("role")
+    sub = usuario.get("sub")
+
+    if role != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
+
+    cliente_id = int(sub)
+
+    cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cli:
+        raise HTTPException(status_code=404, detail="Cliente não cadastrado")
+
+    if cli.sitcliente != "ATIVO":
+        raise HTTPException(status_code=403, detail="Cliente inativo")
+
+    return {
+        "cliente_id": cli.cliente_id,
+        "nmcliente": cli.nmcliente,
+        "emailcliente": cli.emailcliente,
+        "nrtelcliente": cli.nrtelcliente,
+        "nrcpfcliente": cli.nrcpfcliente,
+    }
+
+@router.put("/me")
+def atualizar_perfil_cliente(
+    payload: ClientePerfilUpdate,
+    usuario=Depends(get_usuario_logado),
+    db: Session = Depends(get_db)
+):
+    role = usuario.get("role")
+    sub = usuario.get("sub")
+
+    if role != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
+
+    cliente_id = int(sub)
+
+    cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cli:
+        raise HTTPException(status_code=404, detail="Cliente não cadastrado")
+
+    if cli.sitcliente != "ATIVO":
+        raise HTTPException(status_code=403, detail="Cliente inativo")
+
+    if payload.nrcpfcliente:
+    outro = db.query(Cliente).filter(
+        Cliente.nrcpfcliente == payload.nrcpfcliente,
+        Cliente.cliente_id != cliente_id
+    ).first()
+
+    if outro:
+        raise HTTPException(status_code=400, detail="Já existe outro cliente com este CPF")
+
+    cli.nmcliente = payload.nmcliente.strip()
+    cli.nrtelcliente = payload.nrtelcliente.strip() if payload.nrtelcliente else None
+    cli.nrcpfcliente = payload.nrcpfcliente.strip() if payload.nrcpfcliente else None
+
+    db.commit()
+
+    return {
+        "message": "Dados atualizados com sucesso",
+        "cliente_id": cli.cliente_id,
+        "nmcliente": cli.nmcliente,
+        "emailcliente": cli.emailcliente,
+        "nrtelcliente": cli.nrtelcliente,
+        "nrcpfcliente": cli.nrcpfcliente,
+    }
