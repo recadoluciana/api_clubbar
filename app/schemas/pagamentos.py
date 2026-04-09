@@ -32,7 +32,8 @@ class PagarNovoIn(BaseModel):
     loja_id: int
 
     encrypted_card: EncryptedStr
-    security_code: CVVStr
+    security_code: Optional[CVVStr] = None
+    payment_method: Literal["CREDIT_CARD", "DEBIT_CARD"] = "CREDIT_CARD"
 
     idempotency_key: Optional[str] = None
 
