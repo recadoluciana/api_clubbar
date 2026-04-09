@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from datetime import datetime
 
 from app.database import get_db
 from app.models.venda import Venda
@@ -10,8 +9,8 @@ from app.models.loja import Loja
 
 from app.utils.datetime_utils import formatar_data_br
 
-
 router = APIRouter(prefix="/compras", tags=["compras"])
+
 
 @router.get("")
 def listar_compras(
@@ -19,10 +18,14 @@ def listar_compras(
     incluir_itens: bool = True,
     db: Session = Depends(get_db),
 ):
-    # 1) Vendas do cliente + nome da loja
+    # 1) Vendas do cliente + nome da loja + logo da loja
     vendas = (
-        db.query(Venda, Loja.nmloja)
-        .join(Loja, (Loja.organizacao_id == Venda.organizacao_id) & (Loja.loja_id == Venda.loja_id))
+        db.query(Venda, Loja.nmloja, Loja.urllogoloja)
+        .join(
+            Loja,
+            (Loja.organizacao_id == Venda.organizacao_id)
+            & (Loja.loja_id == Venda.loja_id),
+        )
         .filter(
             Venda.cliente_id == cliente_id,
             Venda.sitvenda == "PAGA"
@@ -40,7 +43,8 @@ def listar_compras(
                 "venda_id": v.venda_id,
                 "organizacao_id": v.organizacao_id,
                 "loja_id": v.loja_id,
-                "nmloja": nmloja,              # ✅ aqui
+                "nmloja": nmloja,
+                "urllogoloja": urllogoloja,
                 "cliente_id": v.cliente_id,
                 "sitvenda": v.sitvenda,
                 "totalvenda": float(v.totalvenda),
@@ -48,25 +52,26 @@ def listar_compras(
                 "carrinho_id": v.carrinho_id,
                 "dsplataforma": v.dsplataforma,
             }
-            for v, nmloja in vendas
+            for v, nmloja, urllogoloja in vendas
         ]
 
-    venda_ids = [v.venda_id for v, _ in vendas]   # ✅ aqui
+    venda_ids = [v.venda_id for v, _, _ in vendas]
 
-    # 2) Itens + nome do produto
+    # 2) Itens + nome do produto + tipo do produto
     itens_rows = (
-        db.query(ItVenda, Produto.nmproduto)
+        db.query(ItVenda, Produto.nmproduto, Produto.idtipoproduto)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .filter(ItVenda.venda_id.in_(venda_ids))
         .all()
     )
 
     itens_por_venda = {}
-    for it, nmproduto in itens_rows:
+    for it, nmproduto, idtipoproduto in itens_rows:
         itens_por_venda.setdefault(it.venda_id, []).append({
             "itvenda_id": getattr(it, "itvenda_id", None),
             "produto_id": getattr(it, "produto_id", None),
             "nmproduto": nmproduto,
+            "idtipoproduto": idtipoproduto,   # ✅ novo
             "qtitvenda": it.qtitvenda,
             "vrunititvenda": float(it.vrunititvenda),
             "identregaitvenda": it.identregaitvenda,
@@ -78,18 +83,19 @@ def listar_compras(
 
     # 3) Resposta final
     resp = []
-    for v, nmloja in vendas:                      # ✅ aqui
+    for v, nmloja, urllogoloja in vendas:
         resp.append({
             "venda_id": v.venda_id,
             "organizacao_id": v.organizacao_id,
             "loja_id": v.loja_id,
-            "nmloja": nmloja,                     # ✅ aqui
+            "nmloja": nmloja,
+            "urllogoloja": urllogoloja,   # ✅ novo
             "cliente_id": v.cliente_id,
             "dsplataforma": v.dsplataforma,
             "sitvenda": v.sitvenda,
             "totalvenda": float(v.totalvenda),
-            "dtcriacao": formatar_data_br(v.dtcriacao),   # ✅ agora BR
-            "dtultatu": formatar_data_br(v.dtultatu),     # ✅ agora correto
+            "dtcriacao": formatar_data_br(v.dtcriacao),
+            "dtultatu": formatar_data_br(v.dtultatu),
             "carrinho_id": v.carrinho_id,
             "itens": itens_por_venda.get(v.venda_id, []),
         })
