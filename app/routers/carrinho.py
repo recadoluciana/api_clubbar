@@ -180,36 +180,25 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
 
     return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
 
+
 @router.get("/qtde_itens_geral")
 def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
-    # 1) encontra carrinho único
-    carr = (
-        db.query(Carrinho)
-        .filter(
-            Carrinho.cliente_id == cliente_id,
-            Carrinho.sitcarrinho == "ABERTO",
-        )
-        .first()
-    )
-
-    if not carr:
-        return {"carrinho_id": None, "qt": 0}
-
+    # Soma a quantidade de itens em todos os carrinhos ABERTOS do cliente
     row = (
         db.query(
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * Produto.vrprecoprod), 0).label("total"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt")
         )
-        .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
-        .filter(ItCarrinho.carrinho_id    == carr.carrinho_id)
+        .join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id)
+        .filter(
+            Carrinho.cliente_id == cliente_id,
+            Carrinho.sitcarrinho == "ABERTO"
+        )
         .first()
     )
 
     qt = int(row.qt or 0)
-    total = float(row.total or 0.0)
 
-    return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
-
+    return {"cliente_id": cliente_id, "qt_itens": qt}
 
 @router.get("/itens")
 def obter_itens_carrinho(
