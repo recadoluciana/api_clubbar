@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-
 from app.database import get_db
-
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
@@ -152,7 +150,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
     )
 
 @router.get("/qt")
-def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)):
+def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(get_db)):
     # 1) encontra carrinho único
     carr = (
         db.query(Carrinho)
@@ -182,8 +180,36 @@ def get_qt_carrinho(cliente_id: int, loja_id: int, db: Session = Depends(get_db)
 
     return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+@router.get("/qtde_itens_geral")
+def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
+    # 1) encontra carrinho único
+    carr = (
+        db.query(Carrinho)
+        .filter(
+            Carrinho.cliente_id == cliente_id,
+            Carrinho.sitcarrinho == "ABERTO",
+        )
+        .first()
+    )
+
+    if not carr:
+        return {"carrinho_id": None, "qt": 0}
+
+    row = (
+        db.query(
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * Produto.vrprecoprod), 0).label("total"),
+        )
+        .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
+        .filter(ItCarrinho.carrinho_id    == carr.carrinho_id)
+        .first()
+    )
+
+    qt = int(row.qt or 0)
+    total = float(row.total or 0.0)
+
+    return {"carrinho_id": int(carr.carrinho_id), "qt": qt, "total": total}
+
 
 @router.get("/itens")
 def obter_itens_carrinho(
