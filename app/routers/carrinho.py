@@ -415,7 +415,7 @@ def get_lojas_com_carrinho(
             Loja.nmloja.label("nmloja"),
             Loja.dsbairroloja.label("dsbairroloja"),
             Loja.urllogoloja.label("urllogoloja"),
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("total_itens"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt_itens"),
         )
         .join(Carrinho, Carrinho.loja_id == Loja.loja_id)
         .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
@@ -439,7 +439,7 @@ def get_lojas_com_carrinho(
             nmloja=row.nmloja,
             dsbairroloja=row.dsbairroloja,
             urllogoloja=row.urllogoloja,
-            total_itens=int(row.total_itens or 0),
+            qt_itens=int(row.qt_itens or 0),
         )
         for row in rows
     ]
