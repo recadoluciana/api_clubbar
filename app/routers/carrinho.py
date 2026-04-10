@@ -198,7 +198,7 @@ def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
 
     qt = int(row.qt or 0)
 
-    return {"cliente_id": cliente_id, "qt_itens": qt}
+    return {"qt_total": qt}
 
 @router.get("/itens")
 def obter_itens_carrinho(
