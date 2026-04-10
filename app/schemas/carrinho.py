@@ -57,4 +57,3 @@ class LojaCarrinhoOut(BaseModel):
     dsbairroloja: Optional[str] = None
     urllogoloja: Optional[str] = None
     total_itens: int
-    total: float

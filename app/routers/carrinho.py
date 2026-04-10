@@ -388,8 +388,6 @@ def get_itens_carrinho(
     ]
 
 
-from sqlalchemy import func
-
 @router.get("/lojas", response_model=list[LojaCarrinhoOut])
 def get_lojas_com_carrinho(
     cliente_id: int,
@@ -403,10 +401,6 @@ def get_lojas_com_carrinho(
             Loja.dsbairroloja.label("dsbairroloja"),
             Loja.urllogoloja.label("urllogoloja"),
             func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("total_itens"),
-            func.coalesce(
-                func.sum(ItCarrinho.qtitcarrinho * ItCarrinho.vrunititcarrinho),
-                0
-            ).label("total"),
         )
         .join(Carrinho, Carrinho.loja_id == Loja.loja_id)
         .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
@@ -431,7 +425,6 @@ def get_lojas_com_carrinho(
             dsbairroloja=row.dsbairroloja,
             urllogoloja=row.urllogoloja,
             total_itens=int(row.total_itens or 0),
-            total=float(row.total or 0),
         )
         for row in rows
     ]
