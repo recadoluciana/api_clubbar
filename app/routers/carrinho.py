@@ -439,7 +439,7 @@ def get_lojas_com_carrinho(
             nmloja=row.nmloja,
             dsbairroloja=row.dsbairroloja,
             urllogoloja=row.urllogoloja,
-            qt_itens=int(row.qt_itens or 0),
+            total_itens=int(row.qt_itens or 0),
         )
         for row in rows
     ]
