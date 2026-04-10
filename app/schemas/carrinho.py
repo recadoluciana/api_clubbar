@@ -54,5 +54,7 @@ class LojaCarrinhoOut(BaseModel):
     loja_id: int
     organizacao_id: int
     nmloja: str
-    dsbairroloja: str | None = None
+    dsbairroloja: Optional[str] = None
+    urllogoloja: Optional[str] = None
     total_itens: int
+    total: float
