@@ -40,6 +40,7 @@ def listar_itens_nao_entregues(
             Produto.urlfotoproduto,
             Loja.nmloja,
             Loja.urllogoloja,
+            Loja.dsinstaloja,
             Cliente.nmcliente,
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
@@ -86,6 +87,7 @@ def listar_itens_nao_entregues(
             "loja_id": row.loja_id,
             "nmloja" : row.nmloja,
             "urllogoloja": row.urllogoloja,
+            "dsinstaloja": row.dsinstaloja,
             "nmcliente" : row.nmcliente,
         }
         for row in itens
