@@ -111,6 +111,49 @@ def listar_todas_lojas_ativas(
         for r in lojas
     ]
 
+@router.get("/com_retirada")
+def listar_lojas_com_retirada_pendente(
+    request: Request,
+    cidade_id: int | None = None,
+    db: Session = Depends(get_db)
+):
+    rows = (
+        db.query(
+            Loja.loja_id,
+            Loja.organizacao_id,
+            Organizacao.nmorganizacao,
+            Loja.nmloja,
+            Loja.endloja,
+            Loja.aberto24x7,
+            Loja.dshorarioloja,
+            Loja.nrtelloja,
+            Loja.urllogoloja,
+        )
+        .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
+        .filter(Loja.sitloja == "ATIVA")
+    )
+
+    if cidade_id is not None:
+        rows = rows.filter(Loja.cidade_id == cidade_id)
+
+    lojas = rows.order_by(Loja.nmloja.asc()).all()
+    
+    base_url = str(request.base_url).rstrip("/")
+
+    return [
+        {
+            "loja_id": r.loja_id,
+            "organizacao_id": r.organizacao_id,
+            "nmorganizacao": r.nmorganizacao,
+            "nmloja": r.nmloja,
+            "endloja": r.endloja,
+            "aberto24x7": r.aberto24x7,
+            "dshorarioloja": r.dshorarioloja,
+            "nrtelloja": r.nrtelloja,
+            "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+        }
+        for r in lojas
+    ]
 
 @router.get("/cidades")
 def listar_lojas_cidade(
