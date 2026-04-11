@@ -38,6 +38,7 @@ def listar_itens_nao_entregues(
             Produto.produto_id,
             Produto.nmproduto,
             Loja.nmloja,
+            Loja.urllogoloja,
             Cliente.nmcliente,
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
@@ -82,6 +83,7 @@ def listar_itens_nao_entregues(
             "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y") if row.dtcriacao else None,
             "loja_id": row.loja_id,
             "nmloja" : row.nmloja,
+            "urllogoloja": row.urllogoloja,
             "nmcliente" : row.nmcliente,
         }
         for row in itens

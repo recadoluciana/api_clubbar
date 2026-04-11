@@ -114,7 +114,7 @@ def listar_todas_lojas_ativas(
 @router.get("/com_retirada")
 def listar_lojas_com_retirada_pendente(
     request: Request,
-    cidade_id: int | None = None,
+    cliente_id: int | None = None,
     db: Session = Depends(get_db)
 ):
     rows = (
