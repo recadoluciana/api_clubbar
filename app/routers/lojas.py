@@ -42,6 +42,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.dsinstaloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -62,6 +63,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "dsinstaloja": r.dsinstaloja,                        
         }
         for r in rows
     ]
@@ -84,6 +86,7 @@ def listar_todas_lojas_ativas(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.dsinstaloja,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -107,6 +110,7 @@ def listar_todas_lojas_ativas(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "dsinstaloja": r.dsinstaloja,
         }
         for r in lojas
     ]
