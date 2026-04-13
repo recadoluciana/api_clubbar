@@ -284,7 +284,7 @@ def remover_uma_unidade(
             DELETE FROM itcarrinho
             WHERE carrinho_id = :cid
               AND produto_id = :pid
-              AND COALESCE(dsproduto, '') = :observacao
+              AND COALESCE(dsobsitcar, '') = :observacao
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
