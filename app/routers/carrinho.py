@@ -268,16 +268,31 @@ def obter_itens_carrinho(
         ],
     }
 
+from fastapi import Query
+
 @router.delete("/{carrinho_id}/produto/{produto_id}/um")
-def remover_uma_unidade(carrinho_id: int, produto_id: int, observacao: str, db: Session = Depends(get_db)):
+def remover_uma_unidade(
+    carrinho_id: int,
+    produto_id: int,
+    observacao: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    observacao = (observacao or "").strip()
+
     res = db.execute(
         text("""
             DELETE FROM itcarrinho
-            WHERE carrinho_id = :cid AND produto_id = :pid AND COALESCE(dsproduto, '') = :observacao
+            WHERE carrinho_id = :cid
+              AND produto_id = :pid
+              AND COALESCE(dsproduto, '') = :observacao
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
-        {"cid": carrinho_id, "pid": produto_id},
+        {
+            "cid": carrinho_id,
+            "pid": produto_id,
+            "observacao": observacao,
+        },
     )
     db.commit()
 
