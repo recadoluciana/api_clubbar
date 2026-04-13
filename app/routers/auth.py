@@ -22,13 +22,15 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
     if existe:
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
+    telefone = (data.nrtelcliente or "").strip()
+    cpf = (data.nrcpfcliente or "").strip()
+
     cli = Cliente(
-        nmcliente     = data.nmcliente.strip(),
-        emailcliente  = email,
-        senhahashcli  = hash_senha(data.senhahashcli),
-        nrtelcliente  = data.nrtelcliente.strip(),
-        nrcpfcliente  = data.nrcpfcliente.strip(),
-        # emailconf fica "N" por padrão
+        nmcliente=(data.nmcliente or "").strip(),
+        emailcliente=(data.emailcliente or "").strip().lower(),
+        senhahashcli=hash_senha(data.senhahashcli),
+        nrtelcliente=telefone or None,
+        nrcpfcliente=cpf or None,
     )
     db.add(cli)
     db.commit()
