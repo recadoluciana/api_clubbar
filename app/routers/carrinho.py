@@ -269,11 +269,11 @@ def obter_itens_carrinho(
     }
 
 @router.delete("/{carrinho_id}/produto/{produto_id}/um")
-def remover_uma_unidade(carrinho_id: int, produto_id: int, db: Session = Depends(get_db)):
+def remover_uma_unidade(carrinho_id: int, produto_id: int, observacao: str, db: Session = Depends(get_db)):
     res = db.execute(
         text("""
             DELETE FROM itcarrinho
-            WHERE carrinho_id = :cid AND produto_id = :pid
+            WHERE carrinho_id = :cid AND produto_id = :pid AND COALESCE(dsproduto, '') = :observacao
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
