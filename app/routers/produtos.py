@@ -4,6 +4,7 @@ from sqlalchemy import exists
 import os
 import uuid
 import shutil
+import traceback
 
 from app.database import get_db
 from app.models.categoria import Categoria
@@ -12,6 +13,11 @@ from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
 
 from app.core.config import UPLOAD_PRODUTOS
+
+# mantém estes imports se já existirem no seu projeto
+# se estiverem em outro arquivo, ajuste o caminho
+from app.schemas.produto import ProdutoOut
+from app.utils.produto import calcular_preco_final
 
 router = APIRouter(tags=["Produtos"])
 
@@ -55,12 +61,12 @@ def atualizar_produto(
     dsproduto: str | None = Form(None),
     vrprecoprod: float | None = Form(None),
     sitproduto: str | None = Form(None),
-    urlfotoproduto: UploadFile | None = File(None),  # 🔥 PADRONIZADO
+    tipodesconto: str | None = Form(None),
+    vrdesconto: float | None = Form(None),
+    dtinidesconto: str | None = Form(None),
+    dtfimdesconto: str | None = Form(None),
+    urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    tipodesconto=(data.tipodesconto or "NENHUM").upper(),
-    vrdesconto=data.vrdesconto or 0,
-    dtinidesconto=data.dtinidesconto,
-    dtfimdesconto=data.dtfimdesconto,
 ):
     try:
         produto = db.query(Produto).filter(
@@ -72,7 +78,6 @@ def atualizar_produto(
 
         print("arquivo recebido:", urlfotoproduto.filename if urlfotoproduto else None)
 
-        # 🔥 FOTO
         if urlfotoproduto is not None and urlfotoproduto.filename:
             if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
                 raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
@@ -82,18 +87,16 @@ def atualizar_produto(
             caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
 
             with open(caminho_arquivo, "wb") as buffer:
-                shutil.copyfileobj(urlfotoproduto.file, buffer)  # ✅ CORRIGIDO
+                shutil.copyfileobj(urlfotoproduto.file, buffer)
 
             produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
-
             print("nova url foto:", produto.urlfotoproduto)
 
-        # 🔥 CAMPOS
         if categoria_id is not None:
             produto.categoria_id = categoria_id
 
         if nmproduto is not None:
-            produto.nmproduto = nmproduto
+            produto.nmproduto = nmproduto.strip()
 
         if dsproduto is not None:
             produto.dsproduto = dsproduto
@@ -104,8 +107,19 @@ def atualizar_produto(
         if sitproduto is not None:
             produto.sitproduto = sitproduto
 
+        if tipodesconto is not None:
+            produto.tipodesconto = (tipodesconto or "NENHUM").upper()
 
-        if (produto.tipodesconto or "NENHUM") == "NENHUM":
+        if vrdesconto is not None:
+            produto.vrdesconto = vrdesconto
+
+        if dtinidesconto is not None:
+            produto.dtinidesconto = dtinidesconto
+
+        if dtfimdesconto is not None:
+            produto.dtfimdesconto = dtfimdesconto
+
+        if (produto.tipodesconto or "NENHUM").upper() == "NENHUM":
             produto.vrdesconto = 0
             produto.dtinidesconto = None
             produto.dtfimdesconto = None
@@ -119,6 +133,8 @@ def atualizar_produto(
             "urlfotoproduto": produto.urlfotoproduto
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         traceback.print_exc()
@@ -162,6 +178,7 @@ def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
 
     return saida
 
+
 @router.post("/produtos")
 async def criar_produto(
     request: Request,
@@ -174,12 +191,12 @@ async def criar_produto(
     sitproduto: str = Form(...),
     idtipoproduto: str = Form(...),
     lote_id: int | None = Form(None),
+    tipodesconto: str = Form("NENHUM"),
+    vrdesconto: float = Form(0),
+    dtinidesconto: str | None = Form(None),
+    dtfimdesconto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
-    tipodesconto=(data.tipodesconto or "NENHUM").upper(),
-    vrdesconto=data.vrdesconto or 0,
-    dtinidesconto=data.dtinidesconto,
-    dtfimdesconto=data.dtfimdesconto,
 ):
     nmproduto = nmproduto.strip()
 
@@ -222,11 +239,14 @@ async def criar_produto(
         )
 
     nome_arquivo_foto = None
+    url_foto = None
 
-    if urlfotoproduto:
+    if urlfotoproduto and urlfotoproduto.filename:
+        if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
+
         extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
         nome_arquivo_foto = f"{uuid.uuid4().hex}{extensao}"
-
         caminho = os.path.join(UPLOAD_PRODUTOS, nome_arquivo_foto)
 
         conteudo = await urlfotoproduto.read()
@@ -234,8 +254,13 @@ async def criar_produto(
             f.write(conteudo)
 
         url_foto = f"/uploads/produtos/{nome_arquivo_foto}"
-    else:
-        url_foto = None
+
+    tipodesconto = (tipodesconto or "NENHUM").upper()
+
+    if tipodesconto == "NENHUM":
+        vrdesconto = 0
+        dtinidesconto = None
+        dtfimdesconto = None
 
     novo_produto = Produto(
         organizacao_id=organizacao_id,
@@ -248,6 +273,10 @@ async def criar_produto(
         idtipoproduto=idtipoproduto,
         lote_id=lote_id,
         urlfotoproduto=url_foto,
+        tipodesconto=tipodesconto,
+        vrdesconto=vrdesconto,
+        dtinidesconto=dtinidesconto,
+        dtfimdesconto=dtfimdesconto,
     )
 
     db.add(novo_produto)
@@ -268,4 +297,8 @@ async def criar_produto(
         "lote_id": novo_produto.lote_id,
         "foto": nome_arquivo_foto,
         "urlfotoproduto": novo_produto.urlfotoproduto,
+        "tipodesconto": novo_produto.tipodesconto,
+        "vrdesconto": float(novo_produto.vrdesconto or 0),
+        "dtinidesconto": novo_produto.dtinidesconto,
+        "dtfimdesconto": novo_produto.dtfimdesconto,
     }
