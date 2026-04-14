@@ -22,6 +22,8 @@ from app.services.venda_service import criar_ou_obter_venda_idempotente
 from app.services.pagamento_status_service import set_venda_como_paga, set_venda_como_cancelada
 from app.services.cliente_service import get_cliente
 
+from app.utils.calcular_preco_desconto import calcular_preco_final
+
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 PAGBANK_BASE = os.getenv("PAGBANK_BASE", "https://sandbox.api.pagseguro.com")
@@ -30,6 +32,50 @@ PAGBANK_TIMEOUT = float(os.getenv("PAGBANK_TIMEOUT", "30"))
 
 
 # ---------- Helpers (internos) ----------
+def _recalcular_itens_carrinho(db: Session, itens: list[Dict[str, Any]]) -> tuple[list[Dict[str, Any]], float]:
+    itens_recalculados = []
+    total = 0.0
+
+    for it in itens:
+        produto_id = int(it.get("produto_id") or 0)
+        qt = int(it.get("qt") or 1)
+
+        produto = (
+            db.query(Produto)
+            .filter(Produto.produto_id == produto_id)
+            .first()
+        )
+
+        if not produto:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Produto {produto_id} não encontrado"
+            )
+
+        if (produto.sitproduto or "").upper() != "ATIVO":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Produto '{produto.nmproduto}' não está disponível"
+            )
+
+        vrprecofinal, descontoativo = calcular_preco_final(produto)
+        vrunitario = float(vrprecofinal)
+        subtotal = vrunitario * qt
+        total += subtotal
+
+        itens_recalculados.append({
+            "produto_id": produto.produto_id,
+            "nmproduto": produto.nmproduto,
+            "qt": qt,
+            "vrunitario": vrunitario,
+            "subtotal": subtotal,
+            "tipodesconto": produto.tipodesconto or "NENHUM",
+            "vrdesconto": float(produto.vrdesconto or 0),
+            "descontoativo": descontoativo,
+        })
+
+    return itens_recalculados, total
+
 def _clean_digits(value: str | None) -> str:
     if not value:
         return ""
@@ -43,20 +89,21 @@ def _to_cents(value: Any) -> int:
 
 def _build_order_body(
     venda_id: int,
-    carrinho: Dict[str, Any],
+    total: float,
     itens: list[Dict[str, Any]],
     cliente: Dict[str, Any],
     encrypted_card: str,
     security_code: str,
 ) -> Dict[str, Any]:
     pagbank_items = []
+
     for it in itens:
         pagbank_items.append(
             {
                 "reference_id": str(it.get("produto_id")),
                 "name": it.get("nmproduto", "Produto"),
                 "quantity": int(it.get("qt", 1)),
-                "unit_amount": _to_cents(it.get("vrprecoprod", 0)),
+                "unit_amount": _to_cents(it.get("vrunitario", 0)),
             }
         )
 
@@ -84,7 +131,10 @@ def _build_order_body(
             {
                 "reference_id": f"charge-{venda_id}",
                 "description": f"Venda {venda_id} - ClubBar",
-                "amount": {"value": _to_cents(carrinho.get("total", 0)), "currency": "BRL"},
+                "amount": {
+                    "value": _to_cents(total),
+                    "currency": "BRL"
+                },
                 "payment_method": {
                     "type": "CREDIT_CARD",
                     "installments": 1,
@@ -220,10 +270,15 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     detail="Cliente não encontrado"
                 )
 
+            itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
+
+            print("[PAGAR_NOVO] itens recalculados =", itens_recalculados)
+            print("[PAGAR_NOVO] total recalculado =", total_recalculado)
+
             order_body = _build_order_body(
                 venda_id=venda_id,
-                carrinho=carrinho,
-                itens=itens,
+                total=total_recalculado,
+                itens=itens_recalculados,
                 cliente=cliente,
                 encrypted_card=payload.encrypted_card,
                 security_code=payload.security_code,
