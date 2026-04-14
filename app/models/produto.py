@@ -25,3 +25,14 @@ class Produto(Base):
     lote_id = Column(BigInteger, nullable=True)
 
     urlfotoproduto = Column(String(255), nullable=True)
+
+    tipodesconto = Column(
+        Enum("NENHUM", "PERCENTUAL", "VALOR", name="enum_tipodesconto_produto"),
+        nullable=False,
+        default="NENHUM",
+    )
+
+    vrdesconto = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+
+    dtinidesconto = Column(DateTime, nullable=True)
+    dtfimdesconto = Column(DateTime, nullable=True)

@@ -57,7 +57,11 @@ def atualizar_produto(
     sitproduto: str | None = Form(None),
     skuproduto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),  # 🔥 PADRONIZADO
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    tipodesconto=(data.tipodesconto or "NENHUM").upper(),
+    vrdesconto=data.vrdesconto or 0,
+    dtinidesconto=data.dtinidesconto,
+    dtfimdesconto=data.dtfimdesconto,
 ):
     try:
         produto = db.query(Produto).filter(
@@ -104,6 +108,11 @@ def atualizar_produto(
         if skuproduto is not None:
             produto.skuproduto = skuproduto
 
+        if (produto.tipodesconto or "NENHUM") == "NENHUM":
+            produto.vrdesconto = 0
+            produto.dtinidesconto = None
+            produto.dtfimdesconto = None
+
         db.commit()
         db.refresh(produto)
 
@@ -119,56 +128,42 @@ def atualizar_produto(
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
 
 
-@router.get("/lojas/{loja_id}/produtos")
+@router.get("/lojas/{loja_id}/produtos", response_model=list[ProdutoOut])
 def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
     rows = (
-        db.query(
-            Produto.organizacao_id,
-            Produto.loja_id,
-            Produto.produto_id,
-            Produto.categoria_id,
-            Produto.nmproduto,
-            Produto.dsproduto,
-            Produto.vrprecoprod,
-            Produto.sitproduto,
-            Produto.skuproduto,
-            Produto.idtipoproduto,
-            Produto.lote_id,
-            Produto.urlfotoproduto,
-            Categoria.nmcategoria
-        )
+        db.query(Produto, Categoria.nmcategoria)
         .outerjoin(Categoria, Categoria.categoria_id == Produto.categoria_id)
-        .filter(
-            Produto.loja_id == loja_id,
-            Produto.sitproduto == "ATIVO",
-            Produto.idtipoproduto == "P",
-        )
-        .order_by(
-            Categoria.nmcategoria,
-            Produto.nmproduto
-        )
+        .filter(Produto.loja_id == loja_id, Produto.sitproduto == "ATIVO")
         .all()
     )
 
-    return [
-        {
-            "organizacao_id": r.organizacao_id,
-            "loja_id": r.loja_id,
-            "produto_id": r.produto_id,
-            "categoria_id": r.categoria_id,
-            "nmcategoria": r.nmcategoria,
-            "nmproduto": r.nmproduto,
-            "dsproduto": r.dsproduto,
-            "vrprecoprod": float(r.vrprecoprod) if r.vrprecoprod is not None else 0.0,
-            "sitproduto": r.sitproduto,
-            "skuproduto": r.skuproduto,
-            "idtipoproduto": r.idtipoproduto,
-            "lote_id": r.lote_id,
-            "urlfotoproduto": r.urlfotoproduto,
-        }
-        for r in rows
-    ]
+    saida = []
 
+    for produto, nmcategoria in rows:
+        vrprecofinal, descontoativo = calcular_preco_final(produto)
+
+        saida.append(
+            {
+                "produto_id": produto.produto_id,
+                "organizacao_id": produto.organizacao_id,
+                "loja_id": produto.loja_id,
+                "categoria_id": produto.categoria_id,
+                "nmproduto": produto.nmproduto,
+                "dsproduto": produto.dsproduto,
+                "vrprecoprod": produto.vrprecoprod,
+                "sitproduto": produto.sitproduto,
+                "nmcategoria": nmcategoria,
+                "urlfotoproduto": produto.urlfotoproduto,
+                "tipodesconto": produto.tipodesconto or "NENHUM",
+                "vrdesconto": produto.vrdesconto or 0,
+                "dtinidesconto": produto.dtinidesconto,
+                "dtfimdesconto": produto.dtfimdesconto,
+                "vrprecofinal": vrprecofinal,
+                "descontoativo": descontoativo,
+            }
+        )
+
+    return saida
 
 @router.post("/produtos")
 async def criar_produto(
@@ -185,6 +180,10 @@ async def criar_produto(
     lote_id: int | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
+    tipodesconto=(data.tipodesconto or "NENHUM").upper(),
+    vrdesconto=data.vrdesconto or 0,
+    dtinidesconto=data.dtinidesconto,
+    dtfimdesconto=data.dtfimdesconto,
 ):
     nmproduto = nmproduto.strip()
 

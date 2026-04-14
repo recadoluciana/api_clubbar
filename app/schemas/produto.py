@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
 from decimal import Decimal
 
-
 class ProdutoCreate(BaseModel):
     organizacao_id: int
     loja_id: int
@@ -14,6 +13,10 @@ class ProdutoCreate(BaseModel):
     skuproduto: Optional[str] = Field(None, max_length=100)
     idtipoproduto: Literal["I", "P"] = "P"
     lote_id: Optional[int] = None
+    tipodesconto: Optional[str] = "NENHUM"
+    vrdesconto: Optional[Decimal] = Decimal("0.00")
+    dtinidesconto: Optional[datetime] = None
+    dtfimdesconto: Optional[datetime] = None
 
     @field_validator("nmproduto")
     @classmethod
@@ -42,6 +45,18 @@ class ProdutoOut(BaseModel):
     skuproduto: Optional[str]
     idtipoproduto: str
     lote_id: Optional[int]
+    nmcategoria: Optional[str] = None
+    urlfotoproduto: Optional[str] = None
+
+    tipodesconto: str = "NENHUM"
+    vrdesconto: Decimal = Decimal("0.00")
+    dtinidesconto: Optional[datetime] = None
+    dtfimdesconto: Optional[datetime] = None
+    vrprecofinal: Decimal
+    descontoativo: bool
+
+    class Config:
+        from_attributes = True
 
     class Config:
         from_attributes = True
@@ -53,3 +68,7 @@ class ProdutoUpdate(BaseModel):
     vrprecoprod: Optional[float] = None
     sitproduto: Optional[str] = None
     skuproduto: Optional[str] = None
+    tipodesconto: Optional[str] = None
+    vrdesconto: Optional[Decimal] = None
+    dtinidesconto: Optional[datetime] = None
+    dtfimdesconto: Optional[datetime] = None
