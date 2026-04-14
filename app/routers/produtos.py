@@ -44,7 +44,7 @@ def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
     db.delete(produto)
     db.commit()
 
-    return {"message": "Produto excluído com sucesso"}
+    return {"message": "Produto excluído com sucesso. Consulte seu cadastro."}
 
 
 @router.put("/produtos/{produto_id}")
