@@ -22,7 +22,7 @@ from app.services.venda_service import criar_ou_obter_venda_idempotente
 from app.services.pagamento_status_service import set_venda_como_paga, set_venda_como_cancelada
 from app.services.cliente_service import get_cliente
 
-from app.utils.calcular_preco_desconto import calcular_preco_final
+from app.utils.calcular_preco_final import calcular_preco_final
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
