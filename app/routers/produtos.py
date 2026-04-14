@@ -55,7 +55,6 @@ def atualizar_produto(
     dsproduto: str | None = Form(None),
     vrprecoprod: float | None = Form(None),
     sitproduto: str | None = Form(None),
-    skuproduto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),  # 🔥 PADRONIZADO
     db: Session = Depends(get_db),
     tipodesconto=(data.tipodesconto or "NENHUM").upper(),
@@ -105,8 +104,6 @@ def atualizar_produto(
         if sitproduto is not None:
             produto.sitproduto = sitproduto
 
-        if skuproduto is not None:
-            produto.skuproduto = skuproduto
 
         if (produto.tipodesconto or "NENHUM") == "NENHUM":
             produto.vrdesconto = 0
@@ -175,7 +172,6 @@ async def criar_produto(
     dsproduto: str = Form(""),
     vrprecoprod: float = Form(...),
     sitproduto: str = Form(...),
-    skuproduto: str = Form(""),
     idtipoproduto: str = Form(...),
     lote_id: int | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
@@ -249,7 +245,6 @@ async def criar_produto(
         dsproduto=dsproduto,
         vrprecoprod=vrprecoprod,
         sitproduto=sitproduto,
-        skuproduto=skuproduto,
         idtipoproduto=idtipoproduto,
         lote_id=lote_id,
         urlfotoproduto=url_foto,
@@ -269,7 +264,6 @@ async def criar_produto(
         "dsproduto": novo_produto.dsproduto,
         "vrprecoprod": float(novo_produto.vrprecoprod),
         "sitproduto": novo_produto.sitproduto,
-        "skuproduto": novo_produto.skuproduto,
         "idtipoproduto": novo_produto.idtipoproduto,
         "lote_id": novo_produto.lote_id,
         "foto": nome_arquivo_foto,

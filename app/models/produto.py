@@ -13,7 +13,6 @@ class Produto(Base):
     dsproduto = Column(String(255), nullable=True)
     vrprecoprod = Column(DECIMAL(10, 2), nullable=False)
     sitproduto = Column(Enum("ATIVO", "INATIVO", name="sitproduto_enum"), nullable=False, server_default="ATIVO")
-    skuproduto = Column(String(100), nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(
         DateTime,
