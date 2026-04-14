@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import exists
@@ -11,17 +12,72 @@ from app.models.categoria import Categoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
-
 from app.core.config import UPLOAD_PRODUTOS
-
-# mantém estes imports se já existirem no seu projeto
-# se estiverem em outro arquivo, ajuste o caminho
-from app.schemas.produto import ProdutoOut
-from app.utils.produto import calcular_preco_final
 
 router = APIRouter(tags=["Produtos"])
 
 os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
+
+
+def _parse_datetime(valor: str | None):
+    if not valor:
+        return None
+    valor = valor.strip()
+    if not valor:
+        return None
+
+    formatos = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d",
+    ]
+
+    for fmt in formatos:
+        try:
+            return datetime.strptime(valor, fmt)
+        except ValueError:
+            pass
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Data inválida: {valor}. Use formato YYYY-MM-DD ou YYYY-MM-DD HH:MM:SS"
+    )
+
+
+def calcular_preco_final(produto: Produto):
+    agora = datetime.now()
+
+    tipodesconto = (produto.tipodesconto or "NENHUM").upper()
+    vrdesconto = float(produto.vrdesconto or 0)
+    vrprecoprod = float(produto.vrprecoprod or 0)
+
+    dtini = produto.dtinidesconto
+    dtfim = produto.dtfimdesconto
+
+    desconto_ativo = False
+
+    if tipodesconto != "NENHUM":
+        dentro_periodo = True
+
+        if dtini and agora < dtini:
+            dentro_periodo = False
+
+        if dtfim and agora > dtfim:
+            dentro_periodo = False
+
+        desconto_ativo = dentro_periodo
+
+    if not desconto_ativo:
+        return vrprecoprod, False
+
+    if tipodesconto == "VALOR":
+        vrprecofinal = max(0, vrprecoprod - vrdesconto)
+    elif tipodesconto == "PERCENTUAL":
+        vrprecofinal = max(0, vrprecoprod - (vrprecoprod * vrdesconto / 100))
+    else:
+        vrprecofinal = vrprecoprod
+
+    return round(vrprecofinal, 2), True
 
 
 @router.delete("/produtos/{produto_id}")
@@ -76,8 +132,6 @@ def atualizar_produto(
         if not produto:
             raise HTTPException(status_code=404, detail="Produto não encontrado")
 
-        print("arquivo recebido:", urlfotoproduto.filename if urlfotoproduto else None)
-
         if urlfotoproduto is not None and urlfotoproduto.filename:
             if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
                 raise HTTPException(status_code=400, detail="Arquivo deve ser imagem")
@@ -90,18 +144,22 @@ def atualizar_produto(
                 shutil.copyfileobj(urlfotoproduto.file, buffer)
 
             produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
-            print("nova url foto:", produto.urlfotoproduto)
 
         if categoria_id is not None:
             produto.categoria_id = categoria_id
 
         if nmproduto is not None:
-            produto.nmproduto = nmproduto.strip()
+            nmproduto = nmproduto.strip()
+            if not nmproduto:
+                raise HTTPException(status_code=400, detail="Nome do produto é obrigatório.")
+            produto.nmproduto = nmproduto
 
         if dsproduto is not None:
             produto.dsproduto = dsproduto
 
         if vrprecoprod is not None:
+            if vrprecoprod <= 0:
+                raise HTTPException(status_code=400, detail="Preço do produto deve ser maior que zero.")
             produto.vrprecoprod = vrprecoprod
 
         if sitproduto is not None:
@@ -114,10 +172,10 @@ def atualizar_produto(
             produto.vrdesconto = vrdesconto
 
         if dtinidesconto is not None:
-            produto.dtinidesconto = dtinidesconto
+            produto.dtinidesconto = _parse_datetime(dtinidesconto)
 
         if dtfimdesconto is not None:
-            produto.dtfimdesconto = dtfimdesconto
+            produto.dtfimdesconto = _parse_datetime(dtfimdesconto)
 
         if (produto.tipodesconto or "NENHUM").upper() == "NENHUM":
             produto.vrdesconto = 0
@@ -130,7 +188,18 @@ def atualizar_produto(
         return {
             "mensagem": "Produto atualizado com sucesso",
             "produto_id": produto.produto_id,
-            "urlfotoproduto": produto.urlfotoproduto
+            "organizacao_id": produto.organizacao_id,
+            "loja_id": produto.loja_id,
+            "categoria_id": produto.categoria_id,
+            "nmproduto": produto.nmproduto,
+            "dsproduto": produto.dsproduto,
+            "vrprecoprod": float(produto.vrprecoprod),
+            "sitproduto": produto.sitproduto,
+            "urlfotoproduto": produto.urlfotoproduto,
+            "tipodesconto": produto.tipodesconto,
+            "vrdesconto": float(produto.vrdesconto or 0),
+            "dtinidesconto": produto.dtinidesconto,
+            "dtfimdesconto": produto.dtfimdesconto,
         }
 
     except HTTPException:
@@ -141,7 +210,7 @@ def atualizar_produto(
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
 
 
-@router.get("/lojas/{loja_id}/produtos", response_model=list[ProdutoOut])
+@router.get("/lojas/{loja_id}/produtos")
 def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
     rows = (
         db.query(Produto, Categoria.nmcategoria)
@@ -163,12 +232,12 @@ def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
                 "categoria_id": produto.categoria_id,
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto,
-                "vrprecoprod": produto.vrprecoprod,
+                "vrprecoprod": float(produto.vrprecoprod),
                 "sitproduto": produto.sitproduto,
                 "nmcategoria": nmcategoria,
                 "urlfotoproduto": produto.urlfotoproduto,
                 "tipodesconto": produto.tipodesconto or "NENHUM",
-                "vrdesconto": produto.vrdesconto or 0,
+                "vrdesconto": float(produto.vrdesconto or 0),
                 "dtinidesconto": produto.dtinidesconto,
                 "dtfimdesconto": produto.dtfimdesconto,
                 "vrprecofinal": vrprecofinal,
@@ -256,11 +325,13 @@ async def criar_produto(
         url_foto = f"/uploads/produtos/{nome_arquivo_foto}"
 
     tipodesconto = (tipodesconto or "NENHUM").upper()
+    dtini = _parse_datetime(dtinidesconto)
+    dtfim = _parse_datetime(dtfimdesconto)
 
     if tipodesconto == "NENHUM":
         vrdesconto = 0
-        dtinidesconto = None
-        dtfimdesconto = None
+        dtini = None
+        dtfim = None
 
     novo_produto = Produto(
         organizacao_id=organizacao_id,
@@ -275,8 +346,8 @@ async def criar_produto(
         urlfotoproduto=url_foto,
         tipodesconto=tipodesconto,
         vrdesconto=vrdesconto,
-        dtinidesconto=dtinidesconto,
-        dtfimdesconto=dtfimdesconto,
+        dtinidesconto=dtini,
+        dtfimdesconto=dtfim,
     )
 
     db.add(novo_produto)
