@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
+from app.models.usuario import Organizacao
 from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic, UserLogin
 from app.core.security import hash_senha, verificar_senha, criar_jwt, get_usuario_logado    
 
