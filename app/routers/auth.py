@@ -80,12 +80,22 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
 
 @router.post("/loginuser")
 def loginuser(data: UserLogin, db: Session = Depends(get_db)):
-    
     email = data.email.lower().strip()
 
-    user = db.query(Usuario).filter(Usuario.emailuser == email).first()
-    if not user:
+    row = (
+        db.query(Usuario, Organizacao.nmorganizacao)
+        .outerjoin(
+            Organizacao,
+            Organizacao.organizacao_id == Usuario.organizacao_id,
+        )
+        .filter(Usuario.emailuser == email)
+        .first()
+    )
+
+    if not row:
         raise HTTPException(status_code=401, detail="E-mail não cadastrado")
+
+    user, nmorganizacao = row
 
     if user.situsuario != "ATIVO":
         raise HTTPException(status_code=403, detail="Usuário inativo")
@@ -93,19 +103,31 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
     try:
         ok = verificar_senha(data.senha, user.senhahashuser)
     except UnknownHashError:
-        raise HTTPException(status_code=401, detail="Senha inválida (hash inválido no banco)")
+        raise HTTPException(
+            status_code=401,
+            detail="Senha inválida (hash inválido no banco)",
+        )
 
     if not ok:
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
+    token = criar_jwt(
+        {"sub": str(user.usuario_id), "role": "usuario"},
+        expires_delta=timedelta(days=1000),
+    )
 
-    token = criar_jwt({"sub": str(user.usuario_id), "role": "usuario"},expires_delta=timedelta(days=1000))
+    print(
+        'retorno um json com access_token, usuario_id, nmusuario',
+        token,
+        user.usuario_id,
+        user.nmusuario,
+    )
 
-    print('retorno um json com access_token, usuario_id, nmusuario', token, user.usuario_id,user.nmusuario)
-
-    return {"access_token"   : token,
-            "usuario_id"     : user.usuario_id,
-            "nmusuario"      : user.nmusuario,
-            "loja_id"        : user.loja_id,
-            "organizacao_id" : user.organizacao_id,}
-
+    return {
+        "access_token": token,
+        "usuario_id": user.usuario_id,
+        "nmusuario": user.nmusuario,
+        "loja_id": user.loja_id,
+        "organizacao_id": user.organizacao_id,
+        "nmorganizacao": nmorganizacao or "",
+    }
