@@ -36,12 +36,14 @@ def listar_categorias_por_loja_todas(loja_id: int, db: Session = Depends(get_db)
             Categoria.categoria_id,
             Categoria.nmcategoria,
             Categoria.sitcategoria,
+            Categoria.idordcategoria,
         )
         .filter(
             Categoria.organizacao_id == loja.organizacao_id,
             Categoria.loja_id == loja_id,
         )
         .order_by(
+            Categoria.idordcategoria.asc(),
             Categoria.nmcategoria.asc(),
         )
         .all()
@@ -49,9 +51,10 @@ def listar_categorias_por_loja_todas(loja_id: int, db: Session = Depends(get_db)
 
     return [
         {
-            "categoria_id" : r.categoria_id,
-            "nmcategoria"  : r.nmcategoria,
-            "sitcategoria" : r.sitcategoria
+            "categoria_id"   : r.categoria_id,
+            "nmcategoria"    : r.nmcategoria,
+            "sitcategoria"   : r.sitcategoria,
+            "idordcategoria" : r.idordcategoria,
         }
         for r in rows
     ]
@@ -67,6 +70,7 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
         db.query(
             Categoria.categoria_id,
             Categoria.nmcategoria,
+            Categoria.idordcategoria,
         )
         .filter(
             Categoria.organizacao_id == loja.organizacao_id,
@@ -84,6 +88,7 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
         {
             "categoria_id": r.categoria_id,
             "nmcategoria": r.nmcategoria,
+            "idordcategoria": r.idordcategoria,
         }
         for r in rows
     ]
