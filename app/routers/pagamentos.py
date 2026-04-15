@@ -5,22 +5,28 @@ import os
 import uuid
 from typing import Any, Dict
 import traceback
-from fastapi.responses import HTMLResponse
-from fastapi import Query
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.pagamentos import PagarNovoIn, PagarNovoOut
 
-from app.models.venda import Venda 
+from app.models.venda import Venda
+from app.models.produto import Produto
 
 from app.services.carrinho_service import get_carrinho
 from app.services.venda_service import criar_ou_obter_venda_idempotente
-from app.services.pagamento_status_service import set_venda_como_paga, set_venda_como_cancelada
+from app.services.pagamento_status_service import (
+    set_venda_como_paga,
+    set_venda_como_cancelada,
+)
 from app.services.cliente_service import get_cliente
+
+# ajuste este import se calcular_preco_final estiver em outro lugar
+from app.routers.produtos import calcular_preco_final
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -35,28 +41,80 @@ def _clean_digits(value: str | None) -> str:
         return ""
     return "".join(ch for ch in str(value) if ch.isdigit())
 
+
 def _to_cents(value: Any) -> int:
     try:
         return int(round(float(value) * 100))
     except Exception:
         return 0
 
+
+def _recalcular_itens_carrinho(
+    db: Session, itens: list[Dict[str, Any]]
+) -> tuple[list[Dict[str, Any]], float]:
+    itens_recalculados = []
+    total = 0.0
+
+    for it in itens:
+        produto_id = int(it.get("produto_id") or 0)
+        qt = int(it.get("qt") or 1)
+
+        produto = (
+            db.query(Produto)
+            .filter(Produto.produto_id == produto_id)
+            .first()
+        )
+
+        if not produto:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Produto {produto_id} não encontrado",
+            )
+
+        if (produto.sitproduto or "").upper() != "ATIVO":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Produto '{produto.nmproduto}' não está disponível",
+            )
+
+        vrprecofinal, descontoativo = calcular_preco_final(produto)
+        vrunitario = float(vrprecofinal)
+        subtotal = vrunitario * qt
+        total += subtotal
+
+        itens_recalculados.append(
+            {
+                "produto_id": produto.produto_id,
+                "nmproduto": produto.nmproduto,
+                "qt": qt,
+                "vrunitario": vrunitario,
+                "subtotal": subtotal,
+                "tipodesconto": produto.tipodesconto or "NENHUM",
+                "vrdesconto": float(produto.vrdesconto or 0),
+                "descontoativo": descontoativo,
+            }
+        )
+
+    return itens_recalculados, total
+
+
 def _build_order_body(
     venda_id: int,
-    carrinho: Dict[str, Any],
+    total: float,
     itens: list[Dict[str, Any]],
     cliente: Dict[str, Any],
     encrypted_card: str,
     security_code: str,
 ) -> Dict[str, Any]:
     pagbank_items = []
+
     for it in itens:
         pagbank_items.append(
             {
                 "reference_id": str(it.get("produto_id")),
                 "name": it.get("nmproduto", "Produto"),
                 "quantity": int(it.get("qt", 1)),
-                "unit_amount": _to_cents(it.get("vrprecoprod", 0)),
+                "unit_amount": _to_cents(it.get("vrunitario", 0)),
             }
         )
 
@@ -64,27 +122,47 @@ def _build_order_body(
     ddd = _clean_digits(cliente.get("ddd"))
     telefone = _clean_digits(cliente.get("telefone"))
 
+    phones = []
+    if ddd and telefone:
+        phones.append(
+            {
+                "country": "55",
+                "area": ddd,
+                "number": telefone,
+                "type": "MOBILE",
+            }
+        )
+
+    customer = {
+        "name": cliente.get("nome", "Cliente"),
+        "email": cliente.get("email", "cliente@exemplo.com"),
+    }
+
+    if cpf:
+        customer["tax_id"] = cpf
+
+    if phones:
+        customer["phones"] = phones
+
+    holder = {
+        "name": cliente.get("nome", "Cliente"),
+    }
+
+    if cpf:
+        holder["tax_id"] = cpf
+
     return {
         "reference_id": str(venda_id),
-        "customer": {
-            "name": cliente.get("nome", "Cliente"),
-            "email": cliente.get("email", "cliente@exemplo.com"),
-            "tax_id": cpf,
-            "phones": [
-                {
-                    "country": "55",
-                    "area": ddd,
-                    "number": telefone,
-                    "type": "MOBILE",
-                }
-            ],
-        },
+        "customer": customer,
         "items": pagbank_items,
         "charges": [
             {
                 "reference_id": f"charge-{venda_id}",
                 "description": f"Venda {venda_id} - ClubBar",
-                "amount": {"value": _to_cents(carrinho.get("total", 0)), "currency": "BRL"},
+                "amount": {
+                    "value": _to_cents(total),
+                    "currency": "BRL",
+                },
                 "payment_method": {
                     "type": "CREDIT_CARD",
                     "installments": 1,
@@ -92,10 +170,7 @@ def _build_order_body(
                     "card": {
                         "encrypted": encrypted_card,
                         "security_code": security_code,
-                        "holder": {
-                            "name": cliente.get("nome", "Cliente"),
-                            "tax_id": cpf,
-                        },
+                        "holder": holder,
                     },
                 },
             }
@@ -103,7 +178,9 @@ def _build_order_body(
     }
 
 
-async def _pagbank_create_order(order_body: Dict[str, Any], idempotency_key: str) -> Dict[str, Any]:
+async def _pagbank_create_order(
+    order_body: Dict[str, Any], idempotency_key: str
+) -> Dict[str, Any]:
     headers = {
         "Authorization": f"Bearer {PAGBANK_TOKEN}",
         "Content-Type": "application/json",
@@ -115,7 +192,7 @@ async def _pagbank_create_order(order_body: Dict[str, Any], idempotency_key: str
             resp = await client.post(
                 f"{PAGBANK_BASE}/orders",
                 json=order_body,
-                headers=headers
+                headers=headers,
             )
 
         print("[PAGBANK] status =", resp.status_code)
@@ -153,17 +230,15 @@ def _is_paid(data: Dict[str, Any]) -> tuple[bool, str]:
         charge_status = data.get("charges", [{}])[0].get("status") or ""
     except Exception:
         charge_status = ""
+
     paid = charge_status in {"PAID", "AUTHORIZED"}
     return paid, charge_status
 
 
 # ---------- Rota ----------
-
 @router.post("/pagar-novo", response_model=PagarNovoOut)
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
-    
-    
-    print( "pagar-novo", payload.organizacao_id)
+    print("pagar-novo", payload.organizacao_id)
 
     if not PAGBANK_TOKEN:
         raise HTTPException(status_code=500, detail="PAGBANK_TOKEN não configurado")
@@ -175,7 +250,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if not carrinho:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Carrinho não encontrado"
+                    detail="Carrinho não encontrado",
                 )
 
             itens = carrinho.get("itens") or []
@@ -183,32 +258,43 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if not isinstance(itens, list):
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Formato inválido dos itens do carrinho"
+                    detail="Formato inválido dos itens do carrinho",
                 )
 
-            print("[PAGAR_NOVO] itens =", itens)
+            print("[PAGAR_NOVO] itens carrinho =", itens)
 
             if not itens:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Carrinho vazio"
+                    detail="Carrinho vazio",
                 )
+
+            # 🔥 RECALCULA TUDO COM PREÇO ATUAL
+            itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
+
+            print("[PAGAR_NOVO] itens recalculados =", itens_recalculados)
+            print("[PAGAR_NOVO] total recalculado =", total_recalculado)
 
             minha_chave = payload.idempotency_key or str(uuid.uuid4())
 
+            # mantém sua lógica atual de venda idempotente
             venda = await criar_ou_obter_venda_idempotente(
                 db,
                 cliente_id=payload.cliente_id,
                 organizacao_id=payload.organizacao_id,
                 loja_id=payload.loja_id,
-                carrinho=carrinho,
+                carrinho={
+                    **carrinho,
+                    "total": total_recalculado,
+                    "itens": itens_recalculados,
+                },
                 chave=minha_chave,
             )
 
             if not venda:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Não foi possível criar/obter a venda"
+                    detail="Não foi possível criar/obter a venda",
                 )
 
             venda_id = int(venda["venda_id"])
@@ -217,13 +303,13 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if not cliente:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Cliente não encontrado"
+                    detail="Cliente não encontrado",
                 )
 
             order_body = _build_order_body(
                 venda_id=venda_id,
-                carrinho=carrinho,
-                itens=itens,
+                total=total_recalculado,
+                itens=itens_recalculados,
                 cliente=cliente,
                 encrypted_card=payload.encrypted_card,
                 security_code=payload.security_code,
@@ -240,7 +326,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao preparar pagamento ({type(e).__name__}): {e}"
+            detail=f"Erro ao preparar pagamento ({type(e).__name__}): {e}",
         )
 
     # =========================
@@ -257,7 +343,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         print(traceback.format_exc())
         raise HTTPException(
             status_code=502,
-            detail=f"Falha ao chamar PagBank ({type(e).__name__}): {e}"
+            detail=f"Falha ao chamar PagBank ({type(e).__name__}): {e}",
         )
 
     # =========================
@@ -270,17 +356,17 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if paid:
                 set_venda_como_paga(db, venda_id=venda_id, gateway="PAGBANK", payload=data)
             elif charge_status in {"CANCELED", "CANCELLED"}:
-                set_venda_como_cancelada(db, venda_id=venda_id, gateway="PAGBANK", payload=data)
+                set_venda_como_cancelada(
+                    db, venda_id=venda_id, gateway="PAGBANK", payload=data
+                )
     except HTTPException:
         raise
     except Exception as e:
-        # pagamento pode ter sido aprovado mas falhou pra salvar no seu banco:
-        # devolvemos erro pra você corrigir e depois você concilia via status do PagBank.
         print("[PAGAR_NOVO][ERRO] prepare:", repr(e))
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail=f"Pagamento via pagbank ok, mas falhou ao salvar venda como paga. ({type(e).__name__}): {e}"
+            detail=f"Pagamento via pagbank ok, mas falhou ao salvar venda como paga. ({type(e).__name__}): {e}",
         )
 
     return PagarNovoOut(
@@ -296,16 +382,15 @@ async def cartao_web(
     organizacao_id: int = Query(...),
     loja_id: int = Query(...),
 ):
-  
     public_key = os.getenv("PAGBANK_PUBLIC_KEY", "")
 
-    nmcliente  = "Angela Binatto"
-    nmloja     = "Remelexo Brasil"
-    cpfcliente = "29419781860" 
-    telcliente = "35999881045" 
-    nrcartao   = "4539620659922097"
-    mescartao  = '12'
-    anocartao  = '2030'
+    nmcliente = "Angela Binatto"
+    nmloja = "Remelexo Brasil"
+    cpfcliente = "29419781860"
+    telcliente = "35999881045"
+    nrcartao = "4539620659922097"
+    mescartao = "12"
+    anocartao = "2030"
 
     html = rf"""
 <!DOCTYPE html>
@@ -372,8 +457,8 @@ async def cartao_web(
     <input id="nmloja"      value="{nmloja}"     placeholder="Nome do Estabelecimento" readonly/>
     <input id="nmcliente"   value="{nmcliente}"  placeholder="Nome do Cliente" readonly />
     <input id="cpfcliente"  value="{cpfcliente}" placeholder="CPF do Cliente" />
-    <input id="telcliente"  value="{telcliente}" placeholder="Telefone do Cliente" />    
-    <input id="holder"      value="{nmcliente}"  placeholder="Nome no cartão" />    
+    <input id="telcliente"  value="{telcliente}" placeholder="Telefone do Cliente" />
+    <input id="holder"      value="{nmcliente}"  placeholder="Nome no cartão" />
     <input id="number"      value="{nrcartao}"   placeholder="Número do cartão" inputmode="numeric" />
     <input id="exp_month"   value="{mescartao}"  placeholder="MM" inputmode="numeric" />
     <input id="exp_year"    value="{anocartao}"  placeholder="AAAA" inputmode="numeric" />
@@ -495,7 +580,12 @@ async def cartao_web(
 
 
 @router.get("/pendente")
-async def pagamento_pendente(cliente_id: int, organizacao_id: int, loja_id: int, db: Session = Depends(get_db)):
+async def pagamento_pendente(
+    cliente_id: int,
+    organizacao_id: int,
+    loja_id: int,
+    db: Session = Depends(get_db),
+):
     venda = (
         db.query(Venda)
         .filter(

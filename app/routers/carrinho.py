@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import Query
+
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from sqlalchemy import text
@@ -200,6 +202,44 @@ def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
 
     return {"qt_total": qt}
 
+from datetime import datetime
+
+def calcular_preco_final(produto: Produto):
+    agora = datetime.now()
+
+    tipodesconto = (produto.tipodesconto or "NENHUM").upper()
+    vrdesconto = float(produto.vrdesconto or 0)
+    vrprecoprod = float(produto.vrprecoprod or 0)
+
+    dtini = produto.dtinidesconto
+    dtfim = produto.dtfimdesconto
+
+    desconto_ativo = False
+
+    if tipodesconto != "NENHUM":
+        dentro_periodo = True
+
+        if dtini and agora < dtini:
+            dentro_periodo = False
+
+        if dtfim and agora > dtfim:
+            dentro_periodo = False
+
+        desconto_ativo = dentro_periodo
+
+    if not desconto_ativo:
+        return vrprecoprod, False
+
+    if tipodesconto == "VALOR":
+        vrprecofinal = max(0, vrprecoprod - vrdesconto)
+    elif tipodesconto == "PERCENTUAL":
+        vrprecofinal = max(0, vrprecoprod - (vrprecoprod * vrdesconto / 100))
+    else:
+        vrprecofinal = vrprecoprod
+
+    return round(vrprecofinal, 2), True
+
+
 @router.get("/itens")
 def obter_itens_carrinho(
     request: Request,
@@ -227,7 +267,7 @@ def obter_itens_carrinho(
             "itens": [],
         }
 
-    itens = (
+    itens_db = (
         db.query(
             ItCarrinho.itcarrinho_id,
             ItCarrinho.produto_id,
@@ -235,6 +275,10 @@ def obter_itens_carrinho(
             Produto.dsproduto,
             Produto.vrprecoprod,
             Produto.urlfotoproduto,
+            Produto.tipodesconto,
+            Produto.vrdesconto,
+            Produto.dtinidesconto,
+            Produto.dtfimdesconto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
         )
@@ -243,32 +287,55 @@ def obter_itens_carrinho(
         .all()
     )
 
-    total = sum((float(i.vrprecoprod or 0) * int(i.qtitcarrinho or 0)) for i in itens)
-    qt_total = sum(int(i.qtitcarrinho or 0) for i in itens)
+    itens = []
+    total = 0.0
+    qt_total = 0
 
-    base_url = str(request.base_url).rstrip("/")
+    for i in itens_db:
+        # cria um "objeto produto fake" só para reaproveitar a função
+        class ProdutoTmp:
+            pass
 
-    return {
-        "carrinho_id": carrinho.carrinho_id,
-        "qt_total": qt_total,
-        "total": total,
-        "itens": [
+        produto_tmp = ProdutoTmp()
+        produto_tmp.vrprecoprod = i.vrprecoprod
+        produto_tmp.tipodesconto = i.tipodesconto
+        produto_tmp.vrdesconto = i.vrdesconto
+        produto_tmp.dtinidesconto = i.dtinidesconto
+        produto_tmp.dtfimdesconto = i.dtfimdesconto
+
+        vrprecofinal, descontoativo = calcular_preco_final(produto_tmp)
+
+        qt = int(i.qtitcarrinho or 0)
+        subtotal = float(vrprecofinal) * qt
+
+        total += subtotal
+        qt_total += qt
+
+        itens.append(
             {
                 "itcarrinho_id": i.itcarrinho_id,
                 "produto_id": i.produto_id,
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "vrprecoprod": float(i.vrprecoprod or 0),
-                "urlfotoproduto": f"{i.urlfotoproduto}" if i.urlfotoproduto else None,
-                "qt": i.qtitcarrinho,
-                "obs": i.dsobsitcar,
-                "subtotal": float(i.vrprecoprod or 0) * int(i.qtitcarrinho or 0),
+                "vrprecofinal": float(vrprecofinal),
+                "descontoativo": descontoativo,
+                "tipodesconto": i.tipodesconto or "NENHUM",
+                "vrdesconto": float(i.vrdesconto or 0),
+                "urlfotoproduto": f"{i.urlfotoproduto}" if i.urlfotoproduto else "",
+                "qt": qt,
+                "observacao": i.dsobsitcar or "",
+                "subtotal": round(subtotal, 2),
             }
-            for i in itens
-        ],
+        )
+
+    return {
+        "carrinho_id": carrinho.carrinho_id,
+        "qt_total": qt_total,
+        "total": round(total, 2),
+        "itens": itens,
     }
 
-from fastapi import Query
 
 @router.delete("/{carrinho_id}/produto/{produto_id}/um")
 def remover_uma_unidade(
