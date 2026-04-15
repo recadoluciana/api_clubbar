@@ -132,3 +132,13 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
         "organizacao_id": user.organizacao_id,
         "nmorganizacao": nmorganizacao or "",
     }
+
+@router.get("/debug/hora")
+def debug_hora():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    return {
+        "server_now": str(datetime.now()),
+        "br_now": str(datetime.now(ZoneInfo("America/Sao_Paulo"))),
+    }
