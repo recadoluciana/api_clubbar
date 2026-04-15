@@ -127,7 +127,7 @@ def listar_eventos_da_loja(
             "dtfimevento": evento.dtfimevento,
             "nmlocalevento": evento.nmlocalevento,
             "dsendlocevento": evento.dsendlocevento,
-            "urlbannerevento": f"{base_url}{evento.urlbannerevento}" if evento.urlbannerevento else None,
+            "urlbannerevento": f"{evento.urlbannerevento}" if evento.urlbannerevento else None,
             "statusevento": evento.statusevento,
         }
         for evento in eventos
@@ -229,7 +229,7 @@ def get_evento_por_id(
         "nmlocalevento": getattr(evento_obj, "nmlocalevento", None),
         "dsendlocevento": getattr(evento_obj, "dsendlocevento", None),
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
-        "urlbannerevento": f"{base_url}{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
+        "urlbannerevento": f"{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,
         "nmcidade": nmcidade,
