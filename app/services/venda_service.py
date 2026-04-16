@@ -70,7 +70,7 @@ async def criar_ou_obter_venda_idempotente(
         for it in itens:
             produto_id     = int(it["produto_id"])
             qtd = int(it.get("qtitcarrinho", 1) or 1)
-            vr_unit = float(it.get("vrprecoprod", 0) or 0)
+            vr_unit = float(it.get("vrunitario", 0) or 0)
             dsobsitcar = it.get("dsobsitcar")
 
 
