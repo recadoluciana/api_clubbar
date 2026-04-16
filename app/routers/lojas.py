@@ -338,6 +338,8 @@ def atualizar_loja(
     cidade_id: int | None = Form(None),
     nmloja: str | None = Form(None),
     dsbairroloja: str | None = Form(None),
+    endloja: str | None = Form(None),
+    dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
@@ -345,12 +347,6 @@ def atualizar_loja(
     db: Session = Depends(get_db),
 ):
     try:
-        print("=== UPDATE LOJA ===")
-        print("loja_id:", loja_id)
-        print("organizacao_id:", organizacao_id)
-        print("cidade_id:", cidade_id)
-        print("nmloja:", nmloja)
-        print("arquivo recebido:", urllogoloja.filename if urllogoloja else None)
 
         loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
@@ -368,6 +364,12 @@ def atualizar_loja(
 
         if dsbairroloja is not None:
             loja.dsbairroloja = dsbairroloja
+
+        if endloja is not None:
+            loja.endloja = endloja
+
+        if dsinstaloja is not None:
+            loja.dsinstaloja = dsinstaloja
 
         if nrtelloja is not None:
             loja.nrtelloja = nrtelloja
@@ -396,6 +398,8 @@ def atualizar_loja(
                 "cidade_id": loja.cidade_id,
                 "nmloja": loja.nmloja,
                 "dsbairroloja": loja.dsbairroloja,
+                "endloja": loja.endloja,
+                "dsinstaloja": loja.dsinstaloja,
                 "nrtelloja": loja.nrtelloja,
                 "dshorarioloja": loja.dshorarioloja,
                 "nrdiavalidade": loja.nrdiavalidade,
