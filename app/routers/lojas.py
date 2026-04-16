@@ -319,8 +319,11 @@ def listar_lojas_por_organizacao_todas(
         {
             "loja_id": loja.loja_id,
             "organizacao_id": loja.organizacao_id,
+            "cidade_id": loja.cidade_id,
             "nmloja": loja.nmloja,
             "dsbairroloja": loja.dsbairroloja,
+            "endloja": loja.endloja,
+            "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "dshorarioloja": loja.dshorarioloja,
             "nrdiavalidade": loja.nrdiavalidade,
