@@ -153,8 +153,7 @@ def deletar_usuario_por_organizacao(
             detail="Usuário não encontrado para esta organização",
         )
 
-    usuario.situsuario = "INATIVO"
-    db.commit()
+    db.delete()
     db.refresh(usuario)
 
     return {"detail": "Usuário inativado com sucesso"}

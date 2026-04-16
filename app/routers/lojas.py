@@ -257,6 +257,8 @@ def criar_loja(
     cidade_id: int = Form(...),
     nmloja: str = Form(...),
     dsbairroloja: str | None = Form(None),
+    endloja: str | None = Form(None),
+    dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
@@ -271,6 +273,8 @@ def criar_loja(
             cidade_id=cidade_id,
             nmloja=nmloja,
             dsbairroloja=dsbairroloja,
+            endloja=endloja,
+            dsinstaloja=dsinstaloja,
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
             nrdiavalidade=nrdiavalidade,
@@ -286,6 +290,8 @@ def criar_loja(
             "mensagem": "Loja cadastrada com sucesso",
             "loja_id": nova.loja_id,
             "urllogoloja": nova.urllogoloja,
+            "endloja": nova.endloja,
+            "dsinstaloja": nova.dsinstaloja,
         }
 
     except Exception as e:
