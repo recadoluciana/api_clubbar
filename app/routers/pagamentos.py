@@ -5,6 +5,7 @@ import os
 import uuid
 from typing import Any, Dict
 import traceback
+from fastapi import Body
 
 import httpx
 from fastapi.responses import HTMLResponse
@@ -606,3 +607,56 @@ async def pagamento_pendente(
         "venda_id": venda.venda_id,
         "sitvenda": venda.sitvenda,
     }
+
+
+@router.post("/pagar-pix")
+async def pagar_pix(
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+):
+    try:
+        cliente_id = payload.get("cliente_id")
+        organizacao_id = payload.get("organizacao_id")
+        loja_id = payload.get("loja_id")
+
+        if not cliente_id or not loja_id:
+            raise HTTPException(status_code=400, detail="Dados inválidos")
+
+        # 🔥 BUSCA CARRINHO
+        carrinho = get_carrinho(db, cliente_id, loja_id)
+
+        if not carrinho or not carrinho.get("itens"):
+            raise HTTPException(status_code=400, detail="Carrinho vazio")
+
+        itens = carrinho["itens"]
+
+        # 🔥 RECALCULA TOTAL
+        itens_recalculados, total = _recalcular_itens_carrinho(db, itens)
+
+        # 🔥 CRIA VENDA
+        venda = await criar_ou_obter_venda_idempotente(
+            db,
+            cliente_id=cliente_id,
+            organizacao_id=organizacao_id,
+            loja_id=loja_id,
+            carrinho={
+                **carrinho,
+                "total": total,
+                "itens": itens_recalculados,
+            },
+            chave=str(uuid.uuid4()),
+        )
+
+        venda_id = int(venda["venda_id"])
+
+        # 🔥 MOCK PIX (substituir depois pelo PagBank PIX)
+        return {
+            "status": "PENDENTE",
+            "venda_id": venda_id,
+            "pix_copia_cola": "00020101021226830014br.gov.bcb.pix2561pix.fake/abc123520400005303986540510.005802BR5913CLUBBAR6009SAO PAULO62070503***6304ABCD",
+            "qr_code_base64": ""
+        }
+
+    except Exception as e:
+        print("ERRO PIX:", e)
+        raise HTTPException(status_code=500, detail=str(e))
