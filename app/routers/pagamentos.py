@@ -610,7 +610,10 @@ async def pagamento_pendente(
 
 
 @router.post("/pagar-pix")
-async def pagar_pix(payload: PagarPixIn, db: Session = Depends(get_db)):
+async def pagar_pix(
+    payload: PagarPixIn = Body(...),
+    db: Session = Depends(get_db),
+):
     try:
         cliente_id = payload.cliente_id
         organizacao_id = payload.organizacao_id
