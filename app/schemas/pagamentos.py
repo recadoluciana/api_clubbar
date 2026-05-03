@@ -42,3 +42,8 @@ class PagarNovoOut(BaseModel):
     venda_id: int
     pagbank_order_id: Optional[str] = None
     status: str
+
+class PagarPixIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int

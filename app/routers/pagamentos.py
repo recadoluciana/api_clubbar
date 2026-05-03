@@ -610,11 +610,11 @@ async def pagamento_pendente(
 
 
 @router.post("/pagar-pix")
-async def pagar_pix(payload: dict, db: Session = Depends(get_db)):
+async def pagar_pix(payload: PagarPixIn, db: Session = Depends(get_db)):
     try:
-        cliente_id = payload.get("cliente_id")
-        organizacao_id = payload.get("organizacao_id")
-        loja_id = payload.get("loja_id")
+        cliente_id = payload.cliente_id
+        organizacao_id = payload.organizacao_id
+        loja_id = payload.loja_id
 
         carrinho = get_carrinho(db, cliente_id, loja_id)
 
