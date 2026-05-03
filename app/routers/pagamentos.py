@@ -610,19 +610,12 @@ async def pagamento_pendente(
 
 
 @router.post("/pagar-pix")
-async def pagar_pix(
-    payload: dict = Body(...),
-    db: Session = Depends(get_db),
-):
+async def pagar_pix(payload: dict, db: Session = Depends(get_db)):
     try:
         cliente_id = payload.get("cliente_id")
         organizacao_id = payload.get("organizacao_id")
         loja_id = payload.get("loja_id")
 
-        if not cliente_id or not loja_id:
-            raise HTTPException(status_code=400, detail="Dados inválidos")
-
-        # 🔥 BUSCA CARRINHO
         carrinho = get_carrinho(db, cliente_id, loja_id)
 
         if not carrinho or not carrinho.get("itens"):
@@ -630,10 +623,8 @@ async def pagar_pix(
 
         itens = carrinho["itens"]
 
-        # 🔥 RECALCULA TOTAL
         itens_recalculados, total = _recalcular_itens_carrinho(db, itens)
 
-        # 🔥 CRIA VENDA
         venda = await criar_ou_obter_venda_idempotente(
             db,
             cliente_id=cliente_id,
@@ -649,14 +640,78 @@ async def pagar_pix(
 
         venda_id = int(venda["venda_id"])
 
-        # 🔥 MOCK PIX (substituir depois pelo PagBank PIX)
+        cliente = get_cliente(db, cliente_id)
+
+        # 🔥 CHAMA PAGBANK PIX
+        data = await _pagbank_create_pix(
+            venda_id=venda_id,
+            total=total,
+            cliente=cliente,
+            idempotency_key=str(uuid.uuid4()),
+        )
+
+        charge = data.get("charges", [])[0]
+        pix = charge.get("payment_method", {}).get("pix", {})
+
         return {
-            "status": "PENDENTE",
+            "status": charge.get("status", "PENDENTE"),
             "venda_id": venda_id,
-            "pix_copia_cola": "00020101021226830014br.gov.bcb.pix2561pix.fake/abc123520400005303986540510.005802BR5913CLUBBAR6009SAO PAULO62070503***6304ABCD",
-            "qr_code_base64": ""
+            "pix_copia_cola": pix.get("qr_codes", [{}])[0].get("text", ""),
+            "qr_code_base64": pix.get("qr_codes", [{}])[0].get("links", [{}])[0].get("href", ""),
         }
 
     except Exception as e:
-        print("ERRO PIX:", e)
+        print("ERRO PIX REAL:", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+async def _pagbank_create_pix(
+    venda_id: int,
+    total: float,
+    cliente: Dict[str, Any],
+    idempotency_key: str,
+):
+    headers = {
+        "Authorization": f"Bearer {PAGBANK_TOKEN}",
+        "Content-Type": "application/json",
+        "x-idempotency-key": idempotency_key,
+    }
+
+    cpf = _clean_digits(cliente.get("cpf"))
+
+    body = {
+        "reference_id": str(venda_id),
+        "customer": {
+            "name": cliente.get("nome", "Cliente"),
+            "email": cliente.get("email", "cliente@teste.com"),
+            "tax_id": cpf or "12345678909",
+        },
+        "charges": [
+            {
+                "reference_id": f"pix-{venda_id}",
+                "description": f"Venda {venda_id} - ClubBar",
+                "amount": {
+                    "value": _to_cents(total),
+                    "currency": "BRL",
+                },
+                "payment_method": {
+                    "type": "PIX",
+                    "expires_in": 3600  # 1 hora
+                },
+            }
+        ],
+    }
+
+    async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
+        resp = await client.post(
+            f"{PAGBANK_BASE}/orders",
+            json=body,
+            headers=headers,
+        )
+
+    if resp.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=resp.text,
+        )
+
+    return resp.json()
