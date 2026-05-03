@@ -1,31 +1,24 @@
 import os
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="clubbar API")
 
-
-@app.middleware("http")
-async def cors_fix(request: Request, call_next):
-    if request.method == "OPTIONS":
-        response = Response()
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        return response
-
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    return response
-
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://clubbarcliente-production.up.railway.app",
+    "https://clubbaradmin-production.up.railway.app",
+    "https://bitbeer-production.up.railway.app",
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,7 +66,6 @@ app.include_router(usuarios.router)
 app.include_router(clisenha.router)
 app.include_router(clientes.router)
 
-#teste de deploay
 
 @app.get("/health")
 def health():
@@ -92,6 +84,14 @@ def serve_favicon():
 
 @app.get("/{full_path:path}")
 def serve_flutter_routes(full_path: str):
-    if full_path.startswith("uploads") or full_path.startswith("assets") or full_path == "health":
+    if (
+        full_path.startswith("uploads")
+        or full_path.startswith("assets")
+        or full_path == "health"
+        or full_path.startswith("docs")
+        or full_path.startswith("redoc")
+        or full_path.startswith("openapi.json")
+    ):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
     return FileResponse("app/static/index.html")
