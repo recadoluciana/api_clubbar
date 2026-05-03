@@ -680,6 +680,9 @@ async def _pagbank_create_pix(
 
     body = {
         "reference_id": str(venda_id),
+        "notification_urls": [
+            f"{os.getenv('APP_BASE_URL', '').rstrip('/')}/pagamentos/webhook/pagbank"
+        ],
         "customer": {
             "name": cliente.get("nome", "Cliente"),
             "email": cliente.get("email", "cliente@teste.com"),
@@ -715,3 +718,62 @@ async def _pagbank_create_pix(
         )
 
     return resp.json()
+
+from fastapi import Request
+
+@router.post("/webhook/pagbank")
+async def webhook_pagbank(request: Request, db: Session = Depends(get_db)):
+    try:
+        data = await request.json()
+
+        print("[WEBHOOK_PAGBANK] payload =", data)
+
+        reference_id = data.get("reference_id")
+        if not reference_id:
+            raise HTTPException(status_code=400, detail="reference_id não recebido")
+
+        try:
+            venda_id = int(reference_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="reference_id inválido")
+
+        charge = {}
+        charges = data.get("charges") or []
+
+        if charges and isinstance(charges, list):
+            charge = charges[0] or {}
+
+        charge_status = (charge.get("status") or data.get("status") or "").upper()
+
+        print("[WEBHOOK_PAGBANK] venda_id =", venda_id)
+        print("[WEBHOOK_PAGBANK] status =", charge_status)
+
+        if charge_status in {"PAID", "AUTHORIZED"}:
+            set_venda_como_paga(
+                db,
+                venda_id=venda_id,
+                gateway="PAGBANK",
+                payload=data,
+            )
+
+        elif charge_status in {"CANCELED", "CANCELLED", "DECLINED"}:
+            set_venda_como_cancelada(
+                db,
+                venda_id=venda_id,
+                gateway="PAGBANK",
+                payload=data,
+            )
+
+        return {
+            "ok": True,
+            "venda_id": venda_id,
+            "status": charge_status,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("[WEBHOOK_PAGBANK][ERRO]", repr(e))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
