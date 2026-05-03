@@ -611,7 +611,7 @@ async def pagamento_pendente(
 
 @router.post("/pagar-pix")
 async def pagar_pix(
-    payload: PagarPixIn = Body(...),
+    payload: dict = Body(...),
     db: Session = Depends(get_db),
 ):
     try:
