@@ -9,7 +9,7 @@ from fastapi import Body
 
 import httpx
 from fastapi.responses import HTMLResponse
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Body, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -615,9 +615,15 @@ async def pagar_pix(
     db: Session = Depends(get_db),
 ):
     try:
-        cliente_id = payload.cliente_id
-        organizacao_id = payload.organizacao_id
-        loja_id = payload.loja_id
+        cliente_id = int(payload.get("cliente_id") or 0)
+        organizacao_id = int(payload.get("organizacao_id") or 0)
+        loja_id = int(payload.get("loja_id") or 0)
+
+        if cliente_id <= 0 or organizacao_id <= 0 or loja_id <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="cliente_id, organizacao_id e loja_id são obrigatórios",
+            )
 
         carrinho = get_carrinho(db, cliente_id, loja_id)
 
@@ -625,7 +631,6 @@ async def pagar_pix(
             raise HTTPException(status_code=400, detail="Carrinho vazio")
 
         itens = carrinho["itens"]
-
         itens_recalculados, total = _recalcular_itens_carrinho(db, itens)
 
         venda = await criar_ou_obter_venda_idempotente(
@@ -644,8 +649,9 @@ async def pagar_pix(
         venda_id = int(venda["venda_id"])
 
         cliente = get_cliente(db, cliente_id)
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-        # 🔥 CHAMA PAGBANK PIX
         data = await _pagbank_create_pix(
             venda_id=venda_id,
             total=total,
@@ -653,18 +659,28 @@ async def pagar_pix(
             idempotency_key=str(uuid.uuid4()),
         )
 
-        charge = data.get("charges", [])[0]
-        pix = charge.get("payment_method", {}).get("pix", {})
+        print("[PAGBANK PIX] resposta =", data)
+
+        charge = (data.get("charges") or [{}])[0]
+        payment_method = charge.get("payment_method") or {}
+        qr_codes = payment_method.get("qr_codes") or []
+
+        qr_code = qr_codes[0] if qr_codes else {}
 
         return {
             "status": charge.get("status", "PENDENTE"),
             "venda_id": venda_id,
-            "pix_copia_cola": pix.get("qr_codes", [{}])[0].get("text", ""),
-            "qr_code_base64": pix.get("qr_codes", [{}])[0].get("links", [{}])[0].get("href", ""),
+            "pix_copia_cola": qr_code.get("text", ""),
+            "qr_code_base64": "",
+            "pagbank_order_id": data.get("id"),
+            "pagbank_charge_id": charge.get("id"),
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         print("ERRO PIX REAL:", e)
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 async def _pagbank_create_pix(
@@ -722,7 +738,6 @@ async def _pagbank_create_pix(
 
     return resp.json()
 
-from fastapi import Request
 
 @router.post("/webhook/pagbank")
 async def webhook_pagbank(request: Request, db: Session = Depends(get_db)):
