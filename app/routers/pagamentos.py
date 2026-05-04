@@ -742,9 +742,16 @@ async def _pagbank_create_pix(
         )
 
     if resp.status_code >= 400:
+        try:
+            erro = resp.json()
+        except:
+            erro = resp.text
+
+        print("ERRO PAGBANK PIX:", erro)
+
         raise HTTPException(
             status_code=502,
-            detail=resp.text,
+            detail=erro,
         )
 
     return resp.json()
