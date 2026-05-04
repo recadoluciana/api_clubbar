@@ -705,31 +705,24 @@ async def _pagbank_create_pix(
     
     body = {
         "reference_id": str(venda_id),
-
-        "notification_urls": [  # ✅ CORRETO
-            "https://bitbeer-production.up.railway.app/pagamentos/webhook/pagbank"
-        ],
-
         "customer": {
             "name": cliente.get("nome", "Cliente"),
             "email": cliente.get("email", "cliente@teste.com"),
             "tax_id": cpf or "12345678909",
         },
-
-        "charges": [
+        "items": [
             {
-                "reference_id": f"pix-{venda_id}",
-                "description": f"Venda {venda_id} - ClubBar",
+                "reference_id": str(venda_id),
+                "name": "Pedido Clubbar",
+                "quantity": 1,
+                "unit_amount": _to_cents(total),
+            }
+        ],
+        "qr_codes": [
+            {
                 "amount": {
                     "value": _to_cents(total),
-                    "currency": "BRL",
-                },
-                "payment_method": {
-                    "type": "PIX",
-                    "pix": {
-                        "expiration_date": expiration_date
-                    }
-                },
+                }
             }
         ],
     }
