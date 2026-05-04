@@ -379,209 +379,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     )
 
 
-@router.get("/cartao-web", response_class=HTMLResponse)
-async def cartao_web(
-    cliente_id: int = Query(...),
-    organizacao_id: int = Query(...),
-    loja_id: int = Query(...),
-):
-    public_key = os.getenv("PAGBANK_PUBLIC_KEY", "")
-
-    nmcliente = "Angela Binatto"
-    nmloja = "Remelexo Brasil"
-    cpfcliente = "29419781860"
-    telcliente = "35999881045"
-    nrcartao = "4539620659922097"
-    mescartao = "12"
-    anocartao = "2030"
-
-    html = rf"""
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pagamento ClubBar</title>
-  <script src="https://assets.pagseguro.com.br/checkout-sdk-js/rc/dist/browser/pagseguro.min.js"></script>
-  <style>
-    body {{
-      font-family: Arial, sans-serif;
-      background: #f6f6f6;
-      margin: 0;
-      padding: 24px;
-    }}
-    .box {{
-      max-width: 420px;
-      margin: 0 auto;
-      background: #fff;
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow: 0 4px 20px rgba(0,0,0,.08);
-    }}
-    h2 {{
-      margin-top: 0;
-      text-align: center;
-    }}
-    input {{
-      width: 100%;
-      box-sizing: border-box;
-      padding: 12px;
-      margin-bottom: 12px;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      font-size: 16px;
-    }}
-    button {{
-      width: 100%;
-      padding: 14px;
-      border: none;
-      border-radius: 10px;
-      background: #111;
-      color: #fff;
-      font-size: 16px;
-      cursor: pointer;
-    }}
-    button:disabled {{
-      opacity: .65;
-      cursor: not-allowed;
-    }}
-    .msg {{
-      margin-top: 12px;
-      text-align: center;
-      font-size: 14px;
-      word-break: break-word;
-    }}
-  </style>
-</head>
-<body>
-  <div class="box">
-    <h2>Pagar com Cartão</h2>
-
-    <input id="nmloja"      value="{nmloja}"     placeholder="Nome do Estabelecimento" readonly/>
-    <input id="nmcliente"   value="{nmcliente}"  placeholder="Nome do Cliente" readonly />
-    <input id="cpfcliente"  value="{cpfcliente}" placeholder="CPF do Cliente" />
-    <input id="telcliente"  value="{telcliente}" placeholder="Telefone do Cliente" />
-    <input id="holder"      value="{nmcliente}"  placeholder="Nome no cartão" />
-    <input id="number"      value="{nrcartao}"   placeholder="Número do cartão" inputmode="numeric" />
-    <input id="exp_month"   value="{mescartao}"  placeholder="MM" inputmode="numeric" />
-    <input id="exp_year"    value="{anocartao}"  placeholder="AAAA" inputmode="numeric" />
-    <input id="cvv" placeholder="CVV" inputmode="numeric" />
-
-    <button id="btnPagar" onclick="pagar()">Pagar agora</button>
-
-    <div class="msg" id="msg"></div>
-  </div>
-
-    <script>
-      const PUBLIC_KEY = "{public_key}";
-      const cliente_id = {cliente_id};
-      const organizacao_id = {organizacao_id};
-      const loja_id = {loja_id};
-
-      let pagando = false;
-
-      function setMsg(text) {{
-        document.getElementById("msg").innerText = text || "";
-      }}
-
-      async function pagar() {{
-        if (pagando) {{
-          return;
-        }}
-
-        pagando = true;
-
-        const btn = document.getElementById("btnPagar");
-        btn.disabled = true;
-        setMsg("Gerando cartão criptografado...");
-
-        try {{
-          const holder = document.getElementById("holder").value.trim();
-          const number = document.getElementById("number").value.replace(/\D/g, "");
-          const expMonth = document.getElementById("exp_month").value.replace(/\D/g, "");
-          const expYear = document.getElementById("exp_year").value.replace(/\D/g, "");
-          const cvv = document.getElementById("cvv").value.replace(/\D/g, "");
-
-          if (!holder || !number || !expMonth || !expYear || !cvv) {{
-            setMsg("Preencha todos os campos.");
-            return;
-          }}
-
-          const card = PagSeguro.encryptCard({{
-            publicKey: PUBLIC_KEY,
-            holder: holder,
-            number: number,
-            expMonth: expMonth,
-            expYear: expYear,
-            securityCode: cvv
-          }});
-
-          if (!card || card.hasErrors || !card.encryptedCard) {{
-            console.log("ERRO ENCRYPT:", card);
-            setMsg("Dados do cartão inválidos.");
-            return;
-          }}
-
-          setMsg("Processando pagamento...");
-          console.log("POST /pagamentos/pagar-novo");
-          console.log("encrypted len:", (card.encryptedCard || "").length);
-
-          const resp = await fetch("/pagamentos/pagar-novo", {{
-            method: "POST",
-            headers: {{
-              "Content-Type": "application/json"
-            }},
-            body: JSON.stringify({{
-              cliente_id: cliente_id,
-              organizacao_id: organizacao_id,
-              loja_id: loja_id,
-              encrypted_card: card.encryptedCard,
-              security_code: cvv,
-              idempotency_key: null
-            }})
-          }});
-
-          const data = await resp.json();
-          console.log("HTTP status:", resp.status);
-          console.log("Resposta do backend:", data);
-
-          if (!resp.ok) {{
-            const msg =
-              data?.detail?.mensagem ||
-              data?.detail?.message ||
-              data?.mensagem ||
-              data?.message ||
-              "Erro no pagamento";
-            throw new Error(msg);
-          }}
-
-          const statusPagamento =
-            data?.status ||
-            data?.sitpagvenda ||
-            data?.situacao ||
-            (data?.ok ? "PAID" : null);
-
-          if (statusPagamento === "PAID" || statusPagamento === "PAGO") {{
-            setMsg("Pagamento aprovado com sucesso");
-          }} else {{
-            setMsg(statusPagamento || "Pagamento concluído. Pode voltar para o seu app");
-          }}
-
-        }} catch (err) {{
-          console.error("Erro no pagamento:", err);
-          setMsg(err.message || "Erro ao processar pagamento");
-        }} finally {{
-          btn.disabled = false;
-          pagando = false;
-        }}
-      }}
-    </script>
-</body>
-</html>
-"""
-    return HTMLResponse(content=html)
-
-
 @router.get("/pendente")
 async def pagamento_pendente(
     cliente_id: int,
@@ -663,21 +460,20 @@ async def pagar_pix(
 
         print("[PAGBANK PIX] resposta =", data)
 
-        charge = (data.get("charges") or [{}])[0]
-        payment_method = charge.get("payment_method") or {}
-        qr_codes = payment_method.get("qr_codes") or []
+        qr_codes = data.get("qr_codes") or []
+        print("[PAGBANK PIX] qr_codes =", qr_codes)
 
         qr_code = qr_codes[0] if qr_codes else {}
 
         return {
-            "status": charge.get("status", "PENDENTE"),
+            "status": "PENDENTE",
             "venda_id": venda_id,
             "pix_copia_cola": qr_code.get("text", ""),
             "qr_code_base64": "",
             "pagbank_order_id": data.get("id"),
-            "pagbank_charge_id": charge.get("id"),
+            "pagbank_charge_id": "",
         }
-
+        
     except HTTPException:
         raise
     except Exception as e:
