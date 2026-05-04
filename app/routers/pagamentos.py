@@ -7,6 +7,8 @@ from typing import Any, Dict
 import traceback
 from fastapi import Body
 
+from datetime import datetime, timedelta, timezone
+
 import httpx
 from fastapi.responses import HTMLResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Body, Request
@@ -697,6 +699,10 @@ async def _pagbank_create_pix(
 
     cpf = _clean_digits(cliente.get("cpf"))
 
+    expiration_date = (
+        datetime.now(timezone.utc) + timedelta(hours=1)
+    ).isoformat(timespec="seconds")
+    
     body = {
         "reference_id": str(venda_id),
 
@@ -721,7 +727,7 @@ async def _pagbank_create_pix(
                 "payment_method": {
                     "type": "PIX",
                     "pix": {
-                        "expires_in": 3600
+                        "expiration_date": expiration_date
                     }
                 },
             }
