@@ -720,7 +720,9 @@ async def _pagbank_create_pix(
                 },
                 "payment_method": {
                     "type": "PIX",
-                    "expires_in": 3600
+                    "pix": {
+                        "expires_in": 3600
+                    }
                 },
             }
         ],
