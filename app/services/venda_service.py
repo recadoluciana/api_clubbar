@@ -13,9 +13,11 @@ from app.models.pagvenda import PagVenda
 
 import uuid
 
+
 def gerar_token_qr() -> str:
     return uuid.uuid4().hex
-    
+
+
 async def criar_ou_obter_venda_idempotente(
     db: Session,
     *,
@@ -25,28 +27,21 @@ async def criar_ou_obter_venda_idempotente(
     carrinho: Dict[str, Any],
     chave: Optional[str] = None,
     plataforma: str = "ANDROID",
+    metodo_pagamento: str = "CREDITO",  # PIX, CREDITO, DEBITO
 ) -> Dict[str, Any]:
-    """
-    Regras:
-    - Reaproveita venda PENDENTE mais recente do mesmo carrinho_id (idempotência).
-    - Sincroniza ItVenda com os itens atuais do carrinho.
-    - Garante PagVenda PENDENTE.
-    - Não chama PagBank.
-    - Não faz commit/rollback (rota controla com db.begin()).
-    """
-    carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
+    carrinho_id = int(carrinho.get("carrinho_id") or 0)
     itens = carrinho.get("itens", [])
     total = float(carrinho.get("total") or 0)
 
-    print ("aqui é o ultimo print", itens)
-
     if not carrinho_id:
         raise HTTPException(status_code=400, detail="carrinho_id inválido")
+
     if not itens:
         raise HTTPException(status_code=400, detail="Carrinho sem itens")
 
-    # 1) procura venda pendente desse carrinho
+    metodo_pagamento = (metodo_pagamento or "CREDITO").upper()
+
     venda = (
         db.query(Venda)
         .filter(
@@ -65,14 +60,11 @@ async def criar_ou_obter_venda_idempotente(
         agora = datetime.now()
         fim = agora + timedelta(days=30)
 
-        print("estou no _sync_itens_venda", itens)
-
         for it in itens:
-            produto_id     = int(it["produto_id"])
-            qtd = int(it.get("qtitcarrinho", 1) or 1)
+            produto_id = int(it["produto_id"])
+            qtd = int(it.get("qtitcarrinho") or it.get("qt") or 1)
             vr_unit = float(it.get("vrunitario", 0) or 0)
             dsobsitcar = it.get("dsobsitcar")
-
 
             db.add(
                 ItVenda(
@@ -87,17 +79,17 @@ async def criar_ou_obter_venda_idempotente(
                 )
             )
 
-    # 2) se existe venda pendente -> reaproveita
     if venda:
         _sync_itens_venda(venda.venda_id)
 
         venda.totalvenda = float(total)
+
         if hasattr(venda, "dsplataforma"):
             venda.dsplataforma = plataforma
+
         if chave and hasattr(venda, "idempotency_key") and not getattr(venda, "idempotency_key", None):
             venda.idempotency_key = chave
 
-        # 2.1) garante PagVenda pendente
         pag = (
             db.query(PagVenda)
             .filter(
@@ -111,24 +103,23 @@ async def criar_ou_obter_venda_idempotente(
         if not pag:
             pag = PagVenda(
                 venda_id=venda.venda_id,
-                dsmetodopag="CREDITO",
+                dsmetodopag=metodo_pagamento,
                 vrpagvenda=float(total),
                 sitpagvenda="PENDENTE",
                 reference_id=f"VENDA-{venda.venda_id}",
                 provedor="PAGBANK",
             )
-            if chave and hasattr(pag, "idempotency_key"):
-                pag.idempotency_key = chave
             db.add(pag)
             db.flush()
         else:
+            pag.dsmetodopag = metodo_pagamento
             pag.vrpagvenda = float(total)
+
             if not getattr(pag, "reference_id", None):
                 pag.reference_id = f"VENDA-{venda.venda_id}"
+
             if not getattr(pag, "provedor", None):
                 pag.provedor = "PAGBANK"
-            if chave and hasattr(pag, "idempotency_key") and not getattr(pag, "idempotency_key", None):
-                pag.idempotency_key = chave
 
         return {
             "venda_id": int(venda.venda_id),
@@ -136,7 +127,6 @@ async def criar_ou_obter_venda_idempotente(
             "reference_id": pag.reference_id,
         }
 
-    # 3) se não existe venda pendente -> cria venda + itens + pagvenda
     venda = Venda(
         loja_id=loja_id,
         organizacao_id=organizacao_id,
@@ -145,27 +135,28 @@ async def criar_ou_obter_venda_idempotente(
         sitvenda="PENDENTE",
         totalvenda=float(total),
     )
+
     if hasattr(venda, "dsplataforma"):
         venda.dsplataforma = plataforma
+
     if chave and hasattr(venda, "idempotency_key"):
         venda.idempotency_key = chave
 
     db.add(venda)
-    db.flush()  # gera venda_id
+    db.flush()
 
     _sync_itens_venda(venda.venda_id)
 
     reference_id = f"VENDA-{venda.venda_id}"
+
     pag = PagVenda(
         venda_id=venda.venda_id,
-        dsmetodopag="CREDITO",
+        dsmetodopag=metodo_pagamento,
         vrpagvenda=float(total),
         sitpagvenda="PENDENTE",
         reference_id=reference_id,
         provedor="PAGBANK",
     )
-    if chave and hasattr(pag, "idempotency_key"):
-        pag.idempotency_key = chave
 
     db.add(pag)
     db.flush()

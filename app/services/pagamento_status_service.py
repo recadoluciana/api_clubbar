@@ -31,10 +31,21 @@ def set_venda_como_paga(
     """
     payload = payload or {}
 
-    # PagBank: tenta extrair charge id/status
     charge = (payload.get("charges") or [{}])[0]
-    charge_id = charge.get("id")  # bom pra idtransacaopagvenda
-    charge_status = charge.get("status") or ""
+    qr_code = (payload.get("qr_codes") or [{}])[0]
+
+    charge_id = (
+        charge.get("id")
+        or qr_code.get("id")
+        or payload.get("id")
+    )
+
+    charge_status = (
+        charge.get("status")
+        or qr_code.get("status")
+        or payload.get("status")
+        or "PAID"
+    )
 
     venda = (
         db.query(Venda)

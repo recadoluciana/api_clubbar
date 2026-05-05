@@ -31,6 +31,8 @@ from app.services.cliente_service import get_cliente
 # ajuste este import se calcular_preco_final estiver em outro lugar
 from app.routers.produtos import calcular_preco_final
 
+from app.models.pagvenda import PagVenda
+
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 PAGBANK_BASE = os.getenv("PAGBANK_BASE", "https://sandbox.api.pagseguro.com")
@@ -414,9 +416,9 @@ async def pagar_pix(
     db: Session = Depends(get_db),
 ):
     try:
-        cliente_id = int(payload.get("cliente_id") or 0)
+        cliente_id     = int(payload.get("cliente_id") or 0)
         organizacao_id = int(payload.get("organizacao_id") or 0)
-        loja_id = int(payload.get("loja_id") or 0)
+        loja_id        = int(payload.get("loja_id") or 0)
 
         if cliente_id <= 0 or organizacao_id <= 0 or loja_id <= 0:
             raise HTTPException(
@@ -443,6 +445,7 @@ async def pagar_pix(
                 "itens": itens_recalculados,
             },
             chave=str(uuid.uuid4()),
+            metodo_pagamento="PIX",
         )
 
         venda_id = int(venda["venda_id"])
@@ -461,19 +464,49 @@ async def pagar_pix(
         print("[PAGBANK PIX] resposta =", data)
 
         qr_codes = data.get("qr_codes") or []
-        print("[PAGBANK PIX] qr_codes =", qr_codes)
-
         qr_code = qr_codes[0] if qr_codes else {}
 
+        links = data.get("links") or []
+        pay_url = ""
+
+        for link in links:
+            if link.get("rel") == "PAY":
+                pay_url = link.get("href", "")
+                break
+
+        venda_id = int(venda["venda_id"])
+        pagvenda_id = int(venda["pagvenda_id"])
+
+        pagvenda = (
+            db.query(PagVenda)
+            .filter(PagVenda.pagvenda_id == pagvenda_id)
+            .first()
+        )
+
+        if pagvenda:
+            pagvenda.dsmetodopag = "PIX"
+            pagvenda.vrpagvenda = total
+            pagvenda.sitpagvenda = "PENDENTE"
+            pagvenda.idtransacaopagvenda = data.get("id")
+            pagvenda.reference_id = str(venda_id)
+            pagvenda.checkout_id = qr_code.get("id", "")
+            pagvenda.pay_url = pay_url
+            pagvenda.provedor = "PAGBANK"
+
+            db.commit()
+            db.refresh(pagvenda)
+                
         return {
             "status": "PENDENTE",
             "venda_id": venda_id,
+            "pagvenda_id": pagvenda_id,
             "pix_copia_cola": qr_code.get("text", ""),
             "qr_code_base64": "",
             "pagbank_order_id": data.get("id"),
-            "pagbank_charge_id": "",
+            "pagbank_qrcode_id": qr_code.get("id", ""),
+            "pay_url": pay_url,
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -602,3 +635,44 @@ async def webhook_pagbank(request: Request, db: Session = Depends(get_db)):
         print("[WEBHOOK_PAGBANK][ERRO]", repr(e))
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pix/sandbox-pay/{venda_id}")
+async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
+    venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+
+    if not venda:
+        raise HTTPException(status_code=404, detail="Venda não encontrada")
+
+    order_id = venda.idpagbankorder  # ajuste para o nome real do campo
+
+    headers = {
+        "Authorization": f"Bearer {PAGBANK_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
+        pay_resp = await client.post(
+            f"{PAGBANK_BASE}/orders/{order_id}/pay",
+            headers=headers,
+            json={},
+        )
+
+    if pay_resp.status_code >= 400:
+        raise HTTPException(status_code=502, detail=pay_resp.text)
+
+    data = pay_resp.json()
+
+    set_venda_como_paga(
+        db,
+        venda_id=venda_id,
+        gateway="PAGBANK_PIX_SANDBOX",
+        payload=data,
+    )
+
+    return {
+        "ok": True,
+        "venda_id": venda_id,
+        "status": "PAID",
+        "pagbank": data,
+    }
