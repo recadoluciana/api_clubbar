@@ -26,7 +26,7 @@ from app.models.pagvenda import PagVenda
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 
-router = APIRouter(prefix="/pagamentos", tags=["pagamentos"])
+router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 PAGBANK_TOKEN = os.getenv("PAGBANK_TOKEN", "").strip()
 
