@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -12,19 +13,19 @@ from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
 
-router = APIRouter(prefix="/pagamentos", tags=["pagamentos"])
+router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 PAGBANK_TOKEN = os.getenv("PAGBANK_TOKEN")
 
 @router.post("/pagar-pix")
 async def pagar_pix(
-    payload: dict = Body(...),
+    payload: PagarPixRequest,
     db: Session = Depends(get_db),
 ):
     try:
-        cliente_id = int(payload.get("cliente_id") or 0)
-        organizacao_id = int(payload.get("organizacao_id") or 0)
-        loja_id = int(payload.get("loja_id") or 0)
+        cliente_id = payload.cliente_id
+        organizacao_id = payload.organizacao_id
+        loja_id = payload.loja_id
 
         if not cliente_id:
             raise HTTPException(400, "cliente_id obrigatório")

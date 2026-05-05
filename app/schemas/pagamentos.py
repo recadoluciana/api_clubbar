@@ -43,7 +43,7 @@ class PagarNovoOut(BaseModel):
     pagbank_order_id: Optional[str] = None
     status: str
 
-class PagarPixIn(BaseModel):
+class PagarPixRequest(BaseModel):
     cliente_id: int
     organizacao_id: int
     loja_id: int
