@@ -1,5 +1,5 @@
-from pydantic import BaseModel
 from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
 import requests
@@ -16,6 +16,11 @@ from app.models.pagvenda import PagVenda
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 PAGBANK_TOKEN = os.getenv("PAGBANK_TOKEN")
+
+class PagarPixRequest(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
 
 @router.post("/pagar-pix")
 async def pagar_pix(
