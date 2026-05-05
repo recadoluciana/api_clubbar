@@ -7,12 +7,11 @@ from typing import Any, Dict
 import traceback
 
 import httpx
-from fastapi.responses import HTMLResponse
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.pagamentos import PagarNovoIn, PagarNovoOut
+from app.schemas.pagamentos import PagarNovoIn
 
 from app.models.venda import Venda
 from app.models.produto import Produto
@@ -168,7 +167,7 @@ def _build_order_body(
                     "currency": "BRL",
                 },
                 "payment_method": {
-                    "type": "CREDIT_CARD",
+                    "type": "DEBIT_CARD" if metodo == "DEBITO" else "CREDIT_CARD",
                     "installments": 1,
                     "capture": True,
                     "card": {
