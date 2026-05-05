@@ -5,9 +5,6 @@ import os
 import uuid
 from typing import Any, Dict
 import traceback
-from fastapi import Body
-
-from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi.responses import HTMLResponse
@@ -102,7 +99,9 @@ def _recalcular_itens_carrinho(
 
     return itens_recalculados, total
 
-
+#-------------------------------------------------------------------------------
+#   constroi o body para pagamento em cartão
+#-------------------------------------------------------------------------------
 def _build_order_body(
     venda_id: int,
     total: float,
@@ -183,6 +182,41 @@ def _build_order_body(
     }
 
 
+#-------------------------------------------------------------------------------
+#   constroi o body para pagamento em pix
+#-------------------------------------------------------------------------------
+def _build_pix_order_body(
+    venda_id: int,
+    total: float,
+    cliente: Dict[str, Any],
+) -> Dict[str, Any]:
+    cpf = _clean_digits(cliente.get("cpf"))
+
+    return {
+        "reference_id": str(venda_id),
+        "customer": {
+            "name": cliente.get("nome", "Cliente"),
+            "email": cliente.get("email", "cliente@teste.com"),
+            "tax_id": cpf or "12345678909",
+        },
+        "items": [
+            {
+                "reference_id": str(venda_id),
+                "name": "Pedido Clubbar",
+                "quantity": 1,
+                "unit_amount": _to_cents(total),
+            }
+        ],
+        "qr_codes": [
+            {
+                "amount": {
+                    "value": _to_cents(total),
+                }
+            }
+        ],
+    }
+
+
 async def _pagbank_create_order(
     order_body: Dict[str, Any], idempotency_key: str
 ) -> Dict[str, Any]:
@@ -240,8 +274,10 @@ def _is_paid(data: Dict[str, Any]) -> tuple[bool, str]:
     return paid, charge_status
 
 
-# ---------- Rota ----------
-@router.post("/pagar-novo", response_model=PagarNovoOut)
+# --------------------------------------------------------------------------
+#  Rota para chamar pagbank para cartão e ou pix e gravar venda 
+# --------------------------------------------------------------------------
+@router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     print("pagar-novo", payload.organizacao_id)
 
@@ -294,6 +330,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     "itens": itens_recalculados,
                 },
                 chave=minha_chave,
+                metodo_pagamento=payload.dsmetodopag,
             )
 
             if not venda:
@@ -311,14 +348,21 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     detail="Cliente não encontrado",
                 )
 
-            order_body = _build_order_body(
-                venda_id=venda_id,
-                total=total_recalculado,
-                itens=itens_recalculados,
-                cliente=cliente,
-                encrypted_card=payload.encrypted_card,
-                security_code=payload.security_code,
-            )
+            if (payload.dsmetodopag or "").upper() == "PIX":
+                order_body = _build_pix_order_body(
+                    venda_id=venda_id,
+                    total=total_recalculado,
+                    cliente=cliente,
+                )
+            else:
+                order_body = _build_order_body(
+                    venda_id=venda_id,
+                    total=total_recalculado,
+                    itens=itens_recalculados,
+                    cliente=cliente,
+                    encrypted_card=payload.encrypted_card,
+                    security_code=payload.security_code,
+                )
 
         print("[PAGAR_NOVO] venda_id =", venda_id)
         print("[PAGAR_NOVO] idempotency_key =", minha_chave)
@@ -352,27 +396,91 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         )
 
     # =========================
-    # FASE 3 (DB curto): grava status / marca como paga
+    # FASE 3 (DB curto): grava retorno / marca como paga
     # =========================
+    metodo = (payload.dsmetodopag or "CREDITO").upper()
     paid, charge_status = _is_paid(data)
 
     try:
         with db.begin():
+            pagvenda_id = int(venda["pagvenda_id"])
+
+            pag = (
+                db.query(PagVenda)
+                .filter(PagVenda.pagvenda_id == pagvenda_id)
+                .with_for_update()
+                .first()
+            )
+
+            if not pag:
+                raise HTTPException(status_code=404, detail="PagVenda não encontrada")
+
+            if metodo == "PIX":
+                qr_codes = data.get("qr_codes") or []
+                qr_code = qr_codes[0] if qr_codes else {}
+
+                links = data.get("links") or []
+                pay_url = ""
+
+                for link in links:
+                    if link.get("rel") == "PAY":
+                        pay_url = link.get("href", "")
+                        break
+
+                pag.dsmetodopag = "PIX"
+                pag.idtransacaopagvenda = data.get("id")  # ORDE_xxx
+                pag.checkout_id = qr_code.get("id", "")   # QRCO_xxx
+                pag.pay_url = pay_url
+                pag.reference_id = str(venda_id)
+                pag.provedor = "PAGBANK"
+
+            else:
+                charge = (data.get("charges") or [{}])[0]
+
+                pag.dsmetodopag = "DEBITO" if metodo == "DEBITO" else "CREDITO"
+                pag.idtransacaopagvenda = charge.get("id")  # CHAR_xxx
+                pag.checkout_id = data.get("id")            # ORDE_xxx
+                pag.pay_url = None
+                pag.reference_id = str(venda_id)
+                pag.provedor = "PAGBANK"
+
             if paid:
-                set_venda_como_paga(db, venda_id=venda_id, gateway="PAGBANK", payload=data)
+                set_venda_como_paga(
+                    db,
+                    venda_id=venda_id,
+                    gateway="PAGBANK",
+                    payload=data,
+                )
             elif charge_status in {"CANCELED", "CANCELLED"}:
                 set_venda_como_cancelada(
-                    db, venda_id=venda_id, gateway="PAGBANK", payload=data
+                    db,
+                    venda_id=venda_id,
+                    gateway="PAGBANK",
+                    payload=data,
                 )
+
     except HTTPException:
         raise
     except Exception as e:
-        print("[PAGAR_NOVO][ERRO] prepare:", repr(e))
+        print("[PAGAR_NOVO][ERRO_FASE_3]", repr(e))
         print(traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail=f"Pagamento via pagbank ok, mas falhou ao salvar venda como paga. ({type(e).__name__}): {e}",
+            detail=f"Pagamento via PagBank ok, mas falhou ao atualizar banco. ({type(e).__name__}): {e}",
         )
+
+    if metodo == "PIX":
+        qr_codes = data.get("qr_codes") or []
+        qr_code = qr_codes[0] if qr_codes else {}
+
+        return {
+            "venda_id": venda_id,
+            "pagbank_order_id": data.get("id"),
+            "status": "PENDENTE",
+            "pix_copia_cola": qr_code.get("text", ""),
+            "pagbank_qrcode_id": qr_code.get("id", ""),
+            "pay_url": pay_url,
+        }
 
     return PagarNovoOut(
         venda_id=venda_id,
@@ -408,175 +516,6 @@ async def pagamento_pendente(
         "venda_id": venda.venda_id,
         "sitvenda": venda.sitvenda,
     }
-
-
-@router.post("/pagar-pix")
-async def pagar_pix(
-    payload: dict = Body(...),
-    db: Session = Depends(get_db),
-):
-    try:
-        cliente_id     = int(payload.get("cliente_id") or 0)
-        organizacao_id = int(payload.get("organizacao_id") or 0)
-        loja_id        = int(payload.get("loja_id") or 0)
-
-        if cliente_id <= 0 or organizacao_id <= 0 or loja_id <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="cliente_id, organizacao_id e loja_id são obrigatórios",
-            )
-
-        carrinho = get_carrinho(db, cliente_id, loja_id)
-
-        if not carrinho or not carrinho.get("itens"):
-            raise HTTPException(status_code=400, detail="Carrinho vazio")
-
-        itens = carrinho["itens"]
-        itens_recalculados, total = _recalcular_itens_carrinho(db, itens)
-
-        venda = await criar_ou_obter_venda_idempotente(
-            db,
-            cliente_id=cliente_id,
-            organizacao_id=organizacao_id,
-            loja_id=loja_id,
-            carrinho={
-                **carrinho,
-                "total": total,
-                "itens": itens_recalculados,
-            },
-            chave=str(uuid.uuid4()),
-            metodo_pagamento="PIX",
-        )
-
-        venda_id = int(venda["venda_id"])
-
-        cliente = get_cliente(db, cliente_id)
-        if not cliente:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado")
-
-        data = await _pagbank_create_pix(
-            venda_id=venda_id,
-            total=total,
-            cliente=cliente,
-            idempotency_key=str(uuid.uuid4()),
-        )
-
-        print("[PAGBANK PIX] resposta =", data)
-
-        qr_codes = data.get("qr_codes") or []
-        qr_code = qr_codes[0] if qr_codes else {}
-
-        links = data.get("links") or []
-        pay_url = ""
-
-        for link in links:
-            if link.get("rel") == "PAY":
-                pay_url = link.get("href", "")
-                break
-
-        venda_id = int(venda["venda_id"])
-        pagvenda_id = int(venda["pagvenda_id"])
-
-        pagvenda = (
-            db.query(PagVenda)
-            .filter(PagVenda.pagvenda_id == pagvenda_id)
-            .first()
-        )
-
-        if pagvenda:
-            pagvenda.dsmetodopag = "PIX"
-            pagvenda.vrpagvenda = total
-            pagvenda.sitpagvenda = "PENDENTE"
-            pagvenda.idtransacaopagvenda = data.get("id")
-            pagvenda.reference_id = str(venda_id)
-            pagvenda.checkout_id = qr_code.get("id", "")
-            pagvenda.pay_url = pay_url
-            pagvenda.provedor = "PAGBANK"
-
-            db.commit()
-            db.refresh(pagvenda)
-                
-        return {
-            "status": "PENDENTE",
-            "venda_id": venda_id,
-            "pagvenda_id": pagvenda_id,
-            "pix_copia_cola": qr_code.get("text", ""),
-            "qr_code_base64": "",
-            "pagbank_order_id": data.get("id"),
-            "pagbank_qrcode_id": qr_code.get("id", ""),
-            "pay_url": pay_url,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print("ERRO PIX REAL:", e)
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def _pagbank_create_pix(
-    venda_id: int,
-    total: float,
-    cliente: Dict[str, Any],
-    idempotency_key: str,
-):
-    headers = {
-        "Authorization": f"Bearer {PAGBANK_TOKEN}",
-        "Content-Type": "application/json",
-        "x-idempotency-key": idempotency_key,
-    }
-
-    cpf = _clean_digits(cliente.get("cpf"))
-
-    expiration_date = (
-        datetime.now(timezone.utc) + timedelta(hours=1)
-    ).isoformat(timespec="seconds")
-    
-    body = {
-        "reference_id": str(venda_id),
-        "customer": {
-            "name": cliente.get("nome", "Cliente"),
-            "email": cliente.get("email", "cliente@teste.com"),
-            "tax_id": cpf or "12345678909",
-        },
-        "items": [
-            {
-                "reference_id": str(venda_id),
-                "name": "Pedido Clubbar",
-                "quantity": 1,
-                "unit_amount": _to_cents(total),
-            }
-        ],
-        "qr_codes": [
-            {
-                "amount": {
-                    "value": _to_cents(total),
-                }
-            }
-        ],
-    }
-
-    async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
-        resp = await client.post(
-            f"{PAGBANK_BASE}/orders",
-            json=body,
-            headers=headers,
-        )
-
-    if resp.status_code >= 400:
-        try:
-            erro = resp.json()
-        except:
-            erro = resp.text
-
-        print("ERRO PAGBANK PIX:", erro)
-
-        raise HTTPException(
-            status_code=502,
-            detail=erro,
-        )
-
-    return resp.json()
 
 
 @router.post("/webhook/pagbank")
@@ -639,40 +578,64 @@ async def webhook_pagbank(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/pix/sandbox-pay/{venda_id}")
 async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
-    venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
-
-    if not venda:
-        raise HTTPException(status_code=404, detail="Venda não encontrada")
-
-    order_id = venda.idpagbankorder  # ajuste para o nome real do campo
-
-    headers = {
-        "Authorization": f"Bearer {PAGBANK_TOKEN}",
-        "Content-Type": "application/json",
-    }
-
-    async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
-        pay_resp = await client.post(
-            f"{PAGBANK_BASE}/orders/{order_id}/pay",
-            headers=headers,
-            json={},
+    try:
+        pag = (
+            db.query(PagVenda)
+            .filter(
+                PagVenda.venda_id == venda_id,
+                PagVenda.dsmetodopag == "PIX",
+                PagVenda.sitpagvenda == "PENDENTE",
+            )
+            .order_by(PagVenda.pagvenda_id.desc())
+            .first()
         )
 
-    if pay_resp.status_code >= 400:
-        raise HTTPException(status_code=502, detail=pay_resp.text)
+        if not pag:
+            raise HTTPException(status_code=404, detail="PIX pendente não encontrado")
 
-    data = pay_resp.json()
+        if not pag.pay_url:
+            raise HTTPException(status_code=400, detail="pay_url não gravado na PagVenda")
 
-    set_venda_como_paga(
-        db,
-        venda_id=venda_id,
-        gateway="PAGBANK_PIX_SANDBOX",
-        payload=data,
-    )
+        headers = {
+            "Authorization": f"Bearer {PAGBANK_TOKEN}",
+            "Content-Type": "application/json",
+        }
 
-    return {
-        "ok": True,
-        "venda_id": venda_id,
-        "status": "PAID",
-        "pagbank": data,
-    }
+        async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
+            pay_resp = await client.post(
+                pag.pay_url,
+                headers=headers,
+                json={},
+            )
+
+        if pay_resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=pay_resp.text)
+
+        data = pay_resp.json()
+
+        resultado = set_venda_como_paga(
+            db,
+            venda_id=venda_id,
+            gateway="PAGBANK",
+            payload=data,
+        )
+
+        db.commit()
+
+        return {
+            "ok": True,
+            "venda_id": venda_id,
+            "pagvenda_id": int(pag.pagvenda_id),
+            "status": "PAGO",
+            "resultado": resultado,
+            "pagbank": data,
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print("[PIX SANDBOX PAY][ERRO]", repr(e))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))

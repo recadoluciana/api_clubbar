@@ -36,7 +36,7 @@ class PagarNovoIn(BaseModel):
     payment_method: Literal["CREDIT_CARD", "DEBIT_CARD"] = "CREDIT_CARD"
 
     idempotency_key: Optional[str] = None
-
+    dsmetodopag: str = "CREDITO"
 
 class PagarNovoOut(BaseModel):
     venda_id: int
