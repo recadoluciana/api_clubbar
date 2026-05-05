@@ -284,6 +284,8 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     if not PAGBANK_TOKEN:
         raise HTTPException(status_code=500, detail="PAGBANK_TOKEN não configurado")
 
+    pay_url = ""
+
     try:
         with db.begin():
             carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
@@ -613,14 +615,14 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
 
         data = pay_resp.json()
 
-        resultado = set_venda_como_paga(
-            db,
-            venda_id=venda_id,
-            gateway="PAGBANK",
-            payload=data,
-        )
+        with db.begin():
+            resultado = set_venda_como_paga(
+                db,
+                venda_id=venda_id,
+                gateway="PAGBANK",
+                payload=data,
+            )
 
-        db.commit()
 
         return {
             "ok": True,
@@ -632,10 +634,8 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
         }
 
     except HTTPException:
-        db.rollback()
         raise
     except Exception as e:
-        db.rollback()
         print("[PIX SANDBOX PAY][ERRO]", repr(e))
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
