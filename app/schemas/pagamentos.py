@@ -31,7 +31,7 @@ class PagarNovoIn(BaseModel):
     organizacao_id: int
     loja_id: int
 
-    encrypted_card: Optional[EncryptedStr]
+    encrypted_card: Optional[EncryptedStr] = None
     security_code: Optional[CVVStr] = None
     payment_method: Literal["CREDIT_CARD", "DEBIT_CARD"] = "CREDIT_CARD"
 
