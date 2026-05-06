@@ -606,7 +606,19 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
             pay_resp = await client.post(
                 pag.pay_url,
                 headers=headers,
-                json={},
+                json={
+                    "charges": [
+                        {
+                            "amount": {
+                                "value": int(float(pag.vrpagvenda) * 100),
+                                "currency": "BRL",
+                            },
+                            "payment_method": {
+                                "type": "PIX",
+                            },
+                        }
+                    ]
+                },
             )
 
         if pay_resp.status_code >= 400:
