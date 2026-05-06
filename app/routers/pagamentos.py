@@ -615,6 +615,7 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
                             },
                             "payment_method": {
                                 "type": "PIX",
+                                "pix": {},
                             },
                         }
                     ]
