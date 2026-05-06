@@ -7,12 +7,12 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 PAGBANK_TOKEN = os.getenv("PAGBANK_TOKEN", "").strip()
-PAGBANK_ENV = os.getenv("PAGBANK_ENV", "sandbox").strip().lower()
+PAGBANK_BASE  = os.getenv("PAGBANK_BASE", "sandbox").strip().lower()
 
 
 def pagbank_base_url() -> str:
     # Sandbox: https://sandbox.api.pagseguro.com/ | Produção: https://api.pagseguro.com :contentReference[oaicite:3]{index=3}
-    if PAGBANK_ENV in ("prod", "production"):
+    if PAGBANK_BASE in ("prod", "production"):
         return "https://api.pagseguro.com"
     return "https://sandbox.api.pagseguro.com"
 
@@ -77,7 +77,7 @@ async def criar_checkout_externo(
 
     async with httpx.AsyncClient(timeout=25) as client:
 
-        print("PAGBANK_ENV:", PAGBANK_ENV)
+        print("PAGBANK_BASE:", PAGBANK_BASE)
 
         url = f"{pagbank_base_url()}/checkouts"
         

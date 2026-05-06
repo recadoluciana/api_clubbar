@@ -253,10 +253,22 @@ async def _pagbank_create_order(
                 detail={
                     "pagbank_status": resp.status_code,
                     "body": body,
+                    "raw_text": resp.text,
                 },
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            print("[PAGBANK] resposta não JSON =", resp.text)
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "pagbank_status": resp.status_code,
+                    "body_text": resp.text,
+                },
+            )
+
         print("[PAGBANK] body ok =", data)
         return data
 
