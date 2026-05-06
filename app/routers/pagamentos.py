@@ -608,27 +608,31 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
 
             expiration_date = (
                 datetime.now(timezone.utc) + timedelta(hours=1)
-            ).isoformat(timespec="seconds")
+            ).isoformat(timespec="milliseconds")
+
+            body_pay = {
+                "charges": [
+                    {
+                        "amount": {
+                            "value": int(float(pag.vrpagvenda) * 100),
+                            "currency": "BRL",
+                        },
+                        "payment_method": {
+                            "type": "PIX",
+                            "pix": {
+                                "expiration_date": expiration_date,
+                            },
+                        },
+                    }
+                ]
+            }
+
+            print("[PIX SANDBOX PAY] BODY =", body_pay)
 
             pay_resp = await client.post(
                 pag.pay_url,
                 headers=headers,
-                json={
-                    "charges": [
-                        {
-                            "amount": {
-                                "value": int(float(pag.vrpagvenda) * 100),
-                                "currency": "BRL",
-                            },
-                            "payment_method": {
-                                "type": "PIX",
-                                "pix": {
-                                    "expires_in": 3600,
-                                },
-                            },
-                        }
-                    ]
-                },
+                json=body_pay,
             )
 
         if pay_resp.status_code >= 400:
