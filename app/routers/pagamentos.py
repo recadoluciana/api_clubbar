@@ -7,6 +7,7 @@ from typing import Any, Dict
 import traceback
 
 import httpx
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.orm import Session
 
@@ -227,6 +228,7 @@ async def _pagbank_create_order(
 
     try:
         async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
+            
             resp = await client.post(
                 f"{PAGBANK_BASE}/orders",
                 json=order_body,
@@ -603,6 +605,11 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
         }
 
         async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
+
+            expiration_date = (
+                datetime.now(timezone.utc) + timedelta(hours=1)
+            ).isoformat(timespec="seconds")
+
             pay_resp = await client.post(
                 pag.pay_url,
                 headers=headers,
@@ -615,7 +622,9 @@ async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
                             },
                             "payment_method": {
                                 "type": "PIX",
-                                "pix": {},
+                                "pix": {
+                                    "expiration_date": expiration_date,
+                                },
                             },
                         }
                     ]
