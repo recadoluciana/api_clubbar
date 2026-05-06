@@ -214,6 +214,9 @@ def _build_pix_order_body(
                 }
             }
         ],
+        "notification_urls": [
+            "https://bitbeer-production.up.railway.app/pagamentos/webhook/pagbank"
+        ],
     }
 
 
