@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.pagamentos import PagarNovoIn
+from app.schemas.pagamentos import PagarNovoIn, PagarNovoOut
 
 from app.models.venda import Venda
 from app.models.produto import Produto
