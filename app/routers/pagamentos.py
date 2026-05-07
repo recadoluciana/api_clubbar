@@ -109,10 +109,10 @@ def _build_order_body(
     cliente: Dict[str, Any],
     encrypted_card: str,
     security_code: str,
+    metodo: str = "CREDITO",
 ) -> Dict[str, Any]:
     
     pagbank_items = []
-    metodo = "CREDITO"
 
     for it in itens:
         pagbank_items.append(
@@ -382,6 +382,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     cliente=cliente,
                     encrypted_card=payload.encrypted_card,
                     security_code=payload.security_code,
+                    metodo=(payload.dsmetodopag or "CREDITO").upper(),
                 )
 
         print("[PAGAR_NOVO] venda_id =", venda_id)
