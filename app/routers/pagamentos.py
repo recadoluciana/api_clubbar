@@ -110,7 +110,9 @@ def _build_order_body(
     encrypted_card: str,
     security_code: str,
 ) -> Dict[str, Any]:
+    
     pagbank_items = []
+    metodo = "CREDITO"
 
     for it in itens:
         pagbank_items.append(
