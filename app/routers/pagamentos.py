@@ -388,6 +388,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         print("[PAGAR_NOVO] venda_id =", venda_id)
         print("[PAGAR_NOVO] idempotency_key =", minha_chave)
         print("[PAGAR_NOVO] encrypted_len =", len(payload.encrypted_card or ""))
+        print("[PAGAR_NOVO] request =", order_body)
 
     except HTTPException:
         raise
