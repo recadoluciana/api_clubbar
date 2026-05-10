@@ -239,7 +239,8 @@ def calcular_preco_final(produto: Produto):
 
     return round(vrprecofinal, 2), True
 
-
+# busca os itens do carrinho que pode ser produto ou ingresso
+# falta colocar join para trazer a foto do evento quando o produto for ingresso.
 @router.get("/itens")
 def obter_itens_carrinho(
     request: Request,
