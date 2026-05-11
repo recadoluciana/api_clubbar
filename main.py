@@ -34,7 +34,6 @@ from app.routers import categoria
 from app.routers import carrinho
 from app.routers import compras
 from app.routers import pagamentos
-from app.routers import pagbank_webhook
 from app.routers import entregas
 from app.routers import eventos
 from app.routers import eventolotes
@@ -58,7 +57,6 @@ app.include_router(categoria.router)
 app.include_router(carrinho.router)
 app.include_router(compras.router)
 app.include_router(pagamentos.router)
-app.include_router(pagbank_webhook.router)
 app.include_router(entregas.router)
 app.include_router(eventos.router)
 app.include_router(eventolotes.router)
