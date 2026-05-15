@@ -19,6 +19,7 @@ from app.services.venda_service import criar_ou_obter_venda_idempotente
 from app.services.cliente_service import get_cliente
 from app.services.mercadopago_service import criar_pagamento_pix
 from app.services.mercadopago_service import consultar_pagamento
+from app.services.pagamento_status_service import set_venda_como_paga
 
 from app.routers.produtos import calcular_preco_final
 
