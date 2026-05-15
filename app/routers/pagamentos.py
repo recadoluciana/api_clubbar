@@ -276,3 +276,46 @@ async def consultar_mercadopago_por_venda(
         "venda_id": venda_id,
         "status": status_mp or "PENDENTE",
     }
+
+
+@router.post("/mock-aprovar/{venda_id}")
+async def mock_aprovar_pagamento(
+    venda_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        with db.begin():
+            resultado = set_venda_como_paga(
+                db,
+                venda_id=venda_id,
+                gateway="MERCADOPAGO",
+                payload={
+                    "id": f"MOCK_MP_{venda_id}",
+                    "status": "approved",
+                    "charges": [
+                        {
+                            "id": f"MOCK_MP_{venda_id}",
+                            "status": "PAID",
+                        }
+                    ],
+                    "mercadopago": {
+                        "id": f"MOCK_MP_{venda_id}",
+                        "status": "approved",
+                        "external_reference": str(venda_id),
+                    },
+                },
+            )
+
+        return {
+            "ok": True,
+            "venda_id": venda_id,
+            "status": "PAGO",
+            "resultado": resultado,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("[MOCK APROVAR][ERRO]", repr(e))
+        raise HTTPException(status_code=500, detail=str(e))
