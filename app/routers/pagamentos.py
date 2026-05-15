@@ -1,71 +1,43 @@
 # app/routers/pagamentos.py
 from __future__ import annotations
 
-import os
+import traceback
 import uuid
 from typing import Any, Dict
-import traceback
 
-import httpx
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas.pagamentos import PagarNovoIn, PagarNovoOut
-
+from app.schemas.pagamentos import PagarNovoIn
 from app.models.venda import Venda
 from app.models.produto import Produto
+from app.models.pagvenda import PagVenda
 
 from app.services.carrinho_service import get_carrinho
 from app.services.venda_service import criar_ou_obter_venda_idempotente
-from app.services.pagamento_status_service import (
-    set_venda_como_paga,
-    set_venda_como_cancelada,
-)
 from app.services.cliente_service import get_cliente
+from app.services.mercadopago_service import criar_pagamento_pix
 
-# ajuste este import se calcular_preco_final estiver em outro lugar
 from app.routers.produtos import calcular_preco_final
-
-from app.models.pagvenda import PagVenda
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
-PAGBANK_BASE = os.getenv("PAGBANK_BASE", "https://sandbox.api.pagseguro.com")
-PAGBANK_TOKEN = os.getenv("PAGBANK_TOKEN", "")
-PAGBANK_TIMEOUT = float(os.getenv("PAGBANK_TIMEOUT", "30"))
-
-
-# ---------- Helpers (internos) ----------
-def _clean_digits(value: str | None) -> str:
-    if not value:
-        return ""
-    return "".join(ch for ch in str(value) if ch.isdigit())
-
-
-def _to_cents(value: Any) -> int:
-    try:
-        return int(round(float(value) * 100))
-    except Exception:
-        return 0
-
 
 def _recalcular_itens_carrinho(
-    db: Session, itens: list[Dict[str, Any]]
+    db: Session,
+    itens: list[Dict[str, Any]],
 ) -> tuple[list[Dict[str, Any]], float]:
     itens_recalculados = []
     total = 0.0
 
     for it in itens:
         produto_id = int(it.get("produto_id") or 0)
-        qt = int(it.get("qt") or 1)
+        qt = int(it.get("qt") or it.get("qtitcarrinho") or 1)
 
-        produto = (
-            db.query(Produto)
-            .filter(Produto.produto_id == produto_id)
-            .first()
-        )
+        produto = db.query(Produto).filter(
+            Produto.produto_id == produto_id
+        ).first()
 
         if not produto:
             raise HTTPException(
@@ -89,220 +61,28 @@ def _recalcular_itens_carrinho(
                 "produto_id": produto.produto_id,
                 "nmproduto": produto.nmproduto,
                 "qt": qt,
+                "qtitcarrinho": qt,
                 "vrunitario": vrunitario,
                 "subtotal": subtotal,
                 "tipodesconto": produto.tipodesconto or "NENHUM",
                 "vrdesconto": float(produto.vrdesconto or 0),
                 "descontoativo": descontoativo,
+                "dsobsitcar": it.get("dsobsitcar") or it.get("obs"),
             }
         )
 
     return itens_recalculados, total
 
-#-------------------------------------------------------------------------------
-#   constroi o body para pagamento em cartão
-#-------------------------------------------------------------------------------
-def _build_order_body(
-    venda_id: int,
-    total: float,
-    itens: list[Dict[str, Any]],
-    cliente: Dict[str, Any],
-    encrypted_card: str,
-    security_code: str,
-    metodo: str = "CREDITO",
-) -> Dict[str, Any]:
-    
-    pagbank_items = []
 
-    for it in itens:
-        pagbank_items.append(
-            {
-                "reference_id": str(it.get("produto_id")),
-                "name": it.get("nmproduto", "Produto"),
-                "quantity": int(it.get("qt", 1)),
-                "unit_amount": _to_cents(it.get("vrunitario", 0)),
-            }
-        )
-
-    cpf = _clean_digits(cliente.get("cpf"))
-    ddd = _clean_digits(cliente.get("ddd"))
-    telefone = _clean_digits(cliente.get("telefone"))
-
-    phones = []
-    if ddd and telefone:
-        phones.append(
-            {
-                "country": "55",
-                "area": ddd,
-                "number": telefone,
-                "type": "MOBILE",
-            }
-        )
-
-    customer = {
-        "name": cliente.get("nome", "Cliente"),
-        "email": cliente.get("email", "cliente@exemplo.com"),
-    }
-
-    if cpf:
-        customer["tax_id"] = cpf
-
-    if phones:
-        customer["phones"] = phones
-
-    holder = {
-        "name": cliente.get("nome", "Cliente"),
-    }
-
-    if cpf:
-        holder["tax_id"] = cpf
-
-    return {
-        "reference_id": str(venda_id),
-        "customer": customer,
-        "items": pagbank_items,
-        "charges": [
-            {
-                "reference_id": f"charge-{venda_id}",
-                "description": f"Venda {venda_id} - ClubBar",
-                "amount": {
-                    "value": _to_cents(total),
-                    "currency": "BRL",
-                },
-                "payment_method": {
-                    "type": "DEBIT_CARD" if metodo == "DEBITO" else "CREDIT_CARD",
-                    "installments": 1,
-                    "capture": True,
-                    "card": {
-                        "encrypted": encrypted_card,
-                        "security_code": security_code,
-                        "holder": holder,
-                    },
-                },
-            }
-        ],
-    }
-
-
-#-------------------------------------------------------------------------------
-#   constroi o body para pagamento em pix
-#-------------------------------------------------------------------------------
-def _build_pix_order_body(
-    venda_id: int,
-    total: float,
-    cliente: Dict[str, Any],
-) -> Dict[str, Any]:
-    cpf = _clean_digits(cliente.get("cpf"))
-
-    return {
-        "reference_id": str(venda_id),
-        "customer": {
-            "name": cliente.get("nome", "Cliente"),
-            "email": cliente.get("email", "cliente@teste.com"),
-            "tax_id": cpf or "12345678909",
-        },
-        "items": [
-            {
-                "reference_id": str(venda_id),
-                "name": "Pedido Clubbar",
-                "quantity": 1,
-                "unit_amount": _to_cents(total),
-            }
-        ],
-        "qr_codes": [
-            {
-                "amount": {
-                    "value": _to_cents(total),
-                }
-            }
-        ],
-        "notification_urls": [
-            "https://bitbeer-production.up.railway.app/pagamentos/webhook/pagbank"
-        ],
-    }
-
-
-async def _pagbank_create_order(
-    order_body: Dict[str, Any], idempotency_key: str
-) -> Dict[str, Any]:
-    headers = {
-        "Authorization": f"Bearer {PAGBANK_TOKEN}",
-        "Content-Type": "application/json",
-        "x-idempotency-key": idempotency_key,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
-            
-            resp = await client.post(
-                f"{PAGBANK_BASE}/orders",
-                json=order_body,
-                headers=headers,
-            )
-
-        print("[PAGBANK] status =", resp.status_code)
-
-        if resp.status_code >= 400:
-            try:
-                body = resp.json()
-            except Exception:
-                body = {"text": resp.text}
-
-            print("[PAGBANK] body erro =", body)
-
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={
-                    "pagbank_status": resp.status_code,
-                    "body": body,
-                    "raw_text": resp.text,
-                },
-            )
-
-        try:
-            data = resp.json()
-        except Exception:
-            print("[PAGBANK] resposta não JSON =", resp.text)
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "pagbank_status": resp.status_code,
-                    "body_text": resp.text,
-                },
-            )
-
-        print("[PAGBANK] body ok =", data)
-        return data
-
-    except httpx.HTTPError as e:
-        print("[PAGBANK][HTTP_ERROR]", repr(e))
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Falha ao chamar PagBank: {e}",
-        )
-
-
-def _is_paid(data: Dict[str, Any]) -> tuple[bool, str]:
-    try:
-        charge_status = data.get("charges", [{}])[0].get("status") or ""
-    except Exception:
-        charge_status = ""
-
-    paid = charge_status in {"PAID", "AUTHORIZED"}
-    return paid, charge_status
-
-
-# --------------------------------------------------------------------------
-#  Rota para chamar pagbank para cartão e ou pix e gravar venda 
-# --------------------------------------------------------------------------
 @router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
-    print("pagar-novo", payload.organizacao_id)
+    metodo = (payload.dsmetodopag or "PIX").upper()
 
-    if not PAGBANK_TOKEN:
-        raise HTTPException(status_code=500, detail="PAGBANK_TOKEN não configurado")
-
-    pay_url = ""
+    if metodo != "PIX":
+        raise HTTPException(
+            status_code=400,
+            detail="Cartão Mercado Pago será implementado no próximo passo. Por enquanto use PIX.",
+        )
 
     try:
         with db.begin():
@@ -322,23 +102,19 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     detail="Formato inválido dos itens do carrinho",
                 )
 
-            print("[PAGAR_NOVO] itens carrinho =", itens)
-
             if not itens:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Carrinho vazio",
                 )
 
-            # 🔥 RECALCULA TUDO COM PREÇO ATUAL
-            itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
-
-            print("[PAGAR_NOVO] itens recalculados =", itens_recalculados)
-            print("[PAGAR_NOVO] total recalculado =", total_recalculado)
+            itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
+                db,
+                itens,
+            )
 
             minha_chave = payload.idempotency_key or str(uuid.uuid4())
 
-            # mantém sua lógica atual de venda idempotente
             venda = await criar_ou_obter_venda_idempotente(
                 db,
                 cliente_id=payload.cliente_id,
@@ -350,83 +126,30 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     "itens": itens_recalculados,
                 },
                 chave=minha_chave,
-                metodo_pagamento=payload.dsmetodopag,
+                metodo_pagamento="PIX",
             )
 
-            if not venda:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Não foi possível criar/obter a venda",
-                )
-
             venda_id = int(venda["venda_id"])
+            pagvenda_id = int(venda["pagvenda_id"])
 
             cliente = get_cliente(db, payload.cliente_id)
+
             if not cliente:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Cliente não encontrado",
                 )
 
-            if (payload.dsmetodopag or "").upper() == "PIX":
-                order_body = _build_pix_order_body(
-                    venda_id=venda_id,
-                    total=total_recalculado,
-                    cliente=cliente,
-                )
-            else:
-                order_body = _build_order_body(
-                    venda_id=venda_id,
-                    total=total_recalculado,
-                    itens=itens_recalculados,
-                    cliente=cliente,
-                    encrypted_card=payload.encrypted_card,
-                    security_code=payload.security_code,
-                    metodo=(payload.dsmetodopag or "CREDITO").upper(),
-                )
-
-        print("[PAGAR_NOVO] venda_id =", venda_id)
-        print("[PAGAR_NOVO] idempotency_key =", minha_chave)
-        print("[PAGAR_NOVO] encrypted_len =", len(payload.encrypted_card or ""))
-        print("[PAGAR_NOVO] request =", order_body)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print("[PAGAR_NOVO][ERRO_PREPARO]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erro ao preparar pagamento ({type(e).__name__}): {e}",
+        data = await criar_pagamento_pix(
+            valor=total_recalculado,
+            descricao=f"Venda {venda_id} - Clubbar",
+            email=cliente.get("email"),
+            nome=cliente.get("nome"),
+            cpf=cliente.get("cpf"),
+            venda_id=venda_id,
         )
 
-    # =========================
-    # FASE 2 (sem DB/lock): chama PagBank
-    # =========================
-    try:
-        data = await _pagbank_create_order(order_body, minha_chave)
-    except HTTPException as e:
-        print("[PAGAR_NOVO][ERRO_PAGBANK] HTTPException")
-        print("[PAGAR_NOVO][ERRO_PAGBANK] detail =", e.detail)
-        raise
-    except Exception as e:
-        print("[PAGAR_NOVO][ERRO_CALL_PAGBANK]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=502,
-            detail=f"Falha ao chamar PagBank ({type(e).__name__}): {e}",
-        )
-
-    # =========================
-    # FASE 3 (DB curto): grava retorno / marca como paga
-    # =========================
-    metodo = (payload.dsmetodopag or "CREDITO").upper()
-    paid, charge_status = _is_paid(data)
-
-    try:
         with db.begin():
-            pagvenda_id = int(venda["pagvenda_id"])
-
             pag = (
                 db.query(PagVenda)
                 .filter(PagVenda.pagvenda_id == pagvenda_id)
@@ -435,80 +158,41 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             )
 
             if not pag:
-                raise HTTPException(status_code=404, detail="PagVenda não encontrada")
-
-            if metodo == "PIX":
-                qr_codes = data.get("qr_codes") or []
-                qr_code = qr_codes[0] if qr_codes else {}
-
-                links = data.get("links") or []
-                pay_url = ""
-
-                for link in links:
-                    if link.get("rel") == "PAY":
-                        pay_url = link.get("href", "")
-                        break
-
-                pag.dsmetodopag = "PIX"
-                pag.idtransacaopagvenda = data.get("id")  # ORDE_xxx
-                pag.checkout_id = qr_code.get("id", "")   # QRCO_xxx
-                pag.pay_url = pay_url
-                pag.reference_id = str(venda_id)
-                pag.provedor = "PAGBANK"
-
-            else:
-                charge = (data.get("charges") or [{}])[0]
-
-                pag.dsmetodopag = "DEBITO" if metodo == "DEBITO" else "CREDITO"
-                pag.idtransacaopagvenda = charge.get("id")  # CHAR_xxx
-                pag.checkout_id = data.get("id")            # ORDE_xxx
-                pag.pay_url = None
-                pag.reference_id = str(venda_id)
-                pag.provedor = "PAGBANK"
-
-            if paid:
-                set_venda_como_paga(
-                    db,
-                    venda_id=venda_id,
-                    gateway="PAGBANK",
-                    payload=data,
-                )
-            elif charge_status in {"CANCELED", "CANCELLED"}:
-                set_venda_como_cancelada(
-                    db,
-                    venda_id=venda_id,
-                    gateway="PAGBANK",
-                    payload=data,
+                raise HTTPException(
+                    status_code=404,
+                    detail="PagVenda não encontrada",
                 )
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        print("[PAGAR_NOVO][ERRO_FASE_3]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail=f"Pagamento via PagBank ok, mas falhou ao atualizar banco. ({type(e).__name__}): {e}",
-        )
+            pag.dsmetodopag = "PIX"
+            pag.sitpagvenda = "PENDENTE"
+            pag.idtransacaopagvenda = str(data.get("id"))
+            pag.checkout_id = str(data.get("id"))
+            pag.reference_id = str(venda_id)
+            pag.pay_url = None
+            pag.provedor = "OUTRO"
 
-    if metodo == "PIX":
-        qr_codes = data.get("qr_codes") or []
-        qr_code = qr_codes[0] if qr_codes else {}
+        point = data.get("point_of_interaction") or {}
+        transaction_data = point.get("transaction_data") or {}
 
         return {
             "venda_id": venda_id,
-            "pagbank_order_id": data.get("id"),
+            "pagamento_id": data.get("id"),
             "status": "PENDENTE",
-            "pix_copia_cola": qr_code.get("text", ""),
-            "pagbank_qrcode_id": qr_code.get("id", ""),
-            "pay_url": pay_url,
+            "pix_copia_cola": transaction_data.get("qr_code", ""),
+            "qr_code_base64": transaction_data.get("qr_code_base64", ""),
+            "ticket_url": transaction_data.get("ticket_url", ""),
         }
 
-    return PagarNovoOut(
-        venda_id=venda_id,
-        pagbank_order_id=data.get("id"),
-        status=charge_status or "UNKNOWN",
-    )
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("[PAGAR_NOVO][ERRO]", repr(e))
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao gerar pagamento Mercado Pago ({type(e).__name__}): {e}",
+        )
 
 
 @router.get("/pendente")
@@ -538,148 +222,3 @@ async def pagamento_pendente(
         "venda_id": venda.venda_id,
         "sitvenda": venda.sitvenda,
     }
-
-
-@router.post("/webhook/pagbank")
-async def webhook_pagbank(request: Request, db: Session = Depends(get_db)):
-    try:
-        data = await request.json()
-
-        print("[WEBHOOK_PAGBANK] payload =", data)
-
-        reference_id = data.get("reference_id")
-        if not reference_id:
-            raise HTTPException(status_code=400, detail="reference_id não recebido")
-
-        try:
-            venda_id = int(reference_id)
-        except Exception:
-            raise HTTPException(status_code=400, detail="reference_id inválido")
-
-        charge = {}
-        charges = data.get("charges") or []
-
-        if charges and isinstance(charges, list):
-            charge = charges[0] or {}
-
-        charge_status = (charge.get("status") or data.get("status") or "").upper()
-
-        print("[WEBHOOK_PAGBANK] venda_id =", venda_id)
-        print("[WEBHOOK_PAGBANK] status =", charge_status)
-
-        if charge_status in {"PAID", "AUTHORIZED"}:
-            set_venda_como_paga(
-                db,
-                venda_id=venda_id,
-                gateway="PAGBANK",
-                payload=data,
-            )
-
-        elif charge_status in {"CANCELED", "CANCELLED", "DECLINED"}:
-            set_venda_como_cancelada(
-                db,
-                venda_id=venda_id,
-                gateway="PAGBANK",
-                payload=data,
-            )
-
-        return {
-            "ok": True,
-            "venda_id": venda_id,
-            "status": charge_status,
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        print("[WEBHOOK_PAGBANK][ERRO]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/pix/sandbox-pay/{venda_id}")
-async def pix_sandbox_pay(venda_id: int, db: Session = Depends(get_db)):
-    try:
-        pag = (
-            db.query(PagVenda)
-            .filter(
-                PagVenda.venda_id == venda_id,
-                PagVenda.dsmetodopag == "PIX",
-                PagVenda.sitpagvenda == "PENDENTE",
-            )
-            .order_by(PagVenda.pagvenda_id.desc())
-            .first()
-        )
-
-        if not pag:
-            raise HTTPException(status_code=404, detail="PIX pendente não encontrado")
-
-        if not pag.pay_url:
-            raise HTTPException(status_code=400, detail="pay_url não gravado na PagVenda")
-
-        headers = {
-            "Authorization": f"Bearer {PAGBANK_TOKEN}",
-            "Content-Type": "application/json",
-        }
-
-        async with httpx.AsyncClient(timeout=PAGBANK_TIMEOUT) as client:
-
-            expiration_date = (
-                datetime.now(timezone.utc) + timedelta(hours=1)
-            ).isoformat(timespec="milliseconds")
-
-            body_pay = {
-                "charges": [
-                    {
-                        "amount": {
-                            "value": int(float(pag.vrpagvenda) * 100),
-                            "currency": "BRL",
-                        },
-                        "payment_method": {
-                            "type": "PIX",
-                            "pix": {
-                                "expiration_date": expiration_date,
-                            },
-                        },
-                    }
-                ]
-            }
-
-            print("[PIX SANDBOX PAY] BODY =", body_pay)
-
-            pay_resp = await client.post(
-                pag.pay_url,
-                headers=headers,
-                json=body_pay,
-            )
-
-        if pay_resp.status_code >= 400:
-            raise HTTPException(status_code=502, detail=pay_resp.text)
-
-        data = pay_resp.json()
-
-        with db.begin():
-            resultado = set_venda_como_paga(
-                db,
-                venda_id=venda_id,
-                gateway="PAGBANK",
-                payload=data,
-            )
-
-
-        return {
-            "ok": True,
-            "venda_id": venda_id,
-            "pagvenda_id": int(pag.pagvenda_id),
-            "status": "PAGO",
-            "resultado": resultado,
-            "pagbank": data,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print("[PIX SANDBOX PAY][ERRO]", repr(e))
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
