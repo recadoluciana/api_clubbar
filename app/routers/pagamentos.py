@@ -223,3 +223,56 @@ async def pagamento_pendente(
         "venda_id": venda.venda_id,
         "sitvenda": venda.sitvenda,
     }
+
+
+@router.post("/mercadopago/consultar/{venda_id}")
+async def consultar_mercadopago_por_venda(
+    venda_id: int,
+    db: Session = Depends(get_db),
+):
+    pag = (
+        db.query(PagVenda)
+        .filter(PagVenda.venda_id == venda_id)
+        .order_by(PagVenda.pagvenda_id.desc())
+        .first()
+    )
+
+    if not pag:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado")
+
+    if not pag.idtransacaopagvenda:
+        raise HTTPException(status_code=400, detail="ID do pagamento não encontrado")
+
+    data = await consultar_pagamento(str(pag.idtransacaopagvenda))
+
+    status_mp = (data.get("status") or "").lower()
+
+    if status_mp == "approved":
+        with db.begin():
+            resultado = set_venda_como_paga(
+                db,
+                venda_id=venda_id,
+                gateway="OUTRO",
+                payload={
+                    "charges": [
+                        {
+                            "id": str(data.get("id")),
+                            "status": "PAID",
+                        }
+                    ],
+                    "mercadopago": data,
+                },
+            )
+
+        return {
+            "ok": True,
+            "venda_id": venda_id,
+            "status": "PAGO",
+            "resultado": resultado,
+        }
+
+    return {
+        "ok": True,
+        "venda_id": venda_id,
+        "status": status_mp or "PENDENTE",
+    }
