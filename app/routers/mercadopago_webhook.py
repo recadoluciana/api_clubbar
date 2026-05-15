@@ -37,7 +37,13 @@ async def mercadopago_webhook(
 
         data = body.get("data") or {}
 
-        pagamento_id = data.get("id")
+        pagamento_id = (
+            data.get("id")
+            or body.get("id")
+        )
+
+        if pagamento_id:
+            pagamento_id = str(pagamento_id).strip()
 
         if not pagamento_id:
             return {
@@ -45,7 +51,20 @@ async def mercadopago_webhook(
                 "mensagem": "Webhook sem payment id",
             }
 
-        pagamento = await consultar_pagamento(str(pagamento_id))
+        print("[MP WEBHOOK] pagamento_id =", pagamento_id)
+        
+        try:
+
+            pagamento = await consultar_pagamento(str(pagamento_id))
+
+        except Exception as e:
+
+            print("[MP WEBHOOK] pagamento ainda indisponível")
+
+            return {
+                "ok": True,
+                "mensagem": "Pagamento ainda não disponível",
+            }
 
         print("[MP WEBHOOK] pagamento =", pagamento)
 
