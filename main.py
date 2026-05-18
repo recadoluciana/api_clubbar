@@ -5,28 +5,6 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="clubbar API")
-
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "https://clubbarcliente-production.up.railway.app",
-    "https://clubbaradmin-production.up.railway.app",
-    "https://bitbeer-production.up.railway.app",
-]
-
-allow_origins=[
-    "https://clubbarsite-production.up.railway.app",
-    "https://clubbar.com.br",
-    "https://www.clubbar.com.br",
-    "https://clubbarcliente-production.up.railway.app",
-    "https://clubbaradmin-production.up.railway.app",
-    "https://bitbeer-production.up.railway.app",
-],
-allow_credentials=True,
-allow_methods=["*"],
-allow_headers=["*"],
-
 import app.models as app_models
 
 from app.routers import cidades
@@ -46,6 +24,27 @@ from app.routers import clisenha
 from app.routers import clientes
 from app.routers import mercadopago_webhook
 from app.routers import parceiros
+
+app = FastAPI(title="clubbar API")
+
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://clubbarsite-production.up.railway.app",
+    "https://clubbar.com.br",
+    "https://www.clubbar.com.br",
+    "https://clubbarcliente-production.up.railway.app",
+    "https://clubbaradmin-production.up.railway.app",
+    "https://bitbeer-production.up.railway.app",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 os.makedirs("/app/uploads", exist_ok=True)
 os.makedirs("app/static", exist_ok=True)
@@ -71,6 +70,7 @@ app.include_router(clisenha.router)
 app.include_router(clientes.router)
 app.include_router(mercadopago_webhook.router)
 app.include_router(parceiros.router)
+
 
 @app.get("/health")
 def health():
