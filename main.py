@@ -15,13 +15,17 @@ origins = [
     "https://bitbeer-production.up.railway.app",
 ]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+allow_origins=[
+    "https://clubbarsite-production.up.railway.app",
+    "https://clubbar.com.br",
+    "https://www.clubbar.com.br",
+    "https://clubbarcliente-production.up.railway.app",
+    "https://clubbaradmin-production.up.railway.app",
+    "https://bitbeer-production.up.railway.app",
+],
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],
 
 import app.models as app_models
 
