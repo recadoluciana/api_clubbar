@@ -1,12 +1,27 @@
-#lead_parceiro.py
-from sqlalchemy import Column, BigInteger, String, DateTime, Text, text
+# app/models/lead_parceiro.py
+
+import enum
+from sqlalchemy import Column, BigInteger, String, DateTime, Text, text, Enum
 from app.database import Base
+
+
+class StatusLeadParceiro(str, enum.Enum):
+    NOVO = "NOVO"
+    CONTATADO = "CONTATADO"
+    NEGOCIANDO = "NEGOCIANDO"
+    CONVERTIDO = "CONVERTIDO"
+    PERDIDO = "PERDIDO"
 
 
 class LeadParceiro(Base):
     __tablename__ = "lead_parceiro"
 
-    lead_parceiro_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    lead_parceiro_id = Column(
+        BigInteger,
+        primary_key=True,
+        index=True,
+        autoincrement=True,
+    )
 
     nome_responsavel = Column(String(120), nullable=False)
     nome_estabelecimento = Column(String(160), nullable=False)
@@ -17,7 +32,21 @@ class LeadParceiro(Base):
     cidade = Column(String(120), nullable=False)
 
     mensagem = Column(Text, nullable=True)
-    status = Column(String(30), nullable=False, server_default=text("'NOVO'"))
 
-    dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
-    dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
+    status = Column(
+        Enum(StatusLeadParceiro),
+        nullable=False,
+        server_default=text("'NOVO'"),
+    )
+
+    dtcriacao = Column(
+        DateTime,
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+    dtultatu = Column(
+        DateTime,
+        nullable=True,
+        server_onupdate=text("CURRENT_TIMESTAMP"),
+    )

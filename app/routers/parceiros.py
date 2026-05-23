@@ -36,13 +36,18 @@ def criar_interesse_parceiro(
         telefone=payload.telefone.strip(),
         email=payload.email.strip().lower(),
         cidade=payload.cidade.strip(),
-        mensagem=payload.mensagem.strip() if payload.mensagem else None,
-        status="NOVO",
+        mensagem=payload.mensagem.strip() if payload.mensagem else None
     )
 
     db.add(lead)
+
+    print(payload.model_dump())
+
     db.commit()
+
     db.refresh(lead)
+
+    print(lead.status)
 
     return lead
 
