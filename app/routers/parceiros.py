@@ -41,13 +41,13 @@ def criar_interesse_parceiro(
 
     db.add(lead)
 
-    print(payload.model_dump())
+    #print(payload.model_dump())
 
     db.commit()
 
     db.refresh(lead)
 
-    print(lead.status)
+    #print(lead.status)
 
     return lead
 

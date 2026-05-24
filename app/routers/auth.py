@@ -113,24 +113,29 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
     token = criar_jwt(
-        {"sub": str(user.usuario_id), "role": "usuario"},
+        {
+            "sub": str(user.usuario_id),
+            "role": "usuario",
+            "dscargo": user.dscargo,
+            "organizacao_id": user.organizacao_id,
+        },
         expires_delta=timedelta(days=1000),
-    )
-
-    print(
-        'retorno um json com access_token, usuario_id, nmusuario',
-        token,
-        user.usuario_id,
-        user.nmusuario,
     )
 
     return {
         "access_token": token,
+        "token_type": "bearer",
+
         "usuario_id": user.usuario_id,
         "nmusuario": user.nmusuario,
+        "emailuser": user.emailuser,
+
         "loja_id": user.loja_id,
         "organizacao_id": user.organizacao_id,
         "nmorganizacao": nmorganizacao or "",
+
+        "dscargo": user.dscargo,
+        "is_superadmin": user.dscargo == "SUPERADMIN",
     }
 
 @router.get("/debug/hora")
