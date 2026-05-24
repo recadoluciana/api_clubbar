@@ -24,6 +24,7 @@ from app.routers import clisenha
 from app.routers import clientes
 from app.routers import mercadopago_webhook
 from app.routers import parceiros
+from app.routers import superadmin
 
 app = FastAPI(title="clubbar API")
 
@@ -70,6 +71,7 @@ app.include_router(clisenha.router)
 app.include_router(clientes.router)
 app.include_router(mercadopago_webhook.router)
 app.include_router(parceiros.router)
+app.include_router(superadmin.router)
 
 
 @app.get("/health")
