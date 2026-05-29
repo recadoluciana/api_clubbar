@@ -52,6 +52,8 @@ async def criar_pagamento_pix(
 ) -> Dict[str, Any]:
     cpf_limpo = _clean_digits(cpf)
 
+    print("[PIX] valor =", valor, type(valor))
+    
     body = {
         "transaction_amount": float(valor),
         "description": descricao,
@@ -69,6 +71,7 @@ async def criar_pagamento_pix(
             "number": cpf_limpo,
         }
 
+    
     idempotency_key = str(uuid.uuid4())
 
     async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
