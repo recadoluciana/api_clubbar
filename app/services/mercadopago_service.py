@@ -52,11 +52,26 @@ async def criar_pagamento_pix(
 ) -> Dict[str, Any]:
     cpf_limpo = _clean_digits(cpf)
 
-    print("[PIX] valor = ", round(float(valor),2), type(valor))
+    valor = round(float(valor or 0), 2)
+
+    if valor <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Valor PIX inválido: {valor}",
+        )
+
+    email = (email or "").strip()
+    nome = (nome or "").strip()
+
+    if not email or "@" not in email:
+        email = "cliente@clubbar.com.br"
+
+    if not nome:
+        nome = "Cliente"
 
     body = {
-        "transaction_amount": round(float(valor),2),
-        "description": descricao,
+        "transaction_amount": valor,
+        "description": descricao or f"Compra Clubbar #{venda_id}",
         "payment_method_id": "pix",
         "external_reference": str(venda_id),
         "payer": {
@@ -65,7 +80,9 @@ async def criar_pagamento_pix(
         },
     }
 
-    if cpf_limpo:
+    print("[PIX] BODY =", body)
+
+    if cpf_limpo and len(cpf_limpo) == 11:
         body["payer"]["identification"] = {
             "type": "CPF",
             "number": cpf_limpo,
