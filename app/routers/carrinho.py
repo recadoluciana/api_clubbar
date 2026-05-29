@@ -11,8 +11,10 @@ from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+from app.models.evento import Evento
 
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut
+
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
@@ -53,6 +55,13 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             print("entrei na funcao produto por loja", produto)
             return produto
 
+        evento = (
+            db.query(Evento)
+            .filter(Evento.evento_id == lote.evento_id)
+            .first()
+        )
+
+        nome_evento = evento.nmtituloevento if evento else "Evento"
 
         # cria produto “espelho”
         produto = Produto(
@@ -60,7 +69,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             loja_id=loja_id,
             lote_id=lote_id,
             idtipoproduto="I",
-            nmproduto=lote.nmlote,
+            nmproduto=f"{nome_evento} - {lote.nmlote}",
+            dsproduto=f"Ingresso para {nome_evento}",
             vrprecoprod=lote.vrprecolote,
             sitproduto="ATIVO",
         )
