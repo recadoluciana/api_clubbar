@@ -53,9 +53,9 @@ async def criar_pagamento_pix(
     cpf_limpo = _clean_digits(cpf)
 
     print("[PIX] valor =", valor, type(valor))
-    
+
     body = {
-        "transaction_amount": float(valor),
+        "transaction_amount": round(float(valor),2),
         "description": descricao,
         "payment_method_id": "pix",
         "external_reference": str(venda_id),
