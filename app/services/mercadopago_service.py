@@ -73,7 +73,7 @@ async def criar_pagamento_pix(
         "transaction_amount": valor,
         "description": descricao or f"Compra Clubbar #{venda_id}",
         "payment_method_id": "pix",
-        "external_reference": "teste123",
+        "external_reference": str(venda_id),
         "payer": {
             "email": email,
             "first_name": nome,
