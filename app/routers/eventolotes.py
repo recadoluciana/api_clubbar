@@ -24,14 +24,6 @@ def listar_lotes_evento(
         db.query(EventoLote)
         .filter(EventoLote.evento_id == evento_id)
         .filter(EventoLote.statuslote == "ATIVO")
-        .filter(
-            (EventoLote.dtiniciovenda == None)  # noqa: E711
-            | (EventoLote.dtiniciovenda <= agora)
-        )
-        .filter(
-            (EventoLote.dtfimvenda == None)  # noqa: E711
-            | (EventoLote.dtfimvenda >= agora)
-        )
         .order_by(EventoLote.vrprecolote.asc())
         .all()
     )
