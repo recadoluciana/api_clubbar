@@ -52,7 +52,7 @@ async def criar_pagamento_pix(
 ) -> Dict[str, Any]:
     cpf_limpo = _clean_digits(cpf)
 
-    print("[PIX] valor =", valor, type(valor))
+    print("[PIX] valor = ", valor, type(valor))
 
     body = {
         "transaction_amount": round(float(valor),2),
