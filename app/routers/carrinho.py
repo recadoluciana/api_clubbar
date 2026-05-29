@@ -92,6 +92,13 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             if not produto:
                 raise
         return produto
+    # ----------------------------------- fim da função 
+        
+    if payload.idtipoproduto == "P" and not payload.produto_id:
+        raise HTTPException(status_code=400, detail="produto_id obrigatório")
+
+    if payload.idtipoproduto == "I" and not payload.lote_id:
+        raise HTTPException(status_code=400, detail="lote_id obrigatório")
 
     # 1) define produto_id_final dependendo do tipo
     if payload.idtipoproduto == "P":
