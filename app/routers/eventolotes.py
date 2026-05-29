@@ -18,7 +18,6 @@ def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
 ):
-    agora = datetime.now()
 
     lotes = (
         db.query(EventoLote)
