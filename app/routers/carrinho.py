@@ -61,7 +61,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             .first()
         )
 
-        nome_evento = evento.nmtituloevento if evento else "Evento"
+        nome_evento   = evento.nmtituloevento if evento else "Evento"
+        banner_evento = evento.urlbannerevento if evento else None
 
         # cria produto “espelho”
         produto = Produto(
@@ -72,6 +73,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             nmproduto=f"{nome_evento} - {lote.nmlote}",
             dsproduto=f"Ingresso para {nome_evento}",
             vrprecoprod=lote.vrprecolote,
+            urlfotoproduto=banner_evento,
             sitproduto="ATIVO",
         )
         db.add(produto)
