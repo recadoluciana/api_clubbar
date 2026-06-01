@@ -70,13 +70,18 @@ async def criar_pagamento_pix(
     if not nome:
         nome = "Cliente"
 
+    email_pix = email
+
+    if MERCADOPAGO_ACCESS_TOKEN.startswith("TEST-"):
+        email_pix = "test_user_123@testuser.com"
+
     body = {
         "transaction_amount": valor,
         "description": descricao or f"Compra Clubbar #{venda_id}",
         "payment_method_id": "pix",
         "payer": {
             # para produção, volte para: email
-            "email": "test_user_123@testuser.com",
+            "email": email_pix,
             "first_name": nome,
         },
     }
