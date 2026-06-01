@@ -70,11 +70,9 @@ async def mercadopago_webhook(
 
         external_reference = pagamento.get("external_reference")
 
-        if not external_reference:
-            return {
-                "ok": True,
-                "mensagem": "Pagamento sem external_reference",
-            }
+        if not external_reference or not str(external_reference).isdigit():
+            print("[MP WEBHOOK] external_reference inválido:", external_reference)
+            return {"ok": True, "msg": "external_reference ignorado"}
 
         venda_id = int(external_reference)
 

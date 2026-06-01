@@ -75,7 +75,7 @@ async def criar_pagamento_pix(
         "payment_method_id": "pix",
         #"external_reference": str(venda_id),
         "payer": {
-            "email": email,
+            "email": 'test_user_123@testuser.com', #email,
             "first_name": nome,
         },
     }
