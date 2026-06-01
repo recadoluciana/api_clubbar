@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import asyncio
 from typing import Any, Dict
 
 import httpx
@@ -73,14 +74,12 @@ async def criar_pagamento_pix(
         "transaction_amount": valor,
         "description": descricao or f"Compra Clubbar #{venda_id}",
         "payment_method_id": "pix",
-        #"external_reference": str(venda_id),
         "payer": {
-            "email": 'test_user_123@testuser.com', #email,
+            # para produção, volte para: email
+            "email": "test_user_123@testuser.com",
             "first_name": nome,
         },
     }
-
-    print("[PIX] BODY =", body)
 
     if cpf_limpo and len(cpf_limpo) == 11:
         body["payer"]["identification"] = {
@@ -88,28 +87,37 @@ async def criar_pagamento_pix(
             "number": cpf_limpo,
         }
 
-    
-    idempotency_key = str(uuid.uuid4())
+    print("[PIX] BODY =", body)
 
-    async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
-        response = await client.post(
-            f"{MERCADOPAGO_BASE}/v1/payments",
-            json=body,
-            headers=_headers(idempotency_key),
-        )
+    last_data: Dict[str, Any] = {}
 
-    try:
-        data = response.json()
-    except Exception:
-        data = {"raw": response.text}
+    for tentativa in range(1, 4):
+        idempotency_key = str(uuid.uuid4())
 
-    print("[MERCADOPAGO PIX] STATUS =", response.status_code)
-    print("[MERCADOPAGO PIX] RESPONSE =", data)
+        async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
+            response = await client.post(
+                f"{MERCADOPAGO_BASE}/v1/payments",
+                json=body,
+                headers=_headers(idempotency_key),
+            )
 
-    if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=data)
+        try:
+            data = response.json()
+        except Exception:
+            data = {"raw": response.text}
 
-    return data
+        last_data = data
+
+        print("[MERCADOPAGO PIX] TENTATIVA =", tentativa)
+        print("[MERCADOPAGO PIX] STATUS =", response.status_code)
+        print("[MERCADOPAGO PIX] RESPONSE =", data)
+
+        if response.status_code < 400:
+            return data
+
+        await asyncio.sleep(1)
+
+    raise HTTPException(status_code=502, detail=last_data)
 
 
 async def consultar_pagamento(
@@ -133,4 +141,3 @@ async def consultar_pagamento(
         raise HTTPException(status_code=502, detail=data)
 
     return data
-
