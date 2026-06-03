@@ -16,14 +16,14 @@ class Usuario(Base):
 
     organizacao_id = Column(
         BigInteger,
-        ForeignKey("organizacao.organizacao_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        ForeignKey("organizacao.organizacao_id", ondelete="RESTRICT", onupdate="RESTRICT"),
         nullable=False,
         index=True,
     )
 
     loja_id = Column(
         BigInteger,
-        ForeignKey("loja.loja_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        ForeignKey("loja.loja_id", ondelete="RESTRICT", onupdate="RESTRICT"),
         nullable=True,
         index=True,
     )
@@ -34,7 +34,7 @@ class Usuario(Base):
 
     senhahashuser = Column(String(255), nullable=False)
 
-    dscargo = Column(String(50), nullable=False, default="FUNCIONARIO")
+    dscargo = Column(String(50), nullable=False, default="BARMAN")
 
     situsuario = Column(String(15), nullable=False, default="ATIVO")
 
