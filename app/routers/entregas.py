@@ -12,6 +12,7 @@ from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.cliente import Cliente
+from app.models.usuario import Usuario
 
 from app.schemas.entregas import LojaRetiradaOut
 
@@ -97,38 +98,66 @@ def listar_itens_nao_entregues(
 
 
 @router.post("/{itvenda_id}/entregarproduto")
-def entregar_produto(itvenda_id: int, usuario_id: int, db: Session = Depends(get_db)):
-    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+def entregar_produto(
+    itvenda_id: int,
+    usuario_id: int,
+    db: Session = Depends(get_db),
+):
+    item = (
+        db.query(ItVenda)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .first()
+    )
+
     if not item:
-        raise HTTPException(status_code=404, detail="Item não encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="Item não encontrado",
+        )
+
+    usuario = (
+        db.query(Usuario)
+        .filter(Usuario.usuario_id == usuario_id)
+        .first()
+    )
+
+    if not usuario:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário não encontrado",
+        )
 
     # evita entregar 2x
-    if getattr(item, "identregaitvenda", None) == "SIM":
+    if item.identregaitvenda == "SIM":
         return {
             "ok": True,
             "already": True,
             "msg": "Este produto já foi entregue.",
             "itvenda_id": itvenda_id,
-            "dtentregaitvenda": item.dtentregaitvenda.isoformat() if item.dtentregaitvenda else None,
-            "userentregaitvenda": getattr(item, "userentregaitvenda", None),
-            "nmuserentregaitvenda": getattr(item, "nmuserentregaitvenda", None),
+            "dtentregaitvenda": (
+                item.dtentregaitvenda.isoformat()
+                if item.dtentregaitvenda
+                else None
+            ),
+            "userentregaitvenda": item.userentregaitvenda,
+            "nmuserentregaitvenda": item.nmuserentregaitvenda,
         }
 
-    item.identregaitvenda     = "SIM"
-    item.dtentregaitvenda     = datetime.now()
-    item.userentregaitvenda   = usuario_id  # ou item.usuario_id_entregou (ajuste conforme sua coluna)
-    item.nmuserentregaitvenda = str(usuario_id)
+    item.identregaitvenda = "SIM"
+    item.dtentregaitvenda = datetime.now()
+    item.userentregaitvenda = usuario_id
+    item.nmuserentregaitvenda = usuario.nmusuario
 
     db.commit()
     db.refresh(item)
 
     return {
         "ok": True,
-        "itvenda_id"           : itvenda_id,
-        "identregaitvenda"     : item.identregaitvenda,
-        "dtentregaitvenda"     : item.dtentregaitvenda.isoformat(),
-        "userentregaitvenda"   : usuario_id,
-        "nmuserentregaitvenda" : item.nmuserentregaitvenda,
+        "itvenda_id": item.itvenda_id,
+        "identregaitvenda": item.identregaitvenda,
+        "dtentregaitvenda": item.dtentregaitvenda.isoformat(),
+        "userentregaitvenda": item.userentregaitvenda,
+        "nmuserentregaitvenda": item.nmuserentregaitvenda,
     }
 
 @router.get("/{itvenda_id}/status")
@@ -236,13 +265,19 @@ def get_qt_itens_naoentregues(
             db.query(
                 func.coalesce(func.sum(ItVenda.qtitvenda), 0).label("qt_total"),
                 func.coalesce(
-                    func.sum(ItVenda.qtitvenda * ItVenda.vrunititvenda), 0
+                    func.sum(ItVenda.qtitvenda * ItVenda.vrunititvenda),
+                    0,
                 ).label("valor_total"),
             )
             .join(Venda, Venda.venda_id == ItVenda.venda_id)
             .filter(
                 Venda.cliente_id == cliente_id,
+                Venda.sitvenda == "PAGA",
                 ItVenda.identregaitvenda == "NAO",
+            )
+            .filter(
+                (ItVenda.dtexpiraitvenda == None)
+                | (ItVenda.dtexpiraitvenda >= func.current_date())
             )
         )
 
@@ -290,7 +325,15 @@ def listar_lojas_com_retirada_pendente(
         .filter(Venda.cliente_id == cliente_id)
         .filter(Venda.sitvenda == "PAGA")
         .filter(ItVenda.identregaitvenda == "NAO")
-        .group_by(Loja.loja_id, Loja.nmloja)
+        .filter(
+            (ItVenda.dtexpiraitvenda == None) |
+            (ItVenda.dtexpiraitvenda >= func.current_date())
+        )
+        .group_by(
+            Loja.loja_id,
+            Loja.nmloja,
+            Loja.dsbairroloja,
+        )
         .order_by(Loja.nmloja.asc())
         .all()
     )
