@@ -299,6 +299,7 @@ def obter_itens_carrinho(
             Produto.vrdesconto,
             Produto.dtinidesconto,
             Produto.dtfimdesconto,
+            Produto.idtipoproduto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
         )
@@ -312,7 +313,6 @@ def obter_itens_carrinho(
     qt_total = 0
 
     for i in itens_db:
-        # cria um "objeto produto fake" só para reaproveitar a função
         class ProdutoTmp:
             pass
 
@@ -331,12 +331,15 @@ def obter_itens_carrinho(
         total += subtotal
         qt_total += qt
 
+        tipo_produto = (i.idtipoproduto or "P").strip().upper()
+
         itens.append(
             {
                 "itcarrinho_id": i.itcarrinho_id,
                 "produto_id": i.produto_id,
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
+                "idtipoproduto": tipo_produto,
                 "vrprecoprod": float(i.vrprecoprod or 0),
                 "vrprecofinal": float(vrprecofinal),
                 "descontoativo": descontoativo,
