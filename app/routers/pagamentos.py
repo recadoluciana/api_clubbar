@@ -80,6 +80,8 @@ def _recalcular_itens_carrinho(
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     metodo = (payload.dsmetodopag or "PIX").upper()
 
+    print(metodo)
+    
     if metodo != "PIX":
         raise HTTPException(
             status_code=400,
