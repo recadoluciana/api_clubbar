@@ -53,6 +53,7 @@ os.makedirs("app/static/assets", exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
 app.mount("/assets", StaticFiles(directory="app/static/assets"), name="assets")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(cidades.router)
 app.include_router(auth.router)

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pagamento Clubbar</title>
+
+  <script src="https://sdk.mercadopago.com/js/v2"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f7f7f7;
+      color: #111;
+    }
+
+    .topo {
+      background: #000;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .topo img {
+      height: 68px;
+    }
+
+    .container {
+      max-width: 430px;
+      margin: 24px auto;
+      padding: 18px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.10);
+    }
+
+    h2 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    #status {
+      margin-top: 16px;
+      text-align: center;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topo">
+    <img src="/static/logo_copa.png" alt="Clubbar" />
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <h2>Pagamento com cartão</h2>
+      <div id="cardPaymentBrick_container"></div>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+
+    const publicKey = params.get("public_key");
+    const clienteId = params.get("cliente_id");
+    const organizacaoId = params.get("organizacao_id");
+    const lojaId = params.get("loja_id");
+    const tipoPagamento = params.get("tipo_pagamento") || "CREDIT_CARD";
+    const amount = Number(params.get("amount") || "0");
+
+    const mp = new MercadoPago(publicKey, {
+      locale: "pt-BR"
+    });
+
+    const bricksBuilder = mp.bricks();
+
+    const renderCardPaymentBrick = async () => {
+      const settings = {
+        initialization: {
+          amount: amount
+        },
+        customization: {
+          visual: {
+            style: {
+              theme: "default"
+            }
+          },
+          paymentMethods: {
+            maxInstallments: 1
+          }
+        },
+        callbacks: {
+          onReady: () => {},
+
+          onSubmit: async (cardFormData) => {
+            document.getElementById("status").innerText = "Processando pagamento...";
+
+            const body = {
+              cliente_id: Number(clienteId),
+              organizacao_id: Number(organizacaoId),
+              loja_id: Number(lojaId),
+              dsmetodopag: tipoPagamento,
+              card_token: cardFormData.token,
+              payment_method_id: cardFormData.payment_method_id,
+              issuer_id: cardFormData.issuer_id,
+              installments: cardFormData.installments || 1,
+              idempotency_key: crypto.randomUUID()
+            };
+
+            const resp = await fetch("/pagamentos/pagar-novo", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify(body)
+            });
+
+            const data = await resp.json();
+
+            if (!resp.ok) {
+              document.getElementById("status").innerText =
+                "Erro no pagamento: " + JSON.stringify(data.detail || data);
+              throw new Error("Erro no pagamento");
+            }
+
+            if (data.status === "PAGO") {
+              document.getElementById("status").innerText = "Pagamento aprovado!";
+              window.location.href = "clubbar://pagamento-sucesso";
+            } else {
+              document.getElementById("status").innerText =
+                "Pagamento enviado. Status: " + data.status;
+            }
+          },
+
+          onError: (error) => {
+            console.error(error);
+            document.getElementById("status").innerText =
+              "Erro ao carregar pagamento.";
+          }
+        }
+      };
+
+      await bricksBuilder.create(
+        "cardPayment",
+        "cardPaymentBrick_container",
+        settings
+      );
+    };
+
+    renderCardPaymentBrick();
+  </script>
+</body>
+</html>
