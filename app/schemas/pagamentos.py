@@ -26,17 +26,34 @@ class VendaStatusOut(BaseModel):
 EncryptedStr = constr(min_length=20)
 CVVStr       = constr(pattern=r"^\d{3,4}$")
 
+from typing import Optional, Literal
+from pydantic import BaseModel
+
+
 class PagarNovoIn(BaseModel):
     cliente_id: int
     organizacao_id: int
     loja_id: int
 
+    # PIX ou Cartão
+    dsmetodopag: Literal[
+        "PIX",
+        "CREDIT_CARD",
+        "DEBIT_CARD",
+    ] = "PIX"
+
+    # Mercado Pago Cartão
+    card_token: Optional[str] = None
+    payment_method_id: Optional[str] = None
+    issuer_id: Optional[str] = None
+    installments: Optional[int] = 1
+
+    # Mantidos por compatibilidade
     encrypted_card: Optional[EncryptedStr] = None
     security_code: Optional[CVVStr] = None
-    payment_method: Literal["CREDIT_CARD", "DEBIT_CARD"] = "CREDIT_CARD"
 
+    # Idempotência
     idempotency_key: Optional[str] = None
-    dsmetodopag: str = "CREDITO"
 
 class PagarNovoOut(BaseModel):
     venda_id: int

@@ -78,39 +78,22 @@ def _recalcular_itens_carrinho(
 
 @router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
-    metodo = (payload.dsmetodopag or "PIX").upper()
-
-    print(metodo)
-    
-    if metodo != "PIX":
-        raise HTTPException(
-            status_code=400,
-            detail="Cartão Mercado Pago será implementado no próximo passo. Por enquanto use PIX.",
-        )
+    metodo = (payload.dsmetodopag or "PIX").strip().upper()
 
     try:
         with db.begin():
             carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
 
             if not carrinho:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Carrinho não encontrado",
-                )
+                raise HTTPException(status_code=404, detail="Carrinho não encontrado")
 
             itens = carrinho.get("itens") or []
 
             if not isinstance(itens, list):
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Formato inválido dos itens do carrinho",
-                )
+                raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
 
             if not itens:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Carrinho vazio",
-                )
+                raise HTTPException(status_code=400, detail="Carrinho vazio")
 
             itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
                 db,
@@ -130,7 +113,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     "itens": itens_recalculados,
                 },
                 chave=minha_chave,
-                metodo_pagamento="PIX",
+                metodo_pagamento=metodo,
             )
 
             venda_id = int(venda["venda_id"])
@@ -139,19 +122,81 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             cliente = get_cliente(db, payload.cliente_id)
 
             if not cliente:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Cliente não encontrado",
+                raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+        if metodo == "PIX":
+            data = await criar_pagamento_pix(
+                valor=total_recalculado,
+                descricao=f"Venda {venda_id} - Clubbar",
+                email=cliente.get("email"),
+                nome=cliente.get("nome"),
+                cpf=cliente.get("cpf"),
+                venda_id=venda_id,
+            )
+
+            with db.begin():
+                pag = (
+                    db.query(PagVenda)
+                    .filter(PagVenda.pagvenda_id == pagvenda_id)
+                    .with_for_update()
+                    .first()
                 )
 
-        data = await criar_pagamento_pix(
+                if not pag:
+                    raise HTTPException(status_code=404, detail="PagVenda não encontrada")
+
+                pag.dsmetodopag = "PIX"
+                pag.sitpagvenda = "PENDENTE"
+                pag.idtransacaopagvenda = str(data.get("id"))
+                pag.checkout_id = str(data.get("id"))
+                pag.reference_id = str(venda_id)
+                pag.pay_url = None
+                pag.provedor = "MERCADO_PAGO"
+
+            point = data.get("point_of_interaction") or {}
+            transaction_data = point.get("transaction_data") or {}
+
+            return {
+                "venda_id": venda_id,
+                "pagamento_id": data.get("id"),
+                "status": "PENDENTE",
+                "metodo": "PIX",
+                "pix_copia_cola": transaction_data.get("qr_code", ""),
+                "qr_code_base64": transaction_data.get("qr_code_base64", ""),
+                "ticket_url": transaction_data.get("ticket_url", ""),
+            }
+
+        if metodo not in ["CREDIT_CARD", "DEBIT_CARD"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Método de pagamento inválido. Use PIX, CREDIT_CARD ou DEBIT_CARD.",
+            )
+
+        if not payload.card_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Token do cartão não informado.",
+            )
+
+        tipo_mp = "credit_card" if metodo == "CREDIT_CARD" else "debit_card"
+
+        data = await criar_pagamento_cartao_mp(
             valor=total_recalculado,
             descricao=f"Venda {venda_id} - Clubbar",
             email=cliente.get("email"),
             nome=cliente.get("nome"),
             cpf=cliente.get("cpf"),
             venda_id=venda_id,
+            card_token=payload.card_token,
+            payment_method_id=payload.payment_method_id,
+            issuer_id=payload.issuer_id,
+            installments=payload.installments or 1,
+            tipo_pagamento=tipo_mp,
+            idempotency_key=minha_chave,
         )
+
+        status_mp = (data.get("status") or "").upper()
+        status_local = "PAGO" if status_mp == "APPROVED" else "PENDENTE"
 
         with db.begin():
             pag = (
@@ -162,29 +207,23 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             )
 
             if not pag:
-                raise HTTPException(
-                    status_code=404,
-                    detail="PagVenda não encontrada",
-                )
+                raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
-            pag.dsmetodopag = "PIX"
-            pag.sitpagvenda = "PENDENTE"
+            pag.dsmetodopag = metodo
+            pag.sitpagvenda = status_local
             pag.idtransacaopagvenda = str(data.get("id"))
             pag.checkout_id = str(data.get("id"))
             pag.reference_id = str(venda_id)
             pag.pay_url = None
-            pag.provedor = "OUTRO"
-
-        point = data.get("point_of_interaction") or {}
-        transaction_data = point.get("transaction_data") or {}
+            pag.provedor = "MERCADO_PAGO"
 
         return {
             "venda_id": venda_id,
             "pagamento_id": data.get("id"),
-            "status": "PENDENTE",
-            "pix_copia_cola": transaction_data.get("qr_code", ""),
-            "qr_code_base64": transaction_data.get("qr_code_base64", ""),
-            "ticket_url": transaction_data.get("ticket_url", ""),
+            "status": status_local,
+            "status_mp": data.get("status"),
+            "status_detail": data.get("status_detail"),
+            "metodo": metodo,
         }
 
     except HTTPException:
@@ -197,7 +236,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Erro ao gerar pagamento Mercado Pago ({type(e).__name__}): {e}",
         )
-
 
 @router.get("/pendente")
 async def pagamento_pendente(
