@@ -117,7 +117,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                     "itens": itens_recalculados,
                 },
                 chave=minha_chave,
-                metodo_pagamento=metodo,
+                metodo_pagamento=metodo_banco,
             )
 
             venda_id = int(venda["venda_id"])
@@ -213,7 +213,14 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if not pag:
                 raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
-            pag.dsmetodopag = metodo
+            if metodo == "CREDIT_CARD":
+                metodo_banco = "CREDITO"
+            elif metodo == "DEBIT_CARD":
+                metodo_banco = "DEBITO"
+            else:
+                metodo_banco = metodo
+
+            pag.dsmetodopag = metodo_banco
             pag.sitpagvenda = status_local
             pag.idtransacaopagvenda = str(data.get("id"))
             pag.checkout_id = str(data.get("id"))
