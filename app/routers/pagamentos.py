@@ -84,6 +84,13 @@ def _recalcular_itens_carrinho(
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
     metodo = (payload.dsmetodopag or "PIX").strip().upper()
 
+    if metodo == "CREDIT_CARD":
+        metodo_banco = "CREDITO"
+    elif metodo == "DEBIT_CARD":
+        metodo_banco = "DEBITO"
+    else:
+        metodo_banco = metodo
+        
     try:
         with db.begin():
             carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
