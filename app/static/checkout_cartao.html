@@ -82,6 +82,16 @@
 
     const bricksBuilder = mp.bricks();
 
+    function voltarParaClubbar() {
+      const host = window.location.hostname;
+
+      if (host.includes("localhost") || host.includes("127.0.0.1")) {
+        window.location.href = "http://localhost:3000/#/";
+      } else {
+        window.location.href = "https://clubbarcliente-production.up.railway.app/#/";
+      }
+    }
+
     const renderCardPaymentBrick = async () => {
       const settings = {
         initialization: {
@@ -133,20 +143,20 @@
 
             if (data.status === "PAGO") {
               document.getElementById("status").innerText = "Pagamento aprovado!";
-              window.location.href = "clubbar://pagamento-sucesso";
+              voltarParaClubbar();
             } else if (data.status === "PENDENTE") {
               document.getElementById("status").innerText =
                 "Pagamento em análise. Aguarde a confirmação.";
 
               setTimeout(() => {
-                window.location.href = "clubbar://pagamento-sucesso";
+                voltarParaClubbar();
               }, 1500);
             } else {
               document.getElementById("status").innerText =
                 "Pagamento enviado. Status: " + data.status;
 
               setTimeout(() => {
-                window.location.href = "clubbar://pagamento-sucesso";
+                voltarParaClubbar();
               }, 1500);
             }
           },
