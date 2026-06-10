@@ -134,9 +134,20 @@
             if (data.status === "PAGO") {
               document.getElementById("status").innerText = "Pagamento aprovado!";
               window.location.href = "clubbar://pagamento-sucesso";
+            } else if (data.status === "PENDENTE") {
+              document.getElementById("status").innerText =
+                "Pagamento em análise. Aguarde a confirmação.";
+
+              setTimeout(() => {
+                window.location.href = "clubbar://pagamento-sucesso";
+              }, 1500);
             } else {
               document.getElementById("status").innerText =
                 "Pagamento enviado. Status: " + data.status;
+
+              setTimeout(() => {
+                window.location.href = "clubbar://pagamento-sucesso";
+              }, 1500);
             }
           },
 
