@@ -26,9 +26,6 @@ class VendaStatusOut(BaseModel):
 EncryptedStr = constr(min_length=20)
 CVVStr       = constr(pattern=r"^\d{3,4}$")
 
-from typing import Optional, Literal
-from pydantic import BaseModel
-
 
 class PagarNovoIn(BaseModel):
     cliente_id: int
@@ -40,6 +37,8 @@ class PagarNovoIn(BaseModel):
         "PIX",
         "CREDIT_CARD",
         "DEBIT_CARD",
+        "CREDITO",
+        "DEBITO",
     ] = "PIX"
 
     # Mercado Pago Cartão

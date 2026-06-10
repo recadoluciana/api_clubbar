@@ -40,7 +40,14 @@ async def criar_ou_obter_venda_idempotente(
     if not itens:
         raise HTTPException(status_code=400, detail="Carrinho sem itens")
 
-    metodo_pagamento = (metodo_pagamento or "CREDITO").upper()
+    metodo_pagamento = (metodo_pagamento or "CREDITO").strip().upper()
+
+    if metodo_pagamento == "CREDIT_CARD":
+        metodo_pagamento = "CREDITO"
+    elif metodo_pagamento == "DEBIT_CARD":
+        metodo_pagamento = "DEBITO"
+    elif metodo_pagamento not in ["PIX", "CREDITO", "DEBITO", "OUTRO"]:
+        metodo_pagamento = "OUTRO"
 
     venda = (
         db.query(Venda)
@@ -107,7 +114,7 @@ async def criar_ou_obter_venda_idempotente(
                 vrpagvenda=float(total),
                 sitpagvenda="PENDENTE",
                 reference_id=f"VENDA-{venda.venda_id}",
-                provedor="PAGBANK",
+                provedor="MERCADOPAGO",
             )
             db.add(pag)
             db.flush()
@@ -119,7 +126,7 @@ async def criar_ou_obter_venda_idempotente(
                 pag.reference_id = f"VENDA-{venda.venda_id}"
 
             if not getattr(pag, "provedor", None):
-                pag.provedor = "PAGBANK"
+                pag.provedor = "MERCADOPAGO"
 
         return {
             "venda_id": int(venda.venda_id),
@@ -155,7 +162,7 @@ async def criar_ou_obter_venda_idempotente(
         vrpagvenda=float(total),
         sitpagvenda="PENDENTE",
         reference_id=reference_id,
-        provedor="PAGBANK",
+        provedor="MERCADOPAGO",
     )
 
     db.add(pag)
