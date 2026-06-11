@@ -226,7 +226,7 @@
                 voltarParaClubbar();
               }, 1000);
 
-            else if (statusMp === "rejected") {
+            } else if (statusMp === "rejected") {
 
               document.getElementById("status").innerHTML = `
                 <div style="
@@ -242,11 +242,15 @@
                   ${mensagemRecusa(data.status_detail)}
                 </div>
                 <button onclick="location.reload()" class="btn-tentar">
-                    Tentar novamente
+                  Tentar novamente
                 </button>
               `;
 
-            } else if (statusLocal === "PENDENTE" || statusMp === "pending" || statusMp === "in_process") {
+            } else if (
+              statusLocal === "PENDENTE" ||
+              statusMp === "pending" ||
+              statusMp === "in_process"
+            ) {
               document.getElementById("status").innerHTML = `
                 <div style="color:#8a5a00;">
                   Pagamento em análise.<br>
