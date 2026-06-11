@@ -90,7 +90,7 @@
 
 <body>
   <div class="topo">
-    <button class="voltar" onclick="voltarParaClubbar()">
+    <button class="voltar" onclick="window.location.href='clubbar://pagamento-cancelado'">
       <span class="material-symbols-outlined">
         arrow_back
       </span>
@@ -123,13 +123,7 @@
     const bricksBuilder = mp.bricks();
 
     function voltarParaClubbar() {
-      const host = window.location.hostname;
-
-      if (host.includes("localhost") || host.includes("127.0.0.1")) {
-        window.location.href = "http://localhost:3000/#/";
-      } else {
-        window.location.href = "https://clubbarcliente-production.up.railway.app/#/";
-      }
+      window.location.href = "clubbar://pagamento-sucesso";
     }
 
     function mensagemRecusa(statusDetail) {
