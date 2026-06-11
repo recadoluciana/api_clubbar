@@ -22,6 +22,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
     }
 
     .topo img {
@@ -40,6 +41,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      z-index: 10;
+      width: 44px;
+      height: 44px;
     }
 
     .material-symbols-outlined {
@@ -165,23 +169,43 @@
               throw new Error("Erro no pagamento");
             }
 
-            if (data.status === "PAGO") {
+            const statusMp = (data.status_mp || "").toLowerCase();
+            const statusLocal = (data.status || "").toUpperCase();
+
+            if (statusLocal === "PAGO" || statusMp === "approved") {
               document.getElementById("status").innerText = "Pagamento aprovado!";
-              voltarParaClubbar();
-            } else if (data.status === "PENDENTE") {
-              document.getElementById("status").innerText =
-                "Pagamento em análise. Aguarde a confirmação.";
 
               setTimeout(() => {
                 voltarParaClubbar();
-              }, 1500);
+              }, 1000);
+
+            } else if (statusMp === "rejected") {
+              document.getElementById("status").innerHTML = `
+                <div style="color:#b3261e;">
+                  Pagamento recusado.<br>
+                  Verifique os dados do cartão ou tente outro cartão.
+                </div>
+              `;
+
+            } else if (statusLocal === "PENDENTE" || statusMp === "pending" || statusMp === "in_process") {
+              document.getElementById("status").innerHTML = `
+                <div style="color:#8a5a00;">
+                  Pagamento em análise.<br>
+                  Aguarde a confirmação.
+                </div>
+              `;
+
+              setTimeout(() => {
+                voltarParaClubbar();
+              }, 2000);
+
             } else {
-              document.getElementById("status").innerText =
-                "Pagamento enviado. Status: " + data.status;
-
-              setTimeout(() => {
-                voltarParaClubbar();
-              }, 1500);
+              document.getElementById("status").innerHTML = `
+                <div style="color:#b3261e;">
+                  Não foi possível concluir o pagamento.<br>
+                  Tente novamente.
+                </div>
+              `;
             }
           },
 
