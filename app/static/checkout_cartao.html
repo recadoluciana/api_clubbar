@@ -120,6 +120,41 @@
       }
     }
 
+    function mensagemRecusa(statusDetail) {
+      switch ((statusDetail || "").toLowerCase()) {
+
+        case "cc_rejected_insufficient_amount":
+          return "Saldo insuficiente para realizar o pagamento.";
+
+        case "cc_rejected_other_reason":
+          return "Pagamento recusado pelo emissor do cartão.";
+
+        case "cc_rejected_bad_filled_security_code":
+          return "Código de segurança (CVV) inválido.";
+
+        case "cc_rejected_bad_filled_date":
+          return "Data de validade do cartão inválida.";
+
+        case "cc_rejected_bad_filled_card_number":
+          return "Número do cartão inválido.";
+
+        case "cc_rejected_call_for_authorize":
+          return "O banco solicitou autorização. Entre em contato com a operadora do cartão.";
+
+        case "cc_rejected_duplicated_payment":
+          return "Já existe um pagamento semelhante aprovado recentemente.";
+
+        case "cc_rejected_high_risk":
+          return "Pagamento recusado por análise de segurança.";
+
+        case "cc_rejected_blacklist":
+          return "Pagamento recusado pelo emissor do cartão.";
+
+        default:
+          return "Não foi possível autorizar o pagamento.";
+      }
+    }
+
     const renderCardPaymentBrick = async () => {
       const settings = {
         initialization: {
@@ -179,11 +214,20 @@
                 voltarParaClubbar();
               }, 1000);
 
-            } else if (statusMp === "rejected") {
+            else if (statusMp === "rejected") {
+
               document.getElementById("status").innerHTML = `
-                <div style="color:#b3261e;">
-                  Pagamento recusado.<br>
-                  Verifique os dados do cartão ou tente outro cartão.
+                <div style="
+                  margin-top:20px;
+                  padding:16px;
+                  border-radius:12px;
+                  background:#ffebee;
+                  color:#b71c1c;
+                  font-size:16px;
+                  line-height:1.5;
+                ">
+                  <strong>Pagamento recusado</strong><br><br>
+                  ${mensagemRecusa(data.status_detail)}
                 </div>
               `;
 
