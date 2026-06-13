@@ -50,7 +50,9 @@ class PagarNovoIn(BaseModel):
     # Mantidos por compatibilidade
     encrypted_card: Optional[EncryptedStr] = None
     security_code: Optional[CVVStr] = None
-
+    
+    device_id: Optional[str] = None
+    
     # Idempotência
     idempotency_key: Optional[str] = None
 

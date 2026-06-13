@@ -85,7 +85,6 @@ async def mercadopago_webhook(
         if status_mp == "approved":
 
             with db.begin():
-
                 set_venda_como_paga(
                     db,
                     venda_id=venda_id,
@@ -93,17 +92,27 @@ async def mercadopago_webhook(
                     payload=pagamento,
                 )
 
-        # cancelado / rejeitado
         elif status_mp in {"cancelled", "rejected"}:
 
             with db.begin():
-
                 set_venda_como_cancelada(
                     db,
                     venda_id=venda_id,
                     gateway="MERCADOPAGO",
                     payload=pagamento,
+                    fechar_carrinho=False,
                 )
+
+        elif status_mp in {"pending", "in_process", "authorized"}:
+            # Apenas registra e aguarda nova notificação
+            print(f"[MP WEBHOOK] Pagamento em processamento: {status_mp}")
+
+        elif status_mp in {"refunded", "charged_back"}:
+            print(f"[MP WEBHOOK] Pagamento estornado/chargeback: {status_mp}")
+            # Futuramente implementar lógica de reversão
+
+        else:
+            print(f"[MP WEBHOOK] Status não tratado: {status_mp}")
 
         return {
             "ok": True,

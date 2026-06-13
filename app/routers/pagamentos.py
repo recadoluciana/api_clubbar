@@ -235,6 +235,21 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             pag.pay_url = None
             pag.provedor = "MERCADO_PAGO"
 
+            resultado_baixa = None
+
+            if status_mp == "APPROVED":
+                resultado_baixa = set_venda_como_paga(
+                    db,
+                    venda_id=venda_id,
+                    gateway="MERCADOPAGO",
+                    payload={
+                        "id": str(data.get("id")),
+                        "status": data.get("status"),
+                        "status_detail": data.get("status_detail"),
+                        "mercadopago": data,
+                    },
+                )
+
         return {
             "venda_id": venda_id,
             "pagamento_id": data.get("id"),
@@ -242,6 +257,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             "status_mp": data.get("status"),
             "status_detail": data.get("status_detail"),
             "metodo": metodo,
+            "baixa": resultado_baixa,
         }
 
     except HTTPException:

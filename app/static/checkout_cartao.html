@@ -7,6 +7,10 @@
   <title>Pagamento Clubbar</title>
 
   <script src="https://sdk.mercadopago.com/js/v2"></script>
+  <script
+    src="https://www.mercadopago.com/v2/security.js"
+    view="checkout">
+  </script>
 
   <style>
     body {
@@ -182,6 +186,11 @@
           onSubmit: async (cardFormData) => {
             document.getElementById("status").innerText = "Processando pagamento...";
 
+            const deviceId =
+              window.MP_DEVICE_SESSION_ID ||
+              window.deviceSessionId ||
+              "";
+
             const body = {
               cliente_id: Number(clienteId),
               organizacao_id: Number(organizacaoId),
@@ -189,10 +198,14 @@
               dsmetodopag: tipoPagamento,
               card_token: cardFormData.token,
               payment_method_id: cardFormData.payment_method_id,
-              issuer_id: cardFormData.issuer_id,
               installments: cardFormData.installments || 1,
+              device_id: deviceId,
               idempotency_key: crypto.randomUUID()
             };
+
+            if (cardFormData.issuer_id) {
+              body.issuer_id = cardFormData.issuer_id;
+            }
 
             const resp = await fetch("/pagamentos/pagar-novo", {
               method: "POST",

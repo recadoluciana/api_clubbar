@@ -9,6 +9,10 @@ from typing import Any, Dict
 import httpx
 from fastapi import HTTPException
 
+MERCADOPAGO_NOTIFICATION_URL = os.getenv(
+    "MERCADOPAGO_NOTIFICATION_URL",
+    "https://bitbeer-production.up.railway.app/mercadopago/webhook",
+)
 
 MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
 MERCADOPAGO_BASE = os.getenv(
@@ -164,9 +168,19 @@ async def criar_pagamento_cartao_mp(
     if not nome:
         nome = "Cliente"
 
+    partes_nome = nome.strip().split()
+
+    if len(partes_nome) > 1:
+        first_name = partes_nome[0]
+        last_name = " ".join(partes_nome[1:])
+    else:
+        first_name = nome.strip()
+        last_name = "-"    
+
     payer: Dict[str, Any] = {
         "email": email,
-        "first_name": nome,
+        "first_name": first_name,
+        "last_name": last_name,
     }
 
     if cpf_limpo and len(cpf_limpo) == 11:
@@ -183,14 +197,29 @@ async def criar_pagamento_cartao_mp(
         "payment_method_id": payment_method_id,
         "payer": payer,
         "external_reference": str(venda_id),
+        "notification_url": MERCADOPAGO_NOTIFICATION_URL,
         "metadata": {
             "venda_id": venda_id,
             "tipo_pagamento": tipo_pagamento,
+        },
+        "additional_info": {
+            "items": [
+                {
+                    "id": str(venda_id),
+                    "title": descricao or f"Compra Clubbar #{venda_id}",
+                    "description": descricao or f"Compra Clubbar #{venda_id}",
+                    "quantity": 1,
+                    "unit_price": valor,
+                }
+            ]
         },
     }
 
     if issuer_id:
         body["issuer_id"] = issuer_id
+
+    if device_id:
+        body["device_id"] = device_id
 
     print("[CARTAO] BODY =", body)
 

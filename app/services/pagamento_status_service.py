@@ -17,7 +17,7 @@ def set_venda_como_paga(
     db: Session,
     *,
     venda_id: int,
-    gateway: str = "PAGBANK",
+    gateway: str = "MERCADOPAGO",
     payload: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
@@ -72,7 +72,7 @@ def set_venda_como_paga(
 
     # atualiza status
     pag.sitpagvenda = "PAGO"
-    pag.provedor = gateway if gateway in {"PAGBANK", "OUTRO"} else "PAGBANK"
+    pag.provedor = gateway or "MERCADOPAGO"
     pag.dtconftranspagvenda = datetime.now()
     pag.dtultatu = datetime.now()
 
@@ -134,22 +134,24 @@ def set_venda_como_cancelada(
     db: Session,
     *,
     venda_id: int,
-    gateway: str = "PAGBANK",
+    gateway: str = "MERCADOPAGO",
     payload: Optional[Dict[str, Any]] = None,
+    limpar_carrinho: bool = False,
 ) -> dict:
-    """
-    - PagVenda.sitpagvenda = CANCELADO
-    - Venda.sitvenda = CANCELADA
-    - define dtconftranspagvenda
-    - guarda idtransacaopagvenda (charge_id do PagBank)
-    - fecha carrinho e limpa itens (mesmo padrão do seu webhook)
-    Chamar dentro de: with db.begin():
-    """
     payload = payload or {}
 
     charge = (payload.get("charges") or [{}])[0]
-    charge_id = charge.get("id")
-    charge_status = charge.get("status") or ""
+
+    charge_id = (
+        charge.get("id")
+        or payload.get("id")
+    )
+
+    charge_status = (
+        charge.get("status")
+        or payload.get("status")
+        or ""
+    )
 
     venda = (
         db.query(Venda)
@@ -170,12 +172,14 @@ def set_venda_como_cancelada(
     if not pag:
         raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
-    # idempotência
-    if (pag.sitpagvenda or "").upper() == "CANCELADO" and (venda.sitvenda or "").upper() == "CANCELADA":
+    if (
+        (pag.sitpagvenda or "").upper() == "CANCELADO"
+        and (venda.sitvenda or "").upper() == "CANCELADA"
+    ):
         return {"ok": True, "already_processed": True, "venda_id": venda_id}
 
     pag.sitpagvenda = "CANCELADO"
-    pag.provedor = gateway if gateway in {"PAGBANK", "OUTRO"} else "PAGBANK"
+    pag.provedor = gateway or "MERCADOPAGO"
     pag.dtconftranspagvenda = datetime.now()
     pag.dtultatu = datetime.now()
 
@@ -185,27 +189,33 @@ def set_venda_como_cancelada(
     venda.sitvenda = "CANCELADA"
     venda.dtultatu = datetime.now()
 
-    # fecha carrinho + limpa itens (se quiser manter carrinho aberto em cancelamento, comente este bloco)
     carrinho_id = venda.carrinho_id
-    carrinho_ok = False
-    if carrinho_id:
+    carrinho_fechado = False
+    itens_removidos = False
+
+    if limpar_carrinho and carrinho_id:
         carrinho = (
             db.query(Carrinho)
             .filter(Carrinho.carrinho_id == carrinho_id)
             .with_for_update()
             .first()
         )
+
         if carrinho:
             carrinho.sitcarrinho = "FECHADO"
-            db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho_id).delete(
-                synchronize_session=False
-            )
-            carrinho_ok = True
+            carrinho_fechado = True
+
+            db.query(ItCarrinho).filter(
+                ItCarrinho.carrinho_id == carrinho_id
+            ).delete(synchronize_session=False)
+
+            itens_removidos = True
 
     return {
         "ok": True,
         "venda_id": venda_id,
         "charge_status": charge_status,
         "idtransacaopagvenda": pag.idtransacaopagvenda,
-        "carrinho_fechado": carrinho_ok,
+        "carrinho_fechado": carrinho_fechado,
+        "itens_removidos": itens_removidos,
     }
