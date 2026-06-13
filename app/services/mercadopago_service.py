@@ -142,7 +142,9 @@ async def criar_pagamento_cartao_mp(
     installments: int,
     tipo_pagamento: str,
     idempotency_key: str,
+    device_id: str | None = None,
 ) -> Dict[str, Any]:
+
     cpf_limpo = _clean_digits(cpf)
 
     valor = round(float(valor or 0), 2)

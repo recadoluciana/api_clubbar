@@ -203,6 +203,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             issuer_id=payload.issuer_id,
             installments=payload.installments or 1,
             tipo_pagamento=tipo_mp,
+            device_id=payload.device_id,   # ✅ Correto
             idempotency_key=minha_chave,
         )
 
