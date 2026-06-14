@@ -83,6 +83,7 @@ async def criar_pagamento_pix(
         "transaction_amount": valor,
         "description": descricao or f"Compra Clubbar #{venda_id}",
         "payment_method_id": "pix",
+        "notification_url": MERCADOPAGO_NOTIFICATION_URL,
         "payer": {
             "email": email_pix,
             "first_name": nome,
