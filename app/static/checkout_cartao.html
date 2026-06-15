@@ -148,8 +148,7 @@
       if (origem === "web") {
         window.location.href =
           "https://clubbarcliente-production.up.railway.app/?ultima_venda=" +
-          vendaId +
-          "#/";
+          encodeURIComponent(vendaId);
       } else {
         window.location.href = "clubbar://pagamento-sucesso";
       }
@@ -281,7 +280,7 @@
               `;
 
               setTimeout(() => {
-                irSucesso(data.vendaId);
+                irSucesso(data.venda_id);
               }, 1200);
 
             } else if (statusMp === "rejected") {
@@ -309,7 +308,7 @@
               `;
 
               setTimeout(() => {
-                irSucesso(data.vendaId);
+                irSucesso(data.venda_id);
               }, 2000);
 
             } else {
