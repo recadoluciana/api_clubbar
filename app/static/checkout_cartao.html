@@ -112,9 +112,13 @@
 
 <body>
   <div class="topo">
-    <button class="voltar" onclick="window.location.href='clubbar://pagamento-cancelado'">
-      <span class="material-symbols-outlined">arrow_back</span>
+    
+    <button class="voltar" onclick="voltarClubbar()">
+      <span class="material-symbols-outlined">
+        arrow_back
+      </span>
     </button>
+
     <img src="/static/logo_copa.png" alt="Clubbar" />
   </div>
 
@@ -156,6 +160,14 @@
 
     function irErro() {
       window.location.href = "clubbar://pagamento-erro";
+    }
+
+    function voltarClubbar() {
+      if (origem === "web") {
+        history.back();
+      } else {
+        window.location.href = "clubbar://pagamento-cancelado";
+      }
     }
 
     function mensagemRecusa(statusDetail) {
