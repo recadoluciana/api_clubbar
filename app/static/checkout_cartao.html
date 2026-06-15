@@ -144,22 +144,15 @@
 
     const bricksBuilder = mp.bricks();
 
-    function voltarParaClubbar(vendaId) {
-
+    function irSucesso(vendaId) {
       if (origem === "web") {
-
-        localStorage.setItem("ultima_venda", data.venda_id);
         window.location.href =
-          "https://clubbarcliente-production.up.railway.app";
-
+          "https://clubbarcliente-production.up.railway.app/?ultima_venda=" +
+          vendaId +
+          "#/";
       } else {
-
         window.location.href = "clubbar://pagamento-sucesso";
       }
-    }
-
-    function irSucesso() {
-      voltarParaClubbar(data.venda_id);
     }
 
     function irErro() {
@@ -288,7 +281,7 @@
               `;
 
               setTimeout(() => {
-                irSucesso();
+                irSucesso(data.vendaId);
               }, 1200);
 
             } else if (statusMp === "rejected") {
@@ -316,7 +309,7 @@
               `;
 
               setTimeout(() => {
-                irSucesso();
+                irSucesso(data.vendaId);
               }, 2000);
 
             } else {
