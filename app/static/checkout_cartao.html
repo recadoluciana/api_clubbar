@@ -33,18 +33,6 @@
       height: 68px;
     }
 
-    .btn-tentar{
-        margin-top:20px;
-        width:100%;
-        background:#000;
-        color:#fff;
-        border:none;
-        border-radius:10px;
-        padding:14px;
-        font-size:16px;
-        cursor:pointer;
-    }
-
     .voltar {
       position: absolute;
       left: 16px;
@@ -89,15 +77,43 @@
       text-align: center;
       font-weight: bold;
     }
+
+    .status-ok {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #e8f5e9;
+      color: #1b5e20;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .status-erro {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #ffebee;
+      color: #b71c1c;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    .status-pendente {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #fff8e1;
+      color: #8a5a00;
+      font-size: 16px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 
 <body>
   <div class="topo">
     <button class="voltar" onclick="window.location.href='clubbar://pagamento-cancelado'">
-      <span class="material-symbols-outlined">
-        arrow_back
-      </span>
+      <span class="material-symbols-outlined">arrow_back</span>
     </button>
     <img src="/static/logo_copa.png" alt="Clubbar" />
   </div>
@@ -126,40 +142,34 @@
 
     const bricksBuilder = mp.bricks();
 
-    function voltarParaClubbar() {
+    function irSucesso() {
       window.location.href = "clubbar://pagamento-sucesso";
+    }
+
+    function irErro() {
+      window.location.href = "clubbar://pagamento-erro";
     }
 
     function mensagemRecusa(statusDetail) {
       switch ((statusDetail || "").toLowerCase()) {
-
         case "cc_rejected_insufficient_amount":
           return "Saldo insuficiente para realizar o pagamento.";
-
         case "cc_rejected_other_reason":
           return "Pagamento recusado pelo emissor do cartão.";
-
         case "cc_rejected_bad_filled_security_code":
           return "Código de segurança (CVV) inválido.";
-
         case "cc_rejected_bad_filled_date":
           return "Data de validade do cartão inválida.";
-
         case "cc_rejected_bad_filled_card_number":
           return "Número do cartão inválido.";
-
         case "cc_rejected_call_for_authorize":
           return "O banco solicitou autorização. Entre em contato com a operadora do cartão.";
-
         case "cc_rejected_duplicated_payment":
           return "Já existe um pagamento semelhante aprovado recentemente.";
-
         case "cc_rejected_high_risk":
           return "Pagamento recusado por análise de segurança.";
-
         case "cc_rejected_blacklist":
           return "Pagamento recusado pelo emissor do cartão.";
-
         default:
           return "Não foi possível autorizar o pagamento.";
       }
@@ -207,51 +217,75 @@
               body.issuer_id = cardFormData.issuer_id;
             }
 
-            const resp = await fetch("/pagamentos/pagar-novo", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify(body)
-            });
+            let resp;
+            let data;
 
-            const data = await resp.json();
+            try {
+              resp = await fetch("/pagamentos/pagar-novo", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify(body)
+              });
+
+              data = await resp.json();
+            } catch (e) {
+              document.getElementById("status").innerHTML = `
+                <div class="status-erro">
+                  <strong>Erro no pagamento</strong><br><br>
+                  Não foi possível comunicar com o servidor.
+                </div>
+              `;
+
+              setTimeout(() => {
+                irErro();
+              }, 1800);
+
+              return;
+            }
 
             if (!resp.ok) {
-              document.getElementById("status").innerText =
-                "Erro no pagamento: " + JSON.stringify(data.detail || data);
-              throw new Error("Erro no pagamento");
+              document.getElementById("status").innerHTML = `
+                <div class="status-erro">
+                  <strong>Erro no pagamento</strong><br><br>
+                  Não foi possível concluir o pagamento.
+                </div>
+              `;
+
+              setTimeout(() => {
+                irErro();
+              }, 1800);
+
+              return;
             }
 
             const statusMp = (data.status_mp || "").toLowerCase();
             const statusLocal = (data.status || "").toUpperCase();
 
             if (statusLocal === "PAGO" || statusMp === "approved") {
-              document.getElementById("status").innerText = "Pagamento aprovado!";
+              document.getElementById("status").innerHTML = `
+                <div class="status-ok">
+                  <strong>Pagamento aprovado!</strong><br><br>
+                  Sua compra foi confirmada.
+                </div>
+              `;
 
               setTimeout(() => {
-                voltarParaClubbar();
-              }, 1000);
+                irSucesso();
+              }, 1200);
 
             } else if (statusMp === "rejected") {
-
               document.getElementById("status").innerHTML = `
-                <div style="
-                  margin-top:20px;
-                  padding:16px;
-                  border-radius:12px;
-                  background:#ffebee;
-                  color:#b71c1c;
-                  font-size:16px;
-                  line-height:1.5;
-                ">
+                <div class="status-erro">
                   <strong>Pagamento recusado</strong><br><br>
                   ${mensagemRecusa(data.status_detail)}
                 </div>
-                <button onclick="location.reload()" class="btn-tentar">
-                  Tentar novamente
-                </button>
               `;
+
+              setTimeout(() => {
+                irErro();
+              }, 2200);
 
             } else if (
               statusLocal === "PENDENTE" ||
@@ -259,30 +293,43 @@
               statusMp === "in_process"
             ) {
               document.getElementById("status").innerHTML = `
-                <div style="color:#8a5a00;">
-                  Pagamento em análise.<br>
+                <div class="status-pendente">
+                  <strong>Pagamento em análise</strong><br><br>
                   Aguarde a confirmação.
                 </div>
               `;
 
               setTimeout(() => {
-                voltarParaClubbar();
+                irSucesso();
               }, 2000);
 
             } else {
               document.getElementById("status").innerHTML = `
-                <div style="color:#b3261e;">
-                  Não foi possível concluir o pagamento.<br>
-                  Tente novamente.
+                <div class="status-erro">
+                  <strong>Pagamento não aprovado</strong><br><br>
+                  Tente novamente pelo carrinho.
                 </div>
               `;
+
+              setTimeout(() => {
+                irErro();
+              }, 2000);
             }
           },
 
           onError: (error) => {
             console.error(error);
-            document.getElementById("status").innerText =
-              "Erro ao carregar pagamento.";
+
+            document.getElementById("status").innerHTML = `
+              <div class="status-erro">
+                <strong>Erro ao carregar pagamento</strong><br><br>
+                Tente novamente.
+              </div>
+            `;
+
+            setTimeout(() => {
+              irErro();
+            }, 1800);
           }
         }
       };
