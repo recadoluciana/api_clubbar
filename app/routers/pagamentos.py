@@ -316,6 +316,14 @@ async def consultar_mercadopago_por_venda(
     if not pag:
         raise HTTPException(status_code=404, detail="Pagamento não encontrado")
 
+    # >>> evita chamar a consultar_pagamento que vai lá no mercado pago, caso já tenha retornado pago na pagvenda <<<<<<<
+    if (pag.sitpagvenda or "").upper() == "PAGO":
+        return {
+            "ok": True,
+            "venda_id": venda_id,
+            "status": "PAGO",
+        }    
+
     if not pag.idtransacaopagvenda:
         raise HTTPException(status_code=400, detail="ID do pagamento não encontrado")
 
