@@ -74,6 +74,15 @@ async def criar_pagamento_pix(
     if not nome:
         nome = "Cliente"
 
+    partes_nome = nome.strip().split()
+
+    if len(partes_nome) > 1:
+        first_name = partes_nome[0]
+        last_name = " ".join(partes_nome[1:])
+    else:
+        first_name = nome.strip()
+        last_name = "-" 
+           
     email_pix = email
 
     if MERCADOPAGO_ACCESS_TOKEN.startswith("TEST-"):
@@ -81,12 +90,39 @@ async def criar_pagamento_pix(
 
     body = {
         "transaction_amount": valor,
+
         "description": descricao or f"Compra Clubbar #{venda_id}",
+
         "payment_method_id": "pix",
+
+        # importante para o webhook localizar a venda
+        "external_reference": str(venda_id),
+
+        # webhook do Mercado Pago
         "notification_url": MERCADOPAGO_NOTIFICATION_URL,
+
+        # informações adicionais para aumentar aprovação e rastreabilidade
+        "metadata": {
+            "venda_id": venda_id,
+            "tipo_pagamento": "PIX",
+        },
+
+        "additional_info": {
+            "items": [
+                {
+                    "id": str(venda_id),
+                    "title": descricao or f"Compra Clubbar #{venda_id}",
+                    "description": descricao or f"Compra Clubbar #{venda_id}",
+                    "quantity": 1,
+                    "unit_price": valor,
+                }
+            ]
+        },
+
         "payer": {
             "email": email_pix,
-            "first_name": nome,
+            "first_name": first_name,
+            "last_name": last_name,
         },
     }
 
