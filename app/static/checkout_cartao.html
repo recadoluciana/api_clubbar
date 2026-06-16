@@ -73,39 +73,39 @@
     }
 
     #status {
-      margin-top: 6px;
+      margin-top: 4px;
       text-align: center;
       font-weight: bold;
     }
 
     .status-ok {
-      margin-top: 6px;
-      padding: 16px;
+      margin-top: 4px;
+      padding: 12px;
       border-radius: 12px;
       background: #e8f5e9;
       color: #1b5e20;
-      font-size: 16px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.35;
     }
 
     .status-erro {
-      margin-top: 6px;
-      padding: 16px;
+      margin-top: 4px;
+      padding: 12px;
       border-radius: 12px;
       background: #ffebee;
       color: #b71c1c;
-      font-size: 16px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.35;
     }
 
     .status-pendente {
-      margin-top: 6px;
-      padding: 16px;
+      margin-top: 4px;
+      padding: 12px;
       border-radius: 12px;
       background: #fff8e1;
       color: #8a5a00;
-      font-size: 16px;
-      line-height: 1.5;
+      font-size: 15px;
+      line-height: 1.35;
     }
   </style>
 </head>
@@ -275,7 +275,7 @@
                 </div>
               `;
 
-              return;
+              return Promise.resolve();
             }
 
             const statusMp = (data.status_mp || "").toLowerCase();
@@ -296,14 +296,18 @@
             } else if (statusMp === "rejected") {
               document.getElementById("status").innerHTML = `
                 <div class="status-erro">
-                  <strong>Pagamento recusado</strong><br><br>
-                  ${mensagemRecusa(data.status_detail)}<br><br>
+                  <strong>Pagamento recusado</strong><br>
+                  ${mensagemRecusa(data.status_detail)}<br>
                   Confira os dados do cartão e tente novamente.
                 </div>
               `;
 
-              return;
+              window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: "smooth"
+              });
 
+              return Promise.resolve();
             } else if (
               statusLocal === "PENDENTE" ||
               statusMp === "pending" ||
