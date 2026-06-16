@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, UniqueConstraint, CHAR
+from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, UniqueConstraint, CHAR,Numeric
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -28,9 +28,10 @@ class Loja(Base):
     
     dtultatu = Column(DateTime, onupdate=func.now())
 
-    cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=False, index=True)
-
     urllogoloja = Column(String(255), nullable=True)
+
+    vrtaxaprod = Column(Numeric(10, 2), nullable=False, default=0)
+    vrtaxaing = Column(Numeric(10, 2), nullable=False, default=0)
     
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),

@@ -43,6 +43,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Loja.nrtelloja,
             Loja.urllogoloja,
             Loja.dsinstaloja,
+            Loja.vrtaxaprod,
+            Loja.vrtaxaing,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -64,6 +66,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
             "dsinstaloja": r.dsinstaloja,                        
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),            
         }
         for r in rows
     ]
@@ -87,6 +91,8 @@ def listar_todas_lojas_ativas(
             Loja.nrtelloja,
             Loja.urllogoloja,
             Loja.dsinstaloja,
+            Loja.vrtaxaprod,
+            Loja.vrtaxaing,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -111,6 +117,8 @@ def listar_todas_lojas_ativas(
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
             "dsinstaloja": r.dsinstaloja,
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),
         }
         for r in lojas
     ]
@@ -132,6 +140,8 @@ def listar_lojas_com_retirada_pendente(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.vrtaxaprod,
+            Loja.vrtaxaing,            
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -155,6 +165,9 @@ def listar_lojas_com_retirada_pendente(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),
+
         }
         for r in lojas
     ]
@@ -176,6 +189,9 @@ def listar_lojas_cidade(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.vrtaxaprod,
+            Loja.vrtaxaing,            
+
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -198,6 +214,9 @@ def listar_lojas_cidade(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),
+
         }
         for r in lojas
     ]
@@ -221,6 +240,8 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.dsrefeloja,
             Loja.cidade_id,
             Loja.urllogoloja,
+            Loja.vrtaxaprod,
+            Loja.vrtaxaing,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
@@ -248,6 +269,9 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
         "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
+        "vrtaxaprod": float(loja.vrtaxaprod or 0),
+        "vrtaxaing": float(loja.vrtaxaing or 0),
+
     }
 
 
@@ -329,6 +353,9 @@ def listar_lojas_por_organizacao_todas(
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
             "urllogoloja": f"{loja.urllogoloja}" if loja.urllogoloja else None,
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),
+
         }
         for loja in lojas
     ]
