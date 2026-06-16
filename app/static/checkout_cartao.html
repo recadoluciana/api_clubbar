@@ -134,6 +134,9 @@
     const params = new URLSearchParams(window.location.search);
     
     const origem = params.get("origem") || "app";
+    const appUrl =
+      params.get("app_url") ||
+      "https://clubbarcliente-production.up.railway.app";
 
     const publicKey = 'APP_USR-a48d761d-a803-412f-9a84-d73a813af1fb';
     const clienteId = params.get("cliente_id");
@@ -151,8 +154,7 @@
     function irSucesso(vendaId) {
       if (origem === "web") {
         window.location.href =
-          "https://clubbarcliente-production.up.railway.app/?ultima_venda=" +
-          encodeURIComponent(vendaId);
+          appUrl + "/?ultima_venda=" + encodeURIComponent(vendaId);
       } else {
         window.location.href = "clubbar://pagamento-sucesso";
       }
