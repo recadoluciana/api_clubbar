@@ -66,8 +66,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
             "dsinstaloja": r.dsinstaloja,                        
-            "vrtaxaprod": float(loja.vrtaxaprod or 0),
-            "vrtaxaing": float(loja.vrtaxaing or 0),            
+            "vrtaxaprod": float(r.vrtaxaprod or 0),
+            "vrtaxaing": float(r.vrtaxaing or 0),            
         }
         for r in rows
     ]
@@ -117,8 +117,8 @@ def listar_todas_lojas_ativas(
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
             "dsinstaloja": r.dsinstaloja,
-            "vrtaxaprod": float(loja.vrtaxaprod or 0),
-            "vrtaxaing": float(loja.vrtaxaing or 0),
+            "vrtaxaprod": float(r.vrtaxaprod or 0),
+            "vrtaxaing": float(r.vrtaxaing or 0),
         }
         for r in lojas
     ]
@@ -165,8 +165,8 @@ def listar_lojas_com_retirada_pendente(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
-            "vrtaxaprod": float(loja.vrtaxaprod or 0),
-            "vrtaxaing": float(loja.vrtaxaing or 0),
+            "vrtaxaprod": float(r.vrtaxaprod or 0),
+            "vrtaxaing": float(r.vrtaxaing or 0),
 
         }
         for r in lojas
@@ -214,8 +214,8 @@ def listar_lojas_cidade(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
-            "vrtaxaprod": float(loja.vrtaxaprod or 0),
-            "vrtaxaing": float(loja.vrtaxaing or 0),
+            "vrtaxaprod": float(r.vrtaxaprod or 0),
+            "vrtaxaing": float(r.vrtaxaing or 0),
 
         }
         for r in lojas
@@ -269,8 +269,8 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
         "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
-        "vrtaxaprod": float(loja.vrtaxaprod or 0),
-        "vrtaxaing": float(loja.vrtaxaing or 0),
+        "vrtaxaprod": float(row.vrtaxaprod or 0),
+        "vrtaxaing": float(row.vrtaxaing or 0),
 
     }
 
@@ -286,6 +286,8 @@ def criar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
+    vrtaxaprod: float | None = Form(0),
+    vrtaxaing: float | None = Form(0),
     urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
@@ -302,6 +304,8 @@ def criar_loja(
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
             nrdiavalidade=nrdiavalidade,
+            vrtaxaprod=vrtaxaprod,
+            vrtaxaing=vrtaxaing,
             urllogoloja=urllogoloja_aux,
             sitloja="ATIVA",
         )
@@ -373,6 +377,8 @@ def atualizar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
+    rtaxaprod: float | None = Form(None),
+    vrtaxaing: float | None = Form(None),
     urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
@@ -409,6 +415,12 @@ def atualizar_loja(
 
         if nrdiavalidade is not None:
             loja.nrdiavalidade = nrdiavalidade
+        
+        if vrtaxaprod is not None:
+            loja.vrtaxaprod = vrtaxaprod
+
+        if vrtaxaing is not None:
+            loja.vrtaxaing = vrtaxaing
 
         if urllogoloja is not None and urllogoloja.filename:
             nova_url_logo = salvar_logo_loja(urllogoloja)
