@@ -275,7 +275,7 @@
                 </div>
               `;
 
-              return Promise.resolve();
+              return Promise.reject();
             }
 
             const statusMp = (data.status_mp || "").toLowerCase();
@@ -307,7 +307,7 @@
                 behavior: "smooth"
               });
 
-              return Promise.resolve();
+              return Promise.reject();
             } else if (
               statusLocal === "PENDENTE" ||
               statusMp === "pending" ||
