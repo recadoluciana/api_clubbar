@@ -73,13 +73,13 @@
     }
 
     #status {
-      margin-top: 16px;
+      margin-top: 6px;
       text-align: center;
       font-weight: bold;
     }
 
     .status-ok {
-      margin-top: 20px;
+      margin-top: 6px;
       padding: 16px;
       border-radius: 12px;
       background: #e8f5e9;
@@ -89,7 +89,7 @@
     }
 
     .status-erro {
-      margin-top: 20px;
+      margin-top: 6px;
       padding: 16px;
       border-radius: 12px;
       background: #ffebee;
@@ -99,7 +99,7 @@
     }
 
     .status-pendente {
-      margin-top: 20px;
+      margin-top: 6px;
       padding: 16px;
       border-radius: 12px;
       background: #fff8e1;
@@ -271,13 +271,9 @@
               document.getElementById("status").innerHTML = `
                 <div class="status-erro">
                   <strong>Erro no pagamento</strong><br><br>
-                  Não foi possível concluir o pagamento.
+                  ${JSON.stringify(data.detail || data)}
                 </div>
               `;
-
-              setTimeout(() => {
-                irErro();
-              }, 1800);
 
               return;
             }
@@ -301,13 +297,12 @@
               document.getElementById("status").innerHTML = `
                 <div class="status-erro">
                   <strong>Pagamento recusado</strong><br><br>
-                  ${mensagemRecusa(data.status_detail)}
+                  ${mensagemRecusa(data.status_detail)}<br><br>
+                  Confira os dados do cartão e tente novamente.
                 </div>
               `;
 
-              setTimeout(() => {
-                irErro();
-              }, 2200);
+              return;
 
             } else if (
               statusLocal === "PENDENTE" ||
