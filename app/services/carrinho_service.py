@@ -70,6 +70,8 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,
                 "dsobsitcar": getattr(it, "dsobsitcar", None),
+                "nmparticipante": it.nmparticipante,
+                "cpfparticipante": it.cpfparticipante,
                 "subtotal": subtotal,
             }
         )

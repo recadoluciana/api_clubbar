@@ -32,3 +32,6 @@ class ItVenda(Base):
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
     dtexpiraitvenda = Column(Date, nullable=True)
+    
+    nmparticipante = Column(String(150), nullable=True)
+    cpfparticipante = Column(String(11), nullable=True)
