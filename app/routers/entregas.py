@@ -48,6 +48,8 @@ def listar_itens_nao_entregues(
             ItVenda.vrunititvenda,
             ItVenda.dsobsitvenda,
             ItVenda.dtexpiraitvenda,
+            ItVenda.nmparticipante,
+            ItVenda.cpfparticipante,
             Venda.dtcriacao,
             Venda.loja_id,
         )
@@ -92,6 +94,8 @@ def listar_itens_nao_entregues(
             "urllogoloja": row.urllogoloja,
             "dsinstaloja": row.dsinstaloja,
             "nmcliente" : row.nmcliente,
+            "nmparticipante": row.nmparticipante,
+            "cpfparticipante": row.cpfparticipante,
         }
         for row in itens
     ]
