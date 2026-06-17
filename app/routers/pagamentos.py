@@ -74,6 +74,8 @@ def _recalcular_itens_carrinho(
                 "vrdesconto": float(produto.vrdesconto or 0),
                 "descontoativo": descontoativo,
                 "dsobsitcar": it.get("dsobsitcar") or it.get("obs"),
+                "nmparticipante": it.get("nmparticipante"),
+                "cpfparticipante": it.get("cpfparticipante"),
             }
         )
 
