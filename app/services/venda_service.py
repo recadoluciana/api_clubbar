@@ -67,13 +67,14 @@ async def criar_ou_obter_venda_idempotente(
         agora = datetime.now()
         fim = agora + timedelta(days=30)
 
-        print("ITEM VENDA =", it)
-        
+
         for it in itens:
             produto_id = int(it["produto_id"])
             qtd = int(it.get("qtitcarrinho") or it.get("qt") or 1)
             vr_unit = float(it.get("vrunitario", 0) or 0)
             dsobsitcar = it.get("dsobsitcar")
+            
+            print("ITEM VENDA =", it)
 
             db.add(
                 ItVenda(
