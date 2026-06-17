@@ -83,8 +83,8 @@ async def criar_ou_obter_venda_idempotente(
                     identregaitvenda="NAO",
                     qrtokenitvenda=gerar_token_qr(),
                     dtexpiraitvenda=fim,
-                    nmparticipante=nmparticipante,
-                    cpfparticipante=cpfparticipante,
+                    nmparticipante=it.get("nmparticipante"),
+                    cpfparticipante=it.get("cpfparticipante"),
                 )
             )
 
