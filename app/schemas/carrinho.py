@@ -14,6 +14,8 @@ class AddItemIn(BaseModel):
     qt: int = Field(ge=1, default=1)
     obs: Optional[str] = None
 
+    nmparticipante: str | None = None
+    cpfparticipante: str | None = None
 
 class AddItemOut(BaseModel):
     carrinho_id: int
@@ -21,6 +23,8 @@ class AddItemOut(BaseModel):
     produto_id: int
     qt: int
     obs: Optional[str] = None
+    nmparticipante: str | None = None
+    cpfparticipante: str | None = None
 
 
 class CarrinhoItemAgrupadoOut(BaseModel):

@@ -156,6 +156,9 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         qtitcarrinho=int(payload.qt),
         dsobsitcar=(payload.obs or None),
         lote_id=lote_id_final,  # ✅ NUNCA "" (string)
+        # NOVOS CAMPOS
+        nmparticipante=payload.nmparticipante,
+        cpfparticipante=payload.cpfparticipante,        
     )
 
     db.add(item)
@@ -168,6 +171,9 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         produto_id=int(item.produto_id),
         qt=int(item.qtitcarrinho),
         obs=item.dsobsitcar,
+        nmparticipante=item.nmparticipante,
+        cpfparticipante=item.cpfparticipante,        
+
     )
 
 @router.get("/qt")
@@ -302,6 +308,8 @@ def obter_itens_carrinho(
             Produto.idtipoproduto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
+            ItCarrinho.nmparticipante,
+            ItCarrinho.cpfparticipante,
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
         .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
@@ -349,6 +357,8 @@ def obter_itens_carrinho(
                 "qt": qt,
                 "observacao": i.dsobsitcar or "",
                 "subtotal": round(subtotal, 2),
+                "nmparticipante": i.nmparticipante,
+                "cpfparticipante": i.cpfparticipante,
             }
         )
 
