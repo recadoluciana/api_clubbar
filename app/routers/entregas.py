@@ -351,3 +351,37 @@ def listar_lojas_com_retirada_pendente(
         )
         for row in rows
     ]
+
+@router.put("/itvenda/{itvenda_id}/participante")
+def alterar_participante_itvenda(
+    itvenda_id: int,
+    payload: AlterarParticipanteIn,
+    db: Session = Depends(get_db),
+):
+    nome = payload.nmparticipante.strip()
+    cpf = "".join(ch for ch in payload.cpfparticipante if ch.isdigit())
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome do participante obrigatório")
+
+    if len(cpf) != 11:
+        raise HTTPException(status_code=400, detail="CPF do participante inválido")
+
+    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Item da venda não encontrado")
+
+    item.nmparticipante = nome
+    item.cpfparticipante = cpf
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "tipo": "itvenda",
+        "itvenda_id": item.itvenda_id,
+        "nmparticipante": item.nmparticipante,
+        "cpfparticipante": item.cpfparticipante,
+    }

@@ -558,3 +558,37 @@ def get_lojas_com_carrinho(
         )
         for row in rows
     ]
+
+@router.put("/itcarrinho/{itcarrinho_id}/participante")
+def alterar_participante_itcarrinho(
+    itcarrinho_id: int,
+    payload: AlterarParticipanteIn,
+    db: Session = Depends(get_db),
+):
+    nome = payload.nmparticipante.strip()
+    cpf = "".join(ch for ch in payload.cpfparticipante if ch.isdigit())
+
+    if not nome:
+        raise HTTPException(status_code=400, detail="Nome do participante obrigatório")
+
+    if len(cpf) != 11:
+        raise HTTPException(status_code=400, detail="CPF do participante inválido")
+
+    item = db.query(ItCarrinho).filter(ItCarrinho.itcarrinho_id == itcarrinho_id).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Item do carrinho não encontrado")
+
+    item.nmparticipante = nome
+    item.cpfparticipante = cpf
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "tipo": "itcarrinho",
+        "itcarrinho_id": item.itcarrinho_id,
+        "nmparticipante": item.nmparticipante,
+        "cpfparticipante": item.cpfparticipante,
+    }
