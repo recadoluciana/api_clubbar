@@ -14,7 +14,7 @@ from app.models.loja import Loja
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 
-from app.schemas.entregas import LojaRetiradaOut
+from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
 
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 

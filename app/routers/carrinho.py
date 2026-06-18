@@ -13,7 +13,7 @@ from app.models.loja import Loja
 from app.models.eventolote import EventoLote
 from app.models.evento import Evento
 
-from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut
+from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut,AlterarParticipanteIn
 
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
