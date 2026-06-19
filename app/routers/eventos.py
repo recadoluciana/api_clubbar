@@ -13,6 +13,7 @@ from app.models.loja import Loja
 from app.models.evento import Evento
 from app.models.cidade import Cidade
 from app.models.eventolote import EventoLote
+from app.models.organizacao import Organizacao
 from app.schemas.evento import EventoOutBR
 from app.schemas.eventolote import EventoLoteOut
 from app.core.config import UPLOAD_EVENTOS
@@ -91,6 +92,11 @@ def listar_eventos_proximos_global(
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .join(
+            Organizacao,
+            Organizacao.organizacao_id == Evento.organizacao_id,
+        )
+        .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
     )
@@ -100,7 +106,10 @@ def listar_eventos_proximos_global(
 
     eventos = q.order_by(Evento.dtinicioevento.asc()).all()
 
-    return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
+    return [
+        evento_to_out_br(ev, nmloja, nmcidade)
+        for ev, nmloja, nmcidade in eventos
+    ]
 
 
 @router.get("/loja/{loja_id}")
