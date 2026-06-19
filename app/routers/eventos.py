@@ -91,6 +91,8 @@ def listar_eventos_proximos_global(
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
+        .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
     )
@@ -195,6 +197,8 @@ def get_evento_por_id(
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .filter(Evento.evento_id == evento_id)
+        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)        
+        .filter(Organizacao.sitorganizacao == "ATIVA")        
         .first()
     )
 
