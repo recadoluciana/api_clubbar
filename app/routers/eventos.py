@@ -93,6 +93,7 @@ def listar_eventos_proximos_global(
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
         .filter(Organizacao.sitorganizacao == "ATIVA")
+        .filter(Loja.sitloja == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
     )
