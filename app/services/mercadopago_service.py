@@ -54,6 +54,7 @@ async def criar_pagamento_pix(
     nome: str,
     cpf: str | None,
     venda_id: int,
+    external_reference: str | None = None,
 ) -> Dict[str, Any]:
     cpf_limpo = _clean_digits(cpf)
 
@@ -96,7 +97,7 @@ async def criar_pagamento_pix(
         "payment_method_id": "pix",
 
         # importante para o webhook localizar a venda
-        "external_reference": str(venda_id),
+        "external_reference": external_reference or str(venda_id),
 
         # webhook do Mercado Pago
         "notification_url": MERCADOPAGO_NOTIFICATION_URL,

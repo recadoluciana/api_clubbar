@@ -103,10 +103,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             itens = carrinho.get("itens") or []
 
             if not isinstance(itens, list):
-                raise HTTPException(
-                    status_code=500,
-                    detail="Formato inválido dos itens do carrinho",
-                )
+                raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
 
             if not itens:
                 raise HTTPException(status_code=400, detail="Carrinho vazio")
@@ -125,58 +122,26 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
 
             carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
+            if carrinho_id == 0:
+                raise HTTPException(status_code=400, detail="Carrinho inválido")
+
         if metodo == "PIX":
-            with db.begin():
-                venda = await criar_ou_obter_venda_idempotente(
-                    db,
-                    cliente_id=payload.cliente_id,
-                    organizacao_id=payload.organizacao_id,
-                    loja_id=payload.loja_id,
-                    carrinho={
-                        **carrinho,
-                        "total": total_recalculado,
-                        "itens": itens_recalculados,
-                    },
-                    chave=minha_chave,
-                    metodo_pagamento=metodo_banco,
-                )
-
-                venda_id = int(venda["venda_id"])
-                pagvenda_id = int(venda["pagvenda_id"])
-
             data = await criar_pagamento_pix(
                 valor=total_recalculado,
-                descricao=f"Venda {venda_id} - Clubbar",
+                descricao=f"Carrinho {carrinho_id} - Clubbar",
                 email=cliente.get("email"),
                 nome=cliente.get("nome"),
                 cpf=cliente.get("cpf"),
-                venda_id=venda_id,
+                venda_id=0,
+                external_reference=f"CARRINHO-{carrinho_id}",
             )
-
-            with db.begin():
-                pag = (
-                    db.query(PagVenda)
-                    .filter(PagVenda.pagvenda_id == pagvenda_id)
-                    .with_for_update()
-                    .first()
-                )
-
-                if not pag:
-                    raise HTTPException(status_code=404, detail="PagVenda não encontrada")
-
-                pag.dsmetodopag = "PIX"
-                pag.sitpagvenda = "PENDENTE"
-                pag.idtransacaopagvenda = str(data.get("id"))
-                pag.checkout_id = str(data.get("id"))
-                pag.reference_id = str(venda_id)
-                pag.pay_url = None
-                pag.provedor = "MERCADO_PAGO"
 
             point = data.get("point_of_interaction") or {}
             transaction_data = point.get("transaction_data") or {}
 
             return {
-                "venda_id": venda_id,
+                "venda_id": None,
+                "carrinho_id": carrinho_id,
                 "pagamento_id": data.get("id"),
                 "status": "PENDENTE",
                 "metodo": "PIX",
