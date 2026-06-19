@@ -116,6 +116,46 @@ async def criar_venda_paga_por_carrinho_mp(
         "resultado": resultado,
     }
     
+@router.post("/consultar-pagamento/{pagamento_id}")
+async def consultar_pagamento_por_id(
+    pagamento_id: str,
+    db: Session = Depends(get_db),
+):
+    pagamento = await consultar_pagamento(str(pagamento_id))
+
+    status_mp = (pagamento.get("status") or "").lower()
+    external_reference = str(pagamento.get("external_reference") or "").strip()
+
+    resultado = None
+
+    if external_reference.startswith("CARRINHO-"):
+        carrinho_id = int(external_reference.replace("CARRINHO-", ""))
+
+        if status_mp == "approved":
+            with db.begin():
+                resultado = await criar_venda_paga_por_carrinho_mp(
+                    db,
+                    carrinho_id=carrinho_id,
+                    pagamento=pagamento,
+                )
+
+        return {
+            "ok": True,
+            "status": "PAGO" if status_mp == "approved" else status_mp.upper(),
+            "status_mp": status_mp,
+            "pagamento_id": pagamento_id,
+            "carrinho_id": carrinho_id,
+            "resultado": resultado,
+        }
+
+    return {
+        "ok": True,
+        "status": "PAGO" if status_mp == "approved" else status_mp.upper(),
+        "status_mp": status_mp,
+        "pagamento_id": pagamento_id,
+        "external_reference": external_reference,
+    }
+        
 @router.post("/webhook")
 async def mercadopago_webhook(
     request: Request,
