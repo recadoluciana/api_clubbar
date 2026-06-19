@@ -224,6 +224,7 @@ def get_evento_por_id(
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,
         "nmcidade": nmcidade,
+        "dsbairroloja": getattr(evento_obj,"dsbairroloja",None),
         "lotes": [
             {
                 "lote_id": lista_lotes.lote_id,
