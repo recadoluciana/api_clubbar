@@ -68,6 +68,8 @@ def listar_eventos_proximos(
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
+        .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
         .filter(Evento.dtinicioevento >= hi)
