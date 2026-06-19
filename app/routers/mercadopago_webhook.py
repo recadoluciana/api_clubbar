@@ -11,10 +11,11 @@ import uuid
 
 from app.models.carrinho import Carrinho
 from app.models.pagvenda import PagVenda
-from app.routers.carrinho import get_carrinho
+
 from app.routers.pagamentos import _recalcular_itens_carrinho
 from app.services.venda_service import criar_ou_obter_venda_idempotente
 from app.services.mercadopago_service import consultar_pagamento
+from app.services.carrinho_service import get_carrinho
 
 from app.services.pagamento_status_service import (
     set_venda_como_paga,
