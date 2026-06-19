@@ -92,7 +92,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         metodo_banco = "DEBITO"
     else:
         metodo_banco = metodo
-        
+
     try:
         with db.begin():
             carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
@@ -103,7 +103,10 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             itens = carrinho.get("itens") or []
 
             if not isinstance(itens, list):
-                raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Formato inválido dos itens do carrinho",
+                )
 
             if not itens:
                 raise HTTPException(status_code=400, detail="Carrinho vazio")
@@ -115,29 +118,32 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
 
             minha_chave = payload.idempotency_key or str(uuid.uuid4())
 
-            venda = await criar_ou_obter_venda_idempotente(
-                db,
-                cliente_id=payload.cliente_id,
-                organizacao_id=payload.organizacao_id,
-                loja_id=payload.loja_id,
-                carrinho={
-                    **carrinho,
-                    "total": total_recalculado,
-                    "itens": itens_recalculados,
-                },
-                chave=minha_chave,
-                metodo_pagamento=metodo_banco,
-            )
-
-            venda_id = int(venda["venda_id"])
-            pagvenda_id = int(venda["pagvenda_id"])
-
             cliente = get_cliente(db, payload.cliente_id)
 
             if not cliente:
                 raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
+            carrinho_id = int(carrinho.get("carrinho_id") or 0)
+
         if metodo == "PIX":
+            with db.begin():
+                venda = await criar_ou_obter_venda_idempotente(
+                    db,
+                    cliente_id=payload.cliente_id,
+                    organizacao_id=payload.organizacao_id,
+                    loja_id=payload.loja_id,
+                    carrinho={
+                        **carrinho,
+                        "total": total_recalculado,
+                        "itens": itens_recalculados,
+                    },
+                    chave=minha_chave,
+                    metodo_pagamento=metodo_banco,
+                )
+
+                venda_id = int(venda["venda_id"])
+                pagvenda_id = int(venda["pagvenda_id"])
+
             data = await criar_pagamento_pix(
                 valor=total_recalculado,
                 descricao=f"Venda {venda_id} - Clubbar",
@@ -195,24 +201,53 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
 
         data = await criar_pagamento_cartao_mp(
             valor=total_recalculado,
-            descricao=f"Venda {venda_id} - Clubbar",
+            descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             email=cliente.get("email"),
             nome=cliente.get("nome"),
             cpf=cliente.get("cpf"),
-            venda_id=venda_id,
+            venda_id=0,
             card_token=payload.card_token,
             payment_method_id=payload.payment_method_id,
             issuer_id=payload.issuer_id,
             installments=payload.installments or 1,
             tipo_pagamento=tipo_mp,
-            device_id=payload.device_id,   # ✅ Correto
+            device_id=payload.device_id,
             idempotency_key=minha_chave,
         )
 
         status_mp = (data.get("status") or "").upper()
-        status_local = "PAGO" if status_mp == "APPROVED" else "PENDENTE"
+
+        if status_mp != "APPROVED":
+            status_local = "RECUSADO" if status_mp == "REJECTED" else "PENDENTE"
+
+            return {
+                "venda_id": None,
+                "pagamento_id": data.get("id"),
+                "status": status_local,
+                "status_mp": data.get("status"),
+                "status_detail": data.get("status_detail"),
+                "metodo": metodo,
+                "baixa": None,
+            }
 
         with db.begin():
+            venda = await criar_ou_obter_venda_idempotente(
+                db,
+                cliente_id=payload.cliente_id,
+                organizacao_id=payload.organizacao_id,
+                loja_id=payload.loja_id,
+                carrinho={
+                    **carrinho,
+                    "total": total_recalculado,
+                    "itens": itens_recalculados,
+                },
+                chave=minha_chave,
+                metodo_pagamento=metodo_banco,
+            )
+
+            venda_id = int(venda["venda_id"])
+            pagvenda_id = int(venda["pagvenda_id"])
+
             pag = (
                 db.query(PagVenda)
                 .filter(PagVenda.pagvenda_id == pagvenda_id)
@@ -223,40 +258,30 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             if not pag:
                 raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
-            if metodo == "CREDIT_CARD":
-                metodo_banco = "CREDITO"
-            elif metodo == "DEBIT_CARD":
-                metodo_banco = "DEBITO"
-            else:
-                metodo_banco = metodo
-
             pag.dsmetodopag = metodo_banco
-            pag.sitpagvenda = status_local
+            pag.sitpagvenda = "PAGO"
             pag.idtransacaopagvenda = str(data.get("id"))
             pag.checkout_id = str(data.get("id"))
             pag.reference_id = str(venda_id)
             pag.pay_url = None
             pag.provedor = "MERCADO_PAGO"
 
-            resultado_baixa = None
-
-            if status_mp == "APPROVED":
-                resultado_baixa = set_venda_como_paga(
-                    db,
-                    venda_id=venda_id,
-                    gateway="MERCADOPAGO",
-                    payload={
-                        "id": str(data.get("id")),
-                        "status": data.get("status"),
-                        "status_detail": data.get("status_detail"),
-                        "mercadopago": data,
-                    },
-                )
+            resultado_baixa = set_venda_como_paga(
+                db,
+                venda_id=venda_id,
+                gateway="MERCADOPAGO",
+                payload={
+                    "id": str(data.get("id")),
+                    "status": data.get("status"),
+                    "status_detail": data.get("status_detail"),
+                    "mercadopago": data,
+                },
+            )
 
         return {
             "venda_id": venda_id,
             "pagamento_id": data.get("id"),
-            "status": status_local,
+            "status": "PAGO",
             "status_mp": data.get("status"),
             "status_detail": data.get("status_detail"),
             "metodo": metodo,
