@@ -12,6 +12,7 @@ from app.database import get_db
 from app.models.loja import Loja
 from app.models.evento import Evento
 from app.models.cidade import Cidade
+from app.models.estado import Estado
 from app.models.eventolote import EventoLote
 from app.models.organizacao import Organizacao
 from app.schemas.evento import EventoOutBR
@@ -200,19 +201,20 @@ def get_evento_por_id(
     db: Session = Depends(get_db),
 ):
     evento = (
-        db.query(Evento, Loja.nmloja, Cidade.nmcidade)
+        db.query(Evento, Loja.nmloja, Cidade.nmcidade, Estado.sgestado)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .join(Estado, Estado.estado_id == Cidade.estado_id)
+        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
         .filter(Evento.evento_id == evento_id)
-        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)        
-        .filter(Organizacao.sitorganizacao == "ATIVA")        
+        .filter(Organizacao.sitorganizacao == "ATIVA")
         .first()
     )
 
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-    evento_obj, nmloja, nmcidade = evento
+    evento_obj, nmloja, nmcidade, sgestado = evento
 
     lotes = (
         db.query(EventoLote)
@@ -237,6 +239,7 @@ def get_evento_por_id(
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,
         "nmcidade": nmcidade,
+        "sgestado": sgestado,
         "dsbairroloja": getattr(evento_obj,"dsbairroloja",None),
         "lotes": [
             {
