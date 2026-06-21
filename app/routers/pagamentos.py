@@ -95,36 +95,36 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         metodo_banco = metodo
 
     try:
-        with db.begin():
-            carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
+        
+        carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
 
-            if not carrinho:
-                raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+        if not carrinho:
+            raise HTTPException(status_code=404, detail="Carrinho não encontrado")
 
-            itens = carrinho.get("itens") or []
+        itens = carrinho.get("itens") or []
 
-            if not isinstance(itens, list):
-                raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
+        if not isinstance(itens, list):
+            raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
 
-            if not itens:
-                raise HTTPException(status_code=400, detail="Carrinho vazio")
+        if not itens:
+            raise HTTPException(status_code=400, detail="Carrinho vazio")
 
-            itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
-                db,
-                itens,
-            )
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
+            db,
+            itens,
+        )
 
-            minha_chave = payload.idempotency_key or str(uuid.uuid4())
+        minha_chave = payload.idempotency_key or str(uuid.uuid4())
 
-            cliente = get_cliente(db, payload.cliente_id)
+        cliente = get_cliente(db, payload.cliente_id)
 
-            if not cliente:
-                raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-            carrinho_id = int(carrinho.get("carrinho_id") or 0)
+        carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
-            if carrinho_id == 0:
-                raise HTTPException(status_code=400, detail="Carrinho inválido")
+        if carrinho_id == 0:
+            raise HTTPException(status_code=400, detail="Carrinho inválido")
 
         if metodo == "PIX":
             carrinho_db = (
