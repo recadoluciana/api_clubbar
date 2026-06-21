@@ -8,6 +8,8 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from contextlib import nullcontext
+
 from app.database import get_db
 from app.schemas.pagamentos import PagarNovoIn
 from app.models.carrinho import Carrinho
@@ -82,6 +84,8 @@ def _recalcular_itens_carrinho(
 
     return itens_recalculados, total
 
+def db_tx(db: Session):
+    return nullcontext() if db.in_transaction() else db.begin()
 
 @router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
@@ -174,7 +178,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 external_reference=f"CARRINHO-{carrinho_id}",
             )
 
-            with db.begin():
+            with db_tx(db):
                 carrinho_db = (
                     db.query(Carrinho)
                     .filter(Carrinho.carrinho_id == carrinho_id)
@@ -249,7 +253,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 "baixa": None,
             }
 
-        with db.begin():
+        with db_tx(db):
             venda = await criar_ou_obter_venda_idempotente(
                 db,
                 cliente_id=payload.cliente_id,
@@ -378,7 +382,7 @@ async def consultar_mercadopago_por_venda(
     status_mp = (data.get("status") or "").lower()
 
     if status_mp == "approved":
-        with db.begin():
+        with db_tx(db):
             resultado = set_venda_como_paga(
                 db,
                 venda_id=venda_id,
@@ -408,44 +412,3 @@ async def consultar_mercadopago_por_venda(
     }
 
 
-@router.post("/mock-aprovar/{venda_id}")
-async def mock_aprovar_pagamento(
-    venda_id: int,
-    db: Session = Depends(get_db),
-):
-    try:
-        with db.begin():
-            resultado = set_venda_como_paga(
-                db,
-                venda_id=venda_id,
-                gateway="MERCADOPAGO",
-                payload={
-                    "id": f"MOCK_MP_{venda_id}",
-                    "status": "approved",
-                    "charges": [
-                        {
-                            "id": f"MOCK_MP_{venda_id}",
-                            "status": "PAID",
-                        }
-                    ],
-                    "mercadopago": {
-                        "id": f"MOCK_MP_{venda_id}",
-                        "status": "approved",
-                        "external_reference": str(venda_id),
-                    },
-                },
-            )
-
-        return {
-            "ok": True,
-            "venda_id": venda_id,
-            "status": "PAGO",
-            "resultado": resultado,
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        print("[MOCK APROVAR][ERRO]", repr(e))
-        raise HTTPException(status_code=500, detail=str(e))

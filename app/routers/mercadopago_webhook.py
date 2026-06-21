@@ -4,7 +4,7 @@ import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-
+from contextlib import nullcontext
 from app.database import get_db
 
 import uuid
@@ -135,7 +135,7 @@ async def consultar_pagamento_por_id(
         carrinho_id = int(external_reference.replace("CARRINHO-", ""))
 
         if status_mp == "approved":
-            with db.begin():
+            with db_tx(db):
                 resultado = await criar_venda_paga_por_carrinho_mp(
                     db,
                     carrinho_id=carrinho_id,
@@ -158,7 +158,10 @@ async def consultar_pagamento_por_id(
         "pagamento_id": pagamento_id,
         "external_reference": external_reference,
     }
-        
+     
+def db_tx(db: Session):
+    return nullcontext() if db.in_transaction() else db.begin()
+       
 @router.post("/webhook")
 async def mercadopago_webhook(
     request: Request,
@@ -221,7 +224,7 @@ async def mercadopago_webhook(
             resultado = None
 
             if status_mp == "approved":
-                with db.begin():
+                with db_tx(db):
                     resultado = await criar_venda_paga_por_carrinho_mp(
                         db,
                         carrinho_id=carrinho_id,
@@ -249,7 +252,7 @@ async def mercadopago_webhook(
         # approved
         if status_mp == "approved":
 
-            with db.begin():
+            with db_tx(db):
                 set_venda_como_paga(
                     db,
                     venda_id=venda_id,
@@ -259,7 +262,7 @@ async def mercadopago_webhook(
 
         elif status_mp in {"cancelled", "rejected"}:
 
-            with db.begin():
+            with db_tx(db):
                 set_venda_como_cancelada(
                     db,
                     venda_id=venda_id,
