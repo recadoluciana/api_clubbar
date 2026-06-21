@@ -126,8 +126,45 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Carrinho inválido")
 
         if metodo == "PIX":
+            carrinho_db = (
+                db.query(Carrinho)
+                .filter(Carrinho.carrinho_id == carrinho_id)
+                .first()
+            )
+
+            if not carrinho_db:
+                raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+
+            valor_atual = round(float(total_recalculado or 0), 2)
+            valor_pix_salvo = round(float(carrinho_db.vrpixmercadopago or 0), 2)
+
+            if carrinho_db.idpixmercadopago and valor_pix_salvo == valor_atual:
+                pagamento = await consultar_pagamento(
+                    str(carrinho_db.idpixmercadopago)
+                )
+
+                status_mp = (pagamento.get("status") or "").lower()
+
+                if status_mp in ["pending", "in_process"]:
+                    transaction_data = (
+                        pagamento.get("point_of_interaction", {})
+                        .get("transaction_data", {})
+                    )
+
+                    return {
+                        "venda_id": None,
+                        "carrinho_id": carrinho_id,
+                        "pagamento_id": pagamento.get("id"),
+                        "status": "PENDENTE",
+                        "metodo": "PIX",
+                        "pix_copia_cola": transaction_data.get("qr_code", ""),
+                        "qr_code_base64": transaction_data.get("qr_code_base64", ""),
+                        "ticket_url": transaction_data.get("ticket_url", ""),
+                        "reutilizado": True,
+                    }
+
             data = await criar_pagamento_pix(
-                valor=total_recalculado,
+                valor=valor_atual,
                 descricao=f"Carrinho {carrinho_id} - Clubbar",
                 email=cliente.get("email"),
                 nome=cliente.get("nome"),
@@ -135,6 +172,20 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 venda_id=0,
                 external_reference=f"CARRINHO-{carrinho_id}",
             )
+
+            with db.begin():
+                carrinho_db = (
+                    db.query(Carrinho)
+                    .filter(Carrinho.carrinho_id == carrinho_id)
+                    .with_for_update()
+                    .first()
+                )
+
+                if not carrinho_db:
+                    raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+
+                carrinho_db.idpixmercadopago = str(data.get("id"))
+                carrinho_db.vrpixmercadopago = valor_atual
 
             point = data.get("point_of_interaction") or {}
             transaction_data = point.get("transaction_data") or {}
@@ -148,7 +199,9 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 "pix_copia_cola": transaction_data.get("qr_code", ""),
                 "qr_code_base64": transaction_data.get("qr_code_base64", ""),
                 "ticket_url": transaction_data.get("ticket_url", ""),
+                "reutilizado": False,
             }
+        # >>>>> fim do if == pix >>>>>>>>>
 
         if metodo not in ["CREDIT_CARD", "DEBIT_CARD"]:
             raise HTTPException(

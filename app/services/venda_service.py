@@ -49,6 +49,35 @@ async def criar_ou_obter_venda_idempotente(
     elif metodo_pagamento not in ["PIX", "CREDITO", "DEBITO", "OUTRO"]:
         metodo_pagamento = "OUTRO"
 
+    ## testa venda PAGA PARA EVITAR duplicidade de criação da venda
+    venda_paga = (
+        db.query(Venda)
+        .filter(
+            Venda.loja_id == loja_id,
+            Venda.cliente_id == cliente_id,
+            Venda.carrinho_id == carrinho_id,
+            Venda.sitvenda == "PAGO",
+        )
+        .order_by(Venda.venda_id.desc())
+        .first()
+    )
+
+    if venda_paga:
+        pag = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id == venda_paga.venda_id)
+            .order_by(PagVenda.pagvenda_id.desc())
+            .first()
+        )
+
+        return {
+            "venda_id": int(venda_paga.venda_id),
+            "pagvenda_id": int(pag.pagvenda_id) if pag else 0,
+            "reference_id": pag.reference_id if pag else f"VENDA-{venda_paga.venda_id}",
+            "already_paid": True,
+        }    
+    ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> fim >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
     venda = (
         db.query(Venda)
         .filter(

@@ -109,6 +109,9 @@ async def criar_venda_paga_por_carrinho_mp(
         payload=pagamento,
     )
 
+    carrinho_db.idpixmercadopago = None
+    carrinho_db.vrpixmercadopago = None
+
     return {
         "ok": True,
         "venda_id": venda_id,
