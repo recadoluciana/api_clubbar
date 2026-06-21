@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.pagamentos import PagarNovoIn
+from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
 from app.models.pagvenda import PagVenda
