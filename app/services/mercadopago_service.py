@@ -173,7 +173,7 @@ async def criar_pagamento_cartao_mp(
     email: str | None,
     nome: str | None,
     cpf: str | None,
-    venda_id: int,
+    external_reference: str,
     card_token: str,
     payment_method_id: str | None,
     issuer_id: str | None,
@@ -229,25 +229,25 @@ async def criar_pagamento_cartao_mp(
             "number": cpf_limpo,
         }
 
-    body: Dict[str, Any] = {
+    bbody: Dict[str, Any] = {
         "transaction_amount": valor,
         "token": card_token,
-        "description": descricao or f"Compra Clubbar #{venda_id}",
+        "description": descricao or f"Compra Clubbar #{external_reference}",
         "installments": installments or 1,
         "payment_method_id": payment_method_id,
         "payer": payer,
-        "external_reference": str(venda_id),
+        "external_reference": str(external_reference),
         "notification_url": MERCADOPAGO_NOTIFICATION_URL,
         "metadata": {
-            "venda_id": venda_id,
+            "external_reference": str(external_reference),
             "tipo_pagamento": tipo_pagamento,
         },
         "additional_info": {
             "items": [
                 {
-                    "id": str(venda_id),
-                    "title": descricao or f"Compra Clubbar #{venda_id}",
-                    "description": descricao or f"Compra Clubbar #{venda_id}",
+                    "id": str(external_reference),
+                    "title": descricao or f"Compra Clubbar #{external_reference}",
+                    "description": descricao or f"Compra Clubbar #{external_reference}",
                     "quantity": 1,
                     "unit_price": valor,
                 }
@@ -258,13 +258,13 @@ async def criar_pagamento_cartao_mp(
     if issuer_id:
         body["issuer_id"] = issuer_id
 
-    #if device_id:
-    #    body.setdefault("additional_info", {})
-    #    body["additional_info"]["device"] = {
-    #        "fingerprint": {
-    #            "id": device_id,
-    #        }
-    #    }
+    if device_id:
+        body.setdefault("additional_info", {})
+        body["additional_info"]["device"] = {
+            "fingerprint": {
+                "id": device_id,
+            }
+        }
 
     print("[CARTAO] BODY =", body)
 
