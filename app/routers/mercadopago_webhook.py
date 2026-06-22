@@ -161,7 +161,7 @@ async def consultar_pagamento_por_id(
      
 def db_tx(db: Session):
     return nullcontext() if db.in_transaction() else db.begin()
-       
+
 @router.post("/webhook")
 async def mercadopago_webhook(
     request: Request,
@@ -215,6 +215,17 @@ async def mercadopago_webhook(
             print("[MP WEBHOOK] external_reference vazio")
             return {"ok": True, "msg": "external_reference vazio"}
 
+        # Pagamentos de cartão já são tratados no pagar_novo
+        if external_reference.startswith("CARTAO-"):
+            print("[MP WEBHOOK] Pagamento de cartão ignorado:", external_reference)
+
+            return {
+                "ok": True,
+                "msg": "Cartão já tratado no pagar_novo",
+                "external_reference": external_reference,
+                "status": status_mp,
+            }
+
         if external_reference.startswith("CARRINHO-"):
             carrinho_id = int(external_reference.replace("CARRINHO-", ""))
 
@@ -243,6 +254,7 @@ async def mercadopago_webhook(
         if not external_reference.isdigit():
             print("[MP WEBHOOK] external_reference inválido:", external_reference)
             return {"ok": True, "msg": "external_reference ignorado"}
+
 
         venda_id = int(external_reference)
 
