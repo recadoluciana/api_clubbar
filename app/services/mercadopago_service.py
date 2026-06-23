@@ -257,12 +257,6 @@ async def criar_pagamento_cartao_mp(
 
     print("[CARTAO] DEVICE_ID =", device_id)
 
-    if device_id:
-        body["additional_info"]["device"] = {
-            "fingerprint": {
-                "id": device_id,
-            }
-        }
 
     if issuer_id:
         body["issuer_id"] = issuer_id
@@ -278,7 +272,10 @@ async def criar_pagamento_cartao_mp(
             response = await client.post(
                 f"{MERCADOPAGO_BASE}/v1/payments",
                 json=body,
-                headers=_headers(chave),
+                headers={
+                    **_headers(chave),
+                    **({"X-meli-session-id": device_id} if device_id else {}),
+                },
             )
 
         try:
