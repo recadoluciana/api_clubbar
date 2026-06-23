@@ -229,7 +229,7 @@ async def criar_pagamento_cartao_mp(
             "number": cpf_limpo,
         }
 
-    bbody: Dict[str, Any] = {
+    body: Dict[str, Any] = {
         "transaction_amount": valor,
         "token": card_token,
         "description": descricao or f"Compra Clubbar #{external_reference}",
