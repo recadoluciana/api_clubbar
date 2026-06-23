@@ -255,16 +255,17 @@ async def criar_pagamento_cartao_mp(
         },
     }
 
+    print("[CARTAO] DEVICE_ID =", device_id)
+
+    if device_id:
+        body["additional_info"]["device"] = {
+            "fingerprint": {
+                "id": device_id,
+            }
+        }
+
     if issuer_id:
         body["issuer_id"] = issuer_id
-
-    #if device_id:
-    #    body.setdefault("additional_info", {})
-    #    body["additional_info"]["device"] = {
-    #        "fingerprint": {
-    #            "id": device_id,
-    #        }
-    #    }
 
     print("[CARTAO] BODY =", body)
 
