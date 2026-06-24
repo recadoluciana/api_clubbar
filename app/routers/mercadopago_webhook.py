@@ -256,6 +256,10 @@ async def mercadopago_webhook(
             return {"ok": True, "msg": "external_reference ignorado"}
 
 
+        f external_reference == "0":
+            print("[MP WEBHOOK] external_reference 0 ignorado")
+            return {"ok": True, "msg": "external_reference 0 ignorado"}
+                
         venda_id = int(external_reference)
 
         print("[MP WEBHOOK] venda_id =", venda_id)
@@ -280,7 +284,6 @@ async def mercadopago_webhook(
                     venda_id=venda_id,
                     gateway="MERCADOPAGO",
                     payload=pagamento,
-                    fechar_carrinho=False,
                 )
 
         elif status_mp in {"pending", "in_process", "authorized"}:
