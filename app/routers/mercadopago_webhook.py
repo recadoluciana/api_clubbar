@@ -256,7 +256,7 @@ async def mercadopago_webhook(
             return {"ok": True, "msg": "external_reference ignorado"}
 
 
-        f external_reference == "0":
+        if external_reference == "0":
             print("[MP WEBHOOK] external_reference 0 ignorado")
             return {"ok": True, "msg": "external_reference 0 ignorado"}
                 
