@@ -89,14 +89,8 @@ def db_tx(db: Session):
 
 @router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
-    metodo = (payload.dsmetodopag or "PIX").strip().upper()
 
-    if metodo == "CREDIT_CARD":
-        metodo_banco = "CREDITO"
-    elif metodo == "DEBIT_CARD":
-        metodo_banco = "DEBITO"
-    else:
-        metodo_banco = metodo
+    metodo = (payload.dsmetodopag or "PIX").strip().upper()
 
     try:
         
@@ -228,7 +222,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             email=cliente.get("email"),
             nome=cliente.get("nome"),
             cpf=cliente.get("cpf"),
-            external_reference=f"CARTAO-{carrinho_id}-{uuid.uuid4().hex}",
+            external_reference=f"CARRINHO-{carrinho_id}",
             card_token=payload.card_token,
             payment_method_id=payload.payment_method_id,
             issuer_id=payload.issuer_id,
@@ -240,75 +234,23 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
 
         status_mp = (data.get("status") or "").upper()
 
-        if status_mp != "APPROVED":
-            status_local = "RECUSADO" if status_mp == "REJECTED" else "PENDENTE"
-
-            return {
-                "venda_id": None,
-                "pagamento_id": data.get("id"),
-                "status": status_local,
-                "status_mp": data.get("status"),
-                "status_detail": data.get("status_detail"),
-                "metodo": metodo,
-                "baixa": None,
-            }
-
-        with db_tx(db):
-            venda = await criar_ou_obter_venda_idempotente(
-                db,
-                cliente_id=payload.cliente_id,
-                organizacao_id=payload.organizacao_id,
-                loja_id=payload.loja_id,
-                carrinho={
-                    **carrinho,
-                    "total": total_recalculado,
-                    "itens": itens_recalculados,
-                },
-                chave=minha_chave,
-                metodo_pagamento=metodo_banco,
-            )
-
-            venda_id = int(venda["venda_id"])
-            pagvenda_id = int(venda["pagvenda_id"])
-
-            pag = (
-                db.query(PagVenda)
-                .filter(PagVenda.pagvenda_id == pagvenda_id)
-                .with_for_update()
-                .first()
-            )
-
-            if not pag:
-                raise HTTPException(status_code=404, detail="PagVenda não encontrada")
-
-            pag.dsmetodopag = metodo_banco
-            pag.sitpagvenda = "PAGO"
-            pag.idtransacaopagvenda = str(data.get("id"))
-            pag.checkout_id = str(data.get("id"))
-            pag.reference_id = str(venda_id)
-            pag.pay_url = None
-            pag.provedor = "MERCADO_PAGO"
-
-            resultado_baixa = set_venda_como_paga(
-                db,
-                venda_id=venda_id,
-                gateway="MERCADOPAGO",
-                payload={
-                    "id": str(data.get("id")),
-                    "status": data.get("status"),
-                    "status_detail": data.get("status_detail"),
-                    "mercadopago": data,
-                },
-            )
+        if status_mp == "APPROVED":
+            status_local = "PAGO"
+        elif status_mp == "REJECTED":
+            status_local = "RECUSADO"
+        else:
+            status_local = "PENDENTE"
 
         return {
-            "venda_id": venda_id,
+            "venda_id": None,
+            "carrinho_id": carrinho_id,
             "pagamento_id": data.get("id"),
-            "status": "PAGO",
+            "status": status_local,
             "status_mp": data.get("status"),
             "status_detail": data.get("status_detail"),
             "metodo": metodo,
-            "baixa": resultado_baixa,
+            "aguardando_webhook": status_mp == "APPROVED",
+            "baixa": None,
         }
 
     except HTTPException:

@@ -67,6 +67,18 @@ async def criar_venda_paga_por_carrinho_mp(
         itens,
     )
 
+    payment_type_id = (pagamento.get("payment_type_id") or "").lower()
+    payment_method_id = (pagamento.get("payment_method_id") or "").lower()
+
+    if payment_type_id == "credit_card":
+        metodo_pagamento = "CREDITO"
+    elif payment_type_id == "debit_card":
+        metodo_pagamento = "DEBITO"
+    elif payment_method_id == "pix" or payment_type_id in {"bank_transfer", "account_money"}:
+        metodo_pagamento = "PIX"
+    else:
+        metodo_pagamento = "OUTRO"
+
     venda = await criar_ou_obter_venda_idempotente(
         db,
         cliente_id=carrinho_db.cliente_id,
@@ -78,7 +90,7 @@ async def criar_venda_paga_por_carrinho_mp(
             "itens": itens_recalculados,
         },
         chave=str(uuid.uuid4()),
-        metodo_pagamento="PIX",
+        metodo_pagamento=metodo_pagamento,
     )
 
     venda_id = int(venda["venda_id"])
@@ -94,7 +106,7 @@ async def criar_venda_paga_por_carrinho_mp(
     if not pag:
         raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
-    pag.dsmetodopag = "PIX"
+    pag.dsmetodopag = metodo_pagamento
     pag.sitpagvenda = "PAGO"
     pag.idtransacaopagvenda = str(pagamento.get("id"))
     pag.checkout_id = str(pagamento.get("id"))
@@ -129,28 +141,6 @@ async def consultar_pagamento_por_id(
     status_mp = (pagamento.get("status") or "").lower()
     external_reference = str(pagamento.get("external_reference") or "").strip()
 
-    resultado = None
-
-    if external_reference.startswith("CARRINHO-"):
-        carrinho_id = int(external_reference.replace("CARRINHO-", ""))
-
-        if status_mp == "approved":
-            with db_tx(db):
-                resultado = await criar_venda_paga_por_carrinho_mp(
-                    db,
-                    carrinho_id=carrinho_id,
-                    pagamento=pagamento,
-                )
-
-        return {
-            "ok": True,
-            "status": "PAGO" if status_mp == "approved" else status_mp.upper(),
-            "status_mp": status_mp,
-            "pagamento_id": pagamento_id,
-            "carrinho_id": carrinho_id,
-            "resultado": resultado,
-        }
-
     return {
         "ok": True,
         "status": "PAGO" if status_mp == "approved" else status_mp.upper(),
@@ -168,19 +158,14 @@ async def mercadopago_webhook(
     db: Session = Depends(get_db),
 ):
     try:
-
         body = await request.json()
 
         print("[MP WEBHOOK] BODY =", body)
 
         tipo = body.get("type") or body.get("topic")
-
         data = body.get("data") or {}
 
-        pagamento_id = (
-            data.get("id")
-            or body.get("id")
-        )
+        pagamento_id = data.get("id") or body.get("id") or body.get("resource")
 
         if pagamento_id:
             pagamento_id = str(pagamento_id).strip()
@@ -192,15 +177,11 @@ async def mercadopago_webhook(
             }
 
         print("[MP WEBHOOK] pagamento_id =", pagamento_id)
-        
+
         try:
-
             pagamento = await consultar_pagamento(str(pagamento_id))
-
-        except Exception as e:
-
+        except Exception:
             print("[MP WEBHOOK] pagamento ainda indisponível")
-
             return {
                 "ok": True,
                 "mensagem": "Pagamento ainda não disponível",
@@ -208,26 +189,32 @@ async def mercadopago_webhook(
 
         print("[MP WEBHOOK] pagamento =", pagamento)
 
-        external_reference = str(pagamento.get("external_reference") or "").strip()
+        external_reference = str(
+            pagamento.get("external_reference") or ""
+        ).strip()
+
         status_mp = (pagamento.get("status") or "").lower()
 
         if not external_reference:
             print("[MP WEBHOOK] external_reference vazio")
             return {"ok": True, "msg": "external_reference vazio"}
 
-        # Pagamentos de cartão já são tratados no pagar_novo
-        if external_reference.startswith("CARTAO-"):
-            print("[MP WEBHOOK] Pagamento de cartão ignorado:", external_reference)
-
-            return {
-                "ok": True,
-                "msg": "Cartão já tratado no pagar_novo",
-                "external_reference": external_reference,
-                "status": status_mp,
-            }
+        if external_reference == "0":
+            print("[MP WEBHOOK] external_reference 0 ignorado")
+            return {"ok": True, "msg": "external_reference 0 ignorado"}
 
         if external_reference.startswith("CARRINHO-"):
-            carrinho_id = int(external_reference.replace("CARRINHO-", ""))
+            try:
+                carrinho_id = int(
+                    external_reference.replace("CARRINHO-", "").split("-")[0]
+                )
+            except Exception:
+                print("[MP WEBHOOK] carrinho_id inválido:", external_reference)
+                return {
+                    "ok": True,
+                    "msg": "carrinho_id inválido",
+                    "external_reference": external_reference,
+                }
 
             print("[MP WEBHOOK] carrinho_id =", carrinho_id)
             print("[MP WEBHOOK] status =", status_mp)
@@ -242,6 +229,18 @@ async def mercadopago_webhook(
                         pagamento=pagamento,
                     )
 
+            elif status_mp in {"cancelled", "rejected"}:
+                print("[MP WEBHOOK] pagamento recusado/cancelado para carrinho:", carrinho_id)
+
+            elif status_mp in {"pending", "in_process", "authorized"}:
+                print("[MP WEBHOOK] pagamento em processamento:", status_mp)
+
+            elif status_mp in {"refunded", "charged_back"}:
+                print("[MP WEBHOOK] pagamento estornado/chargeback:", status_mp)
+
+            else:
+                print("[MP WEBHOOK] status não tratado:", status_mp)
+
             return {
                 "ok": True,
                 "carrinho_id": carrinho_id,
@@ -255,19 +254,12 @@ async def mercadopago_webhook(
             print("[MP WEBHOOK] external_reference inválido:", external_reference)
             return {"ok": True, "msg": "external_reference ignorado"}
 
-
-        if external_reference == "0":
-            print("[MP WEBHOOK] external_reference 0 ignorado")
-            return {"ok": True, "msg": "external_reference 0 ignorado"}
-                
         venda_id = int(external_reference)
 
         print("[MP WEBHOOK] venda_id =", venda_id)
         print("[MP WEBHOOK] status =", status_mp)
 
-        # approved
         if status_mp == "approved":
-
             with db_tx(db):
                 set_venda_como_paga(
                     db,
@@ -277,7 +269,6 @@ async def mercadopago_webhook(
                 )
 
         elif status_mp in {"cancelled", "rejected"}:
-
             with db_tx(db):
                 set_venda_como_cancelada(
                     db,
@@ -287,12 +278,10 @@ async def mercadopago_webhook(
                 )
 
         elif status_mp in {"pending", "in_process", "authorized"}:
-            # Apenas registra e aguarda nova notificação
             print(f"[MP WEBHOOK] Pagamento em processamento: {status_mp}")
 
         elif status_mp in {"refunded", "charged_back"}:
             print(f"[MP WEBHOOK] Pagamento estornado/chargeback: {status_mp}")
-            # Futuramente implementar lógica de reversão
 
         else:
             print(f"[MP WEBHOOK] Status não tratado: {status_mp}")
@@ -309,7 +298,6 @@ async def mercadopago_webhook(
         raise
 
     except Exception as e:
-
         print("[MP WEBHOOK][ERRO]", repr(e))
         print(traceback.format_exc())
 
