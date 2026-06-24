@@ -151,10 +151,9 @@
 
     const bricksBuilder = mp.bricks();
 
-    function irSucesso(vendaId) {
+    function irSucesso() {
       if (origem === "web") {
-        window.location.href =
-          appUrl + "/?ultima_venda=" + encodeURIComponent(vendaId);
+        window.location.href = appUrl + "/?pagamento=sucesso";
       } else {
         window.location.href = "clubbar://pagamento-sucesso";
       }
@@ -290,7 +289,7 @@
               `;
 
               setTimeout(() => {
-                irSucesso(data.venda_id);
+                irSucesso();
               }, 1200);
 
             } else if (statusMp === "rejected") {
