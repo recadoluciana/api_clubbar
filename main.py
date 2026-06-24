@@ -31,9 +31,15 @@ app = FastAPI(title="clubbar API")
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://clubbarsite-production.up.railway.app",
+
     "https://clubbar.com.br",
     "https://www.clubbar.com.br",
+    "https://app.clubbar.com.br",
+    "https://admin.clubbar.com.br",
+    "https://api.clubbar.com.br",
+
+    # manter por enquanto durante a transição
+    "https://clubbarsite-production.up.railway.app",
     "https://clubbarcliente-production.up.railway.app",
     "https://clubbaradmin-production.up.railway.app",
     "https://bitbeer-production.up.railway.app",

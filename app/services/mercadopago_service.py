@@ -9,10 +9,7 @@ from typing import Any, Dict
 import httpx
 from fastapi import HTTPException
 
-MERCADOPAGO_NOTIFICATION_URL = os.getenv(
-    "MERCADOPAGO_NOTIFICATION_URL",
-    "https://bitbeer-production.up.railway.app/mercadopago/webhook",
-)
+MERCADOPAGO_NOTIFICATION_URL = os.getenv("MERCADOPAGO_NOTIFICATION_URL")
 
 MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
 MERCADOPAGO_BASE = os.getenv(
