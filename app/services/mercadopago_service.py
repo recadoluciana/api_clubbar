@@ -265,6 +265,8 @@ async def criar_pagamento_cartao_mp(
     for tentativa in range(1, 4):
         chave = idempotency_key or str(uuid.uuid4())
 
+        print("[CARTAO] HEADERS TEM DEVICE =", "X-meli-session-id" in headers)
+        
         async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
             response = await client.post(
                 f"{MERCADOPAGO_BASE}/v1/payments",
