@@ -277,6 +277,19 @@ async def criar_pagamento_cartao_mp(
 
         print("[CARTAO] HEADERS TEM DEVICE =", "X-meli-session-id" in headers)
 
+
+        print("[CARTAO][REQ_CHECK]", {
+            "external_reference": str(external_reference),
+            "valor": valor,
+            "payment_method_id": payment_method_id,
+            "issuer_id": issuer_id,
+            "payer_email": email[:3] + "***" if email else None,
+            "payer_doc_type": payer.get("identification", {}).get("type"),
+            "payer_doc_ok": bool(payer.get("identification", {}).get("number")),
+            "additional_info_keys": list(body.get("additional_info", {}).keys()),
+            "headers_tem_device": bool(device_id),
+        })
+
         async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
             response = await client.post(
                 f"{MERCADOPAGO_BASE}/v1/payments",
@@ -294,6 +307,12 @@ async def criar_pagamento_cartao_mp(
         print("[MERCADOPAGO CARTAO] TENTATIVA =", tentativa)
         print("[MERCADOPAGO CARTAO] STATUS =", response.status_code)
         print("[MERCADOPAGO CARTAO] RESPONSE =", data)
+        print("[CARTAO][RESP_CHECK]", {
+            "id": data.get("id"),
+            "status": data.get("status"),
+            "status_detail": data.get("status_detail"),
+            "external_reference": data.get("external_reference"),
+        })
 
         if response.status_code < 400:
             return data
