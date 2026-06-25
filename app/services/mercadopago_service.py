@@ -226,6 +226,21 @@ async def criar_pagamento_cartao_mp(
             "number": cpf_limpo,
         }
 
+    additional_payer = {
+        "first_name": first_name,
+        "registration_date": "2024-01-01T00:00:00.000-03:00",
+        "email": email,
+    }
+
+    if last_name:
+        additional_payer["last_name"] = last_name
+
+    if cpf_limpo and len(cpf_limpo) == 11:
+        additional_payer["identification"] = {
+            "type": "CPF",
+            "number": cpf_limpo,
+        }
+        
     body: Dict[str, Any] = {
         "transaction_amount": valor,
         "token": card_token,
@@ -249,11 +264,7 @@ async def criar_pagamento_cartao_mp(
                     "unit_price": valor,
                 }
             ],
-            "payer": {
-                "first_name": first_name,
-                "last_name": last_name,
-                "registration_date": "2024-01-01T00:00:00.000-03:00",
-            },
+            "payer": additional_payer,
         },
     }
 
