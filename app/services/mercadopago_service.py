@@ -254,15 +254,6 @@ async def criar_pagamento_cartao_mp(
                 "last_name": last_name,
                 "registration_date": "2024-01-01T00:00:00.000-03:00",
             },
-            "cardholder": {
-                "name": f"{first_name} {last_name}".strip(),
-                "identification": {
-                    "type": "CPF",
-                    "number": cpf_limpo,
-                },
-            } if cpf_limpo and len(cpf_limpo) == 11 else {
-                "name": f"{first_name} {last_name}".strip(),
-            },
         },
     }
 
