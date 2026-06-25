@@ -265,16 +265,18 @@ async def criar_pagamento_cartao_mp(
     for tentativa in range(1, 4):
         chave = idempotency_key or str(uuid.uuid4())
 
+        headers = {
+            **_headers(chave),
+            **({"X-meli-session-id": device_id} if device_id else {}),
+        }
+
         print("[CARTAO] HEADERS TEM DEVICE =", "X-meli-session-id" in headers)
-        
+
         async with httpx.AsyncClient(timeout=MERCADOPAGO_TIMEOUT) as client:
             response = await client.post(
                 f"{MERCADOPAGO_BASE}/v1/payments",
                 json=body,
-                headers={
-                    **_headers(chave),
-                    **({"X-meli-session-id": device_id} if device_id else {}),
-                },
+                headers=headers,
             )
 
         try:
