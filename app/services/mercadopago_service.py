@@ -261,8 +261,6 @@ async def criar_pagamento_cartao_mp(
         },
     }
 
-    print("[CARTAO] DEVICE_ID =", device_id)
-
 
     if issuer_id:
         body["issuer_id"] = issuer_id
@@ -272,6 +270,9 @@ async def criar_pagamento_cartao_mp(
     last_data: Dict[str, Any] = {}
 
     for tentativa in range(1, 4):
+
+        print("[CARTAO] DEVICE_ID =", device_id)
+
         chave = idempotency_key or str(uuid.uuid4())
 
         headers = {
