@@ -276,9 +276,16 @@ async def criar_pagamento_cartao_mp(
         chave = idempotency_key or str(uuid.uuid4())
 
         headers = {
-            **_headers(chave),
-            **({"X-meli-session-id": device_id} if device_id else {}),
+            "Authorization": f"Bearer {MERCADOPAGO_ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": chave,
         }
+
+        if device_id:
+            headers["X-meli-session-id"] = device_id
+
+        print("[CARTAO] HEADER DEVICE PRESENTE =", bool(headers.get("X-meli-session-id")))
+        print("[CARTAO] HEADER IDEMPOTENCY PRESENTE =", bool(headers.get("X-Idempotency-Key")))
 
         print("[CARTAO] HEADERS TEM DEVICE =", "X-meli-session-id" in headers)
 
