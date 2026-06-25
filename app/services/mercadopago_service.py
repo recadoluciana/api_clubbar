@@ -217,7 +217,6 @@ async def criar_pagamento_cartao_mp(
     payer: Dict[str, Any] = {
         "email": email,
         "first_name": first_name,
-        "last_name": last_name,
     }
 
     if cpf_limpo and len(cpf_limpo) == 11:
@@ -240,7 +239,7 @@ async def criar_pagamento_cartao_mp(
             "type": "CPF",
             "number": cpf_limpo,
         }
-        
+
     body: Dict[str, Any] = {
         "transaction_amount": valor,
         "token": card_token,
