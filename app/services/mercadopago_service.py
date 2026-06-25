@@ -212,7 +212,7 @@ async def criar_pagamento_cartao_mp(
         last_name = " ".join(partes_nome[1:])
     else:
         first_name = nome.strip()
-        last_name = "-"    
+        last_name = ""    
 
     payer: Dict[str, Any] = {
         "email": email,
@@ -248,7 +248,21 @@ async def criar_pagamento_cartao_mp(
                     "quantity": 1,
                     "unit_price": valor,
                 }
-            ]
+            ],
+            "payer": {
+                "first_name": first_name,
+                "last_name": last_name,
+                "registration_date": "2024-01-01T00:00:00.000-03:00",
+            },
+            "cardholder": {
+                "name": f"{first_name} {last_name}".strip(),
+                "identification": {
+                    "type": "CPF",
+                    "number": cpf_limpo,
+                },
+            } if cpf_limpo and len(cpf_limpo) == 11 else {
+                "name": f"{first_name} {last_name}".strip(),
+            },
         },
     }
 
