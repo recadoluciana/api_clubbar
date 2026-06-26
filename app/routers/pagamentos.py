@@ -29,6 +29,7 @@ from app.services.mercadopago_service import (
 from app.services.pagamento_status_service import set_venda_como_paga
 
 from app.routers.produtos import calcular_preco_final
+from app.services.stripe_service import criar_checkout_stripe
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -354,3 +355,58 @@ async def consultar_mercadopago_por_venda(
     }
 
 
+@router.post("/pagar-cartao-stripe")
+async def pagar_cartao_stripe(
+    payload: PagarNovoIn,
+    db: Session = Depends(get_db),
+):
+    try:
+        carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
+
+        if not carrinho:
+            raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+
+        itens = carrinho.get("itens") or []
+
+        if not itens:
+            raise HTTPException(status_code=400, detail="Carrinho vazio")
+
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
+
+        cliente = get_cliente(db, payload.cliente_id)
+
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+        carrinho_id = int(carrinho.get("carrinho_id") or 0)
+
+        if carrinho_id == 0:
+            raise HTTPException(status_code=400, detail="Carrinho inválido")
+
+        session = criar_checkout_stripe(
+            carrinho_id=carrinho_id,
+            cliente_id=payload.cliente_id,
+            organizacao_id=payload.organizacao_id,
+            loja_id=payload.loja_id,
+            valor_total=total_recalculado,
+            email=cliente.get("email"),
+        )
+
+        return {
+            "ok": True,
+            "gateway": "STRIPE",
+            "checkout_url": session.url,
+            "session_id": session.id,
+            "carrinho_id": carrinho_id,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("[STRIPE][ERRO]", repr(e))
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao gerar checkout Stripe ({type(e).__name__}): {e}",
+        )
