@@ -4,7 +4,7 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.models.cliente import Client
+from app.models.cliente import Cliente
 
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
@@ -76,7 +76,7 @@ async def obter_ou_criar_customer_asaas(
     db.refresh(cliente)
 
     return customer_id
-    
+
 async def criar_cobranca_asaas(
     *,
     customer_id: str,
