@@ -14,3 +14,4 @@ class Cliente(Base):
     dtultatu     = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
     nrtelcliente = Column(String(15), nullable=True)
     nrcpfcliente = Column(String(15), nullable=True)
+    idclienteasaas = Column(String(100), nullable=True)
