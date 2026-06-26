@@ -4,30 +4,34 @@ from fastapi import HTTPException
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-@router.post("/pagar-cartao-stripe")
-async def pagar_cartao_stripe(payload: PagarNovoIn, db: Session = Depends(get_db)):
-    carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
+APP_URL = os.getenv("APP_URL", "https://app.clubbar.com.br")
+API_URL = os.getenv("API_URL", "https://api.clubbar.com.br")
 
-    if not carrinho:
-        raise HTTPException(status_code=404, detail="Carrinho não encontrado")
 
-    itens = carrinho.get("itens") or []
+def criar_checkout_stripe(
+    *,
+    carrinho_id: int,
+    cliente_id: int,
+    organizacao_id: int,
+    loja_id: int,
+    valor_total: float,
+    email: str | None = None,
+):
+    if not stripe.api_key:
+        raise HTTPException(status_code=500, detail="STRIPE_SECRET_KEY não configurada")
 
-    if not itens:
-        raise HTTPException(status_code=400, detail="Carrinho vazio")
+    valor_centavos = int(round(float(valor_total or 0) * 100))
 
-    itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
-
-    carrinho_id = int(carrinho.get("carrinho_id") or 0)
-
-    if carrinho_id == 0:
-        raise HTTPException(status_code=400, detail="Carrinho inválido")
-
-    valor_centavos = int(round(float(total_recalculado) * 100))
+    if valor_centavos <= 0:
+        raise HTTPException(status_code=400, detail="Valor inválido para pagamento Stripe")
 
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
+        customer_email=email if email and "@" in email else None,
+        billing_address_collection="auto",
+        phone_number_collection={"enabled": True},
+        automatic_tax={"enabled": False},
         line_items=[
             {
                 "price_data": {
@@ -40,20 +44,15 @@ async def pagar_cartao_stripe(payload: PagarNovoIn, db: Session = Depends(get_db
                 "quantity": 1,
             }
         ],
-        success_url=f"{os.getenv('APP_URL')}/?pagamento=sucesso&gateway=stripe",
-        cancel_url=f"{os.getenv('APP_URL')}/?pagamento=cancelado&gateway=stripe",
+        success_url=f"{API_URL}/stripe/sucesso?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{APP_URL}/?pagamento=cancelado&gateway=stripe",
         metadata={
             "carrinho_id": str(carrinho_id),
-            "cliente_id": str(payload.cliente_id),
-            "loja_id": str(payload.loja_id),
-            "organizacao_id": str(payload.organizacao_id),
+            "cliente_id": str(cliente_id),
+            "loja_id": str(loja_id),
+            "organizacao_id": str(organizacao_id),
+            "gateway": "STRIPE",
         },
     )
 
-    return {
-        "ok": True,
-        "gateway": "STRIPE",
-        "checkout_url": session.url,
-        "session_id": session.id,
-        "carrinho_id": carrinho_id,
-    }
+    return session
