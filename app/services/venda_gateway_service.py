@@ -1,3 +1,16 @@
+from __future__ import annotations
+
+import uuid
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from app.models.carrinho import Carrinho
+from app.models.pagvenda import PagVenda
+from app.services.carrinho_service import get_carrinho
+from app.services.venda_service import criar_ou_obter_venda_idempotente
+from app.services.pagamento_status_service import set_venda_como_paga
+from app.routers.pagamentos import _recalcular_itens_carrinho
 
 async def criar_venda_paga_por_carrinho_gateway(
     db: Session,
