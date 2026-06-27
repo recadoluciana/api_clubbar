@@ -91,6 +91,10 @@ async def criar_cobranca_asaas(
         "dueDate": "2026-12-31",
         "description": descricao,
         "externalReference": external_reference,
+        "callback": {
+            "successUrl": "https://api.clubbar.com.br/asaas/sucesso",
+            "autoRedirect": True,
+        },
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
