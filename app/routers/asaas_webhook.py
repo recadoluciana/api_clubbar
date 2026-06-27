@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from fastapi.responses import HTMLResponse
 
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 
@@ -61,3 +62,59 @@ async def asaas_webhook(
         "carrinho_id": carrinho_id,
         "resultado": resultado,
     }
+
+@router.get("/sucesso", response_class=HTMLResponse)
+async def asaas_sucesso():
+    return """
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>Pagamento aprovado</title>
+      <style>
+        body {
+          margin: 0;
+          font-family: Arial, sans-serif;
+          background: #f6f6f6;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+        }
+        .card {
+          background: white;
+          padding: 28px;
+          border-radius: 22px;
+          max-width: 420px;
+          text-align: center;
+          box-shadow: 0 8px 24px rgba(0,0,0,.12);
+        }
+        .ok {
+          font-size: 56px;
+          color: #19a55a;
+        }
+        h1 { font-size: 24px; }
+        p { color: #555; line-height: 1.5; }
+        a {
+          display: inline-block;
+          margin-top: 18px;
+          background: #000;
+          color: #fff;
+          padding: 14px 22px;
+          border-radius: 14px;
+          text-decoration: none;
+          font-weight: bold;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="ok">✓</div>
+        <h1>Pagamento aprovado!</h1>
+        <p>Sua compra foi confirmada. Você já pode voltar para o Clubbar.</p>
+        <a href="https://app.clubbar.com.br/?pagamento=sucesso">Voltar para o Clubbar</a>
+      </div>
+    </body>
+    </html>
+    """
