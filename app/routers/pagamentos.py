@@ -34,6 +34,8 @@ from app.services.stripe_service import criar_checkout_stripe
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_cobranca_asaas,
+    criar_cobranca_pix_asaas,
+    buscar_qrcode_pix_asaas,
 )
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
@@ -476,4 +478,78 @@ async def pagar_cartao_asaas(
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao gerar pagamento Asaas ({type(e).__name__}): {e}",
+        )
+
+@router.post("/pagar-pix-asaas")
+async def pagar_pix_asaas(
+    payload: PagarNovoIn,
+    db: Session = Depends(get_db),
+):
+    try:
+        carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
+
+        if not carrinho:
+            raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+
+        itens = carrinho.get("itens") or []
+
+        if not itens:
+            raise HTTPException(status_code=400, detail="Carrinho vazio")
+
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
+            db,
+            itens,
+        )
+
+        carrinho_id = int(carrinho.get("carrinho_id") or 0)
+
+        if carrinho_id == 0:
+            raise HTTPException(status_code=400, detail="Carrinho inválido")
+
+        customer_id = await obter_ou_criar_customer_asaas(
+            db,
+            cliente_id=payload.cliente_id,
+        )
+
+        pagamento = await criar_cobranca_pix_asaas(
+            customer_id=customer_id,
+            valor=total_recalculado,
+            descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
+            external_reference=f"CARRINHO-{carrinho_id}",
+        )
+
+        pagamento_id = pagamento.get("id")
+
+        if not pagamento_id:
+            raise HTTPException(
+                status_code=500,
+                detail="Asaas não retornou o ID do pagamento PIX.",
+            )
+
+        qr = await buscar_qrcode_pix_asaas(str(pagamento_id))
+
+        return {
+            "ok": True,
+            "gateway": "ASAAS",
+            "metodo": "PIX",
+            "carrinho_id": carrinho_id,
+            "pagamento_id": pagamento_id,
+            "status": pagamento.get("status"),
+            "external_reference": pagamento.get("externalReference"),
+            "pix_copia_cola": qr.get("payload", ""),
+            "qr_code_base64": qr.get("encodedImage", ""),
+            "ticket_url": pagamento.get("invoiceUrl"),
+            "invoice_url": pagamento.get("invoiceUrl"),
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("[ASAAS PIX][ERRO]", repr(e))
+        print(traceback.format_exc())
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao gerar PIX Asaas ({type(e).__name__}): {e}",
         )
