@@ -5,6 +5,7 @@ from app.database import get_db
 from fastapi.responses import HTMLResponse
 
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
+from app.models.carrinho import Carrinho
 
 router = APIRouter(
     prefix="/asaas",
@@ -63,17 +64,41 @@ async def asaas_webhook(
         "resultado": resultado,
     }
 
-@router.get("/sucesso", response_class=HTMLResponse)
-async def asaas_sucesso():
-    return """
+@router.get("/retorno", response_class=HTMLResponse)
+async def asaas_retorno(
+    carrinho_id: int,
+    db: Session = Depends(get_db),
+):
+    carrinho = (
+        db.query(Carrinho)
+        .filter(Carrinho.carrinho_id == carrinho_id)
+        .first()
+    )
+
+    pago = carrinho and (carrinho.sitcarrinho or "").upper() != "ABERTO"
+
+    if pago:
+        titulo = "Pagamento confirmado!"
+        mensagem = "Sua compra foi confirmada com sucesso."
+        icone = "✓"
+        cor = "#19a55a"
+        retorno = "sucesso"
+    else:
+        titulo = "Pagamento não confirmado"
+        mensagem = "Sua compra ainda não foi confirmada. Se você desistiu do pagamento, nenhuma compra foi concluída."
+        icone = "!"
+        cor = "#d97706"
+        retorno = "pendente"
+
+    return f"""
     <!DOCTYPE html>
     <html lang="pt-BR">
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Pagamento aprovado</title>
+      <title>{titulo}</title>
       <style>
-        body {
+        body {{
           margin: 0;
           font-family: Arial, sans-serif;
           background: #f6f6f6;
@@ -81,22 +106,23 @@ async def asaas_sucesso():
           align-items: center;
           justify-content: center;
           min-height: 100vh;
-        }
-        .card {
+        }}
+        .card {{
           background: white;
           padding: 28px;
           border-radius: 22px;
           max-width: 420px;
           text-align: center;
           box-shadow: 0 8px 24px rgba(0,0,0,.12);
-        }
-        .ok {
+        }}
+        .icone {{
           font-size: 56px;
-          color: #19a55a;
-        }
-        h1 { font-size: 24px; }
-        p { color: #555; line-height: 1.5; }
-        a {
+          color: {cor};
+          font-weight: bold;
+        }}
+        h1 {{ font-size: 24px; }}
+        p {{ color: #555; line-height: 1.5; }}
+        a {{
           display: inline-block;
           margin-top: 18px;
           background: #000;
@@ -105,15 +131,17 @@ async def asaas_sucesso():
           border-radius: 14px;
           text-decoration: none;
           font-weight: bold;
-        }
+        }}
       </style>
     </head>
     <body>
       <div class="card">
-        <div class="ok">✓</div>
-        <h1>Pagamento aprovado!</h1>
-        <p>Sua compra foi confirmada. Você já pode voltar para o Clubbar.</p>
-        <a href="https://app.clubbar.com.br/?pagamento=sucesso">Voltar para o Clubbar</a>
+        <div class="icone">{icone}</div>
+        <h1>{titulo}</h1>
+        <p>{mensagem}</p>
+        <a href="https://app.clubbar.com.br/?pagamento={retorno}&gateway=asaas">
+          Voltar para o Clubbar
+        </a>
       </div>
     </body>
     </html>

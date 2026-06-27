@@ -92,7 +92,7 @@ async def criar_cobranca_asaas(
         "description": descricao,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": "https://api.clubbar.com.br/asaas/sucesso",
+            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={external_reference.replace('CARRINHO-', '')}",
             "autoRedirect": True,
         },
     }
