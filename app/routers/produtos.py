@@ -210,12 +210,14 @@ def atualizar_produto(
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
 
 
+# >>>>> lista todos os produtos da loja do tipo P (produto)
 @router.get("/lojas/{loja_id}/produtos")
 def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
     rows = (
         db.query(Produto, Categoria.nmcategoria)
         .outerjoin(Categoria, Categoria.categoria_id == Produto.categoria_id)
         .filter(Produto.loja_id == loja_id, Produto.sitproduto == "ATIVO")
+        .filter(Produto.idtipoproduto == "P")
         .all()
     )
 
