@@ -15,6 +15,8 @@ class Loja(Base):
     sitloja = Column(String(15), nullable=False, default="ATIVA")
     
     dsrefeloja = Column(String(255))
+
+    dsestiloloja  = Column(String(255))
     
     nrdiavalidade = Column(BigInteger,nullable=False, default=90)
 
