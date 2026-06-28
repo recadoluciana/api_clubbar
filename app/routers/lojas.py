@@ -73,6 +73,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
     ]
 
 
+from sqlalchemy.orm import aliased
+
 @router.get("/listar_todas_ativas")
 def listar_todas_lojas_ativas(
     request: Request,
@@ -86,6 +88,8 @@ def listar_todas_lojas_ativas(
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
+            Loja.dsbairroloja,
+            Cidade.nmcidade,
             Loja.aberto24x7,
             Loja.dshorarioloja,
             Loja.nrtelloja,
@@ -95,6 +99,7 @@ def listar_todas_lojas_ativas(
             Loja.vrtaxaing,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
+        .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .filter(Loja.sitloja == "ATIVA")
     )
 
@@ -102,8 +107,6 @@ def listar_todas_lojas_ativas(
         rows = rows.filter(Loja.cidade_id == cidade_id)
 
     lojas = rows.order_by(Loja.nmloja.asc()).all()
-    
-    base_url = str(request.base_url).rstrip("/")
 
     return [
         {
@@ -112,6 +115,8 @@ def listar_todas_lojas_ativas(
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
+            "dsbairroloja": r.dsbairroloja or "",
+            "nmcidade": r.nmcidade or "",
             "aberto24x7": r.aberto24x7,
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
