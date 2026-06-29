@@ -1,6 +1,6 @@
 # app/routers/pagamentos.py
 from __future__ import annotations
-
+import json
 import traceback
 import uuid
 from typing import Any, Dict
@@ -16,6 +16,7 @@ from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
 from app.models.pagvenda import PagVenda
+from app.models.cliente import Cliente
 
 from app.services.carrinho_service import get_carrinho
 from app.services.venda_service import criar_ou_obter_venda_idempotente
@@ -33,7 +34,7 @@ from app.services.stripe_service import criar_checkout_stripe
 
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
-    criar_cobranca_asaas,
+    criar_checkout_asaas,
     criar_cobranca_pix_asaas,
     buscar_qrcode_pix_asaas,
 )
@@ -333,11 +334,36 @@ async def pagar_asaas(
             cliente_id=payload.cliente_id,
         )
 
-        pagamento = await criar_cobranca_asaas(
-            customer_id=customer_id,
+        cliente = (
+            db.query(Cliente)
+            .filter(Cliente.cliente_id == payload.cliente_id)
+            .first()
+        )
+
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+        pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=f"CARRINHO-{carrinho_id}",
+            carrinho_id=carrinho_id,
+            nome_cliente=cliente.nmcliente,
+            email_cliente=cliente.emailcliente,
+            cpf_cliente=cliente.nrcpfcliente,
+            celular_cliente=cliente.nrtelcliente,
+        )
+
+        print("=" * 80)
+        print("[ASAAS CHECKOUT]")
+        print(json.dumps(pagamento, indent=2, ensure_ascii=False))
+        print("=" * 80)
+
+        checkout_url = (
+            pagamento.get("url")
+            or pagamento.get("checkoutUrl")
+            or pagamento.get("invoiceUrl")
+            or pagamento.get("link")
         )
 
         return {
@@ -346,6 +372,7 @@ async def pagar_asaas(
             "carrinho_id": carrinho_id,
             "pagamento_id": pagamento.get("id"),
             "status": pagamento.get("status"),
+            "checkout_url": checkout_url,
             "checkout_url": pagamento.get("invoiceUrl"),
             "invoice_url": pagamento.get("invoiceUrl"),
             "bank_slip_url": pagamento.get("bankSlipUrl"),

@@ -111,6 +111,74 @@ async def criar_cobranca_asaas(
 
     return data
 
+async def criar_checkout_asaas(
+    *,
+    valor: float,
+    descricao: str,
+    external_reference: str,
+    carrinho_id: int,
+    nome_cliente: str | None = None,
+    email_cliente: str | None = None,
+    cpf_cliente: str | None = None,
+    celular_cliente: str | None = None,
+):
+    customer_data = {
+        "name": nome_cliente,
+        "email": email_cliente,
+        "cpfCnpj": cpf_cliente,
+        "mobilePhone": celular_cliente,
+    }
+
+    customer_data = {k: v for k, v in customer_data.items() if v}
+
+    body = {
+        "billingTypes": ["PIX", "CREDIT_CARD"],
+        "chargeTypes": ["DETACHED"],
+        "minutesToExpire": 60,
+        "externalReference": external_reference,
+        "callback": {
+            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
+            "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
+            "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
+        },
+        "items": [
+            {
+                "name": descricao,
+                "quantity": 1,
+                "value": round(float(valor), 2),
+            }
+        ],
+        "customerData": customer_data,
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/checkouts",
+            json=body,
+            headers=_headers(),
+        )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=data)
+
+    return data
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/checkouts",
+            json=body,
+            headers=_headers(),
+        )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=data)
+
+    return data
+
 async def criar_cobranca_pix_asaas(
     *,
     customer_id: str,
