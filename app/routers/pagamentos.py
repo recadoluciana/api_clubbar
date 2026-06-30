@@ -321,10 +321,7 @@ async def pagar_asaas(
         if not itens:
             raise HTTPException(status_code=400, detail="Carrinho vazio")
 
-        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
-            db,
-            itens,
-        )
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
 
         carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
@@ -340,10 +337,32 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
+        external_reference = f"CARRINHO-{carrinho_id}"
+
+        checkout_existente = (
+            db.query(CheckoutAsaas)
+            .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+            .filter(CheckoutAsaas.status.in_(["ACTIVE", "PENDING"]))
+            .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+            .first()
+        )
+
+        if checkout_existente:
+            return {
+                "ok": True,
+                "gateway": "ASAAS",
+                "carrinho_id": carrinho_id,
+                "pagamento_id": checkout_existente.checkout_id,
+                "status": checkout_existente.status,
+                "checkout_url": checkout_existente.checkout_url,
+                "external_reference": checkout_existente.external_reference,
+                "reutilizado": True,
+            }
+
         pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
-            external_reference=f"CARRINHO-{carrinho_id}",
+            external_reference=external_reference,
             carrinho_id=carrinho_id,
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,
@@ -351,15 +370,9 @@ async def pagar_asaas(
             celular_cliente=cliente.nrtelcliente,
         )
 
-        print("=" * 80)
-        print("[ASAAS CHECKOUT]")
-        print(json.dumps(pagamento, indent=2, ensure_ascii=False))
-        print("=" * 80)
-
         checkout_id = pagamento.get("id")
         checkout_url = pagamento.get("link")
-        status = pagamento.get("status")
-        external_reference = pagamento.get("externalReference")
+        status = pagamento.get("status") or "ACTIVE"
 
         if not checkout_id or not checkout_url:
             raise HTTPException(
@@ -369,19 +382,19 @@ async def pagar_asaas(
                     "asaas_response": pagamento,
                 },
             )
+
         novo = CheckoutAsaas(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
-            checkout_id=pagamento["id"],
-            payment_id=pagamento.get("paymentId"),
-            external_reference=pagamento.get("externalReference"),
-            status=pagamento.get("status"),
+            checkout_id=checkout_id,
+            checkout_url=checkout_url,
+            external_reference=external_reference,
+            status=status,
         )
 
-
         db.add(novo)
-        db.commit()    
+        db.commit()
 
         return {
             "ok": True,
@@ -391,6 +404,7 @@ async def pagar_asaas(
             "status": status,
             "checkout_url": checkout_url,
             "external_reference": external_reference,
+            "reutilizado": False,
         }
 
     except HTTPException:
@@ -404,4 +418,3 @@ async def pagar_asaas(
             status_code=500,
             detail=f"Erro ao gerar pagamento Asaas ({type(e).__name__}): {e}",
         )
-

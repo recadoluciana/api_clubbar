@@ -19,6 +19,8 @@ class CheckoutAsaas(Base):
     external_reference = Column(String(100))
     status = Column(String(30), server_default=text("'ACTIVE'"))
 
+    checkout_url = Column(String(500), nullable=True)
+
     dtcriacao = Column(
         DateTime,
         server_default=text("CURRENT_TIMESTAMP"),
