@@ -329,11 +329,6 @@ async def pagar_asaas(
         if carrinho_id == 0:
             raise HTTPException(status_code=400, detail="Carrinho inválido")
 
-        customer_id = await obter_ou_criar_customer_asaas(
-            db,
-            cliente_id=payload.cliente_id,
-        )
-
         cliente = (
             db.query(Cliente)
             .filter(Cliente.cliente_id == payload.cliente_id)
@@ -359,19 +354,28 @@ async def pagar_asaas(
         print(json.dumps(pagamento, indent=2, ensure_ascii=False))
         print("=" * 80)
 
+        checkout_id = pagamento.get("id")
         checkout_url = pagamento.get("link")
+        status = pagamento.get("status")
+        external_reference = pagamento.get("externalReference")
+
+        if not checkout_id or not checkout_url:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "erro": "Asaas não retornou id ou link do checkout.",
+                    "asaas_response": pagamento,
+                },
+            )
 
         return {
             "ok": True,
             "gateway": "ASAAS",
             "carrinho_id": carrinho_id,
-            "pagamento_id": pagamento.get("id"),
-            "status": pagamento.get("status"),
+            "pagamento_id": checkout_id,
+            "status": status,
             "checkout_url": checkout_url,
-            "checkout_url": pagamento.get("invoiceUrl"),
-            "invoice_url": pagamento.get("invoiceUrl"),
-            "bank_slip_url": pagamento.get("bankSlipUrl"),
-            "external_reference": pagamento.get("externalReference"),
+            "external_reference": external_reference,
         }
 
     except HTTPException:
