@@ -359,12 +359,7 @@ async def pagar_asaas(
         print(json.dumps(pagamento, indent=2, ensure_ascii=False))
         print("=" * 80)
 
-        checkout_url = (
-            pagamento.get("url")
-            or pagamento.get("checkoutUrl")
-            or pagamento.get("invoiceUrl")
-            or pagamento.get("link")
-        )
+        checkout_url = pagamento.get("link")
 
         return {
             "ok": True,

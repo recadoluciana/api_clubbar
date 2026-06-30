@@ -126,9 +126,9 @@ async def criar_checkout_asaas(
         "name": nome_cliente or "Cliente Clubbar",
         "email": email_cliente,
         "cpfCnpj": cpf_cliente,
-        "mobilePhone": celular_cliente,
+        "phone": celular_cliente,
 
-        # apenas para teste
+        # dados fixos só para teste do checkout
         "address": "Rua Mourato Coelho",
         "addressNumber": "629",
         "postalCode": "05417001",
@@ -149,7 +149,9 @@ async def criar_checkout_asaas(
         },
         "items": [
             {
-                "name": descricao,
+                "externalReference": external_reference,
+                "name": "Compra Clubbar",
+                "description": descricao,
                 "quantity": 1,
                 "value": round(float(valor), 2),
             }
