@@ -9,6 +9,7 @@ from app.database import get_db
 from app.models.carrinho import Carrinho
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 
+from app.models.checkout_asaas import CheckoutAsaas
 
 router = APIRouter(
     prefix="/asaas",
@@ -43,6 +44,38 @@ async def asaas_webhook(
 
         status = str(payment.get("status") or body.get("status") or "").upper()
 
+        checkout_id = (
+            payment.get("id")
+            or payment.get("checkoutSession")
+            or body.get("checkoutId")
+            or body.get("id")
+        )
+
+        registro_checkout = None
+
+        if checkout_id:
+            registro_checkout = (
+                db.query(CheckoutAsaas)
+                .filter(CheckoutAsaas.checkout_id == str(checkout_id))
+                .first()
+            )
+
+        if registro_checkout:
+            carrinho_id = int(registro_checkout.carrinho_id)
+            external_reference = registro_checkout.external_reference or f"CARRINHO-{carrinho_id}"
+        else:
+            if not external_reference.startswith("CARRINHO-"):
+                return {
+                    "ok": True,
+                    "ignored": True,
+                    "msg": "Checkout/carrinho não localizado",
+                    "event": evento,
+                    "status": status,
+                    "checkout_id": checkout_id,
+                    "externalReference": external_reference,
+                }
+
+            carrinho_id = int(external_reference.replace("CARRINHO-", "").split("-")[0])
         external_reference = str(
             payment.get("externalReference")
             or body.get("externalReference")
@@ -68,11 +101,13 @@ async def asaas_webhook(
         eventos_confirmados = [
             "PAYMENT_RECEIVED",
             "PAYMENT_CONFIRMED",
+            "CHECKOUT_PAID",
         ]
 
         status_confirmados = [
             "RECEIVED",
             "CONFIRMED",
+            "PAID",
         ]
 
         if evento not in eventos_confirmados and status not in status_confirmados:
