@@ -122,8 +122,17 @@ async def criar_checkout_asaas(
     cpf_cliente: str | None = None,
     celular_cliente: str | None = None,
 ):
+   
+    nome_limpo = (nome_cliente or "").strip()
+
+    if not nome_limpo:
+        nome_limpo = "Cliente Clubbar"
+
+    if len(nome_limpo.split()) < 2:
+        nome_limpo = f"{nome_limpo} Clubbar"
+
     customer_data = {
-        "name": nome_cliente or "Cliente Clubbar",
+        "name": nome_limpo,
         "email": email_cliente,
         "cpfCnpj": cpf_cliente,
         "phone": celular_cliente,
