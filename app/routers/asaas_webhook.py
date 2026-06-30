@@ -1,16 +1,20 @@
+import json
+import traceback
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from fastapi.responses import HTMLResponse
-
-from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 from app.models.carrinho import Carrinho
+from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
+
 
 router = APIRouter(
     prefix="/asaas",
     tags=["Asaas"],
 )
+
 
 @router.post("/webhook")
 async def asaas_webhook(
@@ -22,47 +26,95 @@ async def asaas_webhook(
     except Exception:
         body = {}
 
+    print("=" * 80)
     print("[ASAAS WEBHOOK]")
-    print(body)
+    print(json.dumps(body, indent=2, ensure_ascii=False))
+    print("=" * 80)
 
-    evento = body.get("event")
-    payment = body.get("payment") or {}
+    try:
+        evento = str(body.get("event") or "").upper()
 
-    status = (payment.get("status") or "").upper()
-    external_reference = str(payment.get("externalReference") or "").strip()
+        payment = (
+            body.get("payment")
+            or body.get("checkout")
+            or body.get("object")
+            or {}
+        )
 
-    if not external_reference.startswith("CARRINHO-"):
-        return {"ok": True, "ignored": True, "msg": "externalReference ignorado"}
+        status = str(payment.get("status") or body.get("status") or "").upper()
 
-    carrinho_id = int(external_reference.replace("CARRINHO-", "").split("-")[0])
+        external_reference = str(
+            payment.get("externalReference")
+            or body.get("externalReference")
+            or ""
+        ).strip()
 
-    if evento not in ["PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"] and status not in ["RECEIVED", "CONFIRMED"]:
+        if not external_reference.startswith("CARRINHO-"):
+            return {
+                "ok": True,
+                "ignored": True,
+                "msg": "externalReference ignorado",
+                "event": evento,
+                "status": status,
+                "externalReference": external_reference,
+            }
+
+        carrinho_id = int(
+            external_reference
+            .replace("CARRINHO-", "")
+            .split("-")[0]
+        )
+
+        eventos_confirmados = [
+            "PAYMENT_RECEIVED",
+            "PAYMENT_CONFIRMED",
+        ]
+
+        status_confirmados = [
+            "RECEIVED",
+            "CONFIRMED",
+        ]
+
+        if evento not in eventos_confirmados and status not in status_confirmados:
+            return {
+                "ok": True,
+                "ignored": True,
+                "event": evento,
+                "status": status,
+                "carrinho_id": carrinho_id,
+            }
+
+        resultado = await criar_venda_paga_por_carrinho_gateway(
+            db,
+            carrinho_id=carrinho_id,
+            gateway="ASAAS",
+            pagamento=payment,
+            metodo_pagamento="CREDITO",
+        )
+
+        db.commit()
+
         return {
             "ok": True,
-            "ignored": True,
+            "gateway": "ASAAS",
             "event": evento,
             "status": status,
             "carrinho_id": carrinho_id,
+            "resultado": resultado,
         }
 
-    resultado = await criar_venda_paga_por_carrinho_gateway(
-        db,
-        carrinho_id=carrinho_id,
-        gateway="ASAAS",
-        pagamento=payment,
-        metodo_pagamento="CREDITO",
-    )
+    except Exception as e:
+        db.rollback()
 
-    db.commit()
+        print("[ASAAS WEBHOOK][ERRO]", repr(e))
+        print(traceback.format_exc())
 
-    return {
-        "ok": True,
-        "gateway": "ASAAS",
-        "event": evento,
-        "status": status,
-        "carrinho_id": carrinho_id,
-        "resultado": resultado,
-    }
+        return {
+            "ok": False,
+            "erro": str(e),
+            "tipo": type(e).__name__,
+        }
+
 
 @router.get("/retorno", response_class=HTMLResponse)
 async def asaas_retorno(
@@ -84,8 +136,11 @@ async def asaas_retorno(
         cor = "#19a55a"
         retorno = "sucesso"
     else:
-        titulo = "Pagamento não confirmado"
-        mensagem = "Sua compra ainda não foi confirmada. Se você desistiu do pagamento, nenhuma compra foi concluída."
+        titulo = "Pagamento em processamento"
+        mensagem = (
+            "Recebemos o retorno do Asaas, mas a confirmação ainda pode levar "
+            "alguns segundos. Volte para o Clubbar e aguarde a atualização da sua compra."
+        )
         icone = "!"
         cor = "#d97706"
         retorno = "pendente"
