@@ -45,11 +45,12 @@ async def asaas_webhook(
         status = str(payment.get("status") or body.get("status") or "").upper()
 
         checkout_id = (
-            payment.get("id")
-            or payment.get("checkoutSession")
+            payment.get("checkoutSession")
             or body.get("checkoutId")
-            or body.get("id")
+            or body.get("checkoutSession")
         )
+
+        payment_id = payment.get("id") or body.get("paymentId")
 
         registro_checkout = None
 
@@ -60,9 +61,18 @@ async def asaas_webhook(
                 .first()
             )
 
+        external_reference = str(
+            payment.get("externalReference")
+            or body.get("externalReference")
+            or ""
+        ).strip()
+
         if registro_checkout:
             carrinho_id = int(registro_checkout.carrinho_id)
-            external_reference = registro_checkout.external_reference or f"CARRINHO-{carrinho_id}"
+            external_reference = (
+                registro_checkout.external_reference
+                or f"CARRINHO-{carrinho_id}"
+            )
         else:
             if not external_reference.startswith("CARRINHO-"):
                 return {
@@ -72,31 +82,13 @@ async def asaas_webhook(
                     "event": evento,
                     "status": status,
                     "checkout_id": checkout_id,
+                    "payment_id": payment_id,
                     "externalReference": external_reference,
                 }
 
-            carrinho_id = int(external_reference.replace("CARRINHO-", "").split("-")[0])
-        external_reference = str(
-            payment.get("externalReference")
-            or body.get("externalReference")
-            or ""
-        ).strip()
-
-        if not external_reference.startswith("CARRINHO-"):
-            return {
-                "ok": True,
-                "ignored": True,
-                "msg": "externalReference ignorado",
-                "event": evento,
-                "status": status,
-                "externalReference": external_reference,
-            }
-
-        carrinho_id = int(
-            external_reference
-            .replace("CARRINHO-", "")
-            .split("-")[0]
-        )
+            carrinho_id = int(
+                external_reference.replace("CARRINHO-", "").split("-")[0]
+            )
 
         eventos_confirmados = [
             "PAYMENT_RECEIVED",
@@ -111,6 +103,12 @@ async def asaas_webhook(
         ]
 
         if evento not in eventos_confirmados and status not in status_confirmados:
+            if registro_checkout:
+                registro_checkout.status = status or evento or registro_checkout.status
+                if payment_id:
+                    registro_checkout.payment_id = str(payment_id)
+                db.commit()
+
             return {
                 "ok": True,
                 "ignored": True,
@@ -119,8 +117,8 @@ async def asaas_webhook(
                 "carrinho_id": carrinho_id,
             }
 
-        print('pasei aqui no webhook no criar venda -  carrinho: ', carrinho_id)    
-        
+        print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
+
         resultado = await criar_venda_paga_por_carrinho_gateway(
             db,
             carrinho_id=carrinho_id,
@@ -128,6 +126,11 @@ async def asaas_webhook(
             pagamento=payment,
             metodo_pagamento="CREDITO",
         )
+
+        if registro_checkout:
+            registro_checkout.status = "PAID"
+            if payment_id:
+                registro_checkout.payment_id = str(payment_id)
 
         db.commit()
 
@@ -137,6 +140,8 @@ async def asaas_webhook(
             "event": evento,
             "status": status,
             "carrinho_id": carrinho_id,
+            "checkout_id": checkout_id,
+            "payment_id": payment_id,
             "resultado": resultado,
         }
 
