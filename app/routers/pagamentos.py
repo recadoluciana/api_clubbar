@@ -39,6 +39,8 @@ from app.services.asaas_service import (
     buscar_qrcode_pix_asaas,
 )
 
+from app.models.checkout_asaas import CheckoutAsaas
+
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
 
