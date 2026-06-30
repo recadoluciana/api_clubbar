@@ -152,6 +152,12 @@ async def criar_checkout_asaas(
         "email": email_cliente,
         "cpfCnpj": cpf_limpo,
         "phone": celular_limpo,
+
+        # obrigatório no checkout Asaas quando usa customerData
+        "address": "Rua Mourato Coelho",
+        "addressNumber": "629",
+        "postalCode": "05417001",
+        "province": "Pinheiros",
     }
 
     customer_data = {
