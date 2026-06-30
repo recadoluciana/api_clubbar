@@ -373,10 +373,12 @@ async def pagar_asaas(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
-            checkout_id=checkout_id,
-            external_reference=f"CARRINHO-{carrinho_id}",
+            checkout_id=pagamento["id"],
+            payment_id=pagamento.get("paymentId"),
+            external_reference=pagamento.get("externalReference"),
             status=pagamento.get("status"),
         )
+
 
         db.add(novo)
         db.commit()    
