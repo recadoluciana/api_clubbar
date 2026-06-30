@@ -3,8 +3,8 @@ import os
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
 from app.models.cliente import Cliente
+import json
 
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
@@ -123,10 +123,16 @@ async def criar_checkout_asaas(
     celular_cliente: str | None = None,
 ):
     customer_data = {
-        "name": nome_cliente,
+        "name": nome_cliente or "Cliente Clubbar",
         "email": email_cliente,
         "cpfCnpj": cpf_cliente,
         "mobilePhone": celular_cliente,
+
+        # apenas para teste
+        "address": "Rua Mourato Coelho",
+        "addressNumber": "629",
+        "postalCode": "05417001",
+        "province": "Pinheiros",
     }
 
     customer_data = {k: v for k, v in customer_data.items() if v}
@@ -151,19 +157,8 @@ async def criar_checkout_asaas(
         "customerData": customer_data,
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{ASAAS_BASE_URL}/checkouts",
-            json=body,
-            headers=_headers(),
-        )
-
-    data = response.json()
-
-    if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=data)
-
-    return data
+    print("[ASAAS CHECKOUT REQUEST]")
+    print(json.dumps(body, indent=2, ensure_ascii=False))
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
@@ -173,6 +168,9 @@ async def criar_checkout_asaas(
         )
 
     data = response.json()
+
+    print("[ASAAS CHECKOUT RESPONSE]")
+    print(json.dumps(data, indent=2, ensure_ascii=False))
 
     if response.status_code >= 400:
         raise HTTPException(status_code=response.status_code, detail=data)
