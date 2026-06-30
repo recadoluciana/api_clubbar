@@ -111,6 +111,20 @@ async def criar_cobranca_asaas(
 
     return data
 
+import json
+import re
+
+import httpx
+from fastapi import HTTPException
+
+
+def somente_numeros(valor: str | None) -> str | None:
+    if not valor:
+        return None
+    numeros = re.sub(r"\D", "", valor)
+    return numeros or None
+
+
 async def criar_checkout_asaas(
     *,
     valor: float,
@@ -122,7 +136,6 @@ async def criar_checkout_asaas(
     cpf_cliente: str | None = None,
     celular_cliente: str | None = None,
 ):
-   
     nome_limpo = (nome_cliente or "").strip()
 
     if not nome_limpo:
@@ -131,20 +144,26 @@ async def criar_checkout_asaas(
     if len(nome_limpo.split()) < 2:
         nome_limpo = f"{nome_limpo} Clubbar"
 
+    cpf_limpo = somente_numeros(cpf_cliente)
+    celular_limpo = somente_numeros(celular_cliente)
+
     customer_data = {
         "name": nome_limpo,
         "email": email_cliente,
-        "cpfCnpj": cpf_cliente,
-        "phone": celular_cliente,
-
-        # dados fixos só para teste do checkout
-        "address": "Rua Mourato Coelho",
-        "addressNumber": "629",
-        "postalCode": "05417001",
-        "province": "Pinheiros",
+        "cpfCnpj": cpf_limpo,
+        "phone": celular_limpo,
     }
 
-    customer_data = {k: v for k, v in customer_data.items() if v}
+    customer_data = {
+        k: v
+        for k, v in customer_data.items()
+        if v is not None and str(v).strip() != ""
+    }
+
+    url_retorno = (
+        f"https://api.clubbar.com.br/asaas/retorno"
+        f"?carrinho_id={carrinho_id}"
+    )
 
     body = {
         "billingTypes": ["PIX", "CREDIT_CARD"],
@@ -152,9 +171,9 @@ async def criar_checkout_asaas(
         "minutesToExpire": 60,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
-            "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
-            "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
+            "successUrl": url_retorno,
+            "cancelUrl": url_retorno,
+            "expiredUrl": url_retorno,
         },
         "items": [
             {
@@ -168,25 +187,67 @@ async def criar_checkout_asaas(
         "customerData": customer_data,
     }
 
+    print("=" * 80)
     print("[ASAAS CHECKOUT REQUEST]")
     print(json.dumps(body, indent=2, ensure_ascii=False))
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{ASAAS_BASE_URL}/checkouts",
-            json=body,
-            headers=_headers(),
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{ASAAS_BASE_URL}/checkouts",
+                json=body,
+                headers=_headers(),
+            )
+
+        try:
+            data = response.json()
+        except Exception:
+            data = {"raw": response.text}
+
+        print("[ASAAS CHECKOUT RESPONSE]")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print("=" * 80)
+
+        if response.status_code >= 400:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=data,
+            )
+
+        checkout_id = data.get("id")
+        checkout_link = data.get("link")
+
+        if not checkout_id or not checkout_link:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "erro": "Checkout Asaas criado sem id ou link.",
+                    "asaas_response": data,
+                },
+            )
+
+        return {
+            "id": checkout_id,
+            "link": checkout_link,
+            "status": data.get("status"),
+            "externalReference": data.get("externalReference"),
+            "raw": data,
+        }
+
+    except HTTPException:
+        raise
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="Timeout ao criar checkout no Asaas.",
         )
 
-    data = response.json()
-
-    print("[ASAAS CHECKOUT RESPONSE]")
-    print(json.dumps(data, indent=2, ensure_ascii=False))
-
-    if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=data)
-
-    return data
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro de conexão com Asaas: {str(e)}",
+        )
 
 async def criar_cobranca_pix_asaas(
     *,
