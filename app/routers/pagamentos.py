@@ -367,6 +367,17 @@ async def pagar_asaas(
                     "asaas_response": pagamento,
                 },
             )
+        novo = CheckoutAsaas(
+            carrinho_id=carrinho_id,
+            cliente_id=payload.cliente_id,
+            loja_id=payload.loja_id,
+            checkout_id=checkout_id,
+            external_reference=f"CARRINHO-{carrinho_id}",
+            status=pagamento.get("status"),
+        )
+
+        db.add(novo)
+        db.commit()    
 
         return {
             "ok": True,

@@ -84,6 +84,8 @@ async def asaas_webhook(
                 "carrinho_id": carrinho_id,
             }
 
+        print('pasei aqui no webhook no criar venda -  carrinho: ', carrinho_id)    
+        
         resultado = await criar_venda_paga_por_carrinho_gateway(
             db,
             carrinho_id=carrinho_id,
