@@ -229,25 +229,14 @@ async def criar_checkout_asaas(
         "cpfCnpj": cpf_cliente,
         "phone": celular_cliente,
         "mobilePhone": celular_cliente,
+
+        "address": endcliente,
+        "addressNumber": nrendcliente,
+        "complement": complcliente,
+        "province": bairrocliente,
+        "postalCode": cepcliente,
     }
 
-    tem_endereco = all([
-        endcliente,
-        nrendcliente,
-        bairrocliente,
-        cepcliente,
-    ])
-
-    if tem_endereco:
-        customer_data.update({
-            "address": endcliente,
-            "addressNumber": nrendcliente,
-            "complement": complcliente,
-            "province": bairrocliente,
-            "postalCode": cepcliente,
-        })
-
-    customer_data = {k: v for k, v in customer_data.items() if v}
 
     url_retorno = (
         f"https://api.clubbar.com.br/asaas/retorno"
