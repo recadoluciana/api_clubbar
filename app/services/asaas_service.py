@@ -24,7 +24,7 @@ def _headers():
 
 async def buscar_customer_asaas(customer_id: str):
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
+        response = await client.put(
             f"{ASAAS_BASE_URL}/customers/{customer_id}",
             headers=_headers(),
         )
@@ -55,7 +55,7 @@ async def obter_ou_criar_customer_asaas(
         "cpfCnpj": cliente.nrcpfcliente,
         "email": cliente.emailcliente,
         "mobilePhone": cliente.nrtelcliente,
-        "phone": cliente.nrtelcliente,
+        "phoneNumber": cliente.nrtelcliente,
         "address": cliente.endcliente,
         "addressNumber": cliente.nrendcliente,
         "complement": cliente.complcliente,

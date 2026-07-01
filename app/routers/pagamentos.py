@@ -335,6 +335,11 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
+        customer_id = await obter_ou_criar_customer_asaas(
+            db,
+            cliente_id=payload.cliente_id,
+        )
+
         external_reference = f"CARRINHO-{carrinho_id}"
 
         valor_atual = round(float(total_recalculado or 0), 2)
@@ -364,6 +369,7 @@ async def pagar_asaas(
 
             checkout_existente.status = "OUTDATED"
             db.commit()
+
 
         pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
