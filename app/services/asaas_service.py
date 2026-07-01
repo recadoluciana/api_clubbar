@@ -33,7 +33,7 @@ async def buscar_customer_asaas(customer_id: str):
         raise HTTPException(status_code=response.status_code, detail=data)
 
     return data
-    
+
 async def obter_ou_criar_customer_asaas(
     db: Session,
     *,
@@ -113,6 +113,78 @@ async def obter_ou_criar_customer_asaas(
     db.refresh(cliente)
 
     return customer_id
+
+async def sincronizar_cliente_com_asaas(
+    db: Session,
+    *,
+    cliente_id: int,
+):
+    cliente = (
+        db.query(Cliente)
+        .filter(Cliente.cliente_id == cliente_id)
+        .first()
+    )
+
+    if not cliente:
+        return
+
+    if not cliente.idclienteasaas:
+        return
+
+    customer = await buscar_customer_asaas(cliente.idclienteasaas)
+
+    cliente.nmcliente = customer.get("name") or cliente.nmcliente
+    cliente.emailcliente = customer.get("email") or cliente.emailcliente
+
+    cliente.nrtelcliente = (
+        customer.get("mobilePhone")
+        or customer.get("phone")
+        or cliente.nrtelcliente
+    )
+
+    cliente.nrcpfcliente = (
+        customer.get("cpfCnpj")
+        or cliente.nrcpfcliente
+    )
+
+    cliente.endcliente = (
+        customer.get("address")
+        or cliente.endcliente
+    )
+
+    cliente.nrendcliente = (
+        customer.get("addressNumber")
+        or cliente.nrendcliente
+    )
+
+    cliente.complcliente = (
+        customer.get("complement")
+        or cliente.complcliente
+    )
+
+    cliente.bairrocliente = (
+        customer.get("province")
+        or cliente.bairrocliente
+    )
+
+    cliente.cepcliente = (
+        customer.get("postalCode")
+        or cliente.cepcliente
+    )
+
+    cliente.cidadecliente = (
+        customer.get("city")
+        or cliente.cidadecliente
+    )
+
+    cliente.ufcliente = (
+        customer.get("state")
+        or cliente.ufcliente
+    )
+
+    db.commit()
+    db.refresh(cliente)
+        
 
 async def criar_cobranca_asaas(
     *,

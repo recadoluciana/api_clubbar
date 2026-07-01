@@ -149,7 +149,34 @@ async def asaas_webhook(
                 cliente.complcliente = customer.get("complement") or cliente.complcliente
                 cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
                 cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
+                cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
+                cliente.ufcliente = customer.get("state") or cliente.ufcliente
                 
+        #await sincronizar_cliente_com_asaas(
+        #    db,
+        #    cliente_id=registro_checkout.cliente_id,
+        #)
+
+        customer_id = payment.get("customer")
+
+        if customer_id and registro_checkout:
+            customer = await buscar_customer_asaas(str(customer_id))
+
+            cliente = (
+                db.query(Cliente)
+                .filter(Cliente.cliente_id == registro_checkout.cliente_id)
+                .first()
+            )
+
+            if cliente:
+                cliente.nrtelcliente = customer.get("mobilePhone") or customer.get("phone") or cliente.nrtelcliente
+                cliente.nrcpfcliente = customer.get("cpfCnpj") or cliente.nrcpfcliente
+                cliente.endcliente = customer.get("address") or cliente.endcliente
+                cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
+                cliente.complcliente = customer.get("complement") or cliente.complcliente
+                cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
+                cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
+
         if registro_checkout:
             registro_checkout.status = "PAID"
             if payment_id:
