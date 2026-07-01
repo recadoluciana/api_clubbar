@@ -22,6 +22,47 @@ def _headers():
     }
 
 
+async def sincronizar_cliente_com_asaas_se_precisar(
+    db: Session,
+    *,
+    cliente_id: int,
+):
+    cliente = (
+        db.query(Cliente)
+        .filter(Cliente.cliente_id == cliente_id)
+        .first()
+    )
+
+    if not cliente or not cliente.idclienteasaas:
+        return
+
+    ja_tem_endereco = all([
+        cliente.endcliente,
+        cliente.nrendcliente,
+        cliente.bairrocliente,
+        cliente.cepcliente,
+    ])
+
+    if ja_tem_endereco:
+        return
+
+    customer = await buscar_customer_asaas(cliente.idclienteasaas)
+
+    cliente.endcliente = customer.get("address") or cliente.endcliente
+    cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
+    cliente.complcliente = customer.get("complement") or cliente.complcliente
+    cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
+    cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
+    cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
+    cliente.ufcliente = customer.get("state") or cliente.ufcliente
+
+    cliente.nrtelcliente = (
+        customer.get("mobilePhone")
+        or customer.get("phone")
+        or cliente.nrtelcliente
+    )
+
+    
 async def buscar_customer_asaas(customer_id: str):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.put(

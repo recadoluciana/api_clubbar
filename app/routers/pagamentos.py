@@ -38,6 +38,7 @@ from app.services.asaas_service import (
 )
 
 from app.models.checkout_asaas import CheckoutAsaas
+from app.services.asaas_service import sincronizar_cliente_com_asaas_se_precisar
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -332,13 +333,21 @@ async def pagar_asaas(
             .first()
         )
 
-        if not cliente:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        try:
+            if not cliente:
+                raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-        customer_id = await obter_ou_criar_customer_asaas(
-            db,
-            cliente_id=payload.cliente_id,
-        )
+            customer_id = await obter_ou_criar_customer_asaas(
+                db,
+                cliente_id=payload.cliente_id,
+            )
+
+            await sincronizar_cliente_com_asaas_se_precisar(
+                db,
+                cliente_id=payload.cliente_id,
+            )
+        except Exception as e:
+            print("[ASAAS] Erro ao sincronizar customer:", repr(e))
 
         external_reference = f"CARRINHO-{carrinho_id}"
 
