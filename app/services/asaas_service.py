@@ -230,11 +230,11 @@ async def criar_checkout_asaas(
         "phone": celular_cliente,
         "mobilePhone": celular_cliente,
 
-        "address": endcliente or '',
-        "addressNumber": nrendcliente or '',
-        "complement": complcliente or '',
-        "province": bairrocliente or '',
-        "postalCode": cepcliente or '',
+        "address": endcliente or ' ',
+        "addressNumber": nrendcliente or ' ',
+        "complement": complcliente or ' ',
+        "province": bairrocliente or ' ',
+        "postalCode": cepcliente or ' ',
     }
 
 
