@@ -20,6 +20,20 @@ def _headers():
     }
 
 
+async def buscar_customer_asaas(customer_id: str):
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f"{ASAAS_BASE_URL}/customers/{customer_id}",
+            headers=_headers(),
+        )
+
+    data = response.json()
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=data)
+
+    return data
+    
 async def obter_ou_criar_customer_asaas(
     db: Session,
     *,
