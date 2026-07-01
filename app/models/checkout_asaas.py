@@ -1,5 +1,5 @@
 #checkout_asaas.py
-from sqlalchemy import BigInteger, Column, DateTime, String, text
+from sqlalchemy import BigInteger, Column, DateTime, String, text, Numeric
 
 from app.database import Base
 
@@ -20,6 +20,8 @@ class CheckoutAsaas(Base):
     status = Column(String(30), server_default=text("'ACTIVE'"))
 
     checkout_url = Column(String(500), nullable=True)
+
+    valor = Column(Numeric(10, 2), nullable=True)
 
     dtcriacao = Column(
         DateTime,

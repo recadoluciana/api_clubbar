@@ -34,18 +34,41 @@ async def obter_ou_criar_customer_asaas(
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    if cliente.idclienteasaas:
-        return cliente.idclienteasaas
-
     body = {
         "name": cliente.nmcliente,
         "cpfCnpj": cliente.nrcpfcliente,
         "email": cliente.emailcliente,
         "mobilePhone": cliente.nrtelcliente,
+        "phone": cliente.nrtelcliente,
+        "address": cliente.endcliente,
+        "addressNumber": cliente.nrendcliente,
+        "complement": cliente.complcliente,
+        "province": cliente.bairrocliente,
+        "postalCode": cliente.cepcliente,
         "externalReference": str(cliente.cliente_id),
     }
 
     body = {k: v for k, v in body.items() if v}
+
+    if cliente.idclienteasaas:
+        customer_id = cliente.idclienteasaas
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{ASAAS_BASE_URL}/customers/{customer_id}",
+                json=body,
+                headers=_headers(),
+            )
+
+        data = response.json()
+
+        print("[ASAAS CUSTOMER UPDATE] STATUS =", response.status_code)
+        print("[ASAAS CUSTOMER UPDATE] RESPONSE =", data)
+
+        if response.status_code >= 400:
+            raise HTTPException(status_code=response.status_code, detail=data)
+
+        return customer_id
 
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
@@ -56,8 +79,8 @@ async def obter_ou_criar_customer_asaas(
 
     data = response.json()
 
-    print("[ASAAS CUSTOMER] STATUS =", response.status_code)
-    print("[ASAAS CUSTOMER] RESPONSE =", data)
+    print("[ASAAS CUSTOMER CREATE] STATUS =", response.status_code)
+    print("[ASAAS CUSTOMER CREATE] RESPONSE =", data)
 
     if response.status_code >= 400:
         raise HTTPException(status_code=response.status_code, detail=data)
