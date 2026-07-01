@@ -62,7 +62,7 @@ async def sincronizar_cliente_com_asaas_se_precisar(
         or cliente.nrtelcliente
     )
 
-    
+
 async def buscar_customer_asaas(customer_id: str):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.put(
@@ -308,7 +308,7 @@ async def criar_checkout_asaas(
             "name": nome_limpo,
             "email": email_cliente,
             "cpfCnpj": cpf_limpo,
-            "mobilePhone": f"+55{telefone_limpo}",
+            "mobilePhone": telefone_limpo,
             "address": endcliente,
             "addressNumber": nrendcliente,
             "complement": complcliente or "",
