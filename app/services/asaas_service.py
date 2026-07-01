@@ -236,20 +236,6 @@ async def criar_checkout_asaas(
         cep_limpo and len(cep_limpo) == 8,
     ])
 
-    if tem_customer_data_completo:
-        body["customerData"] = {
-            "name": nome_limpo,
-            "email": email_cliente,
-            "cpfCnpj": cpf_limpo,
-            "phoneNumber": telefone_limpo,
-            "address": endcliente,
-            "addressNumber": nrendcliente,
-            "complement": complcliente or "",
-            "province": bairrocliente,
-            "postalCode": cep_limpo,
-        }
-
-
     url_retorno = (
         f"https://api.clubbar.com.br/asaas/retorno"
         f"?carrinho_id={carrinho_id}"
@@ -276,8 +262,18 @@ async def criar_checkout_asaas(
         ],
     }
 
-    if tem_endereco_real:
-        body["customerData"] = customer_data
+    if tem_customer_data_completo:
+        body["customerData"] = {
+            "name": nome_limpo,
+            "email": email_cliente,
+            "cpfCnpj": cpf_limpo,
+            "phoneNumber": telefone_limpo,
+            "address": endcliente,
+            "addressNumber": nrendcliente,
+            "complement": complcliente or "",
+            "province": bairrocliente,
+            "postalCode": cep_limpo,
+        }
 
     print("=" * 80)
     print("[ASAAS CHECKOUT REQUEST]")
