@@ -35,8 +35,6 @@ from app.services.stripe_service import criar_checkout_stripe
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
-    criar_cobranca_pix_asaas,
-    buscar_qrcode_pix_asaas,
 )
 
 from app.models.checkout_asaas import CheckoutAsaas
