@@ -376,6 +376,12 @@ async def pagar_asaas(
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
             celular_cliente=cliente.nrtelcliente,
+
+            endcliente=cliente.endcliente,
+            nrendcliente=cliente.nrendcliente,
+            complcliente=cliente.complcliente,
+            bairrocliente=cliente.bairrocliente,
+            cepcliente=cliente.cepcliente,
         )
 
         checkout_id = pagamento.get("id")

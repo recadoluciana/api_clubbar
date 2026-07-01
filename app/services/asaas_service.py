@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.models.cliente import Cliente
 import json
 
+import re
+
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
 
@@ -184,47 +186,6 @@ async def sincronizar_cliente_com_asaas(
 
     db.commit()
     db.refresh(cliente)
-        
-
-async def criar_cobranca_asaas(
-    *,
-    customer_id: str,
-    valor: float,
-    descricao: str,
-    external_reference: str,
-):
-    body = {
-        "customer": customer_id,
-        "billingType": "UNDEFINED",
-        "value": round(float(valor or 0), 2),
-        "dueDate": "2026-12-31",
-        "description": descricao,
-        "externalReference": external_reference,
-        "callback": {
-            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={external_reference.replace('CARRINHO-', '')}",
-            "autoRedirect": True,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{ASAAS_BASE_URL}/payments",
-            json=body,
-            headers=_headers(),
-        )
-
-    data = response.json()
-
-    if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=data)
-
-    return data
-
-import json
-import re
-
-import httpx
-from fastapi import HTTPException
 
 
 def somente_numeros(valor: str | None) -> str | None:
@@ -244,6 +205,12 @@ async def criar_checkout_asaas(
     email_cliente: str | None = None,
     cpf_cliente: str | None = None,
     celular_cliente: str | None = None,
+
+    endcliente: str | None = None,
+    nrendcliente: str | None = None,
+    complcliente: str | None = None,
+    bairrocliente: str | None = None,
+    cepcliente: str | None = None,
 ):
     nome_limpo = (nome_cliente or "").strip()
 
@@ -259,21 +226,18 @@ async def criar_checkout_asaas(
     customer_data = {
         "name": nome_limpo,
         "email": email_cliente,
-        "cpfCnpj": cpf_limpo,
-        "phone": celular_limpo,
+        "cpfCnpj": cpf_cliente,
+        "phone": celular_cliente,
+        "mobilePhone": celular_cliente,
 
-        # obrigatório no checkout Asaas quando usa customerData
-        "address": "Rua Mourato Coelho",
-        "addressNumber": "629",
-        "postalCode": "05417001",
-        "province": "Pinheiros",
+        "address": endcliente,
+        "addressNumber": nrendcliente,
+        "complement": complcliente,
+        "province": bairrocliente,
+        "postalCode": cepcliente,
     }
 
-    customer_data = {
-        k: v
-        for k, v in customer_data.items()
-        if v is not None and str(v).strip() != ""
-    }
+    customer_data = {k: v for k, v in customer_data.items() if v}
 
     url_retorno = (
         f"https://api.clubbar.com.br/asaas/retorno"
@@ -363,43 +327,6 @@ async def criar_checkout_asaas(
             status_code=502,
             detail=f"Erro de conexão com Asaas: {str(e)}",
         )
-
-async def criar_cobranca_pix_asaas(
-    *,
-    customer_id: str,
-    valor: float,
-    descricao: str,
-    external_reference: str,
-):
-    body = {
-        "customer": customer_id,
-        "billingType": "PIX",
-        "value": round(float(valor or 0), 2),
-        "dueDate": "2026-12-31",
-        "description": descricao,
-        "externalReference": external_reference,
-        "callback": {
-            "successUrl": "https://api.clubbar.com.br/asaas/sucesso",
-            "autoRedirect": True,
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{ASAAS_BASE_URL}/payments",
-            json=body,
-            headers=_headers(),
-        )
-
-    data = response.json()
-
-    print("[ASAAS PIX] STATUS =", response.status_code)
-    print("[ASAAS PIX] RESPONSE =", data)
-
-    if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=data)
-
-    return data
 
 
 async def buscar_qrcode_pix_asaas(payment_id: str):
