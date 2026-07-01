@@ -223,19 +223,29 @@ async def criar_checkout_asaas(
     cpf_limpo = somente_numeros(cpf_cliente)
     celular_limpo = somente_numeros(celular_cliente)
 
+    tem_endereco_real = all([
+        endcliente and endcliente.strip(),
+        nrendcliente and nrendcliente.strip(),
+        bairrocliente and bairrocliente.strip(),
+        cep_limpo and len(cep_limpo) == 8,
+    ])
+
     customer_data = {
         "name": nome_limpo,
         "email": email_cliente,
         "cpfCnpj": cpf_cliente,
-        "phone": '35999811045', #celular_cliente,
-        "mobilePhone": '35999811045', #celular_cliente,
-
-        "address": endcliente or ' ',
-        "addressNumber": nrendcliente or ' ',
-        "complement": complcliente or ' ',
-        "province": bairrocliente or ' ',
-        "postalCode": cepcliente or '37190000',
+        "phone": celular_cliente,
+        "mobilePhone": celular_cliente,
+        "address": endcliente,
+        "addressNumber": nrendcliente,
+        "complement": complcliente,
+        "province": bairrocliente,
+        "postalCode": cepcliente,
     }
+
+    if tem_endereco_real:
+        body["customerData"] = customer_data
+
 
 
     url_retorno = (
