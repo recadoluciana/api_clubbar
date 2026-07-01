@@ -243,10 +243,6 @@ async def criar_checkout_asaas(
         "postalCode": cep_limpo,
     }
 
-    if tem_endereco_real:
-        body["customerData"] = customer_data
-
-
 
     url_retorno = (
         f"https://api.clubbar.com.br/asaas/retorno"
@@ -274,7 +270,7 @@ async def criar_checkout_asaas(
         ],
     }
 
-    if customer_data:
+    if tem_endereco_real:
         body["customerData"] = customer_data
 
     print("=" * 80)
