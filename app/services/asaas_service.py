@@ -267,7 +267,7 @@ async def criar_checkout_asaas(
             "name": nome_limpo,
             "email": email_cliente,
             "cpfCnpj": cpf_limpo,
-            "phoneNumber": f"+55{telefone_limpo}",
+            "mobilePhone": f"+55{telefone_limpo}",
             "address": endcliente,
             "addressNumber": nrendcliente,
             "complement": complcliente or "",
