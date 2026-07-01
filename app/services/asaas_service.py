@@ -222,6 +222,7 @@ async def criar_checkout_asaas(
 
     cpf_limpo = somente_numeros(cpf_cliente)
     celular_limpo = somente_numeros(celular_cliente)
+    cep_limpo = "".join(filter(str.isdigit, cepcliente or ""))
 
     tem_endereco_real = all([
         endcliente and endcliente.strip(),
@@ -233,14 +234,13 @@ async def criar_checkout_asaas(
     customer_data = {
         "name": nome_limpo,
         "email": email_cliente,
-        "cpfCnpj": cpf_cliente,
-        "phone": celular_cliente,
-        "mobilePhone": celular_cliente,
+        "cpfCnpj": cpf_limpo,
+        "phoneNumber": telefone_limpo,
         "address": endcliente,
         "addressNumber": nrendcliente,
-        "complement": complcliente,
+        "complement": complcliente or "",
         "province": bairrocliente,
-        "postalCode": cepcliente,
+        "postalCode": cep_limpo,
     }
 
     if tem_endereco_real:
