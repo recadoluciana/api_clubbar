@@ -41,6 +41,12 @@ def alterar_minha_senha(
             detail="A nova senha deve ser diferente da senha atual.",
         )
 
+    if len(payload.nova_senha) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="A nova senha deve conter pelo menos 6 caracteres.",
+        )
+        
     cliente.senhahashcli = hash_senha(payload.nova_senha)
 
     db.commit()
