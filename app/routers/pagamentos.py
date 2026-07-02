@@ -353,31 +353,33 @@ async def pagar_asaas(
 
         valor_atual = round(float(total_recalculado or 0), 2)
 
-        checkout_existente = (
-            db.query(CheckoutAsaas)
-            .filter(CheckoutAsaas.carrinho_id == carrinho_id)
-            .filter(CheckoutAsaas.status == "ACTIVE")
-            .order_by(CheckoutAsaas.checkout_asaas_id.desc())
-            .first()
-        )
+        # >>>>>>>>>>>>>>>> retirei pois não vou mais aproveitar checkout aberto >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> #
+        #checkout_existente = (
+        #    db.query(CheckoutAsaas)
+        #    .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+        #    .filter(CheckoutAsaas.status == "ACTIVE")
+        #    .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+        #    .first()
+        #)
 
-        if checkout_existente:
-            valor_checkout = round(float(checkout_existente.valor or 0), 2)
+        #if checkout_existente:
+        #    valor_checkout = round(float(checkout_existente.valor or 0), 2)
 
-            if valor_checkout == valor_atual:
-                return {
-                    "ok": True,
-                    "gateway": "ASAAS",
-                    "carrinho_id": carrinho_id,
-                    "pagamento_id": checkout_existente.checkout_id,
-                    "status": checkout_existente.status,
-                    "checkout_url": checkout_existente.checkout_url,
-                    "external_reference": checkout_existente.external_reference,
-                    "reutilizado": True,
-                }
+            #if valor_checkout == valor_atual:
+                #return {
+                #    "ok": True,
+                #    "gateway": "ASAAS",
+                #    "carrinho_id": carrinho_id,
+                #    "pagamento_id": checkout_existente.checkout_id,
+                #    "status": checkout_existente.status,
+                #    "checkout_url": checkout_existente.checkout_url,
+                #    "external_reference": checkout_existente.external_reference,
+                #    "reutilizado": True,
+                #}
 
-            checkout_existente.status = "OUTDATED"
-            db.commit()
+            #checkout_existente.status = "OUTDATED"
+            #db.commit()
+        # >>>>>>>>>>>>>>>>>>>>>>>>> não vou reaproveitar checkout aberto. >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> #
 
 
         pagamento = await criar_checkout_asaas(
