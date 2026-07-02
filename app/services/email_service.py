@@ -1,48 +1,39 @@
 import os
 import smtplib
-import socket
-from email.mime.text import MIMEText
+from email.message import EmailMessage
 
 
 def enviar_email_codigo(destinatario: str, codigo: str):
-    smtp_host = os.getenv("SMTP_HOST")
+    smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
     smtp_port = int(os.getenv("SMTP_PORT", "465"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_password = os.getenv("SMTP_PASSWORD")
     smtp_from = os.getenv("SMTP_FROM", smtp_user)
 
-    print("SMTP_HOST =", smtp_host)
-    print("SMTP_PORT =", smtp_port)
-    print("SMTP_USER =", smtp_user)
-    print("SMTP_PASSWORD =", "OK" if smtp_password else "VAZIO")
-    print("SMTP_FROM =", smtp_from)
-
-    if not smtp_host or not smtp_user or not smtp_password:
+    if not smtp_user or not smtp_password:
         raise Exception("SMTP não configurado")
 
-    assunto = "Clubbar - Código de recuperação"
+    msg = EmailMessage()
+    msg["Subject"] = "Código de recuperação de senha - Clubbar"
+    msg["From"] = smtp_from
+    msg["To"] = destinatario
 
-    corpo = f"""
+    msg.set_content(
+        f"""
 Olá!
 
-Seu código para redefinir sua senha é:
+Seu código para redefinir a senha no Clubbar é:
 
 {codigo}
 
 Este código expira em 15 minutos.
 
-Se você não solicitou, ignore este e-mail.
+Se você não solicitou essa recuperação, ignore este e-mail.
+
+Equipe Clubbar
 """
+    )
 
-    msg = MIMEText(corpo, "plain", "utf-8")
-    msg["Subject"] = assunto
-    msg["From"] = smtp_from
-    msg["To"] = destinatario
-
-    try:
-        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=20) as server:
-            server.login(smtp_user, smtp_password)
-            server.send_message(msg)
-    except (smtplib.SMTPException, socket.error, OSError) as e:
-        print("ERRO SMTP REAL:", repr(e))
-        raise Exception(f"Erro ao enviar e-mail: {e}")
+    with smtplib.SMTP_SSL(smtp_host, smtp_port) as smtp:
+        smtp.login(smtp_user, smtp_password)
+        smtp.send_message(msg)

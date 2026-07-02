@@ -55,7 +55,7 @@ def esqueci_senha(payload: dict, db: Session = Depends(get_db)):
     # 🔥 TEMPORÁRIO (sem email ainda)
     enviar_email_codigo(cliente.emailcliente, codigo)
 
-    return {"message": "Se o e-mail existir, o código foi enviado."}
+    return {"message": "Se o e-mail estiver cadastrado, enviaremos um código de recuperação."}
 
 
 @router.post("/redefinir-senha")
