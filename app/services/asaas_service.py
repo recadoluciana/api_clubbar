@@ -288,9 +288,9 @@ async def criar_checkout_asaas(
         "minutesToExpire": 10,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
-            "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
-            "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
+            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso",
+            "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado",
+            "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado",
         },
         "items": [
             {

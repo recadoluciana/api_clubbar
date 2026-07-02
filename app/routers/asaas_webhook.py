@@ -211,6 +211,7 @@ async def asaas_webhook(
 @router.get("/retorno", response_class=HTMLResponse)
 async def asaas_retorno(
     carrinho_id: int,
+    acao: str = "sucesso",
     db: Session = Depends(get_db),
 ):
     carrinho = (
@@ -221,12 +222,33 @@ async def asaas_retorno(
 
     pago = carrinho and (carrinho.sitcarrinho or "").upper() != "ABERTO"
 
-    if pago:
+    if acao == "cancelado":
+        titulo = "Pagamento cancelado"
+        mensagem = (
+            "O pagamento foi cancelado. Você pode voltar ao Clubbar "
+            "e tentar novamente quando desejar."
+        )
+        icone = "↩"
+        cor = "#666666"
+        retorno = "cancelado"
+
+    elif acao == "expirado":
+        titulo = "Checkout expirado"
+        mensagem = (
+            "O tempo para pagamento expirou. "
+            "Volte ao Clubbar para gerar um novo pagamento."
+        )
+        icone = "⌛"
+        cor = "#d97706"
+        retorno = "expirado"
+
+    elif pago:
         titulo = "Pagamento confirmado!"
         mensagem = "Sua compra foi confirmada com sucesso."
         icone = "✓"
         cor = "#19a55a"
         retorno = "sucesso"
+
     else:
         titulo = "Pagamento em processamento"
         mensagem = (
@@ -267,8 +289,13 @@ async def asaas_retorno(
           color: {cor};
           font-weight: bold;
         }}
-        h1 {{ font-size: 24px; }}
-        p {{ color: #555; line-height: 1.5; }}
+        h1 {{
+          font-size: 24px;
+        }}
+        p {{
+          color: #555;
+          line-height: 1.5;
+        }}
         a {{
           display: inline-block;
           margin-top: 18px;
@@ -286,9 +313,11 @@ async def asaas_retorno(
         <div class="icone">{icone}</div>
         <h1>{titulo}</h1>
         <p>{mensagem}</p>
+
         <a href="https://app.clubbar.com.br/?pagamento={retorno}&gateway=asaas">
           Voltar para o Clubbar
         </a>
+
       </div>
     </body>
     </html>
