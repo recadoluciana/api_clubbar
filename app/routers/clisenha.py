@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from passlib.context import CryptContext
 
 from app.services.email_service import enviar_email_codigo
+from app.schemas.cliente import EsqueciSenhaRequest
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
@@ -19,8 +20,11 @@ router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
 
 @router.post("/esqueci-senha")
-def esqueci_senha(payload: dict, db: Session = Depends(get_db)):
-    email = payload.get("emailcliente")
+def esqueci_senha(
+    payload: EsqueciSenhaRequest,
+    db: Session = Depends(get_db),
+):
+    email = payload.email
 
     cliente = db.query(Cliente).filter(
         Cliente.emailcliente == email
