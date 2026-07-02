@@ -283,7 +283,7 @@ async def criar_checkout_asaas(
     )
 
     body = {
-        "billingTypes": ["PIX", "CREDIT_CARD"],
+        "billingTypes": ["PIX", "CREDIT_CARD","DEBIT_CARD"],
         "chargeTypes": ["DETACHED"],
         "minutesToExpire": 10,
         "externalReference": external_reference,
