@@ -285,7 +285,7 @@ async def criar_checkout_asaas(
     body = {
         "billingTypes": ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED"],
-        "minutesToExpire": 60,
+        "minutesToExpire": 10,
         "externalReference": external_reference,
         "callback": {
             "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}",
