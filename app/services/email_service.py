@@ -1,6 +1,7 @@
 import os
 import httpx
 from fastapi import HTTPException
+from app.services.email_templates import template_email_clubbar
 
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
@@ -9,46 +10,57 @@ BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Clubbar")
 
 
 def enviar_email_codigo(destinatario: str, codigo: str):
-
     if not BREVO_API_KEY:
         raise HTTPException(
             status_code=500,
-            detail="BREVO_API_KEY não configurada."
+            detail="BREVO_API_KEY não configurada.",
         )
+
+    conteudo_html = f"""
+    <p style="font-size:16px;color:#444;">
+      Utilize o código abaixo para redefinir sua senha:
+    </p>
+
+    <div style="
+      margin:35px auto;
+      background:#FFC107;
+      border-radius:10px;
+      padding:20px;
+      text-align:center;
+      font-size:42px;
+      font-weight:bold;
+      letter-spacing:8px;
+      color:#000;
+    ">
+      {codigo}
+    </div>
+
+    <p style="font-size:15px;color:#555;">
+      Este código é válido por <b>15 minutos</b>.
+    </p>
+
+    <p style="font-size:15px;color:#555;">
+      Caso você não tenha solicitado esta recuperação,
+      basta ignorar este e-mail.
+    </p>
+    """
+
+    html = template_email_clubbar(
+        titulo="Recuperação de senha",
+        subtitulo="Recebemos uma solicitação para redefinir sua senha no Clubbar.",
+        conteudo_html=conteudo_html,
+        botao_texto="Abrir Clubbar",
+        botao_link="https://app.clubbar.com.br",
+    )
 
     body = {
         "sender": {
             "name": BREVO_FROM_NAME,
             "email": BREVO_FROM_EMAIL,
         },
-        "to": [
-            {
-                "email": destinatario,
-            }
-        ],
+        "to": [{"email": destinatario}],
         "subject": "Recuperação de senha - Clubbar",
-        "htmlContent": f"""
-        <h2>Recuperação de senha</h2>
-
-        <p>Seu código é:</p>
-
-        <h1 style="letter-spacing:4px;">
-            {codigo}
-        </h1>
-
-        <p>
-            Este código expira em <b>15 minutos</b>.
-        </p>
-
-        <p>
-            Se você não solicitou esta recuperação,
-            ignore este e-mail.
-        </p>
-
-        <br>
-
-        <b>Equipe Clubbar</b>
-        """
+        "htmlContent": html,
     }
 
     headers = {
