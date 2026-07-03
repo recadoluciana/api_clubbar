@@ -59,7 +59,12 @@ def esqueci_senha(
     # 🔥 TEMPORÁRIO (sem email ainda)
     enviar_email_codigo(cliente.emailcliente, codigo)
 
-    return {"message": "Se o e-mail estiver cadastrado, enviaremos um código de recuperação."}
+    return {
+        "message": (
+            "Enviamos um e-mail com as instruções para recuperação da senha. "
+            "Verifique também sua caixa de spam ou lixo eletrônico."
+        )
+    }
 
 
 @router.post("/redefinir-senha")

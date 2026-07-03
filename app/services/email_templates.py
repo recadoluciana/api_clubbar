@@ -54,7 +54,7 @@ def template_email_clubbar(
           <tr>
             <td align="center" style="background:#000;padding:30px;">
               <img
-                src="https://app.clubbar.com.br/assets/images/logo_copa.png"
+                src="https://api.clubbar.com.br/static/logo_copa.png"
                 height="70"
                 alt="Clubbar"
               >
