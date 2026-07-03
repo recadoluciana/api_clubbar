@@ -1,54 +1,26 @@
-import os
 import smtplib
-from email.message import EmailMessage
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
+# Configurações
+smtp_server = "smtp.hostinger.com"
+port = 465  # SSL
+sender_email = "seuemail@seudominio.com"
+password = "sua_senha"
+receiver_email = "destinatario@exemplo.com"
 
-def enviar_email_codigo(destinatario: str, codigo: str):
-    smtp_host = os.getenv("SMTP_HOST", "smtp.hostinger.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "465"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM", smtp_user)
+# Criando mensagem
+message = MIMEMultipart("alternative")
+message["Subject"] = "Teste de envio via Hostinger"
+message["From"] = sender_email
+message["To"] = receiver_email
 
-    print("HOST =", smtp_host)
-    print("PORT =", smtp_port)
+texto = "Este é um teste de envio de e-mail via Hostinger SMTP."
+message.attach(MIMEText(texto, "plain"))
 
-    if not smtp_user or not smtp_password:
-        raise Exception("SMTP não configurado")
+# Conexão segura e envio
+with smtplib.SMTP_SSL(smtp_server, port) as server:
+    server.login(sender_email, password)
+    server.sendmail(sender_email, receiver_email, message.as_string())
 
-    msg = EmailMessage()
-    msg["Subject"] = "Código de recuperação de senha - Clubbar"
-    msg["From"] = smtp_from
-    msg["To"] = destinatario
-
-    msg.set_content(
-        f"""
-Olá!
-
-Seu código para redefinir a senha no Clubbar é:
-
-{codigo}
-
-Este código expira em 15 minutos.
-
-Se você não solicitou essa recuperação, ignore este e-mail.
-
-Equipe Clubbar
-"""
-    )
-
-    print("HOST =", smtp_host)
-    print("PORT =", smtp_port)
-    print("USER =", smtp_user)
-    print("VOU CONECTAR...")
-
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as smtp:
-        print("CONECTOU")
-        smtp.ehlo()
-        smtp.starttls()
-        print("TLS OK")
-        smtp.ehlo()
-        smtp.login(smtp_user, smtp_password)
-        print("LOGIN OK")
-        smtp.send_message(msg)
-        print("EMAIL ENVIADO")
+print("E-mail enviado com sucesso!")
