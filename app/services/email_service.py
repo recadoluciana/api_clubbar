@@ -40,6 +40,10 @@ def enviar_email_codigo(destinatario: str, codigo: str):
     </p>
 
     <p style="font-size:15px;color:#555;">
+      Volte ao aplicativo Clubbar e digite este código para criar sua nova senha.
+    </p>
+
+    <p style="font-size:15px;color:#555;">
       Caso você não tenha solicitado esta recuperação,
       basta ignorar este e-mail.
     </p>
@@ -49,8 +53,6 @@ def enviar_email_codigo(destinatario: str, codigo: str):
         titulo="Recuperação de senha",
         subtitulo="Recebemos uma solicitação para redefinir sua senha no Clubbar.",
         conteudo_html=conteudo_html,
-        botao_texto="Abrir Clubbar",
-        botao_link="https://app.clubbar.com.br",
     )
 
     body = {
