@@ -42,11 +42,9 @@ Equipe Clubbar
     print("USER =", smtp_user)
     print("VOU CONECTAR...")
 
-    with smtplib.SMTP_SSL(smtp_host, smtp_port) as smtp:
+    with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30) as smtp:
         print("CONECTOU")
-        smtp.starttls()
-        print("TLS OK")
         smtp.login(smtp_user, smtp_password)
         print("LOGIN OK")
         smtp.send_message(msg)
-        print("EMAIL ENVIADO")
+        print("EMAIL ENVIADO"
