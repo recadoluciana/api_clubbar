@@ -10,6 +10,9 @@ def enviar_email_codigo(destinatario: str, codigo: str):
     smtp_password = os.getenv("SMTP_PASSWORD")
     smtp_from = os.getenv("SMTP_FROM", smtp_user)
 
+    print("HOST =", smtp_host)
+    print("PORT =", smtp_port)
+
     if not smtp_user or not smtp_password:
         raise Exception("SMTP não configurado")
 
@@ -35,5 +38,6 @@ Equipe Clubbar
     )
 
     with smtplib.SMTP_SSL(smtp_host, smtp_port) as smtp:
+        smtp.starttls()
         smtp.login(smtp_user, smtp_password)
         smtp.send_message(msg)
