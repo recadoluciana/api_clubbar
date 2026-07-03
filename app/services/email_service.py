@@ -1,75 +1,74 @@
 import os
-import smtplib
+import httpx
+from fastapi import HTTPException
 
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
+BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Clubbar")
 
 
 def enviar_email_codigo(destinatario: str, codigo: str):
-    smtp_server = os.getenv("SMTP_HOST", "smtp.hostinger.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "465"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    smtp_from = os.getenv("SMTP_FROM", smtp_user)
 
-    if not smtp_user or not smtp_password:
-        raise Exception("SMTP não configurado.")
+    if not BREVO_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="BREVO_API_KEY não configurada."
+        )
 
-    mensagem = MIMEMultipart("alternative")
-    mensagem["Subject"] = "Recuperação de senha - Clubbar"
-    mensagem["From"] = smtp_from
-    mensagem["To"] = destinatario
+    body = {
+        "sender": {
+            "name": BREVO_FROM_NAME,
+            "email": BREVO_FROM_EMAIL,
+        },
+        "to": [
+            {
+                "email": destinatario,
+            }
+        ],
+        "subject": "Recuperação de senha - Clubbar",
+        "htmlContent": f"""
+        <h2>Recuperação de senha</h2>
 
-    texto = f"""
-Olá!
+        <p>Seu código é:</p>
 
-Recebemos uma solicitação para redefinir sua senha do Clubbar.
+        <h1 style="letter-spacing:4px;">
+            {codigo}
+        </h1>
 
-Seu código de recuperação é:
+        <p>
+            Este código expira em <b>15 minutos</b>.
+        </p>
 
-{codigo}
+        <p>
+            Se você não solicitou esta recuperação,
+            ignore este e-mail.
+        </p>
 
-Este código é válido por 15 minutos.
+        <br>
 
-Se você não solicitou esta recuperação, basta ignorar este e-mail.
+        <b>Equipe Clubbar</b>
+        """
+    }
 
-Equipe Clubbar
-"""
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": BREVO_API_KEY,
+    }
 
-    mensagem.attach(MIMEText(texto, "plain", "utf-8"))
+    response = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        json=body,
+        headers=headers,
+        timeout=30,
+    )
 
-    print("=" * 80)
-    print("[EMAIL]")
-    print("HOST.......:", smtp_server)
-    print("PORT.......:", smtp_port)
-    print("USER.......:", smtp_user)
-    print("DESTINO....:", destinatario)
-    print("=" * 80)
+    print("[BREVO]", response.status_code)
+    print(response.text)
 
-    try:
-        with smtplib.SMTP_SSL(
-            smtp_server,
-            smtp_port,
-            timeout=30,
-        ) as server:
-
-            print("[EMAIL] Conectado.")
-
-            server.login(
-                smtp_user,
-                smtp_password,
-            )
-
-            print("[EMAIL] Login OK.")
-
-            server.sendmail(
-                smtp_user,
-                destinatario,
-                mensagem.as_string(),
-            )
-
-            print("[EMAIL] Enviado com sucesso.")
-
-    except Exception as e:
-        print("[EMAIL][ERRO]", repr(e))
-        raise
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.text,
+        )
