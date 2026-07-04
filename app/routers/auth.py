@@ -24,29 +24,47 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="E-mail já cadastrado")
 
     telefone = (data.nrtelcliente or "").strip()
-    cpf = (data.nrcpfcliente or "").strip()
+
+    cpf = ''.join(filter(str.isdigit, data.nrcpfcliente or ""))
+
+    if cpf:
+        cliente_existente = (
+            db.query(Cliente)
+            .filter(Cliente.nrcpfcliente == cpf)
+            .first()
+        )
+
+        if cliente_existente:
+            raise HTTPException(
+                status_code=400,
+                detail="Já existe um cliente cadastrado com este CPF."
+            )
 
     cli = Cliente(
         nmcliente=(data.nmcliente or "").strip(),
-        emailcliente=(data.emailcliente or "").strip().lower(),
+        emailcliente=email,
         senhahashcli=hash_senha(data.senhahashcli),
         nrtelcliente=telefone or None,
         nrcpfcliente=cpf or None,
     )
+
     db.add(cli)
     db.commit()
     db.refresh(cli)
 
-    # token já loga após cadastrar (se quiser, dá pra não logar e pedir confirmação de e-mail)
-    token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=1000))
+    token = criar_jwt(
+        {"sub": str(cli.cliente_id), "role": "cliente"},
+        expires_delta=timedelta(days=1000),
+    )
+
     return {
         "access_token": token,
         "cliente": {
-            "cliente_id"  : cli.cliente_id,
-            "nmcliente"   : cli.nmcliente,
+            "cliente_id": cli.cliente_id,
+            "nmcliente": cli.nmcliente,
             "emailcliente": cli.emailcliente,
-            "emailconf"   : cli.emailconf,
-        }
+            "emailconf": cli.emailconf,
+        },
     }
 
 @router.post("/login")
