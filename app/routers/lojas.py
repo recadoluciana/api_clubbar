@@ -384,7 +384,7 @@ def atualizar_loja(
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
-    rtaxaprod: float | None = Form(None),
+    vrtaxaprod: float | None = Form(None),
     vrtaxaing: float | None = Form(None),
     urllogoloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
