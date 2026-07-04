@@ -16,7 +16,6 @@ from app.models.estado import Estado
 from app.models.eventolote import EventoLote
 from app.models.organizacao import Organizacao
 from app.schemas.evento import EventoOutBR
-from app.schemas.eventolote import EventoLoteOut
 from app.core.config import UPLOAD_EVENTOS
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
@@ -143,54 +142,6 @@ def listar_eventos_da_loja(
             "statusevento": evento.statusevento,
         }
         for evento in eventos
-    ]
-
-
-# ROTAS MAIS ESPECÍFICAS PRIMEIRO, PARA NÃO DAR CONFLITO COM /{evento_id}
-@router.get("/{evento_id}/lotes", response_model=list[EventoLoteOut])
-def listar_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
-
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .filter(EventoLote.statuslote == "ATIVO")
-        .order_by(EventoLote.vrprecolote.asc())
-        .all()
-    )
-
-    return lotes
-
-
-@router.get("/{evento_id}/lotes_todos")
-def listar_todos_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .order_by(EventoLote.lote_id.asc())
-        .all()
-    )
-
-    return [
-        {
-            "lote_id": lote.lote_id,
-            "organizacao_id": lote.organizacao_id,
-            "loja_id": lote.loja_id,
-            "evento_id": lote.evento_id,
-            "nmlote": lote.nmlote,
-            "vrprecolote": float(lote.vrprecolote or 0),
-            "qttotallote": int(lote.qttotallote or 0),
-            "qtvendidalote": int(lote.qtvendidalote or 0),
-            "dtiniciovenda": lote.dtiniciovenda,
-            "dtfimvenda": lote.dtfimvenda,
-            "statuslote": lote.statuslote,
-        }
-        for lote in lotes
     ]
 
 
