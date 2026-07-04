@@ -375,3 +375,39 @@ async def criar_produto(
         "dtinidesconto": novo_produto.dtinidesconto,
         "dtfimdesconto": novo_produto.dtfimdesconto,
     }
+
+# >>>>> dados de apenas 1 prouduto >>>>>>>>>
+@router.get("/buscar_produto/{produto_id}")
+def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Produto)
+        .filter(Produto.produto_id == produto_id)
+        .all()
+    )
+
+    saida = []
+
+    for produto in rows:
+        vrprecofinal, descontoativo = calcular_preco_final(produto)
+
+        saida.append(
+            {
+                "produto_id": produto.produto_id,
+                "organizacao_id": produto.organizacao_id,
+                "loja_id": produto.loja_id,
+                "categoria_id": produto.categoria_id,
+                "nmproduto": produto.nmproduto,
+                "dsproduto": produto.dsproduto,
+                "vrprecoprod": float(produto.vrprecoprod),
+                "sitproduto": produto.sitproduto,
+                "urlfotoproduto": produto.urlfotoproduto,
+                "tipodesconto": produto.tipodesconto or "NENHUM",
+                "vrdesconto": float(produto.vrdesconto or 0),
+                "dtinidesconto": produto.dtinidesconto,
+                "dtfimdesconto": produto.dtfimdesconto,
+                "vrprecofinal": vrprecofinal,
+                "descontoativo": descontoativo,
+            }
+        )
+
+    return saida
