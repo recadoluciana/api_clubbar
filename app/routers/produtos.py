@@ -377,37 +377,39 @@ async def criar_produto(
     }
 
 # >>>>> dados de apenas 1 prouduto >>>>>>>>>
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
 @router.get("/buscar_produto/{produto_id}")
 def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
-    rows = (
+    produto = (
         db.query(Produto)
         .filter(Produto.produto_id == produto_id)
-        .all()
+        .first()
     )
 
-    saida = []
-
-    for produto in rows:
-        vrprecofinal, descontoativo = calcular_preco_final(produto)
-
-        saida.append(
-            {
-                "produto_id": produto.produto_id,
-                "organizacao_id": produto.organizacao_id,
-                "loja_id": produto.loja_id,
-                "categoria_id": produto.categoria_id,
-                "nmproduto": produto.nmproduto,
-                "dsproduto": produto.dsproduto,
-                "vrprecoprod": float(produto.vrprecoprod),
-                "sitproduto": produto.sitproduto,
-                "urlfotoproduto": produto.urlfotoproduto,
-                "tipodesconto": produto.tipodesconto or "NENHUM",
-                "vrdesconto": float(produto.vrdesconto or 0),
-                "dtinidesconto": produto.dtinidesconto,
-                "dtfimdesconto": produto.dtfimdesconto,
-                "vrprecofinal": vrprecofinal,
-                "descontoativo": descontoativo,
-            }
+    if not produto:
+        raise HTTPException(
+            status_code=404,
+            detail="Produto não encontrado."
         )
 
-    return saida
+    vrprecofinal, descontoativo = calcular_preco_final(produto)
+
+    return {
+        "produto_id": produto.produto_id,
+        "organizacao_id": produto.organizacao_id,
+        "loja_id": produto.loja_id,
+        "categoria_id": produto.categoria_id,
+        "nmproduto": produto.nmproduto,
+        "dsproduto": produto.dsproduto,
+        "vrprecoprod": float(produto.vrprecoprod),
+        "sitproduto": produto.sitproduto,
+        "urlfotoproduto": produto.urlfotoproduto,
+        "tipodesconto": produto.tipodesconto or "NENHUM",
+        "vrdesconto": float(produto.vrdesconto or 0),
+        "dtinidesconto": produto.dtinidesconto,
+        "dtfimdesconto": produto.dtfimdesconto,
+        "vrprecofinal": vrprecofinal,
+        "descontoativo": descontoativo,
+    }
