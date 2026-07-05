@@ -99,12 +99,16 @@ def serve_flutter():
 def serve_favicon():
     return FileResponse("app/static/favicon.png")
 
-
+@app.get("/.well-known/assetlinks.json")
+def assetlinks():
+    return FileResponse("app/static/.well-known/assetlinks.json")
+    
 @app.get("/{full_path:path}")
 def serve_flutter_routes(full_path: str):
     if (
         full_path.startswith("uploads")
         or full_path.startswith("assets")
+        or full_path.startswith(".well-known")
         or full_path == "health"
         or full_path.startswith("docs")
         or full_path.startswith("redoc")
@@ -113,7 +117,3 @@ def serve_flutter_routes(full_path: str):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     return FileResponse("app/static/index.html")
-
-@app.get("/.well-known/assetlinks.json")
-def assetlinks():
-    return FileResponse("app/static/.well-known/assetlinks.json")
