@@ -113,3 +113,7 @@ def serve_flutter_routes(full_path: str):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     return FileResponse("app/static/index.html")
+
+@app.get("/.well-known/assetlinks.json")
+def assetlinks():
+    return FileResponse("app/static/.well-known/assetlinks.json")

@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "br.com.clubbar.cliente",
+      "sha256_cert_fingerprints": [
+        "1C:A2:BE:A0:E2:6A:CF:10:03:5A:D6:22:FF:6D:E2:32:5F:BB:10:F7:18:EF:62:90:A4:F8:66:FA:BE:5D:EB:8C"
+      ]
+    }
+  }
+]
