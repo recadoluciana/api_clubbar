@@ -9,6 +9,7 @@ from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
+from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
@@ -236,8 +237,9 @@ def quantidade_vendida_lote(
 
     qtd_vendida = (
         db.query(ItVenda)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .filter(ItVenda.lote_id == lote_id)
-        .filter(ItVenda.sititvenda == "PAGO")
+        .filter(Venda.sitvenda == "PAGA")
         .count()
     )
 

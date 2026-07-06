@@ -35,3 +35,4 @@ class ItVenda(Base):
     
     nmparticipante = Column(String(150), nullable=True)
     cpfparticipante = Column(String(11), nullable=True)
+    lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=True)
