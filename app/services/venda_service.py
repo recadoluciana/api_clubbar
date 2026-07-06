@@ -117,6 +117,7 @@ async def criar_ou_obter_venda_idempotente(
                     dtexpiraitvenda=fim,
                     nmparticipante=it.get("nmparticipante"),
                     cpfparticipante=it.get("cpfparticipante"),
+                    lote_id=it.get("lote_id"),
                 )
             )
 
