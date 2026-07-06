@@ -176,6 +176,8 @@ def get_evento_por_id(
 
     base_url = str(request.base_url).rstrip("/")
 
+    endereco_evento = evento_obj.dsendlocevento or endloja
+
     return {
         "evento_id": evento_obj.evento_id,
         "organizacao_id": evento_obj.organizacao_id,
@@ -184,7 +186,7 @@ def get_evento_por_id(
         "dtinicioevento": getattr(evento_obj, "dtinicioevento", None),
         "dtfimevento": getattr(evento_obj, "dtfimevento", None),
         "nmlocalevento": getattr(evento_obj, "nmlocalevento", None),
-        "dsendlocevento": getattr(evento_obj, "dsendlocevento", None),
+        "dsendlocevento": endereco_evento,
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
         "urlbannerevento": f"{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
         "statusevento": getattr(evento_obj, "statusevento", None),
