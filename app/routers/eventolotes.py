@@ -9,6 +9,7 @@ from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
+from app.models.itvenda import ItVenda
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -221,3 +222,32 @@ def deletar_lote_evento(
         db.rollback()
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erro ao deletar lote: {str(e)}")
+
+
+@router.get("/lotes/{lote_id}/quantidade-vendida")
+def quantidade_vendida_lote(
+    lote_id: int,
+    db: Session = Depends(get_db),
+):
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+
+    if not lote:
+        raise HTTPException(status_code=404, detail="Lote não encontrado")
+
+    qtd_vendida = (
+        db.query(ItVenda)
+        .filter(ItVenda.lote_id == lote_id)
+        .filter(ItVenda.sititvenda == "PAGO")
+        .count()
+    )
+
+    qtd_total = int(lote.qttotallote or 0)
+    qtd_disponivel = max(qtd_total - qtd_vendida, 0)
+
+    return {
+        "lote_id": lote_id,
+        "qt_total": qtd_total,
+        "qt_vendida": qtd_vendida,
+        "qt_disponivel": qtd_disponivel,
+        "esgotado": qtd_disponivel <= 0,
+    }
