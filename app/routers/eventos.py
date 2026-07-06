@@ -152,7 +152,7 @@ def get_evento_por_id(
     db: Session = Depends(get_db),
 ):
     evento = (
-        db.query(Evento, Loja.nmloja, Cidade.nmcidade, Estado.sgestado)
+        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Cidade.nmcidade, Estado.sgestado)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Estado, Estado.estado_id == Cidade.estado_id)
@@ -165,7 +165,7 @@ def get_evento_por_id(
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-    evento_obj, nmloja, nmcidade, sgestado = evento
+    evento_obj, nmloja, dsbairroloja, endloja, nmcidade, sgestado = evento
 
     lotes = (
         db.query(EventoLote)
@@ -191,7 +191,8 @@ def get_evento_por_id(
         "nmloja": nmloja,
         "nmcidade": nmcidade,
         "sgestado": sgestado,
-        "dsbairroloja": getattr(evento_obj,"dsbairroloja",None),
+        "dsbairroloja": dsbairroloja,
+        "endloja": endloja,
         "lotes": [
             {
                 "lote_id": lista_lotes.lote_id,
