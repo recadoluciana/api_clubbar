@@ -1,46 +1,44 @@
 # app/routers/pagamentos.py
 from __future__ import annotations
-import json
+
 import traceback
 import uuid
 from typing import Any, Dict
+from contextlib import nullcontext
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from contextlib import nullcontext
-
 from app.database import get_db
 from app.schemas.pagamentos import PagarNovoIn
+
 from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
-from app.models.pagvenda import PagVenda
+from app.models.eventolote import EventoLote
 from app.models.cliente import Cliente
+from app.models.checkout_asaas import CheckoutAsaas
 
 from app.services.carrinho_service import get_carrinho
-from app.services.venda_service import criar_ou_obter_venda_idempotente
 from app.services.cliente_service import get_cliente
 from app.services.mercadopago_service import (
     criar_pagamento_pix,
     criar_pagamento_cartao_mp,
     consultar_pagamento,
- )
-
-from app.services.pagamento_status_service import set_venda_como_paga
-
+)
 from app.routers.produtos import calcular_preco_final
-from app.services.stripe_service import criar_checkout_stripe
 
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
+    sincronizar_cliente_com_asaas_se_precisar,
 )
 
-from app.models.checkout_asaas import CheckoutAsaas
-from app.services.asaas_service import sincronizar_cliente_com_asaas_se_precisar
-
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
+
+
+def db_tx(db: Session):
+    return nullcontext() if db.in_transaction() else db.begin()
 
 
 def _recalcular_itens_carrinho(
@@ -51,17 +49,70 @@ def _recalcular_itens_carrinho(
     total = 0.0
 
     for it in itens:
-        produto_id = int(it.get("produto_id") or 0)
+        tipo = (it.get("idtipoproduto") or "P").upper()
         qt = int(it.get("qt") or it.get("qtitcarrinho") or 1)
 
-        produto = db.query(Produto).filter(
-            Produto.produto_id == produto_id
-        ).first()
+        produto_id = it.get("produto_id")
+        lote_id = it.get("lote_id")
+
+        if tipo == "I":
+            lote_id_int = int(lote_id or 0)
+
+            lote = (
+                db.query(EventoLote)
+                .filter(EventoLote.lote_id == lote_id_int)
+                .first()
+            )
+
+            if not lote:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Lote {lote_id_int} não encontrado",
+                )
+
+            if (lote.statuslote or "").upper() != "ATIVO":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Lote '{lote.nmlote}' não está disponível",
+                )
+
+            vrunitario = float(lote.vrprecolote or 0)
+            subtotal = vrunitario * qt
+            total += subtotal
+
+            itens_recalculados.append(
+                {
+                    "produto_id": None,
+                    "lote_id": lote.lote_id,
+                    "idtipoproduto": "I",
+                    "nmproduto": f"Ingresso {lote.nmlote}",
+                    "qt": qt,
+                    "qtitcarrinho": qt,
+                    "vrunitario": vrunitario,
+                    "subtotal": subtotal,
+                    "tipodesconto": "NENHUM",
+                    "vrdesconto": 0,
+                    "descontoativo": False,
+                    "dsobsitcar": it.get("dsobsitcar") or it.get("obs"),
+                    "nmparticipante": it.get("nmparticipante"),
+                    "cpfparticipante": it.get("cpfparticipante"),
+                }
+            )
+
+            continue
+
+        produto_id_int = int(produto_id or 0)
+
+        produto = (
+            db.query(Produto)
+            .filter(Produto.produto_id == produto_id_int)
+            .first()
+        )
 
         if not produto:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Produto {produto_id} não encontrado",
+                detail=f"Produto {produto_id_int} não encontrado",
             )
 
         if (produto.sitproduto or "").upper() != "ATIVO":
@@ -78,6 +129,8 @@ def _recalcular_itens_carrinho(
         itens_recalculados.append(
             {
                 "produto_id": produto.produto_id,
+                "lote_id": None,
+                "idtipoproduto": "P",
                 "nmproduto": produto.nmproduto,
                 "qt": qt,
                 "qtitcarrinho": qt,
@@ -94,16 +147,41 @@ def _recalcular_itens_carrinho(
 
     return itens_recalculados, total
 
-def db_tx(db: Session):
-    return nullcontext() if db.in_transaction() else db.begin()
+
+def _montar_itens_asaas(
+    itens_recalculados: list[Dict[str, Any]],
+) -> list[Dict[str, Any]]:
+    itens_asaas = []
+
+    for item in itens_recalculados:
+        nome = item.get("nmproduto") or "Item Clubbar"
+        tipo = (item.get("idtipoproduto") or "P").upper()
+
+        if tipo == "I":
+            descricao_item = "Ingresso"
+            referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
+        else:
+            descricao_item = "Produto"
+            referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
+
+        itens_asaas.append(
+            {
+                "externalReference": referencia,
+                "name": nome[:100],
+                "description": descricao_item,
+                "quantity": int(item.get("qtitcarrinho") or item.get("qt") or 1),
+                "value": round(float(item.get("vrunitario") or 0), 2),
+            }
+        )
+
+    return itens_asaas
+
 
 @router.post("/pagar-novo")
 async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
-
     metodo = (payload.dsmetodopag or "PIX").strip().upper()
 
     try:
-        
         carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
 
         if not carrinho:
@@ -112,7 +190,10 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
         itens = carrinho.get("itens") or []
 
         if not isinstance(itens, list):
-            raise HTTPException(status_code=500, detail="Formato inválido dos itens do carrinho")
+            raise HTTPException(
+                status_code=500,
+                detail="Formato inválido dos itens do carrinho",
+            )
 
         if not itens:
             raise HTTPException(status_code=400, detail="Carrinho vazio")
@@ -167,7 +248,10 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                         "status": "PENDENTE",
                         "metodo": "PIX",
                         "pix_copia_cola": transaction_data.get("qr_code", ""),
-                        "qr_code_base64": transaction_data.get("qr_code_base64", ""),
+                        "qr_code_base64": transaction_data.get(
+                            "qr_code_base64",
+                            "",
+                        ),
                         "ticket_url": transaction_data.get("ticket_url", ""),
                         "reutilizado": True,
                     }
@@ -210,7 +294,6 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
                 "ticket_url": transaction_data.get("ticket_url", ""),
                 "reutilizado": False,
             }
-        # >>>>> fim do if == pix >>>>>>>>>
 
         if metodo not in ["CREDIT_CARD", "DEBIT_CARD"]:
             raise HTTPException(
@@ -274,6 +357,7 @@ async def pagar_novo(payload: PagarNovoIn, db: Session = Depends(get_db)):
             detail=f"Erro ao gerar pagamento Mercado Pago ({type(e).__name__}): {e}",
         )
 
+
 @router.get("/pendente")
 async def pagamento_pendente(
     cliente_id: int,
@@ -303,7 +387,6 @@ async def pagamento_pendente(
     }
 
 
-
 @router.post("/pagar-asaas")
 async def pagar_asaas(
     payload: PagarNovoIn,
@@ -315,12 +398,21 @@ async def pagar_asaas(
         if not carrinho:
             raise HTTPException(status_code=404, detail="Carrinho não encontrado")
 
-        itens = carrinho.get("itens") or []
+        itens_car = carrinho.get("itens") or []
 
-        if not itens:
+        if not isinstance(itens_car, list):
+            raise HTTPException(
+                status_code=500,
+                detail="Formato inválido dos itens do carrinho",
+            )
+
+        if not itens_car:
             raise HTTPException(status_code=400, detail="Carrinho vazio")
 
-        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(db, itens)
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
+            db,
+            itens_car,
+        )
 
         carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
@@ -333,11 +425,11 @@ async def pagar_asaas(
             .first()
         )
 
-        try:
-            if not cliente:
-                raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        if not cliente:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-            customer_id = await obter_ou_criar_customer_asaas(
+        try:
+            await obter_ou_criar_customer_asaas(
                 db,
                 cliente_id=payload.cliente_id,
             )
@@ -350,37 +442,9 @@ async def pagar_asaas(
             print("[ASAAS] Erro ao sincronizar customer:", repr(e))
 
         external_reference = f"CARRINHO-{carrinho_id}"
-
         valor_atual = round(float(total_recalculado or 0), 2)
 
-        # >>>>>>>>>>>>>>>> retirei pois não vou mais aproveitar checkout aberto >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> #
-        #checkout_existente = (
-        #    db.query(CheckoutAsaas)
-        #    .filter(CheckoutAsaas.carrinho_id == carrinho_id)
-        #    .filter(CheckoutAsaas.status == "ACTIVE")
-        #    .order_by(CheckoutAsaas.checkout_asaas_id.desc())
-        #    .first()
-        #)
-
-        #if checkout_existente:
-        #    valor_checkout = round(float(checkout_existente.valor or 0), 2)
-
-            #if valor_checkout == valor_atual:
-                #return {
-                #    "ok": True,
-                #    "gateway": "ASAAS",
-                #    "carrinho_id": carrinho_id,
-                #    "pagamento_id": checkout_existente.checkout_id,
-                #    "status": checkout_existente.status,
-                #    "checkout_url": checkout_existente.checkout_url,
-                #    "external_reference": checkout_existente.external_reference,
-                #    "reutilizado": True,
-                #}
-
-            #checkout_existente.status = "OUTDATED"
-            #db.commit()
-        # >>>>>>>>>>>>>>>>>>>>>>>>> não vou reaproveitar checkout aberto. >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> #
-
+        items_asaas = _montar_itens_asaas(itens_recalculados)
 
         pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
@@ -391,17 +455,17 @@ async def pagar_asaas(
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
             celular_cliente=cliente.nrtelcliente,
-
             endcliente=cliente.endcliente,
             nrendcliente=cliente.nrendcliente,
             complcliente=cliente.complcliente,
             bairrocliente=cliente.bairrocliente,
             cepcliente=cliente.cepcliente,
+            items=items_asaas,
         )
 
         checkout_id = pagamento.get("id")
         checkout_url = pagamento.get("link")
-        status = pagamento.get("status") or "ACTIVE"
+        status_checkout = pagamento.get("status") or "ACTIVE"
 
         if not checkout_id or not checkout_url:
             raise HTTPException(
@@ -419,7 +483,7 @@ async def pagar_asaas(
             checkout_id=checkout_id,
             checkout_url=checkout_url,
             external_reference=external_reference,
-            status=status,
+            status=status_checkout,
             valor=valor_atual,
         )
 
@@ -431,7 +495,7 @@ async def pagar_asaas(
             "gateway": "ASAAS",
             "carrinho_id": carrinho_id,
             "pagamento_id": checkout_id,
-            "status": status,
+            "status": status_checkout,
             "checkout_url": checkout_url,
             "external_reference": external_reference,
             "reutilizado": False,

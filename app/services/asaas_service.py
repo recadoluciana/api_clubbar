@@ -246,12 +246,12 @@ async def criar_checkout_asaas(
     email_cliente: str | None = None,
     cpf_cliente: str | None = None,
     celular_cliente: str | None = None,
-
     endcliente: str | None = None,
     nrendcliente: str | None = None,
     complcliente: str | None = None,
     bairrocliente: str | None = None,
     cepcliente: str | None = None,
+    items: list[dict] | None = None,
 ):
     nome_limpo = (nome_cliente or "").strip()
 
@@ -282,6 +282,16 @@ async def criar_checkout_asaas(
         f"?carrinho_id={carrinho_id}"
     )
 
+    items_asaas = items if items else [
+        {
+            "externalReference": external_reference,
+            "name": "Compra Clubbar",
+            "description": descricao,
+            "quantity": 1,
+            "value": round(float(valor), 2),
+        }
+    ]
+    
     body = {
         "billingTypes": ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED"],
@@ -292,15 +302,7 @@ async def criar_checkout_asaas(
             "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado",
             "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado",
         },
-        "items": [
-            {
-                "externalReference": external_reference,
-                "name": "Compra Clubbar",
-                "description": descricao,
-                "quantity": 1,
-                "value": round(float(valor), 2),
-            }
-        ],
+        "items": items_asaas,
     }
 
     if tem_customer_data_completo:
