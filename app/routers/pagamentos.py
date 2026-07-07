@@ -44,9 +44,12 @@ def db_tx(db: Session):
 def _recalcular_itens_carrinho(
     db: Session,
     itens: list[Dict[str, Any]],
+    percentual_taxa_ingresso: float = 0.0,
 ) -> tuple[list[Dict[str, Any]], float]:
     itens_recalculados = []
     total = 0.0
+
+    percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
 
     for it in itens:
         tipo = (it.get("idtipoproduto") or "P").upper()
@@ -76,9 +79,13 @@ def _recalcular_itens_carrinho(
                     detail=f"Lote '{lote.nmlote}' não está disponível",
                 )
 
-            vrunitario = float(lote.vrprecolote or 0)
-            subtotal = vrunitario * qt
-            total += subtotal
+            vrunitario = round(float(lote.vrprecolote or 0), 2)
+            subtotal = round(vrunitario * qt, 2)
+
+            vrtaxaing = round(subtotal * (percentual_taxa_ingresso / 100), 2)
+            total_com_taxa = round(subtotal + vrtaxaing, 2)
+
+            total += total_com_taxa
 
             itens_recalculados.append(
                 {
@@ -90,6 +97,9 @@ def _recalcular_itens_carrinho(
                     "qtitcarrinho": qt,
                     "vrunitario": vrunitario,
                     "subtotal": subtotal,
+                    "percentual_taxa_ingresso": percentual_taxa_ingresso,
+                    "vrtaxaing": vrtaxaing,
+                    "total_com_taxa": total_com_taxa,
                     "tipodesconto": "NENHUM",
                     "vrdesconto": 0,
                     "descontoativo": False,
@@ -122,8 +132,9 @@ def _recalcular_itens_carrinho(
             )
 
         vrprecofinal, descontoativo = calcular_preco_final(produto)
-        vrunitario = float(vrprecofinal)
-        subtotal = vrunitario * qt
+        vrunitario = round(float(vrprecofinal), 2)
+        subtotal = round(vrunitario * qt, 2)
+
         total += subtotal
 
         itens_recalculados.append(
@@ -136,6 +147,9 @@ def _recalcular_itens_carrinho(
                 "qtitcarrinho": qt,
                 "vrunitario": vrunitario,
                 "subtotal": subtotal,
+                "percentual_taxa_ingresso": 0,
+                "vrtaxaing": 0,
+                "total_com_taxa": subtotal,
                 "tipodesconto": produto.tipodesconto or "NENHUM",
                 "vrdesconto": float(produto.vrdesconto or 0),
                 "descontoativo": descontoativo,
@@ -145,13 +159,14 @@ def _recalcular_itens_carrinho(
             }
         )
 
-    return itens_recalculados, total
+    return itens_recalculados, round(total, 2)
 
 
 def _montar_itens_asaas(
     itens_recalculados: list[Dict[str, Any]],
 ) -> list[Dict[str, Any]]:
     itens_asaas = []
+    total_taxa_conveniencia = 0.0
 
     for item in itens_recalculados:
         nome = item.get("nmproduto") or "Item Clubbar"
@@ -160,6 +175,8 @@ def _montar_itens_asaas(
         if tipo == "I":
             descricao_item = "Ingresso"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
+
+            total_taxa_conveniencia += float(item.get("vrtaxaing") or 0)
         else:
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
@@ -171,6 +188,17 @@ def _montar_itens_asaas(
                 "description": descricao_item,
                 "quantity": int(item.get("qtitcarrinho") or item.get("qt") or 1),
                 "value": round(float(item.get("vrunitario") or 0), 2),
+            }
+        )
+
+    if total_taxa_conveniencia > 0:
+        itens_asaas.append(
+            {
+                "externalReference": "TAXA-CONVENIENCIA",
+                "name": "Taxa de conveniência",
+                "description": "Taxa de serviço Clubbar",
+                "quantity": 1,
+                "value": round(total_taxa_conveniencia, 2),
             }
         )
 
@@ -411,7 +439,7 @@ async def pagar_asaas(
 
         itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
             db,
-            itens_car,
+            itens_car, payload.percentual_taxa_ingresso
         )
 
         carrinho_id = int(carrinho.get("carrinho_id") or 0)
