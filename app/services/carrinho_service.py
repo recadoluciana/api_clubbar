@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
+from app.models.loja import Loja
 
 def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
     # 1) acha carrinho ABERTO do cliente (trava o registro)
@@ -32,7 +33,18 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
     if not itens_car:
         raise HTTPException(status_code=400, detail="Carrinho sem itens")
 
-    # 3) pega todos os produtos de uma vez (evita N+1 queries)
+    # 3) buscar na loja a taxa de ingresso e taxa de produto para armazenar como histórico
+    loja_car = (
+        db.query(Loja)
+        .filter(
+            Loja.loja_id == loja_id
+        )
+        .all()
+    )
+    if not loja_car:
+        raise HTTPException(status_code=400, detail="Loja não encontrada")
+
+    # 4) pega todos os produtos de uma vez (evita N+1 queries)
     produto_ids = list({it.produto_id for it in itens_car if it.produto_id is not None})
     produtos = (
         db.query(Produto)
@@ -44,6 +56,8 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
     itens_out = []
     qt_total = 0
     total = 0.0
+    percentual_taxa = 0.0
+    valor_taxa = 0.0
 
     for it in itens_car:
         qt_aux = int(getattr(it, "qtitcarrinho", 1) or 1)
@@ -55,12 +69,20 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
                 detail=f"Produto {it.produto_id} não encontrado para item do carrinho",
             )
 
-        nmproduto = getattr(prod, "nmproduto", "Produto")
-        vrprecoprod = float(getattr(prod, "vrprecoprod", 0) or 0)
+        nmproduto     = getattr(prod, "nmproduto", "Produto")
+        vrprecoprod   = float(getattr(prod, "vrprecoprod", 0) or 0)
+        idtipoproduto = (getattr(prod, "idtipoproduto", "P") or "P").upper()
 
-        subtotal = vrprecoprod * qt_aux
+        subtotal = round(vrprecoprod * qt_aux, 2)
         qt_total += qt_aux
-        total += subtotal
+        total    += subtotal
+
+        if idtipoproduto == "I":
+            percentual_taxa = round(float(getattr(loja_car, "vrtaxaing", 0) or 0), 2)
+        else:
+            percentual_taxa = round(float(getattr(loja_car, "vrtaxaprod", 0) or 0), 2)
+
+        valor_taxa = round(subtotal * (percentual_taxa / 100), 2)
 
         itens_out.append(
             {
@@ -73,9 +95,10 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
                 "nmparticipante": it.nmparticipante,
                 "cpfparticipante": it.cpfparticipante,
                 "subtotal": subtotal,
-                "lote_id": it.lote_id,
-                "pctaxaitvenda": 5,
-                "vrtaxaitvenda": 0,
+                "idtipoproduto": idtipoproduto,
+                "lote_id": getattr(it, "lote_id", None),
+                "pctaxaitvenda": percentual_taxa,
+                "vrtaxaitvenda": valor_taxa,
             }
         )
 
