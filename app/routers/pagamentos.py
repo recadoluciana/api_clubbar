@@ -502,7 +502,6 @@ async def pagar_asaas(
 
         pagamento = await criar_checkout_asaas(
             valor=valor_total_com_taxa,
-            valor_taxa_ingresso= vr_taxa_ingresso,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,

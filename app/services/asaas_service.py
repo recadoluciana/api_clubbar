@@ -239,7 +239,6 @@ def somente_numeros(valor: str | None) -> str | None:
 async def criar_checkout_asaas(
     *,
     valor: float,
-    valor_taxa_ingresso: float,
     descricao: str,
     external_reference: str,
     carrinho_id: int,
@@ -289,7 +288,7 @@ async def criar_checkout_asaas(
             "name": "Compra Clubbar",
             "description": descricao,
             "quantity": 1,
-            "value": round(float(valor)+float(valor_taxa_ingresso), 2),
+            "value": round(float(valor), 2),
         }
     ]
     
