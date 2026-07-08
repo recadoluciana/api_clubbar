@@ -39,7 +39,7 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
         .filter(
             Loja.loja_id == loja_id
         )
-        .all()
+        .first()
     )
     if not loja_car:
         raise HTTPException(status_code=400, detail="Loja não encontrada")
