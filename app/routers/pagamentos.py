@@ -488,7 +488,7 @@ async def pagar_asaas(
 
         items_asaas, vr_taxa_ingresso = _montar_itens_asaas(
             itens_recalculados,
-            percentual_taxa_ingresso=float(payload.percentua_taxa_ingresso or 0),
+            percentual_taxa_ingresso=float(payload.percentual_taxa_ingresso or 0),
         )
 
         pagamento = await criar_checkout_asaas(
