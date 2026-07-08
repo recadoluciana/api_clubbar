@@ -90,8 +90,8 @@ def _recalcular_itens_carrinho(
             vrunitario = round(float(lote.vrprecolote or 0), 2)
             subtotal   = round(vrunitario * qt_prod, 2)
 
-            total_geral += total_com_taxa
-
+            total_geral += it.get("vrtaxaitvenda")
+            
             itens_recalculados.append(
                 {
                     "produto_id"     : produto.produto_id,
