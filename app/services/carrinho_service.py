@@ -102,6 +102,8 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
             }
         )
 
+    print('carrinho service itens_out >>>>>>>>>>>>>>>>>>', itens_out)
+
     return {
         "carrinho_id": carrinho_selec.carrinho_id,
         "organizacao_id": carrinho_selec.organizacao_id,
