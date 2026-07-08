@@ -184,6 +184,9 @@ def _montar_itens_asaas(
         valor_total_com_taxa += subtotal_item
 
         if tipo == "I":
+    
+            print('>> >>>>>> >>>>>>>>>>>>>entrei aqui no tipo I >>>>>>>>>>>>>>>>>>')
+
             descricao_item = "Ingresso"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
 
