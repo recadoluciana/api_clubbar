@@ -185,7 +185,7 @@ def _montar_itens_asaas(
         itens_asaas.append(
             {
                 "externalReference": referencia,
-                "name": nome[:100],
+                "name": nome[:30],
                 "description": descricao_item,
                 "quantity": quantidade,
                 "value": valor_unitario,
