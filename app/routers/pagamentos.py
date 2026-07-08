@@ -40,14 +40,10 @@ def db_tx(db: Session):
 def _recalcular_itens_carrinho(
     db: Session,
     itens: list[Dict[str, Any]],
-    percentual_taxa_ingresso: float = 0.0,
-    percentual_taxa_produto: float = 0.0,
 ) -> tuple[list[Dict[str, Any]], float]:
     itens_recalculados = []
     total_geral = 0.0
 
-    percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
-    percentual_taxa_produto  = float(percentual_taxa_produto or 0)
 
     for it in itens:
         tipo_prod  = (it.get("idtipoproduto") or "P").upper()
@@ -93,8 +89,6 @@ def _recalcular_itens_carrinho(
 
             vrunitario = round(float(lote.vrprecolote or 0), 2)
             subtotal   = round(vrunitario * qt_prod, 2)
-            vrtaxaing  = round(subtotal * (percentual_taxa_ingresso / 100), 2)
-            total_com_taxa = round(subtotal + vrtaxaing, 2)
 
             total_geral += total_com_taxa
 
@@ -108,9 +102,9 @@ def _recalcular_itens_carrinho(
                     "qtitcarrinho"   : qt_prod,
                     "vrunitario"     : vrunitario,
                     "subtotal"       : subtotal,
-                    "percentual_taxa": percentual_taxa_ingresso,
-                    "vrtaxa"         : vrtaxaing,
-                    "total_com_taxa" : total_com_taxa,
+                    "percentual_taxa": it.get("pctaxaitvenda"),
+                    "vrtaxa"         : it.get("vrtaxaitvenda"),
+                    "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
                     "tipodesconto"   : "NENHUM",
                     "vrdesconto"     : 0,
                     "descontoativo"  : False,
@@ -138,9 +132,9 @@ def _recalcular_itens_carrinho(
                 "qtitcarrinho": qt_prod,
                 "vrunitario"  : vrunitario,
                 "subtotal"    : subtotal,
-                "percentual_taxa": percentual_taxa_produto,
-                "vrtaxa"         : 0,
-                "total_com_taxa" : subtotal,
+                "percentual_taxa": it.get("pctaxaitvenda"),
+                "vrtaxa"         : it.get("vrtaxaitvenda"),
+                "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
                 "tipodesconto"   : produto.tipodesconto or "NENHUM",
                 "vrdesconto"     : float(produto.vrdesconto or 0),
                 "descontoativo"  : descontoativo,
