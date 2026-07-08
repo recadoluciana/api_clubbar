@@ -164,17 +164,31 @@ def _recalcular_itens_carrinho(
 
 def _montar_itens_asaas(
     itens_recalculados: list[Dict[str, Any]],
-    taxa_conveniencia: float = 0.0,
-) -> list[Dict[str, Any]]:
+    percentual_taxa_ingresso: float = 0.0,
+) -> tuple[list[Dict[str, Any]], float]:
+
     itens_asaas = []
+    vr_taxa_ingresso = 0.0
+
+    percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
 
     for item in itens_recalculados:
         nome = item.get("nmproduto") or "Item Clubbar"
         tipo = (item.get("idtipoproduto") or "P").upper()
 
+        quantidade = int(item.get("qtitcarrinho") or item.get("qt") or 1)
+        valor_unitario = round(float(item.get("vrunitario") or 0), 2)
+
         if tipo == "I":
             descricao_item = "Ingresso"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
+
+            subtotal_ingresso = round(valor_unitario * quantidade, 2)
+
+            vr_taxa_ingresso += round(
+                subtotal_ingresso * (percentual_taxa_ingresso / 100),
+                2,
+            )
         else:
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
@@ -184,23 +198,25 @@ def _montar_itens_asaas(
                 "externalReference": referencia,
                 "name": nome[:100],
                 "description": descricao_item,
-                "quantity": int(item.get("qtitcarrinho") or item.get("qt") or 1),
-                "value": round(float(item.get("vrunitario") or 0), 2),
+                "quantity": quantidade,
+                "value": valor_unitario,
             }
         )
 
-    if taxa_conveniencia > 0:
+    vr_taxa_ingresso = round(vr_taxa_ingresso, 2)
+
+    if vr_taxa_ingresso > 0:
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
                 "name": "Taxa de conveniência",
-                "description": "Taxa de serviço Clubbar",
+                "description": f"Taxa de serviço Clubbar ({percentual_taxa_ingresso:.2f}%)",
                 "quantity": 1,
-                "value": round(float(taxa_conveniencia), 2),
+                "value": vr_taxa_ingresso,
             }
         )
 
-    return itens_asaas
+    return itens_asaas, vr_taxa_ingresso
 
 
 @router.post("/pagar-novo")
@@ -470,13 +486,14 @@ async def pagar_asaas(
         external_reference = f"CARRINHO-{carrinho_id}"
         valor_atual = round(float(total_recalculado or 0), 2)
 
-        items_asaas = _montar_itens_asaas(
+        items_asaas, vr_taxa_ingresso = _montar_itens_asaas(
             itens_recalculados,
-            taxa_conveniencia=float(payload.percentual_taxa_ingresso or 0),
+            percentual_taxa_ingresso=float(payload.percentualTaxaIngresso or 0),
         )
 
         pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
+            valor_taxa_ingresso= vr_taxa_ingresso,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,
