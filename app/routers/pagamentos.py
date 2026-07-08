@@ -205,7 +205,9 @@ def _montar_itens_asaas(
 
     vr_taxa_ingresso = round(vr_taxa_ingresso, 2)
 
-    if vr_taxa_ingresso > 0:
+    print(vr_taxa_ingresso,percentual_taxa_ingresso)
+    
+    if percentual_taxa_ingresso > 0:
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
