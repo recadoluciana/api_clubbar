@@ -91,7 +91,7 @@ def _recalcular_itens_carrinho(
             subtotal   = round(vrunitario * qt_prod, 2)
 
             total_geral += it.get("vrtaxaitvenda")
-            
+
             itens_recalculados.append(
                 {
                     "produto_id"     : produto.produto_id,
@@ -102,8 +102,6 @@ def _recalcular_itens_carrinho(
                     "qtitcarrinho"   : qt_prod,
                     "vrunitario"     : vrunitario,
                     "subtotal"       : subtotal,
-                    "percentual_taxa": it.get("pctaxaitvenda"),
-                    "vrtaxa"         : it.get("vrtaxaitvenda"),
                     "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
                     "tipodesconto"   : "NENHUM",
                     "vrdesconto"     : 0,
@@ -111,6 +109,8 @@ def _recalcular_itens_carrinho(
                     "dsobsitcar"     : it.get("dsobsitcar"),
                     "nmparticipante" : it.get("nmparticipante"),
                     "cpfparticipante": it.get("cpfparticipante"),
+                    "pctaxaitvenda"  : it.get("pctaxaitvenda"),
+                    "vrtaxaitvenda"  : it.get("vrtaxaitvenda"),                
                 }
             )
 
@@ -124,16 +124,14 @@ def _recalcular_itens_carrinho(
 
         itens_recalculados.append(
             {
-                "produto_id": produto.produto_id,
-                "lote_id": None,
-                "idtipoproduto": produto.idtipoproduto,
-                "nmproduto": produto.nmproduto,
-                "qt_prod": qt_prod,
-                "qtitcarrinho": qt_prod,
-                "vrunitario"  : vrunitario,
-                "subtotal"    : subtotal,
-                "percentual_taxa": it.get("pctaxaitvenda"),
-                "vrtaxa"         : it.get("vrtaxaitvenda"),
+                "produto_id"     : produto.produto_id,
+                "lote_id"        : None,
+                "idtipoproduto"  : produto.idtipoproduto,
+                "nmproduto"      : produto.nmproduto,
+                "qt_prod"        : qt_prod,
+                "qtitcarrinho"   : qt_prod,
+                "vrunitario"     : vrunitario,
+                "subtotal"       : subtotal,
                 "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
                 "tipodesconto"   : produto.tipodesconto or "NENHUM",
                 "vrdesconto"     : float(produto.vrdesconto or 0),
@@ -141,6 +139,8 @@ def _recalcular_itens_carrinho(
                 "dsobsitcar"     : it.get("dsobsitcar") or it.get("obs"),
                 "nmparticipante" : it.get("nmparticipante"),
                 "cpfparticipante": it.get("cpfparticipante"),
+                "pctaxaitvenda"  : it.get("pctaxaitvenda"),
+                "vrtaxaitvenda"  : it.get("vrtaxaitvenda"),            
             }
         )
 
