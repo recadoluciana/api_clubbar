@@ -73,6 +73,9 @@ def get_carrinho(db: Session, cliente_id: int, loja_id: int) -> dict:
                 "nmparticipante": it.nmparticipante,
                 "cpfparticipante": it.cpfparticipante,
                 "subtotal": subtotal,
+                "lote_id": it.lote_id,
+                "pctaxaitvenda": 5,
+                "vrtaxaitvenda": 0,
             }
         )
 
