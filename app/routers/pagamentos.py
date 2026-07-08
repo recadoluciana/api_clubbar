@@ -494,13 +494,14 @@ async def pagar_asaas(
         external_reference = f"CARRINHO-{carrinho_id}"
         valor_atual = round(float(total_recalculado or 0), 2)
 
-        items_asaas, vr_taxa_ingresso = _montar_itens_asaas(
+        items_asaas, valor_total_com_taxa = _montar_itens_asaas(
             itens_recalculados,
             percentual_taxa_ingresso=float(payload.percentual_taxa_ingresso or 0),
         )
 
+
         pagamento = await criar_checkout_asaas(
-            valor=total_recalculado,
+            valor=valor_total_com_taxa,
             valor_taxa_ingresso= vr_taxa_ingresso,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
