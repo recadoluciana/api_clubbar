@@ -322,6 +322,8 @@ async def criar_checkout_asaas(
     print("=" * 80)
     print("[ASAAS CHECKOUT REQUEST]")
     print(json.dumps(body, indent=2, ensure_ascii=False))
+    print("[ASAAS ITEMS]")
+    print(json.dumps(items_asaas, indent=2, ensure_ascii=False))
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:

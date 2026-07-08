@@ -169,6 +169,7 @@ def _montar_itens_asaas(
 
     itens_asaas = []
     vr_taxa_ingresso = 0.0
+    valor_total_com_taxa = 0.0
 
     percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
 
@@ -178,17 +179,20 @@ def _montar_itens_asaas(
 
         quantidade = int(item.get("qtitcarrinho") or item.get("qt") or 1)
         valor_unitario = round(float(item.get("vrunitario") or 0), 2)
+        subtotal_item = round(valor_unitario * quantidade, 2)
+
+        valor_total_com_taxa += subtotal_item
 
         if tipo == "I":
             descricao_item = "Ingresso"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
 
-            subtotal_ingresso = round(valor_unitario * quantidade, 2)
-
-            vr_taxa_ingresso += round(
-                subtotal_ingresso * (percentual_taxa_ingresso / 100),
+            taxa_item = round(
+                subtotal_item * (percentual_taxa_ingresso / 100),
                 2,
             )
+
+            vr_taxa_ingresso += taxa_item
         else:
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
@@ -204,10 +208,12 @@ def _montar_itens_asaas(
         )
 
     vr_taxa_ingresso = round(vr_taxa_ingresso, 2)
+    valor_total_com_taxa = round(valor_total_com_taxa + vr_taxa_ingresso, 2)
 
-    print('montar itens asass >>>>>>>>>>>>>>>>>>>>>>>', vr_taxa_ingresso,percentual_taxa_ingresso)
+    
+    print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', vr_taxa_ingresso, valor_total_com_taxa)
 
-    if percentual_taxa_ingresso > 0:
+    if vr_taxa_ingresso > 0:
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
@@ -218,7 +224,7 @@ def _montar_itens_asaas(
             }
         )
 
-    return itens_asaas, vr_taxa_ingresso
+    return itens_asaas, valor_total_com_taxa
 
 
 @router.post("/pagar-novo")
