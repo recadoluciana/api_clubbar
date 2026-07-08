@@ -103,7 +103,7 @@ async def criar_ou_obter_venda_idempotente(
             vr_unit = float(it.get("vrunitario", 0) or 0)
             dsobsitcar = it.get("dsobsitcar")
             
-            #print("ITEM VENDA =", it)
+            print("ITEM VENDA =", it)
 
             db.add(
                 ItVenda(
@@ -118,6 +118,8 @@ async def criar_ou_obter_venda_idempotente(
                     nmparticipante=it.get("nmparticipante"),
                     cpfparticipante=it.get("cpfparticipante"),
                     lote_id=it.get("lote_id"),
+                    pctaxaitvenda=it.ger("pctaxaitvenda"),
+                    vrtaxaitvenda=it.ger("vrtaxaitvenda"),
                 )
             )
 
