@@ -234,7 +234,7 @@ async def pagar_asaas(
 
         itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
             db,
-            itens_car, payload.percentual_taxa_ingresso
+            itens_car
         )
 
         carrinho_id = int(carrinho.get("carrinho_id") or 0)
