@@ -150,7 +150,7 @@ def _recalcular_itens_carrinho(
             }
         )
 
-    return itens_recalculados, round(total, 2)
+    return itens_recalculados, round(total_geral, 2)
 
 
 def _montar_itens_asaas(
