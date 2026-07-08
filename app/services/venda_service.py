@@ -118,8 +118,8 @@ async def criar_ou_obter_venda_idempotente(
                     nmparticipante=it.get("nmparticipante"),
                     cpfparticipante=it.get("cpfparticipante"),
                     lote_id=it.get("lote_id"),
-                    pctaxaitvenda=it.ger("pctaxaitvenda"),
-                    vrtaxaitvenda=it.ger("vrtaxaitvenda"),
+                    pctaxaitvenda=it.get("pctaxaitvenda"),
+                    vrtaxaitvenda=it.get("vrtaxaitvenda"),
                 )
             )
 
