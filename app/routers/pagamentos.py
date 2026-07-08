@@ -44,7 +44,7 @@ def _recalcular_itens_carrinho(
     percentual_taxa_produto: float = 0.0,
 ) -> tuple[list[Dict[str, Any]], float]:
     itens_recalculados = []
-    total = 0.0
+    total_geral = 0.0
 
     percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
     percentual_taxa_produto  = float(percentual_taxa_produto or 0)
@@ -277,7 +277,6 @@ async def pagar_asaas(
             itens_recalculados,
             percentual_taxa_ingresso=float(payload.percentual_taxa_ingresso or 0),
         )
-
 
         pagamento = await criar_checkout_asaas(
             valor=valor_total_com_taxa,
