@@ -59,10 +59,12 @@ async def criar_venda_paga_por_carrinho_gateway(
     if not itens:
         raise HTTPException(status_code=400, detail="Carrinho vazio")
 
+    print("antes de recalcular itens >>>>>>>>>>>", itens)
     itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
         db,
         itens,
     )
+    print("depois de recalcular itens >>>>>>>>>>>", itens_recalculados)
 
     payment_id = str(pagamento.get("id") or "").strip()
     external_reference = str(pagamento.get("externalReference") or "").strip()
