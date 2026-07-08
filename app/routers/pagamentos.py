@@ -141,7 +141,7 @@ def _recalcular_itens_carrinho(
             {
                 "produto_id": produto.produto_id,
                 "lote_id": None,
-                "idtipoproduto": "P",
+                "idtipoproduto": produto.idtipoproduto,
                 "nmproduto": produto.nmproduto,
                 "qt": qt,
                 "qtitcarrinho": qt,
