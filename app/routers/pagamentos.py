@@ -183,6 +183,9 @@ def _montar_itens_asaas(
 
         valor_total_com_taxa += subtotal_item
 
+        
+        print('>> >>>>>> >>>>>>>>>>>>>entrei aqui no tipo produto >>>>>>>>>>>>>>>>>', tipo)
+
         if tipo == "I":
     
             print('>> >>>>>> >>>>>>>>>>>>>entrei aqui no tipo I >>>>>>>>>>>>>>>>>>')
