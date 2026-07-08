@@ -211,7 +211,7 @@ def _montar_itens_asaas(
     valor_total_com_taxa = round(valor_total_com_taxa + vr_taxa_ingresso, 2)
 
     
-    print('>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>', vr_taxa_ingresso, valor_total_com_taxa)
+    print('>>perceutal taxa >>>>>> vrtaxa >>>>>>>>>>>>>valor total com taxa >>>>>>>>>>>>>>>>>>', percentual_taxa_ingresso, vr_taxa_ingresso, valor_total_com_taxa)
 
     if vr_taxa_ingresso > 0:
         itens_asaas.append(
