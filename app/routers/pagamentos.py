@@ -205,8 +205,8 @@ def _montar_itens_asaas(
 
     vr_taxa_ingresso = round(vr_taxa_ingresso, 2)
 
-    print(vr_taxa_ingresso,percentual_taxa_ingresso)
-    
+    print('montar itens asass >>>>>>>>>>>>>>>>>>>>>>>', vr_taxa_ingresso,percentual_taxa_ingresso)
+
     if percentual_taxa_ingresso > 0:
         itens_asaas.append(
             {
