@@ -164,9 +164,9 @@ def _recalcular_itens_carrinho(
 
 def _montar_itens_asaas(
     itens_recalculados: list[Dict[str, Any]],
+    taxa_conveniencia: float = 0.0,
 ) -> list[Dict[str, Any]]:
     itens_asaas = []
-    total_taxa_conveniencia = 0.0
 
     for item in itens_recalculados:
         nome = item.get("nmproduto") or "Item Clubbar"
@@ -175,8 +175,6 @@ def _montar_itens_asaas(
         if tipo == "I":
             descricao_item = "Ingresso"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
-
-            total_taxa_conveniencia += float(item.get("vrtaxaing") or 0)
         else:
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
@@ -191,14 +189,14 @@ def _montar_itens_asaas(
             }
         )
 
-    if total_taxa_conveniencia > 0:
+    if taxa_conveniencia > 0:
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
                 "name": "Taxa de conveniência",
                 "description": "Taxa de serviço Clubbar",
                 "quantity": 1,
-                "value": round(total_taxa_conveniencia, 2),
+                "value": round(float(taxa_conveniencia), 2),
             }
         )
 
@@ -472,7 +470,10 @@ async def pagar_asaas(
         external_reference = f"CARRINHO-{carrinho_id}"
         valor_atual = round(float(total_recalculado or 0), 2)
 
-        items_asaas = _montar_itens_asaas(itens_recalculados)
+        items_asaas = _montar_itens_asaas(
+            itens_recalculados,
+            taxa_conveniencia=float(payload.taxaIngressoCliente or 0),
+        )
 
         pagamento = await criar_checkout_asaas(
             valor=total_recalculado,
