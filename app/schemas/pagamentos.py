@@ -55,6 +55,7 @@ class PagarNovoIn(BaseModel):
 
     # Taxa de ingresso
     percentual_taxa_ingresso: Optional[float] = 0
+    percentual_taxa_produto : Optional[float] = 0
 
     # Idempotência
     idempotency_key: Optional[str] = None
