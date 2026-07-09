@@ -169,7 +169,7 @@ def _montar_itens_asaas(
         valor_total_com_taxa += subtotal_item
 
         if tipo == "I":
-            descricao_item = "Ingresso"
+            descricao_item = f"Ingresso LOTE-{item.get('lote_id') or 'SEM-ID'}"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
 
             taxa_item = round(
