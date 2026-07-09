@@ -8,6 +8,7 @@ import traceback
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.cidade import Cidade
+from app.models.estado import Estado
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
 from app.core.config import UPLOAD_LOJAS
