@@ -15,7 +15,8 @@ from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
-
+from datetime import datetime
+    
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 
 
@@ -107,17 +108,6 @@ def entregar_produto(
     usuario_id: int,
     db: Session = Depends(get_db),
 ):
-    item = (
-        db.query(ItVenda)
-        .filter(ItVenda.itvenda_id == itvenda_id)
-        .first()
-    )
-
-    if not item:
-        raise HTTPException(
-            status_code=404,
-            detail="Item não encontrado",
-        )
 
     usuario = (
         db.query(Usuario)
@@ -128,37 +118,42 @@ def entregar_produto(
     if not usuario:
         raise HTTPException(
             status_code=404,
-            detail="Usuário não encontrado",
+            detail="Usuário não encontrado.",
         )
 
-    # evita entregar 2x
-    if item.identregaitvenda == "SIM":
-        return {
-            "ok": True,
-            "already": True,
-            "msg": "Este produto já foi entregue.",
-            "itvenda_id": itvenda_id,
-            "dtentregaitvenda": (
-                item.dtentregaitvenda.isoformat()
-                if item.dtentregaitvenda
-                else None
-            ),
-            "userentregaitvenda": item.userentregaitvenda,
-            "nmuserentregaitvenda": item.nmuserentregaitvenda,
-        }
-
-    item.identregaitvenda = "SIM"
-    item.dtentregaitvenda = datetime.now()
-    item.userentregaitvenda = usuario_id
-    item.nmuserentregaitvenda = usuario.nmusuario
+    quantidade_atualizada = (
+        db.query(ItVenda)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .filter(ItVenda.identregaitvenda != "SIM")
+        .update(
+            {
+                ItVenda.identregaitvenda: "SIM",
+                ItVenda.dtentregaitvenda: datetime.now(),
+                ItVenda.userentregaitvenda: usuario.usuario_id,
+                ItVenda.nmuserentregaitvenda: usuario.nmusuario,
+            },
+            synchronize_session=False,
+        )
+    )
 
     db.commit()
-    db.refresh(item)
+
+    if quantidade_atualizada == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Este produto já foi utilizado.",
+        )
+
+    item = (
+        db.query(ItVenda)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .first()
+    )
 
     return {
         "ok": True,
+        "msg": "Produto entregue com sucesso.",
         "itvenda_id": item.itvenda_id,
-        "identregaitvenda": item.identregaitvenda,
         "dtentregaitvenda": item.dtentregaitvenda.isoformat(),
         "userentregaitvenda": item.userentregaitvenda,
         "nmuserentregaitvenda": item.nmuserentregaitvenda,
