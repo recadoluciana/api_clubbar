@@ -397,10 +397,28 @@ def buscar_item_por_token(
         )
 
     resultado = (
-        db.query(ItVenda, Produto)
+        db.query(
+            ItVenda,
+            Produto,
+            Venda,
+            Loja,
+            Cliente,
+        )
         .join(
             Produto,
             Produto.produto_id == ItVenda.produto_id,
+        )
+        .join(
+            Venda,
+            Venda.venda_id == ItVenda.venda_id,
+        )
+        .join(
+            Loja,
+            Loja.loja_id == Venda.loja_id,
+        )
+        .join(
+            Cliente,
+            Cliente.cliente_id == Venda.cliente_id,
         )
         .filter(ItVenda.qrtokenitvenda == token)
         .first()
@@ -412,7 +430,7 @@ def buscar_item_por_token(
             detail="Produto não encontrado ou QR Code inválido.",
         )
 
-    item, produto = resultado
+    item, produto, venda, loja, cliente = resultado
 
     entregue = (
         (item.identregaitvenda or "NAO")
@@ -424,18 +442,26 @@ def buscar_item_por_token(
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
+
         "nmproduto": produto.nmproduto or "Produto",
         "urlfotoproduto": produto.urlfotoproduto or "",
+
+        "nmloja": loja.nmloja or "",
+        "nmcliente": cliente.nmcliente or "",
+
         "qtitvenda": item.qtitvenda or 1,
         "dsobsitvenda": item.dsobsitvenda or "",
         "nmparticipante": item.nmparticipante or "",
         "cpfparticipante": item.cpfparticipante or "",
+
         "identregaitvenda": item.identregaitvenda or "NAO",
+
         "dtentregaitvenda": (
             item.dtentregaitvenda.isoformat()
             if item.dtentregaitvenda
             else None
         ),
+
         "disponivel": not entregue,
     }
 
