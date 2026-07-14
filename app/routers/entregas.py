@@ -505,17 +505,50 @@ def entregar_produto_por_token(
 
     db.commit()
 
-    item = (
-        db.query(ItVenda)
+    resultado = (
+        db.query(
+            ItVenda,
+            Produto,
+            Loja,
+            Cliente,
+        )
+        .join(
+            Produto,
+            Produto.produto_id == ItVenda.produto_id,
+        )
+        .join(
+            Venda,
+            Venda.venda_id == ItVenda.venda_id,
+        )
+        .join(
+            Loja,
+            Loja.loja_id == Venda.loja_id,
+        )
+        .join(
+            Cliente,
+            Cliente.cliente_id == Venda.cliente_id,
+        )
         .filter(ItVenda.qrtokenitvenda == token)
         .first()
     )
+
+    if not resultado:
+        raise HTTPException(
+            status_code=404,
+            detail="Produto não encontrado.",
+        )
+
+    item, produto, loja, cliente = resultado
 
     return {
         "ok": True,
         "msg": "Produto entregue com sucesso.",
         "itvenda_id": item.itvenda_id,
-        "nmproduto": item.nmproduto,
+        "produto_id": item.produto_id,
+        "nmproduto": produto.nmproduto or "Produto",
+        "urlfotoproduto": produto.urlfotoproduto or "",
+        "nmloja": loja.nmloja or "Loja",
+        "nmcliente": cliente.nmcliente or "Cliente",
         "dtentregaitvenda": (
             item.dtentregaitvenda.isoformat()
             if item.dtentregaitvenda
