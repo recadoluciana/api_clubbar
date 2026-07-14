@@ -390,22 +390,43 @@ def buscar_item_por_token(
 ):
     token = token.strip()
 
-    item = (
-        db.query(ItVenda)
+    if not token:
+        raise HTTPException(
+            status_code=400,
+            detail="Token não informado.",
+        )
+
+    resultado = (
+        db.query(ItVenda, Produto)
+        .join(
+            Produto,
+            Produto.produto_id == ItVenda.produto_id,
+        )
         .filter(ItVenda.qrtokenitvenda == token)
         .first()
     )
 
-    if not item:
+    if not resultado:
         raise HTTPException(
             status_code=404,
             detail="Produto não encontrado ou QR Code inválido.",
         )
 
+    item, produto = resultado
+
+    entregue = (
+        (item.identregaitvenda or "NAO")
+        .strip()
+        .upper()
+        == "SIM"
+    )
+
     return {
         "itvenda_id": item.itvenda_id,
-        "nmproduto": item.nmproduto,
-        "qtitvenda": item.qtitvenda,
+        "produto_id": item.produto_id,
+        "nmproduto": produto.nmproduto or "Produto",
+        "urlfotoproduto": produto.urlfotoproduto or "",
+        "qtitvenda": item.qtitvenda or 1,
         "dsobsitvenda": item.dsobsitvenda or "",
         "nmparticipante": item.nmparticipante or "",
         "cpfparticipante": item.cpfparticipante or "",
@@ -415,7 +436,7 @@ def buscar_item_por_token(
             if item.dtentregaitvenda
             else None
         ),
-        "disponivel": item.identregaitvenda != "SIM",
+        "disponivel": not entregue,
     }
 
 @router.post("/entregar-por-token/{token}")
