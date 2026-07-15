@@ -386,6 +386,7 @@ def alterar_participante_itvenda(
 @router.get("/buscar-por-token/{token}")
 def buscar_item_por_token(
     token: str,
+    usuario_id: int,
     db: Session = Depends(get_db),
 ):
     token = token.strip()
@@ -394,6 +395,24 @@ def buscar_item_por_token(
         raise HTTPException(
             status_code=400,
             detail="Token não informado.",
+        )
+
+    usuario = (
+        db.query(Usuario)
+        .filter(Usuario.usuario_id == usuario_id)
+        .first()
+    )
+
+    if not usuario:
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário responsável não encontrado.",
+        )
+
+    if not usuario.loja_id:
+        raise HTTPException(
+            status_code=403,
+            detail="O usuário não está vinculado a uma loja.",
         )
 
     resultado = (
@@ -432,6 +451,17 @@ def buscar_item_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    # Impede o usuário de visualizar produto de outra loja
+    if venda.loja_id != usuario.loja_id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Este QR Code pertence a outro bar/casa noturna. "
+                "Retirada não permitida! Feche esta tela, verifique "
+                "o estabelecimento correto e tente novamente."
+            ),
+        )
+
     entregue = (
         (item.identregaitvenda or "NAO")
         .strip()
@@ -442,6 +472,7 @@ def buscar_item_por_token(
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
+        "loja_id": loja.loja_id,
 
         "nmproduto": produto.nmproduto or "Produto",
         "urlfotoproduto": produto.urlfotoproduto or "",
@@ -455,13 +486,11 @@ def buscar_item_por_token(
         "cpfparticipante": item.cpfparticipante or "",
 
         "identregaitvenda": item.identregaitvenda or "NAO",
-
         "dtentregaitvenda": (
             item.dtentregaitvenda.isoformat()
             if item.dtentregaitvenda
             else None
         ),
-
         "disponivel": not entregue,
     }
 
@@ -491,50 +520,17 @@ def entregar_produto_por_token(
             detail="Usuário responsável não encontrado.",
         )
 
-    quantidade_atualizada = (
-        db.query(ItVenda)
-        .filter(ItVenda.qrtokenitvenda == token)
-        .filter(
-            (ItVenda.identregaitvenda.is_(None))
-            | (ItVenda.identregaitvenda != "SIM")
-        )
-        .update(
-            {
-                ItVenda.identregaitvenda: "SIM",
-                ItVenda.dtentregaitvenda: datetime.now(),
-                ItVenda.userentregaitvenda: usuario.usuario_id,
-                ItVenda.nmuserentregaitvenda: usuario.nmusuario,
-            },
-            synchronize_session=False,
-        )
-    )
-
-    if quantidade_atualizada == 0:
-        db.rollback()
-
-        item = (
-            db.query(ItVenda)
-            .filter(ItVenda.qrtokenitvenda == token)
-            .first()
-        )
-
-        if not item:
-            raise HTTPException(
-                status_code=404,
-                detail="Produto não encontrado ou QR Code inválido.",
-            )
-
+    if not usuario.loja_id:
         raise HTTPException(
-            status_code=409,
-            detail="Este produto já foi utilizado.",
+            status_code=403,
+            detail="O usuário não está vinculado a uma loja.",
         )
-
-    db.commit()
 
     resultado = (
         db.query(
             ItVenda,
             Produto,
+            Venda,
             Loja,
             Cliente,
         )
@@ -561,24 +557,69 @@ def entregar_produto_por_token(
     if not resultado:
         raise HTTPException(
             status_code=404,
-            detail="Produto não encontrado.",
+            detail="Produto não encontrado ou QR Code inválido.",
         )
 
-    item, produto, loja, cliente = resultado
+    item, produto, venda, loja, cliente = resultado
+
+    # Segurança obrigatória antes da baixa
+    if venda.loja_id != usuario.loja_id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Este QR Code pertence a outro bar/casa noturna. "
+                "Retirada não permitida! Feche esta tela, verifique "
+                "o estabelecimento correto e tente novamente."
+            ),
+        )
+
+    quantidade_atualizada = (
+        db.query(ItVenda)
+        .filter(ItVenda.itvenda_id == item.itvenda_id)
+        .filter(
+            (ItVenda.identregaitvenda.is_(None))
+            | (ItVenda.identregaitvenda != "SIM")
+        )
+        .update(
+            {
+                ItVenda.identregaitvenda: "SIM",
+                ItVenda.dtentregaitvenda: datetime.now(),
+                ItVenda.userentregaitvenda: usuario.usuario_id,
+                ItVenda.nmuserentregaitvenda: usuario.nmusuario,
+            },
+            synchronize_session=False,
+        )
+    )
+
+    if quantidade_atualizada == 0:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=409,
+            detail="Este produto já foi utilizado.",
+        )
+
+    db.commit()
+    db.refresh(item)
 
     return {
         "ok": True,
         "msg": "Produto entregue com sucesso.",
+
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
+        "loja_id": loja.loja_id,
+
         "nmproduto": produto.nmproduto or "Produto",
         "urlfotoproduto": produto.urlfotoproduto or "",
-        "nmloja": loja.nmloja or "Loja",
-        "nmcliente": cliente.nmcliente or "Cliente",
+        "nmloja": loja.nmloja or "",
+        "nmcliente": cliente.nmcliente or "",
+        "dsobsitvenda": item.dsobsitvenda or "",
+
         "dtentregaitvenda": (
             item.dtentregaitvenda.isoformat()
             if item.dtentregaitvenda
             else None
         ),
-        "nmuserentregaitvenda": item.nmuserentregaitvenda,
+        "nmuserentregaitvenda": item.nmuserentregaitvenda or "",
     }
