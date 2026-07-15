@@ -5,6 +5,7 @@ from app.database import get_db
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
 from app.core.security import hash_senha
+from app.models.loja import Loja
 
 router = APIRouter(tags=["Usuários"])
 
@@ -157,3 +158,39 @@ def deletar_usuario_por_organizacao(
     db.refresh(usuario)
 
     return {"detail": "Usuário inativado com sucesso"}
+
+
+@router.get("/{usuario_id}/loja")
+def buscar_loja_usuario(
+    usuario_id: int,
+    db: Session = Depends(get_db),
+):
+    resultado = (
+        db.query(
+            Usuario,
+            Loja,
+        )
+        .join(
+            Loja,
+            Loja.loja_id == Usuario.loja_id,
+        )
+        .filter(
+            Usuario.usuario_id == usuario_id,
+        )
+        .first()
+    )
+
+    if not resultado:
+        raise HTTPException(
+            status_code=404,
+            detail="Loja do usuário não encontrada.",
+        )
+
+    usuario, loja = resultado
+
+    return {
+        "usuario_id": usuario.usuario_id,
+        "loja_id": loja.loja_id,
+        "nmloja": loja.nmloja or "",
+        "urllogoloja": loja.urllogoloja or "",
+    }
