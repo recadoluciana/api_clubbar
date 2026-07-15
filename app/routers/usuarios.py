@@ -160,7 +160,7 @@ def deletar_usuario_por_organizacao(
     return {"detail": "Usuário inativado com sucesso"}
 
 
-@router.get("/{usuario_id}/loja")
+@router.get("usuarios/{usuario_id}/loja")
 def buscar_loja_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
