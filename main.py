@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 import app.models as app_models
+from app.core.config import UPLOAD_DIR
 
 from app.routers import cidades
 from app.routers import auth
@@ -56,11 +57,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs("/app/uploads", exist_ok=True)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 os.makedirs("app/static", exist_ok=True)
 os.makedirs("app/static/assets", exist_ok=True)
 
-app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
 app.mount("/assets", StaticFiles(directory="app/static/assets"), name="assets")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

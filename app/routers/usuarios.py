@@ -9,6 +9,7 @@ from app.models.loja import Loja
 
 router = APIRouter(tags=["Usuários"])
 
+### teste ####
 
 @router.get(
     "/organizacoes/{organizacao_id}/usuarios",
