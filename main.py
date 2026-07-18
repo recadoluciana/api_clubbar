@@ -36,6 +36,9 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 
+    # Ambiente de desenvolvimento
+    "https://clubbaradmin-desenvolvimento.up.railway.app",
+
     "https://clubbar.com.br",
     "https://www.clubbar.com.br",
     "https://app.clubbar.com.br",
@@ -48,6 +51,7 @@ origins = [
     "https://clubbaradmin-production.up.railway.app",
     "https://bitbeer-production.up.railway.app",
 ]
+
 
 app.add_middleware(
     CORSMiddleware,
