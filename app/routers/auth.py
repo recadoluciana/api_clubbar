@@ -74,17 +74,15 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
 
     cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
     if not cli:
-        raise HTTPException(status_code=401, detail="E-mail não cadastrado")
+        raise HTTPException(status_code=401,detail="E-mail ou senha inválidos",)
 
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
     if not verificar_senha(data.senha, cli.senhahashcli):
-        raise HTTPException(status_code=401, detail="Senha inválida")
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
     token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=1000))
-
-    print('retorno um json com access_token, cliente_id, nmcliente', token, cli.cliente_id,cli.nmcliente)
 
     return {
         "access_token": token,
@@ -112,7 +110,7 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
     )
 
     if not row:
-        raise HTTPException(status_code=401, detail="E-mail não cadastrado")
+        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
     user, nmorganizacao = row
 
@@ -124,7 +122,7 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
     except UnknownHashError:
         raise HTTPException(
             status_code=401,
-            detail="Senha inválida (hash inválido no banco)",
+            detail="E-mail ou senha inválidos",
         )
 
     if not ok:
