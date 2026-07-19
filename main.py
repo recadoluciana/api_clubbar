@@ -38,6 +38,7 @@ origins = [
 
     # Ambiente de desenvolvimento
     "https://clubbaradmin-desenvolvimento.up.railway.app",
+    "https://clubbarcliente-desenvolvimento.up.railway.app",
 
     "https://clubbar.com.br",
     "https://www.clubbar.com.br",
