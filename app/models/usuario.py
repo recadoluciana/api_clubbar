@@ -30,7 +30,12 @@ class Usuario(Base):
 
     nmusuario = Column(String(200), nullable=False)
 
-    emailuser = Column(String(200), nullable=False)
+    emailuser = Column(
+        String(200),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
 
     senhahashuser = Column(String(255), nullable=False)
 
@@ -48,14 +53,6 @@ class Usuario(Base):
         DateTime,
         nullable=True,
         onupdate=func.current_timestamp(),
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "organizacao_id",
-            "emailuser",
-            name="uk_usuario_org_email",
-        ),
     )
 
     def __repr__(self) -> str:

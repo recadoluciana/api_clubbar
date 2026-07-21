@@ -7,9 +7,65 @@ from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
 from app.core.security import hash_senha
 from app.models.loja import Loja
 
+
 router = APIRouter(tags=["Usuários"])
 
-### teste ####
+
+CARGOS_VALIDOS = {
+    "SUPERADMIN",
+    "ADMIN",
+    "GERENTE",
+    "CAIXA",
+    "BARMAN",
+    "GARCOM",
+    "PORTEIRO",
+}
+
+
+def _normalizar_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def _normalizar_cargo(cargo: str) -> str:
+    return cargo.strip().upper()
+
+
+def _validar_cargo(cargo: str) -> str:
+    cargo_normalizado = _normalizar_cargo(cargo)
+
+    if cargo_normalizado not in CARGOS_VALIDOS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cargo inválido.",
+        )
+
+    return cargo_normalizado
+
+
+def _validar_loja_da_organizacao(
+    db: Session,
+    *,
+    organizacao_id: int,
+    loja_id: int | None,
+) -> None:
+    if loja_id is None:
+        return
+
+    loja = (
+        db.query(Loja)
+        .filter(
+            Loja.loja_id == loja_id,
+            Loja.organizacao_id == organizacao_id,
+        )
+        .first()
+    )
+
+    if not loja:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A loja informada não pertence a esta organização.",
+        )
+
 
 @router.get(
     "/organizacoes/{organizacao_id}/usuarios",
@@ -21,8 +77,13 @@ def listar_usuarios_por_organizacao(
 ):
     usuarios = (
         db.query(Usuario)
-        .filter(Usuario.organizacao_id == organizacao_id)
-        .order_by(Usuario.nmusuario.asc())
+        .filter(
+            Usuario.organizacao_id == organizacao_id,
+        )
+        .order_by(
+            Usuario.usuario_id.asc(),
+            Usuario.nmusuario.asc(),
+        )
         .all()
     )
 
@@ -39,25 +100,50 @@ def criar_usuario_por_organizacao(
     payload: UsuarioCreate,
     db: Session = Depends(get_db),
 ):
+    nome = payload.nmusuario.strip()
+    email = _normalizar_email(payload.emailuser)
+    cargo = _validar_cargo(
+        payload.dscargo or "BARMAN",
+    )
+
+    if not nome:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe o nome do usuário.",
+        )
+
     email_existente = (
         db.query(Usuario)
-        .filter(Usuario.emailuser == payload.emailuser)
+        .filter(
+            Usuario.emailuser == email,
+        )
         .first()
     )
+
     if email_existente:
         raise HTTPException(
-            status_code=400,
-            detail="Já existe usuário com este e-mail",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Já existe um usuário com este e-mail.",
         )
+
+    _validar_loja_da_organizacao(
+        db,
+        organizacao_id=organizacao_id,
+        loja_id=payload.loja_id,
+    )
 
     novo = Usuario(
         organizacao_id=organizacao_id,
         loja_id=payload.loja_id,
-        nmusuario=payload.nmusuario,
-        emailuser=payload.emailuser,
-        senhahashuser=hash_senha(payload.senha),
-        dscargo=payload.dscargo or "FUNCIONARIO",
-        situsuario=payload.situsuario or "ATIVO",
+        nmusuario=nome,
+        emailuser=email,
+        senhahashuser=hash_senha(
+            payload.senha,
+        ),
+        dscargo=cargo,
+        situsuario=(
+            payload.situsuario or "ATIVO"
+        ).strip().upper(),
     )
 
     db.add(novo)
@@ -88,42 +174,115 @@ def atualizar_usuario_por_organizacao(
 
     if not usuario:
         raise HTTPException(
-            status_code=404,
-            detail="Usuário não encontrado para esta organização",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado para esta organização.",
         )
 
-    if payload.emailuser and payload.emailuser != usuario.emailuser:
-        email_existente = (
-            db.query(Usuario)
-            .filter(
-                Usuario.emailuser == payload.emailuser,
-                Usuario.usuario_id != usuario_id,
-            )
-            .first()
-        )
-        if email_existente:
-            raise HTTPException(
-                status_code=400,
-                detail="Já existe usuário com este e-mail",
-            )
-
-    if payload.loja_id is not None:
-        usuario.loja_id = payload.loja_id
-
-    if payload.nmusuario is not None:
-        usuario.nmusuario = payload.nmusuario
+    # ---------------------------------------------------------
+    # E-MAIL
+    # ---------------------------------------------------------
 
     if payload.emailuser is not None:
-        usuario.emailuser = payload.emailuser
+        email = _normalizar_email(
+            payload.emailuser,
+        )
+
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Informe o e-mail do usuário.",
+            )
+
+        if email != usuario.emailuser:
+            email_existente = (
+                db.query(Usuario)
+                .filter(
+                    Usuario.emailuser == email,
+                    Usuario.usuario_id != usuario_id,
+                )
+                .first()
+            )
+
+            if email_existente:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Já existe outro usuário com este e-mail.",
+                )
+
+        usuario.emailuser = email
+
+    # ---------------------------------------------------------
+    # NOME
+    # ---------------------------------------------------------
+
+    if payload.nmusuario is not None:
+        nome = payload.nmusuario.strip()
+
+        if not nome:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Informe o nome do usuário.",
+            )
+
+        usuario.nmusuario = nome
+
+    # ---------------------------------------------------------
+    # LOJA
+    # ---------------------------------------------------------
+
+    # Permite inclusive remover o vínculo da loja.
+    if "loja_id" in payload.model_fields_set:
+        _validar_loja_da_organizacao(
+            db,
+            organizacao_id=organizacao_id,
+            loja_id=payload.loja_id,
+        )
+
+        usuario.loja_id = payload.loja_id
+
+    # ---------------------------------------------------------
+    # CARGO
+    # ---------------------------------------------------------
 
     if payload.dscargo is not None:
-        usuario.dscargo = payload.dscargo
+        novo_cargo = _validar_cargo(
+            payload.dscargo,
+        )
+
+        if usuario_id == 1:
+            if novo_cargo != usuario.dscargo:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "O cargo do usuário principal "
+                        "não pode ser alterado."
+                    ),
+                )
+        else:
+            usuario.dscargo = novo_cargo
+
+    # ---------------------------------------------------------
+    # STATUS
+    # ---------------------------------------------------------
 
     if payload.situsuario is not None:
-        usuario.situsuario = payload.situsuario
+        usuario.situsuario = (
+            payload.situsuario
+            .strip()
+            .upper()
+        )
 
-    if payload.senha is not None and payload.senha.strip():
-        usuario.senhahashuser = hash_senha(payload.senha)
+    # ---------------------------------------------------------
+    # SENHA
+    # ---------------------------------------------------------
+
+    if (
+        payload.senha is not None
+        and payload.senha.strip()
+    ):
+        usuario.senhahashuser = hash_senha(
+            payload.senha.strip(),
+        )
 
     db.commit()
     db.refresh(usuario)
@@ -151,17 +310,27 @@ def deletar_usuario_por_organizacao(
 
     if not usuario:
         raise HTTPException(
-            status_code=404,
-            detail="Usuário não encontrado para esta organização",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado para esta organização.",
         )
 
-    db.delete()
-    db.refresh(usuario)
+    if usuario_id == 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O usuário principal do sistema não pode ser excluído.",
+        )
 
-    return {"detail": "Usuário inativado com sucesso"}
+    db.delete(usuario)
+    db.commit()
+
+    return {
+        "detail": "Usuário excluído com sucesso."
+    }
 
 
-@router.get("/usuarios/{usuario_id}/loja")
+@router.get(
+    "/usuarios/{usuario_id}/loja",
+)
 def buscar_loja_usuario(
     usuario_id: int,
     db: Session = Depends(get_db),
@@ -183,7 +352,7 @@ def buscar_loja_usuario(
 
     if not resultado:
         raise HTTPException(
-            status_code=404,
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Loja do usuário não encontrada.",
         )
 
