@@ -6,7 +6,7 @@ from sqlalchemy import func
 
 from app.database import get_db
 
-from app.models.lead_parceiro import LeadParceiro
+from app.models.leadparceiro import LeadParceiro
 from app.models.organizacao import Organizacao
 from app.models.loja import Loja
 from app.models.venda import Venda
