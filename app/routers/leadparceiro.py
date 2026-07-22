@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.cidade import Cidade
 from app.models.estado import Estado
-from app.models.lead_parceiro import LeadParceiro
-from app.schemas.lead_parceiro import (
+from app.models.leadparceiro import LeadParceiro
+from app.schemas.leadparceiro import (
     LeadParceiroCreate,
     LeadParceiroOut,
 )
