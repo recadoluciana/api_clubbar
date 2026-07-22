@@ -24,7 +24,7 @@ from app.routers import usuarios
 from app.routers import clisenha
 from app.routers import clientes
 from app.routers import mercadopago_webhook
-from app.routers import parceiros
+from app.routers import leadparceiro
 from app.routers import superadmin
 from app.routers import stripe_webhook
 from app.routers import asaas_webhook
@@ -96,7 +96,7 @@ app.include_router(usuarios.router)
 app.include_router(clisenha.router)
 app.include_router(clientes.router)
 app.include_router(mercadopago_webhook.router)
-app.include_router(parceiros.router)
+app.include_router(leadparceiro.router)
 app.include_router(superadmin.router)
 app.include_router(stripe_webhook.router)
 app.include_router(asaas_webhook.router)

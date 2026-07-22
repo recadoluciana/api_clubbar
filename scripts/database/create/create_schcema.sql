@@ -712,34 +712,45 @@ ALTER TABLE itvenda
   REFERENCES produto(produto_id, lote_id)
   ON DELETE RESTRICT ON UPDATE RESTRICT;
 
-CREATE TABLE lead_parceiro (
-  lead_parceiro_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE leadparceiro (
+  leadparceiro_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+  nmresponsavel     VARCHAR(120) NOT NULL,
+  nmestabelecimento VARCHAR(160) NOT NULL,
+  tipo              VARCHAR(30) NOT NULL,
+  telefone          VARCHAR(30) NOT NULL,
+  email             VARCHAR(160) NOT NULL,
+  estado_id         BIGINT NOT NULL,
+  cidade_id         BIGINT NOT NULL,
+  mensagem          TEXT NULL,
+  status            ENUM(
+                      'NOVO',
+                      'CONTATADO',
+                      'NEGOCIANDO',
+                      'CONVERTIDO',
+                      'PERDIDO'
+                    ) NOT NULL DEFAULT 'NOVO',
+  dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  nome_responsavel VARCHAR(120) NOT NULL,
-  nome_estabelecimento VARCHAR(160) NOT NULL,
+  CONSTRAINT fk_leadparceiro_estado
+    FOREIGN KEY (estado_id)
+    REFERENCES estado(estado_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
 
-  tipo VARCHAR(30) NOT NULL,
+  CONSTRAINT fk_leadparceiro_cidade
+    FOREIGN KEY (cidade_id)
+    REFERENCES cidade(cidade_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
 
-  telefone VARCHAR(30) NOT NULL,
-  email VARCHAR(160) NOT NULL,
+  INDEX idx_leadparceiro_status (status),
+  INDEX idx_leadparceiro_estado (estado_id),
+  INDEX idx_leadparceiro_cidade (cidade_id),
+  INDEX idx_leadparceiro_email (email),
+  INDEX idx_leadparceiro_dtcriacao (dtcriacao)
+) ENGINE=InnoDB;
 
-  cidade VARCHAR(120) NOT NULL,
-
-  mensagem TEXT NULL,
-
-  status ENUM(
-    'NOVO',
-    'CONTATADO',
-    'NEGOCIANDO',
-    'CONVERTIDO',
-    'PERDIDO'
-  ) NOT NULL DEFAULT 'NOVO',
-
-  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-  dtultatu DATETIME NULL
-    ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 
 CREATE TABLE checkout_asaas (

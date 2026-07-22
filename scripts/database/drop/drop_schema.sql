@@ -1,6 +1,6 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
-DROP TABLE IF EXISTS lead_parceiro;
+DROP TABLE IF EXISTS leadparceiro;
 
 DROP TABLE IF EXISTS checkout_asaas;
 DROP TABLE IF EXISTS eventolote;
