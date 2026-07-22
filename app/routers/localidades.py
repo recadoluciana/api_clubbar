@@ -14,7 +14,7 @@ def listar_estados(db: Session = Depends(get_db)):
     return [
         {
             "estado_id": estado.estado_id,
-            "cdibge": estado.cdibge,
+            "cdibgeest": estado.cdibgeest,
             "sgestado": estado.sgestado,
             "nmestado": estado.nmestado,
         }
@@ -40,7 +40,7 @@ def listar_cidades_por_estado(estado_id: int, db: Session = Depends(get_db)):
     return [
         {
             "cidade_id": cidade.cidade_id,
-            "cdibge": cidade.cdibge,
+            "cdibgecid": cidade.cdibgecid,
             "estado_id": cidade.estado_id,
             "nmcidade": cidade.nmcidade,
         }

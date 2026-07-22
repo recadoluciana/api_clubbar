@@ -14,6 +14,8 @@ class Cidade(Base):
 
     nmcidade = Column(String(120), nullable=False)
 
+    cdibgecid = Column(BigInteger,nullable=True, unique=True)
+
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 

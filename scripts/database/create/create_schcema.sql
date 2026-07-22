@@ -22,7 +22,7 @@ CREATE TABLE pais (
 CREATE TABLE estado (
   estado_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
   pais_id     BIGINT NOT NULL,
-  cdibge      BIGINT NULL,
+  cdibgeest   BIGINT NULL,
   sgestado    VARCHAR(5) NOT NULL,
   nmestado    VARCHAR(120) NOT NULL,
   dtcriacao   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -34,7 +34,7 @@ CREATE TABLE estado (
     ON DELETE RESTRICT
     ON UPDATE RESTRICT,
 
-  UNIQUE KEY uk_estado_ibge (cdibge),  
+  UNIQUE KEY uk_estado_ibge (cdibgeest),  
   UNIQUE KEY uk_estado_pais_sigla (pais_id, sgestado),
   UNIQUE KEY uk_estado_pais_estadoid (pais_id, estado_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -44,7 +44,7 @@ CREATE TABLE cidade (
   pais_id     BIGINT NOT NULL,
   estado_id   BIGINT NOT NULL,
   nmcidade    VARCHAR(120) NOT NULL,
-  cdibge      BIGINT NULL,
+  cdibgecid   BIGINT NULL,
   dtcriacao   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu    DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -55,7 +55,7 @@ CREATE TABLE cidade (
     ON UPDATE RESTRICT,
 
   UNIQUE KEY uk_cidade_estado_nome (estado_id, nmcidade),
-  UNIQUE KEY uk_cidade_ibge (cdibge),
+  UNIQUE KEY uk_cidade_ibge (cdibgecid),
   UNIQUE KEY uk_cidade_pais_estado_id (
     pais_id,
     estado_id,

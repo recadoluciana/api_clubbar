@@ -13,6 +13,12 @@ class Estado(Base):
     sgestado = Column(String(5), nullable=False)   # MG, SP...
     nmestado = Column(String(120), nullable=False)
 
+    cdibgeest = Column(
+        BigInteger,
+        nullable=True,
+        unique=True,
+    )
+
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
