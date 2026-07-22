@@ -9,6 +9,7 @@ import app.models as app_models
 from app.core.config import UPLOAD_DIR
 
 from app.routers import cidades
+from app.routers import localidades
 from app.routers import auth
 from app.routers import organizacao
 from app.routers import lojas
@@ -81,6 +82,7 @@ app.mount("/assets", StaticFiles(directory="app/static/assets"), name="assets")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(cidades.router)
+app.include_router(localidades.router)
 app.include_router(auth.router)
 app.include_router(organizacao.router)
 app.include_router(lojas.router)
