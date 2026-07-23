@@ -122,6 +122,77 @@ class LeadParceiroCreate(BaseModel):
         return texto or None
 
 
+class LeadParceiroUpdate(BaseModel):
+    nmresponsavel: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=120,
+    )
+
+    tipo: TipoParceiro | None = None
+
+    telefone: str | None = Field(
+        default=None,
+        min_length=10,
+        max_length=30,
+    )
+
+    email: EmailStr | None = None
+
+    status: StatusLeadParceiroSchema | None = None
+
+    @field_validator("nmresponsavel")
+    @classmethod
+    def normalizar_responsavel(
+        cls,
+        valor: str | None,
+    ) -> str | None:
+        if valor is None:
+            return None
+
+        texto = valor.strip()
+
+        if not texto:
+            raise ValueError(
+                "Informe o nome do responsável."
+            )
+
+        return texto
+
+    @field_validator("telefone")
+    @classmethod
+    def validar_telefone_update(
+        cls,
+        valor: str | None,
+    ) -> str | None:
+        if valor is None:
+            return None
+
+        numeros = "".join(
+            caractere
+            for caractere in valor
+            if caractere.isdigit()
+        )
+
+        if len(numeros) not in (10, 11):
+            raise ValueError(
+                "Informe um telefone válido com DDD."
+            )
+
+        return numeros
+
+    @field_validator("email")
+    @classmethod
+    def normalizar_email_update(
+        cls,
+        valor: EmailStr | None,
+    ) -> str | None:
+        if valor is None:
+            return None
+
+        return str(valor).strip().lower()
+
+
 class LeadParceiroOut(BaseModel):
     leadparceiro_id: int
 
@@ -136,12 +207,18 @@ class LeadParceiroOut(BaseModel):
     estado_id: int
     cidade_id: int
 
+    nmestado: str
+    sgestado: str
+    nmcidade: str
+
     mensagem: str | None = None
 
     status: StatusLeadParceiroSchema
 
     dtcriacao: datetime
     dtultatu: datetime | None = None
+
+    dias_espera: int
 
     class Config:
         from_attributes = True
