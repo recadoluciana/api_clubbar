@@ -1,3 +1,5 @@
+import re
+import unicodedata
 from datetime import datetime
 
 from fastapi import (
@@ -19,6 +21,15 @@ from app.schemas.leadparceiro import (
     LeadParceiroUpdate,
 )
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models.leadparceiro import LeadParceiro
+from app.models.loja import Loja
+from app.models.organizacao import Organizacao
 
 router = APIRouter(
     prefix="/parceiros",
@@ -300,3 +311,227 @@ def atualizar_interesse_parceiro(
         estado,
         cidade,
     )
+
+def _somente_numeros(valor: str) -> str:
+    return re.sub(r"\D", "", valor or "")
+
+
+def _normalizar_texto(valor: str) -> str:
+    texto = unicodedata.normalize(
+        "NFD",
+        valor.strip().lower(),
+    )
+
+    return "".join(
+        caractere
+        for caractere in texto
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+
+def _nome_loja_por_tipo(tipo: str) -> str:
+    tipo_normalizado = (
+        _normalizar_texto(tipo)
+        .replace("-", " ")
+        .replace("_", " ")
+    )
+
+    if tipo_normalizado == "bar":
+        return "Meu Bar"
+
+    if tipo_normalizado in {
+        "casa noturna",
+        "casanoturna",
+        "boate",
+    }:
+        return "Minha Casa Noturna"
+
+    if tipo_normalizado in {
+        "eventos",
+        "evento",
+        "empresa de eventos",
+    }:
+        return "Empresa de Eventos"
+
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=(
+            f'Tipo de estabelecimento não reconhecido: "{tipo}".'
+        ),
+    )
+    
+@router.post(
+    "/{leadparceiro_id}/converter-em-parceiro",
+    status_code=status.HTTP_201_CREATED,
+)
+def converter_lead_em_parceiro(
+    leadparceiro_id: int,
+    dados: ConverterLeadParceiroIn,
+    db: Session = Depends(get_db),
+):
+    lead = (
+        db.query(LeadParceiro)
+        .filter(
+            LeadParceiro.leadparceiro_id
+            == leadparceiro_id,
+        )
+        .first()
+    )
+
+    if not lead:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lead parceiro não encontrado.",
+        )
+
+    if lead.status == "CONVERTIDO":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este lead já foi convertido em parceiro.",
+        )
+
+    if lead.status == "PERDIDO":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Um lead marcado como perdido não pode "
+                "ser convertido."
+            ),
+        )
+
+    cnpj = _somente_numeros(dados.cnpj)
+
+    if len(cnpj) != 14:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="O CNPJ deve possuir 14 números.",
+        )
+
+    organizacao_existente = (
+        db.query(Organizacao)
+        .filter(
+            Organizacao.cnpjorganizacao == cnpj,
+        )
+        .first()
+    )
+
+    if organizacao_existente:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe uma organização com este CNPJ.",
+        )
+
+    nome_loja = _nome_loja_por_tipo(lead.tipo)
+
+    endereco_loja = (
+        f"{dados.endereco.strip()}, "
+        f"{dados.numero.strip()}"
+    )
+
+    try:
+        nova_organizacao = Organizacao(
+            nmorganizacao=lead.nmestabelecimento.strip(),
+            rzsocialorganizacao=dados.razao_social.strip(),
+            cnpjorganizacao=cnpj,
+            emailorganizacao=lead.email.strip().lower(),
+            telorganizacao=lead.telefone.strip(),
+            ceporganizacao=(
+                dados.cep.strip()
+                if dados.cep
+                else None
+            ),
+            endorganizacao=dados.endereco.strip(),
+            nrendorganizacao=dados.numero.strip(),
+            complorganizacao=(
+                dados.complemento.strip()
+                if dados.complemento
+                else None
+            ),
+            cidade_id=lead.cidade_id,
+            nmbairro=(
+                dados.bairro.strip()
+                if dados.bairro
+                else None
+            ),
+            sitorganizacao="ATIVA",
+        )
+
+        db.add(nova_organizacao)
+
+        # Obtém o organizacao_id sem finalizar a transação.
+        db.flush()
+
+        nova_loja = Loja(
+            organizacao_id=nova_organizacao.organizacao_id,
+            nmloja=nome_loja,
+            endloja=endereco_loja,
+            dsbairroloja=(
+                dados.bairro.strip()
+                if dados.bairro
+                else None
+            ),
+            sitloja="ATIVA",
+            aberto24x7="N",
+            nrtelloja=lead.telefone.strip(),
+            nrdiavalidade=90,
+            cidade_id=lead.cidade_id,
+            vrtaxaprod=5.00,
+            vrtaxaing=5.00,
+        )
+
+        db.add(nova_loja)
+
+        # Obtém o loja_id antes do commit.
+        db.flush()
+
+        lead.status = "CONVERTIDO"
+
+        db.commit()
+
+        db.refresh(nova_organizacao)
+        db.refresh(nova_loja)
+        db.refresh(lead)
+
+        return {
+            "ok": True,
+            "mensagem": (
+                "Lead convertido em parceiro com sucesso."
+            ),
+            "leadparceiro_id": lead.leadparceiro_id,
+            "status_lead": lead.status,
+            "tipo": lead.tipo,
+            "organizacao": {
+                "organizacao_id": (
+                    nova_organizacao.organizacao_id
+                ),
+                "nome": nova_organizacao.nmorganizacao,
+            },
+            "loja": {
+                "loja_id": nova_loja.loja_id,
+                "nome": nova_loja.nmloja,
+            },
+        }
+
+    except HTTPException:
+        db.rollback()
+        raise
+
+    except IntegrityError as erro:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Não foi possível converter o lead. "
+                "Verifique se o CNPJ ou outro dado "
+                "já está cadastrado."
+            ),
+        ) from erro
+
+    except Exception as erro:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno ao converter o lead em parceiro.",
+        ) from erro

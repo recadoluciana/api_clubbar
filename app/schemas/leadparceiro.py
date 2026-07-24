@@ -222,3 +222,39 @@ class LeadParceiroOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ConverterLeadParceiroIn(BaseModel):
+    razao_social: str = Field(
+        min_length=3,
+        max_length=160,
+    )
+
+    cnpj: str = Field(
+        min_length=14,
+        max_length=18,
+    )
+
+    cep: str | None = Field(
+        default=None,
+        max_length=20,
+    )
+
+    endereco: str = Field(
+        min_length=3,
+        max_length=255,
+    )
+
+    numero: str = Field(
+        min_length=1,
+        max_length=20,
+    )
+
+    complemento: str | None = Field(
+        default=None,
+        max_length=120,
+    )
+
+    bairro: str | None = Field(
+        default=None,
+        max_length=120,
+    )
