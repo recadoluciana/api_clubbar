@@ -12,7 +12,7 @@ from pydantic import (
 TipoParceiro = Literal[
     "BAR",
     "CASA_NOTURNA",
-    "EVENTO",
+    "PRODUTOR_EVENTOS",
 ]
 
 
@@ -60,7 +60,7 @@ class ConverterLeadParceiroIn(BaseModel):
         default=None,
         max_length=120,
     )
-    
+
 class LeadParceiroCreate(BaseModel):
     nmresponsavel: str = Field(
         ...,

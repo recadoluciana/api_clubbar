@@ -349,9 +349,9 @@ def _nome_loja_por_tipo(tipo: str) -> str:
     if tipo_normalizado in {
         "eventos",
         "evento",
-        "empresa de eventos",
+        "produtor de eventos",
     }:
-        return "Empresa de Eventos"
+        return "Minha Empresa de Eventos"
 
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
