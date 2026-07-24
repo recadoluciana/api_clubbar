@@ -1,33 +1,99 @@
-from sqlalchemy import Column, BigInteger, String, DateTime
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+)
 from sqlalchemy.sql import func
+
 from app.database import Base
 
 
 class Organizacao(Base):
     __tablename__ = "organizacao"
 
-    organizacao_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organizacao_id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+    )
 
-    nmorganizacao = Column(String(120), nullable=False)
-    cnpjorganizacao = Column(String(18), nullable=True)
-    emailorganizacao = Column(String(255), nullable=True)
-    telorganizacao = Column(String(25), nullable=True)
+    nmorganizacao = Column(
+        String(120),
+        nullable=False,
+        index=True,
+    )
+
+    rzsocialorganizacao = Column(
+        String(160),
+        nullable=False,
+    )
+
+    # Armazenar somente os 14 números.
+    cnpjorganizacao = Column(
+        String(14),
+        nullable=False,
+        unique=True,
+    )
+
+    emailorganizacao = Column(
+        String(255),
+        nullable=False,
+    )
+
+    telorganizacao = Column(
+        String(25),
+        nullable=False,
+    )
+
+    ceporganizacao = Column(
+        String(20),
+        nullable=True,
+    )
+
+    endorganizacao = Column(
+        String(255),
+        nullable=False,
+    )
+
+    nrendorganizacao = Column(
+        String(20),
+        nullable=False,
+    )
+
+    complorganizacao = Column(
+        String(120),
+        nullable=True,
+    )
+
+    cidade_id = Column(
+        BigInteger,
+        ForeignKey("cidade.cidade_id"),
+        nullable=False,
+        index=True,
+    )
+
+    nmbairro = Column(
+        String(120),
+        nullable=True,
+    )
 
     sitorganizacao = Column(
         String(15),
         nullable=False,
-        server_default="ATIVA"
+        server_default="ATIVA",
+        index=True,
     )
 
     dtcriacao = Column(
         DateTime,
         nullable=False,
-        server_default=func.now()
+        server_default=func.now(),
     )
 
     dtultatu = Column(
         DateTime,
         nullable=True,
-        server_default=func.now(),
-        onupdate=func.now()
+        onupdate=func.now(),
     )
