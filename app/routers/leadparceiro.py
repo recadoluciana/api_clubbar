@@ -19,6 +19,7 @@ from app.schemas.leadparceiro import (
     LeadParceiroCreate,
     LeadParceiroOut,
     LeadParceiroUpdate,
+    ConverterLeadParceiroIn,
 )
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -102,7 +103,6 @@ def _buscar_lead_com_localidade(
         )
         .first()
     )
-
 
 @router.post(
     "/interesse",
