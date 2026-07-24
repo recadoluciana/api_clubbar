@@ -49,6 +49,17 @@ class LeadParceiro(Base):
         nullable=False,
     )
 
+    tipovenda = Column(
+        Enum(
+            "PRODUTOS",
+            "INGRESSOS",
+            "AMBOS",
+            name="enum_leadparceiro_tipovenda",
+        ),
+        nullable=False,
+        server_default="AMBOS",
+    )
+    
     telefone = Column(
         String(30),
         nullable=False,

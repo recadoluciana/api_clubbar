@@ -82,6 +82,69 @@ CREATE TABLE bairro (
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 
+CREATE TABLE leadparceiro (
+  leadparceiro_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
+  nmresponsavel     VARCHAR(120) NOT NULL,
+  nmestabelecimento VARCHAR(160) NOT NULL,
+
+  tipo              VARCHAR(30) NOT NULL,
+
+  tipovenda         ENUM(
+    'PRODUTOS',
+    'INGRESSOS',
+    'AMBOS'
+  ) NOT NULL DEFAULT 'AMBOS',
+
+  telefone          VARCHAR(30) NOT NULL,
+  email             VARCHAR(160) NOT NULL,
+  estado_id         BIGINT NOT NULL,
+  cidade_id         BIGINT NOT NULL,
+  mensagem          TEXT NULL,
+
+  status            ENUM(
+    'NOVO',
+    'CONTATADO',
+    'NEGOCIANDO',
+    'CONVERTIDO',
+    'PERDIDO'
+  ) NOT NULL DEFAULT 'NOVO',
+
+  dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_leadparceiro_estado
+    FOREIGN KEY (estado_id)
+    REFERENCES estado(estado_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_leadparceiro_cidade
+    FOREIGN KEY (cidade_id)
+    REFERENCES cidade(cidade_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  CONSTRAINT chk_leadparceiro_tipo
+    CHECK (
+      tipo IN (
+        'BAR',
+        'CASA_NOTURNA',
+        'PRODUTOR_EVENTOS'
+      )
+    ),
+
+  INDEX idx_leadparceiro_status (status),
+  INDEX idx_leadparceiro_tipo (tipo),
+  INDEX idx_leadparceiro_tipovenda (tipovenda),
+  INDEX idx_leadparceiro_estado (estado_id),
+  INDEX idx_leadparceiro_cidade (cidade_id),
+  INDEX idx_leadparceiro_email (email),
+  INDEX idx_leadparceiro_dtcriacao (dtcriacao)
+)
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE organizacao (
     organizacao_id BIGINT NOT NULL AUTO_INCREMENT,
 
@@ -105,6 +168,7 @@ CREATE TABLE organizacao (
 
     -- Controle
     sitorganizacao VARCHAR(15) NOT NULL DEFAULT 'ATIVA',
+    leadparceiro_id BIGINT NULL,
 
     dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     dtultatu DATETIME NULL
@@ -115,6 +179,10 @@ CREATE TABLE organizacao (
 
     UNIQUE KEY uk_organizacao_cnpj (
         cnpjorganizacao
+    ),
+
+    UNIQUE KEY uk_organizacao_leadparceiro (
+      leadparceiro_id
     ),
 
     KEY idx_organizacao_nome (
@@ -132,6 +200,12 @@ CREATE TABLE organizacao (
     CONSTRAINT fk_organizacao_cidade
         FOREIGN KEY (cidade_id)
         REFERENCES cidade(cidade_id)
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT fk_organizacao_leadparceiro
+        FOREIGN KEY (leadparceiro_id)
+        REFERENCES leadparceiro(leadparceiro_id)
         ON DELETE RESTRICT
         ON UPDATE RESTRICT,
 
@@ -711,46 +785,6 @@ ALTER TABLE itvenda
   FOREIGN KEY (produto_id, lote_id)
   REFERENCES produto(produto_id, lote_id)
   ON DELETE RESTRICT ON UPDATE RESTRICT;
-
-CREATE TABLE leadparceiro (
-  leadparceiro_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
-  nmresponsavel     VARCHAR(120) NOT NULL,
-  nmestabelecimento VARCHAR(160) NOT NULL,
-  tipo              VARCHAR(30) NOT NULL,
-  telefone          VARCHAR(30) NOT NULL,
-  email             VARCHAR(160) NOT NULL,
-  estado_id         BIGINT NOT NULL,
-  cidade_id         BIGINT NOT NULL,
-  mensagem          TEXT NULL,
-  status            ENUM(
-                      'NOVO',
-                      'CONTATADO',
-                      'NEGOCIANDO',
-                      'CONVERTIDO',
-                      'PERDIDO'
-                    ) NOT NULL DEFAULT 'NOVO',
-  dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-
-  CONSTRAINT fk_leadparceiro_estado
-    FOREIGN KEY (estado_id)
-    REFERENCES estado(estado_id)
-    ON DELETE RESTRICT
-    ON UPDATE RESTRICT,
-
-  CONSTRAINT fk_leadparceiro_cidade
-    FOREIGN KEY (cidade_id)
-    REFERENCES cidade(cidade_id)
-    ON DELETE RESTRICT
-    ON UPDATE RESTRICT,
-
-  INDEX idx_leadparceiro_status (status),
-  INDEX idx_leadparceiro_estado (estado_id),
-  INDEX idx_leadparceiro_cidade (cidade_id),
-  INDEX idx_leadparceiro_email (email),
-  INDEX idx_leadparceiro_dtcriacao (dtcriacao)
-) ENGINE=InnoDB;
-
 
 
 CREATE TABLE checkout_asaas (

@@ -60,6 +60,7 @@ def _serializar_lead(
         "nmresponsavel": lead.nmresponsavel,
         "nmestabelecimento": lead.nmestabelecimento,
         "tipo": lead.tipo,
+        "tipovenda": lead.tipovenda,
         "telefone": lead.telefone,
         "email": lead.email,
         "estado_id": lead.estado_id,
@@ -154,6 +155,7 @@ def criar_interesse_parceiro(
         nmresponsavel=payload.nmresponsavel,
         nmestabelecimento=payload.nmestabelecimento,
         tipo=payload.tipo,
+        tipovenda=payload.tipovenda,
         telefone=payload.telefone,
         email=payload.email,
         estado_id=payload.estado_id,
@@ -281,6 +283,9 @@ def atualizar_interesse_parceiro(
     if payload.tipo is not None:
         lead.tipo = payload.tipo
 
+    if payload.tipovenda is not None:
+        lead.tipovenda = payload.tipovenda
+
     if payload.telefone is not None:
         lead.telefone = payload.telefone
 
@@ -399,6 +404,19 @@ def converter_lead_em_parceiro(
             ),
         )
 
+    if (
+        lead.status == "CONVERTIDO"
+        and dados.status is not None
+        and dados.status != "CONVERTIDO"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "O status de um lead convertido "
+                "não pode ser alterado."
+            ),
+        )
+
     cnpj = _somente_numeros(dados.cnpj)
 
     if len(cnpj) != 14:
@@ -454,6 +472,7 @@ def converter_lead_em_parceiro(
                 else None
             ),
             sitorganizacao="ATIVA",
+            leadparceiro_id=lead.leadparceiro_id,
         )
 
         db.add(nova_organizacao)
@@ -500,6 +519,7 @@ def converter_lead_em_parceiro(
             "leadparceiro_id": lead.leadparceiro_id,
             "status_lead": lead.status,
             "tipo": lead.tipo,
+            "tipovenda": lead.tipovenda,
             "organizacao": {
                 "organizacao_id": (
                     nova_organizacao.organizacao_id

@@ -86,6 +86,18 @@ class Organizacao(Base):
         index=True,
     )
 
+    leadparceiro_id = Column(
+        BigInteger,
+        ForeignKey(
+            "leadparceiro.leadparceiro_id",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
     dtcriacao = Column(
         DateTime,
         nullable=False,

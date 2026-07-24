@@ -16,6 +16,12 @@ TipoParceiro = Literal[
 ]
 
 
+TipoVendaLead = Literal[
+    "PRODUTOS",
+    "INGRESSOS",
+    "AMBOS",
+]
+
 StatusLeadParceiroSchema = Literal[
     "NOVO",
     "CONTATADO",
@@ -75,6 +81,8 @@ class LeadParceiroCreate(BaseModel):
     )
 
     tipo: TipoParceiro
+
+    tipovenda: TipoVendaLead
 
     telefone: str = Field(
         ...,
@@ -167,6 +175,8 @@ class LeadParceiroUpdate(BaseModel):
 
     tipo: TipoParceiro | None = None
 
+    tipovenda: TipoVendaLead | None = None
+
     telefone: str | None = Field(
         default=None,
         min_length=10,
@@ -236,6 +246,8 @@ class LeadParceiroOut(BaseModel):
     nmestabelecimento: str
 
     tipo: TipoParceiro
+
+    tipovenda: TipoVendaLead
 
     telefone: str
     email: str
