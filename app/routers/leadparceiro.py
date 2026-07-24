@@ -531,7 +531,10 @@ def converter_lead_em_parceiro(
     except Exception as erro:
         db.rollback()
 
+        import traceback
+        traceback.print_exc()
+
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Erro interno ao converter o lead em parceiro.",
+            status_code=500,
+            detail=f"Erro ao converter lead: {str(erro)}",
         ) from erro
