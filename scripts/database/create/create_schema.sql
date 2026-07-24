@@ -109,6 +109,13 @@ CREATE TABLE leadparceiro (
     'PERDIDO'
   ) NOT NULL DEFAULT 'NOVO',
 
+  decisao ENUM(
+    'PENDENTE',
+    'ACEITOU',
+    'DUVIDAS',
+    'RECUSOU'
+  ) NOT NULL DEFAULT 'PENDENTE',
+
   dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -144,6 +151,125 @@ CREATE TABLE leadparceiro (
 ENGINE = InnoDB
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE leadmensagem (
+  leadmensagem_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+  origem ENUM('CLUBBAR', 'LEAD') NOT NULL,
+  mensagem TEXT NOT NULL,
+  lida CHAR(1) NOT NULL DEFAULT 'N',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_leadmensagem_lead
+    FOREIGN KEY (leadparceiro_id)
+    REFERENCES leadparceiro(leadparceiro_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  CONSTRAINT chk_leadmensagem_lida
+    CHECK (lida IN ('S', 'N')),
+
+  INDEX idx_leadmensagem_lead_data (
+    leadparceiro_id,
+    dtcriacao
+  )
+) ENGINE=InnoDB
+DEFAULT CHARACTER SET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE leadagendamento (
+  leadagendamento_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+
+  tipo ENUM(
+    'DEMONSTRACAO',
+    'LIGACAO',
+    'REUNIAO_ONLINE',
+    'VISITA'
+  ) NOT NULL,
+
+  dtagendamento DATETIME NOT NULL,
+  observacao VARCHAR(500) NULL,
+
+  status ENUM(
+    'PENDENTE',
+    'CONFIRMADO',
+    'RECUSADO',
+    'REALIZADO',
+    'CANCELADO'
+  ) NOT NULL DEFAULT 'PENDENTE',
+
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_leadagendamento_lead
+    FOREIGN KEY (leadparceiro_id)
+    REFERENCES leadparceiro(leadparceiro_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  INDEX idx_leadagendamento_lead_data (
+    leadparceiro_id,
+    dtagendamento
+  )
+) ENGINE=InnoDB
+DEFAULT CHARACTER SET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE leadmaterial (
+  leadmaterial_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+
+  titulo VARCHAR(160) NOT NULL,
+  descricao VARCHAR(500) NULL,
+  tipo ENUM(
+    'APRESENTACAO',
+    'PROPOSTA',
+    'CONTRATO',
+    'VIDEO',
+    'OUTRO'
+  ) NOT NULL,
+
+  urlarquivo VARCHAR(500) NOT NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_leadmaterial_lead
+    FOREIGN KEY (leadparceiro_id)
+    REFERENCES leadparceiro(leadparceiro_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  INDEX idx_leadmaterial_lead (
+    leadparceiro_id,
+    dtcriacao
+  )
+) ENGINE=InnoDB
+DEFAULT CHARACTER SET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE leadacesso (
+  leadacesso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+
+  tokenhash CHAR(64) NOT NULL,
+  dtvalidade DATETIME NOT NULL,
+  dtultimoacesso DATETIME NULL,
+  revogado CHAR(1) NOT NULL DEFAULT 'N',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE KEY uk_leadacesso_tokenhash (tokenhash),
+
+  CONSTRAINT fk_leadacesso_lead
+    FOREIGN KEY (leadparceiro_id)
+    REFERENCES leadparceiro(leadparceiro_id)
+    ON DELETE RESTRICT
+    ON UPDATE RESTRICT,
+
+  CONSTRAINT chk_leadacesso_revogado
+    CHECK (revogado IN ('S', 'N'))
+) ENGINE=InnoDB
+DEFAULT CHARACTER SET=utf8mb4
+COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE organizacao (
     organizacao_id BIGINT NOT NULL AUTO_INCREMENT,
