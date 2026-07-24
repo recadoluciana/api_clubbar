@@ -31,6 +31,8 @@ from app.database import get_db
 from app.models.leadparceiro import LeadParceiro
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
+from app.services.portal_acesso_service import criar_acesso_portal
+
 
 router = APIRouter(
     prefix="/parceiros",

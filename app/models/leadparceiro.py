@@ -60,6 +60,18 @@ class LeadParceiro(Base):
         server_default="AMBOS",
     )
     
+    decisao = Column(
+        Enum(
+            "PENDENTE",
+            "ACEITOU",
+            "DUVIDAS",
+            "RECUSOU",
+            name="enum_leadparceiro_decisao",
+        ),
+        nullable=False,
+        server_default="PENDENTE",
+    )
+    
     telefone = Column(
         String(30),
         nullable=False,
