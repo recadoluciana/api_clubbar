@@ -18,6 +18,7 @@ from app.models.leadparceiro import LeadParceiro
 from app.schemas.leadparceiro import (
     LeadParceiroCreate,
     LeadParceiroOut,
+    LeadParceiroCadastroOut,
     LeadParceiroUpdate,
     ConverterLeadParceiroIn,
 )
@@ -109,7 +110,7 @@ def _buscar_lead_com_localidade(
 
 @router.post(
     "/interesse",
-    response_model=LeadParceiroOut,
+    response_model=LeadParceiroCadastroOut,
     status_code=status.HTTP_201_CREATED,
 )
 def criar_interesse_parceiro(
@@ -165,15 +166,37 @@ def criar_interesse_parceiro(
         mensagem=payload.mensagem,
     )
 
-    db.add(lead)
-    db.commit()
-    db.refresh(lead)
+    try:
+        db.add(lead)
 
-    return _serializar_lead(
-        lead,
-        estado,
-        cidade,
-    )
+        # Gera o leadparceiro_id sem finalizar a transação.
+        db.flush()
+
+        acesso_portal = criar_acesso_portal(
+            db=db,
+            leadparceiro_id=lead.leadparceiro_id,
+        )
+
+        db.commit()
+        db.refresh(lead)
+
+        resposta = _serializar_lead(
+            lead,
+            estado,
+            cidade,
+        )
+
+        resposta["acesso_portal"] = acesso_portal
+
+        return resposta
+
+    except Exception as erro:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro ao cadastrar interesse: {str(erro)}",
+        ) from erro
 
 
 @router.get(

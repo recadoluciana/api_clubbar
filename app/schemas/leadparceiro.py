@@ -271,3 +271,5 @@ class LeadParceiroOut(BaseModel):
     class Config:
         from_attributes = True
 
+class LeadParceiroCadastroOut(LeadParceiroOut):
+    acesso_portal: str
