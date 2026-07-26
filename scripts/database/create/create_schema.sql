@@ -941,3 +941,316 @@ CREATE TABLE checkout_asaas (
     REFERENCES carrinho(carrinho_id, cliente_id, loja_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE cashback_config (
+    cashback_config_id BIGINT NOT NULL AUTO_INCREMENT,
+
+    organizacao_id BIGINT NOT NULL,
+    loja_id BIGINT NOT NULL,
+
+    sitcashback VARCHAR(10)
+        COLLATE utf8mb4_unicode_ci
+        NOT NULL DEFAULT 'ATIVO',
+
+    pccashback DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    vrmincompra DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    vrmaxcashback DECIMAL(10,2)
+        DEFAULT NULL,
+
+    nrdiapliberacao INT
+        NOT NULL DEFAULT 0,
+
+    nrdiavalidade INT
+        NOT NULL DEFAULT 90,
+
+    permiteusoparcial CHAR(1)
+        COLLATE utf8mb4_unicode_ci
+        NOT NULL DEFAULT 'S',
+
+    pcmaxusocompra DECIMAL(10,2)
+        DEFAULT NULL,
+
+    dtcriacao DATETIME
+        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    dtultatu DATETIME
+        NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (cashback_config_id),
+
+    UNIQUE KEY uk_cashback_config_loja (loja_id),
+
+    KEY idx_cashback_config_organizacao (
+        organizacao_id
+    ),
+
+    KEY idx_cashback_config_situacao (
+        sitcashback
+    ),
+
+    CONSTRAINT fk_cashback_config_loja
+        FOREIGN KEY (
+            organizacao_id,
+            loja_id
+        )
+        REFERENCES loja (
+            organizacao_id,
+            loja_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT chk_cashback_config_situacao
+        CHECK (
+            sitcashback IN ('ATIVO', 'INATIVO')
+        ),
+
+    CONSTRAINT chk_cashback_config_percentual
+        CHECK (
+            pccashback >= 0
+            AND pccashback <= 100
+        ),
+
+    CONSTRAINT chk_cashback_config_valores
+        CHECK (
+            vrmincompra >= 0
+            AND (
+                vrmaxcashback IS NULL
+                OR vrmaxcashback >= 0
+            )
+        ),
+
+    CONSTRAINT chk_cashback_config_dias
+        CHECK (
+            nrdiapliberacao >= 0
+            AND nrdiavalidade >= 0
+        ),
+
+    CONSTRAINT chk_cashback_config_uso_parcial
+        CHECK (
+            permiteusoparcial IN ('S', 'N')
+        ),
+
+    CONSTRAINT chk_cashback_config_max_uso
+        CHECK (
+            pcmaxusocompra IS NULL
+            OR (
+                pcmaxusocompra >= 0
+                AND pcmaxusocompra <= 100
+            )
+        )
+)
+ENGINE = InnoDB
+DEFAULT CHARSET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE cashback_movimento (
+    cashback_movimento_id BIGINT
+        NOT NULL AUTO_INCREMENT,
+
+    cliente_id BIGINT NOT NULL,
+    organizacao_id BIGINT NOT NULL,
+    loja_id BIGINT NOT NULL,
+
+    venda_origem_id BIGINT DEFAULT NULL,
+    venda_uso_id BIGINT DEFAULT NULL,
+
+    tipomovimento VARCHAR(15)
+        COLLATE utf8mb4_unicode_ci
+        NOT NULL,
+
+    sitcashback VARCHAR(15)
+        COLLATE utf8mb4_unicode_ci
+        NOT NULL,
+
+    pcaplicado DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    vrbase DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    vrcashback DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    descricao VARCHAR(255)
+        COLLATE utf8mb4_unicode_ci
+        DEFAULT NULL,
+
+    observacao VARCHAR(500)
+        COLLATE utf8mb4_unicode_ci
+        DEFAULT NULL,
+
+    dtmovimento DATETIME
+        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    dtliberacao DATETIME DEFAULT NULL,
+    dtvalidade DATETIME DEFAULT NULL,
+    dtutilizacao DATETIME DEFAULT NULL,
+
+    PRIMARY KEY (
+        cashback_movimento_id
+    ),
+
+    KEY idx_cashback_movimento_cliente_loja (
+        cliente_id,
+        loja_id
+    ),
+
+    KEY idx_cashback_movimento_status (
+        sitcashback
+    ),
+
+    KEY idx_cashback_movimento_data (
+        dtmovimento
+    ),
+
+    KEY idx_cashback_movimento_venda_origem (
+        venda_origem_id
+    ),
+
+    KEY idx_cashback_movimento_venda_uso (
+        venda_uso_id
+    ),
+
+    KEY idx_cashback_movimento_loja (
+        organizacao_id,
+        loja_id
+    ),
+
+    CONSTRAINT fk_cashback_movimento_cliente
+        FOREIGN KEY (
+            cliente_id
+        )
+        REFERENCES cliente (
+            cliente_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT fk_cashback_movimento_loja
+        FOREIGN KEY (
+            organizacao_id,
+            loja_id
+        )
+        REFERENCES loja (
+            organizacao_id,
+            loja_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT fk_cashback_movimento_venda_origem
+        FOREIGN KEY (
+            venda_origem_id
+        )
+        REFERENCES venda (
+            venda_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT fk_cashback_movimento_venda_uso
+        FOREIGN KEY (
+            venda_uso_id
+        )
+        REFERENCES venda (
+            venda_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT chk_cashback_movimento_percentual
+        CHECK (
+            pcaplicado >= 0
+            AND pcaplicado <= 100
+        ),
+
+    CONSTRAINT chk_cashback_movimento_valores
+        CHECK (
+            vrbase >= 0
+            AND vrcashback >= 0
+        ),
+
+    CONSTRAINT chk_cashback_movimento_datas
+        CHECK (
+            dtvalidade IS NULL
+            OR dtliberacao IS NULL
+            OR dtvalidade >= dtliberacao
+        )
+)
+ENGINE = InnoDB
+DEFAULT CHARSET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE cashback_saldo (
+    cashback_saldo_id BIGINT
+        NOT NULL AUTO_INCREMENT,
+
+    cliente_id BIGINT NOT NULL,
+    organizacao_id BIGINT NOT NULL,
+    loja_id BIGINT NOT NULL,
+
+    vrdisponivel DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    vrpendente DECIMAL(10,2)
+        NOT NULL DEFAULT 0.00,
+
+    dtultatu DATETIME
+        NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (
+        cashback_saldo_id
+    ),
+
+    UNIQUE KEY uk_cashback_saldo_cliente_loja (
+        cliente_id,
+        loja_id
+    ),
+
+    KEY idx_cashback_saldo_loja (
+        organizacao_id,
+        loja_id
+    ),
+
+    KEY idx_cashback_saldo_cliente (
+        cliente_id
+    ),
+
+    CONSTRAINT fk_cashback_saldo_cliente
+        FOREIGN KEY (
+            cliente_id
+        )
+        REFERENCES cliente (
+            cliente_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT fk_cashback_saldo_loja
+        FOREIGN KEY (
+            organizacao_id,
+            loja_id
+        )
+        REFERENCES loja (
+            organizacao_id,
+            loja_id
+        )
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
+
+    CONSTRAINT chk_cashback_saldo_valores
+        CHECK (
+            vrdisponivel >= 0
+            AND vrpendente >= 0
+        )
+)
+ENGINE = InnoDB
+DEFAULT CHARSET = utf8mb4
+COLLATE = utf8mb4_unicode_ci;
