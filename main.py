@@ -49,11 +49,13 @@ origins = [
     "https://app.clubbar.com.br",
     "https://admin.clubbar.com.br",
     "https://api.clubbar.com.br",
+    "https://parceiro.clubbar.com.br",
 
     # manter por enquanto durante a transição
     "https://clubbarsite-production.up.railway.app",
     "https://clubbarcliente-production.up.railway.app",
     "https://clubbaradmin-production.up.railway.app",
+    "https://clubbarpartner-production.up.railway.app",
     "https://bitbeer-production.up.railway.app",
 
     # manter por enquanto durante a transição
@@ -61,6 +63,7 @@ origins = [
     "https://clubbarcliente-desenvolvimento.up.railway.app",
     "https://clubbaradmin-desenvolvimento.up.railway.app",
     "https://apiclubbar-desenvolvimento.up.railway.app",
+    "https://clubbarpartner-desenvolvimento.up.railway.app",
 ]
 
 
