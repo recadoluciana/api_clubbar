@@ -289,6 +289,7 @@ CREATE TABLE organizacao (
     nrendorganizacao VARCHAR(20) NOT NULL,
     complorganizacao VARCHAR(120) NULL,
 
+    estado_id BIGINT NOT NULL,
     cidade_id BIGINT NOT NULL,
     nmbairro varchar(120) NULL,
 
@@ -322,6 +323,12 @@ CREATE TABLE organizacao (
     KEY idx_organizacao_cidade (
         cidade_id
     ),
+
+    CONSTRAINT fk_organizacao_estado
+        FOREIGN KEY (estado_id)
+        REFERENCES estado(estado_id)
+        ON DELETE RESTRICT
+        ON UPDATE RESTRICT,
 
     CONSTRAINT fk_organizacao_cidade
         FOREIGN KEY (cidade_id)

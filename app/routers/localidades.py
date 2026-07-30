@@ -31,9 +31,17 @@ def listar_cidades_por_estado(estado_id: int, db: Session = Depends(get_db)):
         )
 
     cidades = (
-        db.query(Cidade)
-        .filter(Cidade.estado_id == estado_id)
-        .order_by(Cidade.nmcidade.asc())
+        db.query(Cidade, Estado)
+        .join(
+            Estado,
+            Estado.estado_id == Cidade.estado_id,
+        )
+        .filter(
+            Cidade.estado_id == estado_id,
+        )
+        .order_by(
+            Cidade.nmcidade.asc(),
+        )
         .all()
     )
 
@@ -43,6 +51,8 @@ def listar_cidades_por_estado(estado_id: int, db: Session = Depends(get_db)):
             "cdibgecid": cidade.cdibgecid,
             "estado_id": cidade.estado_id,
             "nmcidade": cidade.nmcidade,
+            "sgestado": estado.sgestado,
+            "label": f"{cidade.nmcidade} - {estado.sgestado}",
         }
-        for cidade in cidades
+        for cidade, estado in cidades
     ]

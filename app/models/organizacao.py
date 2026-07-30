@@ -67,6 +67,16 @@ class Organizacao(Base):
         nullable=True,
     )
 
+    estado_id = Column(
+        BigInteger,
+        ForeignKey(
+            "estado.estado_id",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=False,
+    )
+
     cidade_id = Column(
         BigInteger,
         ForeignKey("cidade.cidade_id"),

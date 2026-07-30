@@ -20,6 +20,7 @@ class OrganizacaoCreate(BaseModel):
     endorganizacao: str = Field(..., min_length=3, max_length=255)
     nrendorganizacao: str = Field(..., min_length=1, max_length=20)
     complorganizacao: str | None = Field(default=None, max_length=120)
+    estado_id: int = Field(..., gt=0)
     cidade_id: int = Field(..., gt=0)
     nmbairro: str | None = Field(default=None, max_length=120)
     leadparceiro_id: int | None = Field(default=None, gt=0)
@@ -74,6 +75,11 @@ class OrganizacaoUpdate(BaseModel):
         max_length=120,
     )
 
+    estado_id: int | None = Field(
+        default=None,
+        gt=0,
+    )
+
     cidade_id: int | None = Field(
         default=None,
         gt=0,
@@ -103,8 +109,10 @@ class OrganizacaoOut(BaseModel):
     nrendorganizacao: str
     complorganizacao: str | None = None
 
+    estado_id: int
     cidade_id: int
     nmcidade: str | None = None
+    nmestado: str | None = None
     sgestado: str | None = None
 
     nmbairro: str | None = None
