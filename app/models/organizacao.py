@@ -1,145 +1,83 @@
-from datetime import datetime
-from typing import Literal
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+    text,
+)
+from sqlalchemy.sql import func
 
-from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import text
+from app.database import Base
 
 
-class OrganizacaoCreate(BaseModel):
-    nmorganizacao: str = Field(
-        ...,
-        min_length=3,
-        max_length=120,
+class Organizacao(Base):
+    __tablename__ = "organizacao"
+
+    organizacao_id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
     )
 
-    rzsocialorganizacao: str = Field(
-        ...,
-        min_length=3,
-        max_length=160,
+    nmorganizacao = Column(
+        String(120),
+        nullable=False,
+        index=True,
     )
 
-    cnpjorganizacao: str = Field(
-        ...,
-        min_length=14,
-        max_length=14,
+    rzsocialorganizacao = Column(
+        String(160),
+        nullable=False,
     )
 
-    emailorganizacao: EmailStr
-
-    telorganizacao: str = Field(
-        ...,
-        min_length=10,
-        max_length=25,
+    cnpjorganizacao = Column(
+        String(14),
+        nullable=False,
+        unique=True,
     )
 
-    ceporganizacao: str | None = Field(
-        default=None,
-        max_length=20,
+    emailorganizacao = Column(
+        String(255),
+        nullable=False,
     )
 
-    endorganizacao: str = Field(
-        ...,
-        min_length=3,
-        max_length=255,
+    telorganizacao = Column(
+        String(25),
+        nullable=False,
     )
 
-    nrendorganizacao: str = Field(
-        ...,
-        min_length=1,
-        max_length=20,
+    ceporganizacao = Column(
+        String(20),
+        nullable=True,
     )
 
-    complorganizacao: str | None = Field(
-        default=None,
-        max_length=120,
+    endorganizacao = Column(
+        String(255),
+        nullable=False,
     )
 
-    cidade_id: int = Field(
-        ...,
-        gt=0,
+    nrendorganizacao = Column(
+        String(20),
+        nullable=False,
     )
 
-    nmbairro: str | None = Field(
-        default=None,
-        max_length=120,
+    complorganizacao = Column(
+        String(120),
+        nullable=True,
     )
 
-    leadparceiro_id: int | None = Field(
-        default=None,
-        gt=0,
+    cidade_id = Column(
+        BigInteger,
+        ForeignKey("cidade.cidade_id"),
+        nullable=False,
+        index=True,
     )
 
-
-class OrganizacaoUpdate(BaseModel):
-    """
-    Atualização feita pelo Clubbar Partner.
-
-    A situação não pode ser alterada pelo parceiro.
-    """
-
-    nmorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=120,
+    nmbairro = Column(
+        String(120),
+        nullable=True,
     )
-
-    rzsocialorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=160,
-    )
-
-    cnpjorganizacao: str | None = Field(
-        default=None,
-        min_length=14,
-        max_length=14,
-    )
-
-    emailorganizacao: EmailStr | None = None
-
-    telorganizacao: str | None = Field(
-        default=None,
-        min_length=10,
-        max_length=25,
-    )
-
-    ceporganizacao: str | None = Field(
-        default=None,
-        max_length=20,
-    )
-
-    endorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=255,
-    )
-
-    nrendorganizacao: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=20,
-    )
-
-    complorganizacao: str | None = Field(
-        default=None,
-        max_length=120,
-    )
-
-    cidade_id: int | None = Field(
-        default=None,
-        gt=0,
-    )
-
-    nmbairro: str | None = Field(
-        default=None,
-        max_length=120,
-    )
-
-
-class OrganizacaoSituacaoUpdate(BaseModel):
-    """
-    Uso exclusivo do sistema interno Clubbar.
-    """
 
     sitorganizacao = Column(
         String(15),
@@ -148,38 +86,26 @@ class OrganizacaoSituacaoUpdate(BaseModel):
         index=True,
     )
 
-
-class OrganizacaoOut(BaseModel):
-    organizacao_id: int
-
-    nmorganizacao: str
-    rzsocialorganizacao: str
-    cnpjorganizacao: str
-    emailorganizacao: str
-    telorganizacao: str
-
-    ceporganizacao: str | None = None
-
-    endorganizacao: str
-    nrendorganizacao: str
-    complorganizacao: str | None = None
-
-    cidade_id: int
-    nmcidade: str | None = None
-    sgestado: str | None = None
-
-    nmbairro: str | None = None
-    leadparceiro_id: int | None = None
-
-    sitorganizacao = Column(
-        String(15),
-        nullable=False,
-        server_default=text("'ATIVA'"),
+    leadparceiro_id = Column(
+        BigInteger,
+        ForeignKey(
+            "leadparceiro.leadparceiro_id",
+            ondelete="RESTRICT",
+            onupdate="RESTRICT",
+        ),
+        nullable=True,
+        unique=True,
         index=True,
     )
 
-    dtcriacao: datetime
-    dtultatu: datetime | None = None
+    dtcriacao = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+    )
 
-    class Config:
-        from_attributes = True
+    dtultatu = Column(
+        DateTime,
+        nullable=True,
+        onupdate=func.now(),
+    )
