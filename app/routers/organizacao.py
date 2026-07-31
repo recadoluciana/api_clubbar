@@ -1,4 +1,5 @@
 import traceback
+from sqlalchemy import or_
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -7,6 +8,7 @@ from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 
 from app.schemas.organizacao import OrganizacaoUpdate
+from app.schemas.organizacao import OrganizacaoCreate
 
 from app.models.cidade import Cidade
 from app.models.estado import Estado
@@ -35,7 +37,7 @@ def listar_organizacao_do_usuario(
         )
         .outerjoin(
             Estado,
-            Estado.estado_id == Cidade.estado_id,
+            Estado.estado_id == Organizacao.estado_id,
         )
         .filter(
             Usuario.usuario_id == usuario_id,
@@ -63,6 +65,7 @@ def listar_organizacao_do_usuario(
         "nrendorganizacao": organizacao.nrendorganizacao,
         "complorganizacao": organizacao.complorganizacao,
         "cidade_id": organizacao.cidade_id,
+        "estado_id": organizacao.estado_id,
         "nmcidade": nmcidade,
         "sgestado": sgestado,
         "nmbairro": organizacao.nmbairro,
@@ -76,24 +79,78 @@ def listar_organizacao_do_usuario(
 def atualizar_organizacao_do_usuario(
     usuario_id: int,
     dados: OrganizacaoUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    usuario = db.query(Usuario).filter(
-        Usuario.usuario_id == usuario_id
-    ).first()
+    usuario = (
+        db.query(Usuario)
+        .filter(Usuario.usuario_id == usuario_id)
+        .first()
+    )
 
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(
+            status_code=404,
+            detail="Usuário não encontrado",
+        )
 
-    organizacao = db.query(Organizacao).filter(
-        Organizacao.organizacao_id == usuario.organizacao_id
-    ).first()
+    organizacao = (
+        db.query(Organizacao)
+        .filter(
+            Organizacao.organizacao_id == usuario.organizacao_id
+        )
+        .first()
+    )
 
     if not organizacao:
-        raise HTTPException(status_code=404, detail="Organização não encontrada")
+        raise HTTPException(
+            status_code=404,
+            detail="Organização não encontrada",
+        )
+
+    if dados.estado_id is not None:
+        estado = (
+            db.query(Estado)
+            .filter(Estado.estado_id == dados.estado_id)
+            .first()
+        )
+
+        if not estado:
+            raise HTTPException(
+                status_code=400,
+                detail="Estado inválido.",
+            )
+
+
+    if dados.cidade_id is not None:
+        cidade = (
+            db.query(Cidade)
+            .filter(Cidade.cidade_id == dados.cidade_id)
+            .first()
+        )
+
+        if not cidade:
+            raise HTTPException(
+                status_code=400,
+                detail="Cidade inválida.",
+            )
+
+        estado_id_validacao = (
+            dados.estado_id
+            if dados.estado_id is not None
+            else organizacao.estado_id
+        )
+
+        if cidade.estado_id != estado_id_validacao:
+            raise HTTPException(
+                status_code=400,
+                detail="A cidade selecionada não pertence ao estado informado.",
+            )        
 
     if dados.nmorganizacao is not None:
         organizacao.nmorganizacao = dados.nmorganizacao
+
+    if dados.rzsocialorganizacao is not None:
+        organizacao.rzsocialorganizacao = dados.rzsocialorganizacao
 
     if dados.cnpjorganizacao is not None:
         organizacao.cnpjorganizacao = dados.cnpjorganizacao
@@ -104,22 +161,48 @@ def atualizar_organizacao_do_usuario(
     if dados.telorganizacao is not None:
         organizacao.telorganizacao = dados.telorganizacao
 
-    if dados.sitorganizacao is not None:
-        organizacao.sitorganizacao = dados.sitorganizacao
+    if dados.ceporganizacao is not None:
+        organizacao.ceporganizacao = dados.ceporganizacao
 
-    db.commit()
-    db.refresh(organizacao)
+    if dados.endorganizacao is not None:
+        organizacao.endorganizacao = dados.endorganizacao
 
-    return {
-        "mensagem": "Organização atualizada com sucesso",
-        "organizacao_id": organizacao.organizacao_id
-    }
+    if dados.nrendorganizacao is not None:
+        organizacao.nrendorganizacao = dados.nrendorganizacao
 
-from app.schemas.organizacao import OrganizacaoCreate
+    if dados.complorganizacao is not None:
+        organizacao.complorganizacao = dados.complorganizacao
 
+    if dados.nmbairro is not None:
+        organizacao.nmbairro = dados.nmbairro
 
-from sqlalchemy import or_
+    if dados.estado_id is not None:
+        organizacao.estado_id = dados.estado_id
 
+    if dados.cidade_id is not None:
+        organizacao.cidade_id = dados.cidade_id
+
+    # O Partner NÃO pode alterar a situação da organização.
+    # Não existe mais:
+    # organizacao.sitorganizacao = dados.sitorganizacao
+
+    try:
+        db.commit()
+        db.refresh(organizacao)
+
+        return {
+            "mensagem": "Organização atualizada com sucesso",
+            "organizacao_id": organizacao.organizacao_id,
+        }
+    except Exception as e:
+        db.rollback()
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao atualizar organização: {str(e)}",
+        )
+        
 @router.post("/organizacoes")
 def cadastrar_organizacao(
     dados: OrganizacaoCreate,
@@ -181,6 +264,7 @@ def cadastrar_organizacao(
             endorganizacao=dados.endorganizacao,
             nrendorganizacao=dados.nrendorganizacao,
             complorganizacao=dados.complorganizacao,
+            estado_id=dados.estado_id,
             cidade_id=dados.cidade_id,
             nmbairro=dados.nmbairro,
             leadparceiro_id=dados.leadparceiro_id,
