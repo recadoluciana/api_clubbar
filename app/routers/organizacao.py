@@ -110,34 +110,13 @@ def atualizar_organizacao_do_usuario(
     print("===================================")
     print("estado_id recebido:", dados.estado_id)
     print("cidade_id recebido:", dados.cidade_id)
-
-    cidade = (
-        db.query(Cidade)
-        .filter(Cidade.cidade_id == dados.cidade_id)
-        .first()
-    )
-
-    if cidade:
-        print("Cidade:", cidade.nmcidade)
-        print("Estado da cidade:", cidade.estado_id)
-
     print("===================================")
 
-    if dados.estado_id is not None:
-        estado = (
-            db.query(Estado)
-            .filter(Estado.estado_id == dados.estado_id)
-            .first()
-        )
-
-        if not estado:
-            raise HTTPException(
-                status_code=400,
-                detail="Estado inválido.",
-            )
-
-
+    # ----------------------------------------------------
+    # Atualiza cidade e estado de forma consistente
+    # ----------------------------------------------------
     if dados.cidade_id is not None:
+
         cidade = (
             db.query(Cidade)
             .filter(Cidade.cidade_id == dados.cidade_id)
@@ -150,17 +129,44 @@ def atualizar_organizacao_do_usuario(
                 detail="Cidade inválida.",
             )
 
-        estado_id_validacao = (
-            dados.estado_id
-            if dados.estado_id is not None
-            else organizacao.estado_id
-        )
-
-        if cidade.estado_id != estado_id_validacao:
+        # Se o Flutter enviou estado, valida apenas por segurança
+        if (
+            dados.estado_id is not None
+            and cidade.estado_id != dados.estado_id
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="A cidade selecionada não pertence ao estado informado.",
-            )        
+            )
+
+        print(
+            f"Cidade escolhida: {cidade.nmcidade} "
+            f"(Estado {cidade.estado_id})"
+        )
+
+        # A cidade determina o estado
+        organizacao.cidade_id = cidade.cidade_id
+        organizacao.estado_id = cidade.estado_id
+
+    elif dados.estado_id is not None:
+
+        estado = (
+            db.query(Estado)
+            .filter(Estado.estado_id == dados.estado_id)
+            .first()
+        )
+
+        if not estado:
+            raise HTTPException(
+                status_code=400,
+                detail="Estado inválido.",
+            )
+
+        organizacao.estado_id = estado.estado_id
+
+    # ----------------------------------------------------
+    # Demais campos
+    # ----------------------------------------------------
 
     if dados.nmorganizacao is not None:
         organizacao.nmorganizacao = dados.nmorganizacao
@@ -192,16 +198,6 @@ def atualizar_organizacao_do_usuario(
     if dados.nmbairro is not None:
         organizacao.nmbairro = dados.nmbairro
 
-    if dados.estado_id is not None:
-        organizacao.estado_id = dados.estado_id
-
-    if dados.cidade_id is not None:
-        organizacao.cidade_id = dados.cidade_id
-
-    # O Partner NÃO pode alterar a situação da organização.
-    # Não existe mais:
-    # organizacao.sitorganizacao = dados.sitorganizacao
-
     try:
         db.commit()
         db.refresh(organizacao)
@@ -210,6 +206,7 @@ def atualizar_organizacao_do_usuario(
             "mensagem": "Organização atualizada com sucesso",
             "organizacao_id": organizacao.organizacao_id,
         }
+
     except Exception as e:
         db.rollback()
         traceback.print_exc()
