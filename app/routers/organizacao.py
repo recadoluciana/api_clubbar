@@ -107,6 +107,22 @@ def atualizar_organizacao_do_usuario(
             detail="Organização não encontrada",
         )
 
+    print("===================================")
+    print("estado_id recebido:", dados.estado_id)
+    print("cidade_id recebido:", dados.cidade_id)
+
+    cidade = (
+        db.query(Cidade)
+        .filter(Cidade.cidade_id == dados.cidade_id)
+        .first()
+    )
+
+    if cidade:
+        print("Cidade:", cidade.nmcidade)
+        print("Estado da cidade:", cidade.estado_id)
+
+    print("===================================")
+
     if dados.estado_id is not None:
         estado = (
             db.query(Estado)
