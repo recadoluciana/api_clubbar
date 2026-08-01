@@ -518,6 +518,7 @@ def converter_lead_em_parceiro(
             aberto24x7="N",
             nrtelloja=lead.telefone.strip(),
             nrdiavalidade=90,
+            estado_id=lead.estado_id,
             cidade_id=lead.cidade_id,
             vrtaxaprod=5.00,
             vrtaxaing=5.00,

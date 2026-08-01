@@ -16,6 +16,22 @@ from app.core.config import UPLOAD_LOJAS
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 
+def validar_localidade(db: Session, estado_id: int, cidade_id: int) -> None:
+    cidade = (
+        db.query(Cidade)
+        .filter(
+            Cidade.cidade_id == cidade_id,
+            Cidade.estado_id == estado_id,
+        )
+        .first()
+    )
+    if not cidade:
+        raise HTTPException(
+            status_code=422,
+            detail="Cidade não encontrada ou não pertence ao estado informado.",
+        )
+
+
 def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
     if not arquivo or not arquivo.filename:
         return None
@@ -36,6 +52,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
         db.query(
             Loja.loja_id,
             Loja.organizacao_id,
+            Loja.estado_id,
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
@@ -59,6 +76,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
         {
             "loja_id": r.loja_id,
             "organizacao_id": r.organizacao_id,
+            "estado_id": r.estado_id,
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
@@ -86,6 +104,7 @@ def listar_todas_lojas_ativas(
         db.query(
             Loja.loja_id,
             Loja.organizacao_id,
+            Loja.estado_id,
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
@@ -103,7 +122,7 @@ def listar_todas_lojas_ativas(
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
-        .outerjoin(Estado, Estado.estado_id == Cidade.estado_id)
+        .outerjoin(Estado, Estado.estado_id == Loja.estado_id)
         .filter(Loja.sitloja == "ATIVA")
     )
 
@@ -116,6 +135,7 @@ def listar_todas_lojas_ativas(
         {
             "loja_id": r.loja_id,
             "organizacao_id": r.organizacao_id,
+            "estado_id": r.estado_id,
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
@@ -144,6 +164,7 @@ def listar_lojas_com_retirada_pendente(
         db.query(
             Loja.loja_id,
             Loja.organizacao_id,
+            Loja.estado_id,
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
@@ -169,6 +190,7 @@ def listar_lojas_com_retirada_pendente(
         {
             "loja_id": r.loja_id,
             "organizacao_id": r.organizacao_id,
+            "estado_id": r.estado_id,
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
@@ -193,6 +215,7 @@ def listar_lojas_cidade(
         db.query(
             Loja.loja_id,
             Loja.organizacao_id,
+            Loja.estado_id,
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
@@ -218,6 +241,7 @@ def listar_lojas_cidade(
         {
             "loja_id": r.loja_id,
             "organizacao_id": r.organizacao_id,
+            "estado_id": r.estado_id,
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
@@ -239,6 +263,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         db.query(
             Loja.loja_id,
             Loja.organizacao_id,
+            Loja.estado_id,
             Organizacao.nmorganizacao,
             Cidade.nmcidade,
             Loja.nmloja,
@@ -268,6 +293,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
     return {
         "loja_id": row.loja_id,
         "organizacao_id": row.organizacao_id,
+        "estado_id": row.estado_id,
         "nmorganizacao": row.nmorganizacao,
         "nmloja": row.nmloja,
         "endloja": row.endloja,
@@ -289,6 +315,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
 @router.post("")
 def criar_loja(
     organizacao_id: int = Form(...),
+    estado_id: int = Form(...),
     cidade_id: int = Form(...),
     nmloja: str = Form(...),
     dsbairroloja: str | None = Form(None),
@@ -303,10 +330,12 @@ def criar_loja(
     db: Session = Depends(get_db),
 ):
     try:
+        validar_localidade(db, estado_id, cidade_id)
         urllogoloja_aux = salvar_logo_loja(urllogoloja)
 
         nova = Loja(
             organizacao_id=organizacao_id,
+            estado_id=estado_id,
             cidade_id=cidade_id,
             nmloja=nmloja,
             dsbairroloja=dsbairroloja,
@@ -328,10 +357,14 @@ def criar_loja(
         return {
             "mensagem": "Loja cadastrada com sucesso",
             "loja_id": nova.loja_id,
+            "estado_id": nova.estado_id,
             "urllogoloja": nova.urllogoloja,
             "endloja": nova.endloja,
             "dsinstaloja": nova.dsinstaloja,
         }
+
+    except HTTPException:
+        raise
 
     except Exception as e:
         db.rollback()
@@ -358,6 +391,7 @@ def listar_lojas_por_organizacao_todas(
         {
             "loja_id": loja.loja_id,
             "organizacao_id": loja.organizacao_id,
+            "estado_id": loja.estado_id,
             "cidade_id": loja.cidade_id,
             "nmloja": loja.nmloja,
             "dsbairroloja": loja.dsbairroloja,
@@ -380,6 +414,7 @@ def listar_lojas_por_organizacao_todas(
 def atualizar_loja(
     loja_id: int,
     organizacao_id: int | None = Form(None),
+    estado_id: int | None = Form(None),
     cidade_id: int | None = Form(None),
     nmloja: str | None = Form(None),
     dsbairroloja: str | None = Form(None),
@@ -402,6 +437,13 @@ def atualizar_loja(
 
         if organizacao_id is not None:
             loja.organizacao_id = organizacao_id
+
+        estado_id_final = estado_id if estado_id is not None else loja.estado_id
+        cidade_id_final = cidade_id if cidade_id is not None else loja.cidade_id
+        validar_localidade(db, estado_id_final, cidade_id_final)
+
+        if estado_id is not None:
+            loja.estado_id = estado_id
 
         if cidade_id is not None:
             loja.cidade_id = cidade_id
@@ -448,6 +490,7 @@ def atualizar_loja(
             "loja": {
                 "loja_id": loja.loja_id,
                 "organizacao_id": loja.organizacao_id,
+                "estado_id": loja.estado_id,
                 "cidade_id": loja.cidade_id,
                 "nmloja": loja.nmloja,
                 "dsbairroloja": loja.dsbairroloja,

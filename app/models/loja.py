@@ -27,6 +27,7 @@ class Loja(Base):
     dtcriacao = Column(DateTime, server_default=func.now(), nullable=False)
 
     cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=True)
+    estado_id = Column(BigInteger, ForeignKey("estado.estado_id"), nullable=False)
     
     dtultatu = Column(DateTime, onupdate=func.now())
 

@@ -368,6 +368,7 @@ CREATE TABLE loja (
   dshorarioloja  VARCHAR(255) NULL,
   nrtelloja      VARCHAR(25) NULL,
   nrdiavalidade  BIGINT NOT NULL DEFAULT 90,
+  estado_id      BIGINT NOT NULL,
   cidade_id      BIGINT NOT NULL,
   urllogoloja    VARCHAR(255) NULL,
   urlfachadaloja VARCHAR(255) NULL,
@@ -383,10 +384,15 @@ CREATE TABLE loja (
 
   CONSTRAINT fk_loja_cidade
     FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_loja_estado
+    FOREIGN KEY (estado_id) REFERENCES estado(estado_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_loja_org ON loja(organizacao_id);
+CREATE INDEX idx_loja_estado ON loja(estado_id);
 ALTER TABLE loja
   ADD UNIQUE KEY uk_loja_org_id (organizacao_id, loja_id);
 
