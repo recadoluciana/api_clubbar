@@ -16,10 +16,12 @@ class LojaHorarioItem(BaseModel):
     horaabertura: time | None = Field(
         default=None,
         validation_alias=AliasChoices("horaabertura", "hora_abertura"),
+        serialization_alias="hora_abertura",
     )
     horafechamento: time | None = Field(
         default=None,
         validation_alias=AliasChoices("horafechamento", "hora_fechamento"),
+        serialization_alias="hora_fechamento",
     )
     fechadiaseguinte: bool = False
 

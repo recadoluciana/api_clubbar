@@ -10,6 +10,7 @@ class LojaCreate(BaseModel):
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
     dshorarioloja: Optional[str] = None
+    dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
     urllogoloja: Optional[str] = None  # 👈 novo
 
@@ -22,5 +23,6 @@ class LojaUpdate(BaseModel):
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
     dshorarioloja: Optional[str] = None
+    dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
     urllogoloja: Optional[str] = None  # 👈 novo

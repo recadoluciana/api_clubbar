@@ -274,6 +274,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.nrtelloja,
             Loja.dsinstaloja,
             Loja.dsrefeloja,
+            Loja.dsestiloloja,
             Loja.cidade_id,
             Loja.urllogoloja,
             Loja.vrtaxaprod,
@@ -303,6 +304,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "nrtelloja": row.nrtelloja,
         "dsinstaloja": row.dsinstaloja,
         "dsrefeloja": row.dsrefeloja,
+        "dsestiloloja": row.dsestiloloja,
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
         "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
@@ -323,6 +325,7 @@ def criar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
+    dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     vrtaxaprod: float | None = Form(0),
     vrtaxaing: float | None = Form(0),
@@ -343,6 +346,7 @@ def criar_loja(
             dsinstaloja=dsinstaloja,
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
+            dsestiloloja=dsestiloloja,
             nrdiavalidade=nrdiavalidade,
             vrtaxaprod=vrtaxaprod,
             vrtaxaing=vrtaxaing,
@@ -361,6 +365,7 @@ def criar_loja(
             "urllogoloja": nova.urllogoloja,
             "endloja": nova.endloja,
             "dsinstaloja": nova.dsinstaloja,
+            "dsestiloloja": nova.dsestiloloja,
         }
 
     except HTTPException:
@@ -399,6 +404,7 @@ def listar_lojas_por_organizacao_todas(
             "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "dshorarioloja": loja.dshorarioloja,
+            "dsestiloloja": loja.dsestiloloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
             "urllogoloja": f"{loja.urllogoloja}" if loja.urllogoloja else None,
@@ -422,6 +428,7 @@ def atualizar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
+    dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     vrtaxaprod: float | None = Form(None),
     vrtaxaing: float | None = Form(None),
@@ -466,6 +473,9 @@ def atualizar_loja(
         if dshorarioloja is not None:
             loja.dshorarioloja = dshorarioloja
 
+        if dsestiloloja is not None:
+            loja.dsestiloloja = dsestiloloja
+
         if nrdiavalidade is not None:
             loja.nrdiavalidade = nrdiavalidade
         
@@ -498,6 +508,7 @@ def atualizar_loja(
                 "dsinstaloja": loja.dsinstaloja,
                 "nrtelloja": loja.nrtelloja,
                 "dshorarioloja": loja.dshorarioloja,
+                "dsestiloloja": loja.dsestiloloja,
                 "nrdiavalidade": loja.nrdiavalidade,
                 "sitloja": loja.sitloja,
                 "urllogoloja": loja.urllogoloja,
