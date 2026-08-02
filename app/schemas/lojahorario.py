@@ -1,13 +1,26 @@
 from datetime import datetime, time
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    model_validator,
+)
 
 
 class LojaHorarioItem(BaseModel):
     diasemana: int = Field(ge=1, le=7)
     fechado: bool
-    horaabertura: time | None = None
-    horafechamento: time | None = None
+    horaabertura: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("horaabertura", "hora_abertura"),
+    )
+    horafechamento: time | None = Field(
+        default=None,
+        validation_alias=AliasChoices("horafechamento", "hora_fechamento"),
+    )
     fechadiaseguinte: bool = False
 
     @model_validator(mode="after")
