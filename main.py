@@ -13,6 +13,7 @@ from app.routers import localidades
 from app.routers import auth
 from app.routers import organizacao
 from app.routers import lojas
+from app.routers import lojahorarios
 from app.routers import produtos
 from app.routers import categoria
 from app.routers import carrinho
@@ -90,6 +91,7 @@ app.include_router(localidades.router)
 app.include_router(auth.router)
 app.include_router(organizacao.router)
 app.include_router(lojas.router)
+app.include_router(lojahorarios.router)
 app.include_router(produtos.router)
 app.include_router(categoria.router)
 app.include_router(carrinho.router)
