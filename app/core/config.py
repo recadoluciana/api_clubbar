@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
@@ -37,15 +38,16 @@ BASE_DIR = os.path.dirname(
     )
 )
 
-UPLOAD_DIR = os.getenv(
-    "UPLOAD_DIR",
-    os.path.join(BASE_DIR, "uploads"),
-)
+UPLOAD_DIR = Path(
+    os.getenv("UPLOAD_DIR")
+    or os.getenv("RAILWAY_VOLUME_MOUNT_PATH")
+    or Path(BASE_DIR) / "uploads"
+).expanduser().resolve()
 
-UPLOAD_PRODUTOS = os.path.join(UPLOAD_DIR, "produtos")
-UPLOAD_LOJAS = os.path.join(UPLOAD_DIR, "lojas")
-UPLOAD_EVENTOS = os.path.join(UPLOAD_DIR, "eventos")
+UPLOAD_PRODUTOS = UPLOAD_DIR / "produtos"
+UPLOAD_LOJAS = UPLOAD_DIR / "lojas"
+UPLOAD_EVENTOS = UPLOAD_DIR / "eventos"
 
-os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
-os.makedirs(UPLOAD_LOJAS, exist_ok=True)
-os.makedirs(UPLOAD_EVENTOS, exist_ok=True)
+UPLOAD_PRODUTOS.mkdir(parents=True, exist_ok=True)
+UPLOAD_LOJAS.mkdir(parents=True, exist_ok=True)
+UPLOAD_EVENTOS.mkdir(parents=True, exist_ok=True)

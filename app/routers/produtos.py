@@ -138,7 +138,7 @@ def atualizar_produto(
 
             extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
             nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-            caminho_arquivo = os.path.join(UPLOAD_PRODUTOS, nome_arquivo)
+            caminho_arquivo = UPLOAD_PRODUTOS / nome_arquivo
 
             with open(caminho_arquivo, "wb") as buffer:
                 shutil.copyfileobj(urlfotoproduto.file, buffer)
@@ -318,7 +318,7 @@ async def criar_produto(
 
         extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
         nome_arquivo_foto = f"{uuid.uuid4().hex}{extensao}"
-        caminho = os.path.join(UPLOAD_PRODUTOS, nome_arquivo_foto)
+        caminho = UPLOAD_PRODUTOS / nome_arquivo_foto
 
         conteudo = await urlfotoproduto.read()
         with open(caminho, "wb") as f:

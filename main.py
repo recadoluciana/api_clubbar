@@ -1,4 +1,5 @@
 import os
+import logging
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
@@ -34,6 +35,8 @@ from app.routers import portalparceiro
 
 
 app = FastAPI(title="clubbar API")
+
+logger = logging.getLogger(__name__)
 
 origins = [
     "http://localhost:3000",
@@ -76,7 +79,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+logger.info("Diretório de uploads publicado em /uploads: %s", UPLOAD_DIR)
 
 os.makedirs("app/static", exist_ok=True)
 os.makedirs("app/static/assets", exist_ok=True)
