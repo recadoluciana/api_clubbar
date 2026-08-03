@@ -10,6 +10,8 @@ class Loja(Base):
 
     nmloja = Column(String(120), nullable=False)
     endloja = Column(String(255))
+    nrceploja = Column(String(9), nullable=False)
+    nrendeloja = Column(String(20), nullable=False)
     dsbairroloja = Column(String(120))
     dsinstaloja = Column(String(255))
     sitloja = Column(String(15), nullable=False, default="ATIVA")

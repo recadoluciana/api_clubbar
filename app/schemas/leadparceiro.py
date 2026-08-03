@@ -42,9 +42,9 @@ class ConverterLeadParceiroIn(BaseModel):
         max_length=18,
     )
 
-    cep: str | None = Field(
-        default=None,
-        max_length=20,
+    cep: str = Field(
+        min_length=8,
+        max_length=9,
     )
 
     endereco: str = Field(

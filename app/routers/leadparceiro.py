@@ -466,11 +466,6 @@ def converter_lead_em_parceiro(
 
     nome_loja = _nome_loja_por_tipo(lead.tipo)
 
-    endereco_loja = (
-        f"{dados.endereco.strip()}, "
-        f"{dados.numero.strip()}"
-    )
-
     try:
         nova_organizacao = Organizacao(
             nmorganizacao=lead.nmestabelecimento.strip(),
@@ -478,11 +473,7 @@ def converter_lead_em_parceiro(
             cnpjorganizacao=cnpj,
             emailorganizacao=lead.email.strip().lower(),
             telorganizacao=lead.telefone.strip(),
-            ceporganizacao=(
-                dados.cep.strip()
-                if dados.cep
-                else None
-            ),
+            ceporganizacao=dados.cep.strip(),
             endorganizacao=dados.endereco.strip(),
             nrendorganizacao=dados.numero.strip(),
             complorganizacao=(
@@ -508,7 +499,9 @@ def converter_lead_em_parceiro(
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,
             nmloja=nome_loja,
-            endloja=endereco_loja,
+            endloja=dados.endereco.strip(),
+            nrceploja=dados.cep.strip(),
+            nrendeloja=dados.numero.strip(),
             dsbairroloja=(
                 dados.bairro.strip()
                 if dados.bairro

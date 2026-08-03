@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 
@@ -7,6 +7,8 @@ class LojaCreate(BaseModel):
     estado_id: int
     cidade_id: int  # 👈 obrigatório
     nmloja: str
+    nrceploja: str = Field(min_length=1, max_length=9)
+    nrendeloja: str = Field(min_length=1, max_length=20)
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
     dshorarioloja: Optional[str] = None
@@ -23,6 +25,8 @@ class LojaUpdate(BaseModel):
     estado_id: Optional[int] = None
     cidade_id: Optional[int] = None
     nmloja: Optional[str] = None
+    nrceploja: Optional[str] = Field(default=None, min_length=1, max_length=9)
+    nrendeloja: Optional[str] = Field(default=None, min_length=1, max_length=20)
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
     dshorarioloja: Optional[str] = None

@@ -360,6 +360,8 @@ CREATE TABLE loja (
   organizacao_id BIGINT NOT NULL,
   nmloja         VARCHAR(120) NOT NULL,
   endloja        VARCHAR(255) NULL,
+  nrceploja      VARCHAR(9) NOT NULL,
+  nrendeloja     VARCHAR(20) NOT NULL,
   dsrefeloja     VARCHAR(255) NULL,
   dsinstaloja    VARCHAR(255) NULL,
   dsbairroloja   VARCHAR(120) NULL,

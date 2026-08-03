@@ -65,6 +65,33 @@ def validar_configuracao_validade(
     return controle, nrdiavalidade
 
 
+def validar_campo_endereco(
+    valor: str | None,
+    nome_campo: str,
+    tamanho_maximo: int,
+    obrigatorio: bool = False,
+) -> str | None:
+    if valor is None:
+        if obrigatorio:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{nome_campo} é obrigatório.",
+            )
+        return None
+    valor_normalizado = valor.strip()
+    if obrigatorio and not valor_normalizado:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{nome_campo} é obrigatório.",
+        )
+    if len(valor_normalizado) > tamanho_maximo:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{nome_campo} deve possuir no máximo {tamanho_maximo} caracteres.",
+        )
+    return valor_normalizado or None
+
+
 def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
     if not arquivo or not arquivo.filename:
         return None
@@ -89,6 +116,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
+            Loja.nrceploja,
+            Loja.nrendeloja,
             Loja.aberto24x7,
             Loja.idvalidadeprod,
             Loja.dshorarioloja,
@@ -115,6 +144,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
+            "nrceploja": r.nrceploja,
+            "nrendeloja": r.nrendeloja,
             "aberto24x7": r.aberto24x7,
             "idvalidadeprod": r.idvalidadeprod,
             "dshorarioloja": r.dshorarioloja,
@@ -145,6 +176,8 @@ def listar_todas_lojas_ativas(
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
+            Loja.nrceploja,
+            Loja.nrendeloja,
             Loja.dsbairroloja,
             Cidade.nmcidade,
             Loja.aberto24x7,
@@ -178,6 +211,8 @@ def listar_todas_lojas_ativas(
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
+            "nrceploja": r.nrceploja,
+            "nrendeloja": r.nrendeloja,
             "dsbairroloja": r.dsbairroloja or "",
             "nmcidade": r.nmcidade or "",
             "aberto24x7": r.aberto24x7,
@@ -209,6 +244,8 @@ def listar_lojas_com_retirada_pendente(
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
+            Loja.nrceploja,
+            Loja.nrendeloja,
             Loja.aberto24x7,
             Loja.idvalidadeprod,
             Loja.dshorarioloja,
@@ -237,6 +274,8 @@ def listar_lojas_com_retirada_pendente(
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
+            "nrceploja": r.nrceploja,
+            "nrendeloja": r.nrendeloja,
             "aberto24x7": r.aberto24x7,
             "idvalidadeprod": r.idvalidadeprod,
             "dshorarioloja": r.dshorarioloja,
@@ -264,6 +303,8 @@ def listar_lojas_cidade(
             Organizacao.nmorganizacao,
             Loja.nmloja,
             Loja.endloja,
+            Loja.nrceploja,
+            Loja.nrendeloja,
             Loja.aberto24x7,
             Loja.idvalidadeprod,
             Loja.dshorarioloja,
@@ -292,6 +333,8 @@ def listar_lojas_cidade(
             "nmorganizacao": r.nmorganizacao,
             "nmloja": r.nmloja,
             "endloja": r.endloja,
+            "nrceploja": r.nrceploja,
+            "nrendeloja": r.nrendeloja,
             "aberto24x7": r.aberto24x7,
             "idvalidadeprod": r.idvalidadeprod,
             "dshorarioloja": r.dshorarioloja,
@@ -317,6 +360,8 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Cidade.nmcidade,
             Loja.nmloja,
             Loja.endloja,
+            Loja.nrceploja,
+            Loja.nrendeloja,
             Loja.dsbairroloja,
             Loja.aberto24x7,
             Loja.idvalidadeprod,
@@ -349,6 +394,8 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "nmorganizacao": row.nmorganizacao,
         "nmloja": row.nmloja,
         "endloja": row.endloja,
+        "nrceploja": row.nrceploja,
+        "nrendeloja": row.nrendeloja,
         "dsbairroloja": row.dsbairroloja,
         "aberto24x7": row.aberto24x7,
         "idvalidadeprod": row.idvalidadeprod,
@@ -375,6 +422,8 @@ def criar_loja(
     nmloja: str = Form(...),
     dsbairroloja: str | None = Form(None),
     endloja: str | None = Form(None),
+    nrceploja: str = Form(...),
+    nrendeloja: str = Form(...),
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
@@ -396,6 +445,18 @@ def criar_loja(
             idvalidadeprod,
             nrdiavalidade,
         )
+        nrceploja = validar_campo_endereco(
+            nrceploja,
+            "nrceploja",
+            9,
+            obrigatorio=True,
+        )
+        nrendeloja = validar_campo_endereco(
+            nrendeloja,
+            "nrendeloja",
+            20,
+            obrigatorio=True,
+        )
         urllogoloja_aux = salvar_logo_loja(urllogoloja)
         urlfachadaloja_aux = salvar_logo_loja(urlfachadaloja)
 
@@ -406,6 +467,8 @@ def criar_loja(
             nmloja=nmloja,
             dsbairroloja=dsbairroloja,
             endloja=endloja,
+            nrceploja=nrceploja,
+            nrendeloja=nrendeloja,
             dsinstaloja=dsinstaloja,
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
@@ -431,6 +494,8 @@ def criar_loja(
             "urllogoloja": nova.urllogoloja,
             "urlfachadaloja": nova.urlfachadaloja,
             "endloja": nova.endloja,
+            "nrceploja": nova.nrceploja,
+            "nrendeloja": nova.nrendeloja,
             "dsinstaloja": nova.dsinstaloja,
             "aberto24x7": nova.aberto24x7,
             "idvalidadeprod": nova.idvalidadeprod,
@@ -470,6 +535,8 @@ def listar_lojas_por_organizacao_todas(
             "nmloja": loja.nmloja,
             "dsbairroloja": loja.dsbairroloja,
             "endloja": loja.endloja,
+            "nrceploja": loja.nrceploja,
+            "nrendeloja": loja.nrendeloja,
             "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "dshorarioloja": loja.dshorarioloja,
@@ -497,6 +564,8 @@ def atualizar_loja(
     nmloja: str | None = Form(None),
     dsbairroloja: str | None = Form(None),
     endloja: str | None = Form(None),
+    nrceploja: str | None = Form(None),
+    nrendeloja: str | None = Form(None),
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
@@ -538,6 +607,22 @@ def atualizar_loja(
 
         if endloja is not None:
             loja.endloja = endloja
+
+        if nrceploja is not None:
+            loja.nrceploja = validar_campo_endereco(
+                nrceploja,
+                "nrceploja",
+                9,
+                obrigatorio=True,
+            )
+
+        if nrendeloja is not None:
+            loja.nrendeloja = validar_campo_endereco(
+                nrendeloja,
+                "nrendeloja",
+                20,
+                obrigatorio=True,
+            )
 
         if dsinstaloja is not None:
             loja.dsinstaloja = dsinstaloja
@@ -602,6 +687,8 @@ def atualizar_loja(
                 "nmloja": loja.nmloja,
                 "dsbairroloja": loja.dsbairroloja,
                 "endloja": loja.endloja,
+                "nrceploja": loja.nrceploja,
+                "nrendeloja": loja.nrendeloja,
                 "dsinstaloja": loja.dsinstaloja,
                 "nrtelloja": loja.nrtelloja,
                 "dshorarioloja": loja.dshorarioloja,
