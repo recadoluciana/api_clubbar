@@ -32,6 +32,7 @@ class Loja(Base):
     dtultatu = Column(DateTime, onupdate=func.now())
 
     urllogoloja = Column(String(255), nullable=True)
+    urlfachadaloja = Column(String(255), nullable=True)
 
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, default=5)
     vrtaxaing = Column(Numeric(10, 2), nullable=False, default=5)

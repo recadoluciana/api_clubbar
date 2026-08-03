@@ -70,6 +70,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.urlfachadaloja,
             Loja.dsinstaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
@@ -94,7 +95,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
-            "dsinstaloja": r.dsinstaloja,                        
+            "urlfachadaloja": r.urlfachadaloja,
+            "dsinstaloja": r.dsinstaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),            
         }
@@ -124,6 +126,7 @@ def listar_todas_lojas_ativas(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.urlfachadaloja,
             Loja.dsinstaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
@@ -155,6 +158,7 @@ def listar_todas_lojas_ativas(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "urlfachadaloja": r.urlfachadaloja,
             "dsinstaloja": r.dsinstaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
@@ -182,6 +186,7 @@ def listar_lojas_com_retirada_pendente(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.urlfachadaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,            
         )
@@ -208,6 +213,7 @@ def listar_lojas_com_retirada_pendente(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "urlfachadaloja": r.urlfachadaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
 
@@ -233,6 +239,7 @@ def listar_lojas_cidade(
             Loja.dshorarioloja,
             Loja.nrtelloja,
             Loja.urllogoloja,
+            Loja.urlfachadaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,            
 
@@ -259,6 +266,7 @@ def listar_lojas_cidade(
             "dshorarioloja": r.dshorarioloja,
             "nrtelloja": r.nrtelloja,
             "urllogoloja": f"{r.urllogoloja}" if r.urllogoloja else None,
+            "urlfachadaloja": r.urlfachadaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
 
@@ -287,6 +295,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.dsestiloloja,
             Loja.cidade_id,
             Loja.urllogoloja,
+            Loja.urlfachadaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
         )
@@ -318,6 +327,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
         "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
+        "urlfachadaloja": row.urlfachadaloja,
         "vrtaxaprod": float(row.vrtaxaprod or 0),
         "vrtaxaing": float(row.vrtaxaing or 0),
 
@@ -341,12 +351,14 @@ def criar_loja(
     vrtaxaprod: float | None = Form(0),
     vrtaxaing: float | None = Form(0),
     urllogoloja: UploadFile | None = File(None),
+    urlfachadaloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
         validar_localidade(db, estado_id, cidade_id)
         aberto24x7 = validar_aberto24x7(aberto24x7)
         urllogoloja_aux = salvar_logo_loja(urllogoloja)
+        urlfachadaloja_aux = salvar_logo_loja(urlfachadaloja)
 
         nova = Loja(
             organizacao_id=organizacao_id,
@@ -364,6 +376,7 @@ def criar_loja(
             vrtaxaprod=vrtaxaprod,
             vrtaxaing=vrtaxaing,
             urllogoloja=urllogoloja_aux,
+            urlfachadaloja=urlfachadaloja_aux,
             sitloja="ATIVA",
         )
 
@@ -376,6 +389,7 @@ def criar_loja(
             "loja_id": nova.loja_id,
             "estado_id": nova.estado_id,
             "urllogoloja": nova.urllogoloja,
+            "urlfachadaloja": nova.urlfachadaloja,
             "endloja": nova.endloja,
             "dsinstaloja": nova.dsinstaloja,
             "aberto24x7": nova.aberto24x7,
@@ -423,6 +437,7 @@ def listar_lojas_por_organizacao_todas(
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
             "urllogoloja": f"{loja.urllogoloja}" if loja.urllogoloja else None,
+            "urlfachadaloja": loja.urlfachadaloja,
             "vrtaxaprod": float(loja.vrtaxaprod or 0),
             "vrtaxaing": float(loja.vrtaxaing or 0),
 
@@ -449,6 +464,7 @@ def atualizar_loja(
     vrtaxaprod: float | None = Form(None),
     vrtaxaing: float | None = Form(None),
     urllogoloja: UploadFile | None = File(None),
+    urlfachadaloja: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -509,6 +525,9 @@ def atualizar_loja(
             loja.urllogoloja = nova_url_logo
             print("nova_url_logo:", nova_url_logo)
 
+        if urlfachadaloja is not None and urlfachadaloja.filename:
+            loja.urlfachadaloja = salvar_logo_loja(urlfachadaloja)
+
         db.commit()
         db.refresh(loja)
 
@@ -532,6 +551,7 @@ def atualizar_loja(
                 "nrdiavalidade": loja.nrdiavalidade,
                 "sitloja": loja.sitloja,
                 "urllogoloja": loja.urllogoloja,
+                "urlfachadaloja": loja.urlfachadaloja,
             }
         }
 

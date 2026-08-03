@@ -14,6 +14,7 @@ class LojaCreate(BaseModel):
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
     urllogoloja: Optional[str] = None  # 👈 novo
+    urlfachadaloja: Optional[str] = None
 
 
 class LojaUpdate(BaseModel):
@@ -28,3 +29,4 @@ class LojaUpdate(BaseModel):
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
     urllogoloja: Optional[str] = None  # 👈 novo
+    urlfachadaloja: Optional[str] = None
