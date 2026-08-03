@@ -32,6 +32,16 @@ def validar_localidade(db: Session, estado_id: int, cidade_id: int) -> None:
         )
 
 
+def validar_aberto24x7(valor: str) -> str:
+    valor_normalizado = valor.strip().upper()
+    if valor_normalizado not in {"S", "N"}:
+        raise HTTPException(
+            status_code=422,
+            detail="aberto24x7 deve possuir o valor 'S' ou 'N'.",
+        )
+    return valor_normalizado
+
+
 def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
     if not arquivo or not arquivo.filename:
         return None
@@ -325,6 +335,7 @@ def criar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
+    aberto24x7: str = Form("N"),
     dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     vrtaxaprod: float | None = Form(0),
@@ -334,6 +345,7 @@ def criar_loja(
 ):
     try:
         validar_localidade(db, estado_id, cidade_id)
+        aberto24x7 = validar_aberto24x7(aberto24x7)
         urllogoloja_aux = salvar_logo_loja(urllogoloja)
 
         nova = Loja(
@@ -346,6 +358,7 @@ def criar_loja(
             dsinstaloja=dsinstaloja,
             nrtelloja=nrtelloja,
             dshorarioloja=dshorarioloja,
+            aberto24x7=aberto24x7,
             dsestiloloja=dsestiloloja,
             nrdiavalidade=nrdiavalidade,
             vrtaxaprod=vrtaxaprod,
@@ -365,6 +378,7 @@ def criar_loja(
             "urllogoloja": nova.urllogoloja,
             "endloja": nova.endloja,
             "dsinstaloja": nova.dsinstaloja,
+            "aberto24x7": nova.aberto24x7,
             "dsestiloloja": nova.dsestiloloja,
         }
 
@@ -404,6 +418,7 @@ def listar_lojas_por_organizacao_todas(
             "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "dshorarioloja": loja.dshorarioloja,
+            "aberto24x7": loja.aberto24x7,
             "dsestiloloja": loja.dsestiloloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "sitloja": loja.sitloja,
@@ -428,6 +443,7 @@ def atualizar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     dshorarioloja: str | None = Form(None),
+    aberto24x7: str | None = Form(None),
     dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     vrtaxaprod: float | None = Form(None),
@@ -473,6 +489,9 @@ def atualizar_loja(
         if dshorarioloja is not None:
             loja.dshorarioloja = dshorarioloja
 
+        if aberto24x7 is not None:
+            loja.aberto24x7 = validar_aberto24x7(aberto24x7)
+
         if dsestiloloja is not None:
             loja.dsestiloloja = dsestiloloja
 
@@ -508,6 +527,7 @@ def atualizar_loja(
                 "dsinstaloja": loja.dsinstaloja,
                 "nrtelloja": loja.nrtelloja,
                 "dshorarioloja": loja.dshorarioloja,
+                "aberto24x7": loja.aberto24x7,
                 "dsestiloloja": loja.dsestiloloja,
                 "nrdiavalidade": loja.nrdiavalidade,
                 "sitloja": loja.sitloja,
