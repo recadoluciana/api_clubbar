@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -93,10 +92,6 @@ async def criar_ou_obter_venda_idempotente(
     def _sync_itens_venda(venda_id: int) -> None:
         db.execute(delete(ItVenda).where(ItVenda.venda_id == venda_id))
 
-        agora = datetime.now()
-        fim = agora + timedelta(days=30)
-
-
         for it in itens:
             produto_id = int(it["produto_id"])
             qtd = int(it.get("qtitcarrinho") or it.get("qt") or 1)
@@ -114,7 +109,9 @@ async def criar_ou_obter_venda_idempotente(
                     dsobsitvenda=dsobsitcar,
                     identregaitvenda="NAO",
                     qrtokenitvenda=gerar_token_qr(),
-                    dtexpiraitvenda=fim,
+                    # A validade é definida somente após a confirmação
+                    # do pagamento, conforme a configuração da loja.
+                    dtexpiraitvenda=None,
                     nmparticipante=it.get("nmparticipante"),
                     cpfparticipante=it.get("cpfparticipante"),
                     lote_id=it.get("lote_id"),

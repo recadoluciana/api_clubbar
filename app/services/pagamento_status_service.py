@@ -4,12 +4,14 @@ from datetime import datetime, date, timedelta
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.venda import Venda 
 from app.models.pagvenda import PagVenda
 from app.models.loja import Loja
 from app.models.itvenda import ItVenda
+from app.models.produto import Produto
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho 
 
@@ -25,7 +27,7 @@ def set_venda_como_paga(
     - Venda.sitvenda = PAGA
     - define dtconftranspagvenda
     - guarda idtransacaopagvenda (charge_id do PagBank)
-    - calcula validade (Loja.nrdiavalidade, fallback 30) em ItVenda.dtexpiraitvenda
+    - calcula a validade dos produtos conforme a configuração da loja
     - fecha carrinho e limpa itens
     Chamar dentro de: with db.begin():
     """
@@ -84,7 +86,8 @@ def set_venda_como_paga(
     venda.sitvenda = "PAGA"
     venda.dtultatu = datetime.now()
 
-    # validade conforme loja.nrdiavalidade (fallback 30)
+    # Ingressos não expiram. Produtos expiram somente quando a loja
+    # mantém o controle de validade habilitado.
     loja = (
         db.query(Loja)
         .filter(
@@ -93,16 +96,30 @@ def set_venda_como_paga(
         )
         .first()
     )
-    nr_dias = int(getattr(loja, "nrdiavalidade", 0) or 0) if loja else 0
-    if nr_dias <= 0:
-        nr_dias = 30
-
-    data_expira = date.today() + timedelta(days=nr_dias)
-
     db.query(ItVenda).filter(ItVenda.venda_id == venda_id).update(
-        {"dtexpiraitvenda": data_expira},
+        {"dtexpiraitvenda": None},
         synchronize_session=False,
     )
+
+    controla_validade = (
+        (getattr(loja, "idvalidadeprod", "S") or "S").upper() == "S"
+        if loja
+        else True
+    )
+    nr_dias = int(getattr(loja, "nrdiavalidade", 0) or 0) if loja else 0
+
+    if controla_validade and nr_dias > 0:
+        data_expira = date.today() + timedelta(days=nr_dias)
+        produtos_ids = select(Produto.produto_id).where(
+            Produto.idtipoproduto == "P"
+        )
+        db.query(ItVenda).filter(
+            ItVenda.venda_id == venda_id,
+            ItVenda.produto_id.in_(produtos_ids),
+        ).update(
+            {"dtexpiraitvenda": data_expira},
+            synchronize_session=False,
+        )
 
     # fecha carrinho + limpa itens
     carrinho_id = venda.carrinho_id

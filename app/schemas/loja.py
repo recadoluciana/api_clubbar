@@ -13,6 +13,7 @@ class LojaCreate(BaseModel):
     aberto24x7: Literal["S", "N"] = "N"
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
+    idvalidadeprod: Literal["S", "N"] = "S"
     urllogoloja: Optional[str] = None  # 👈 novo
     urlfachadaloja: Optional[str] = None
 
@@ -28,5 +29,6 @@ class LojaUpdate(BaseModel):
     aberto24x7: Optional[Literal["S", "N"]] = None
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
+    idvalidadeprod: Optional[Literal["S", "N"]] = None
     urllogoloja: Optional[str] = None  # 👈 novo
     urlfachadaloja: Optional[str] = None

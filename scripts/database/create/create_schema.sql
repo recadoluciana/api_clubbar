@@ -368,6 +368,7 @@ CREATE TABLE loja (
   dshorarioloja  VARCHAR(255) NULL,
   nrtelloja      VARCHAR(25) NULL,
   nrdiavalidade  BIGINT NOT NULL DEFAULT 90,
+  idvalidadeprod CHAR(1) NOT NULL DEFAULT 'S',
   estado_id      BIGINT NOT NULL,
   cidade_id      BIGINT NOT NULL,
   urllogoloja    VARCHAR(255) NULL,
@@ -398,6 +399,9 @@ ALTER TABLE loja
 
 ALTER TABLE loja
   ADD CONSTRAINT chk_aberto24x7 CHECK (aberto24x7 IN ('S', 'N'));
+
+ALTER TABLE loja
+  ADD CONSTRAINT chk_idvalidadeprod CHECK (idvalidadeprod IN ('S', 'N'));
 
 -- MySQL 8+
 -- Uma loja possui no máximo um horário para cada dia da semana.

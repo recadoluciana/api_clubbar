@@ -19,6 +19,7 @@ class Loja(Base):
     dsestiloloja  = Column(String(255))
     
     nrdiavalidade = Column(BigInteger,nullable=False, default=90)
+    idvalidadeprod = Column(CHAR(1), nullable=False, default="S")
 
     dshorarioloja = Column(String(255))
     aberto24x7 = Column(CHAR(1), nullable=False, default="N")
