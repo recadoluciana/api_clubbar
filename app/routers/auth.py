@@ -134,6 +134,7 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
             "role": "usuario",
             "dscargo": user.dscargo,
             "organizacao_id": user.organizacao_id,
+            "loja_id": user.loja_id,
         },
         expires_delta=timedelta(days=1000),
     )

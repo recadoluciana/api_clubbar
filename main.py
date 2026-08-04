@@ -32,6 +32,7 @@ from app.routers import superadmin
 from app.routers import stripe_webhook
 from app.routers import asaas_webhook
 from app.routers import portalparceiro
+from app.routers import painel_gerencial
 
 
 app = FastAPI(title="clubbar API")
@@ -112,6 +113,7 @@ app.include_router(superadmin.router)
 app.include_router(stripe_webhook.router)
 app.include_router(asaas_webhook.router)
 app.include_router(portalparceiro.router)
+app.include_router(painel_gerencial.router)
 
 @app.get("/health")
 def health():
