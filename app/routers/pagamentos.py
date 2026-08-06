@@ -18,6 +18,9 @@ from app.models.produto import Produto
 from app.models.eventolote import EventoLote
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.lojaasaas import LojaAsaas
+from app.core.config import APP_ENV, ASAAS_CLUBBAR_WALLET_ID
+from app.core.credential_crypto import descriptografar_credencial
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -27,7 +30,7 @@ from app.routers.produtos import calcular_preco_final
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
-    sincronizar_cliente_com_asaas_se_precisar,
+    criar_referencia_checkout_asaas,
 )
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
@@ -90,7 +93,7 @@ def _recalcular_itens_carrinho(
             vrunitario = round(float(lote.vrprecolote or 0), 2)
             subtotal   = round(vrunitario * qt_prod, 2)
 
-            total_geral += it.get("vrtaxaitvenda")
+            total_geral += subtotal + round(float(it.get("vrtaxaitvenda") or 0), 2)
 
             itens_recalculados.append(
                 {
@@ -120,7 +123,7 @@ def _recalcular_itens_carrinho(
         vrunitario = round(float(vrprecofinal), 2)
         subtotal   = round(vrunitario * qt_prod, 2)
 
-        total_geral += subtotal
+        total_geral += subtotal + round(float(it.get("vrtaxaitvenda") or 0), 2)
 
         itens_recalculados.append(
             {
@@ -149,14 +152,11 @@ def _recalcular_itens_carrinho(
 
 def _montar_itens_asaas(
     itens_recalculados: list[Dict[str, Any]],
-    percentual_taxa_ingresso: float = 0.0,
-) -> tuple[list[Dict[str, Any]], float]:
+) -> tuple[list[Dict[str, Any]], float, float]:
 
     itens_asaas = []
-    vr_taxa_ingresso = 0.0
+    vr_taxa_clubbar = 0.0
     valor_total_com_taxa = 0.0
-
-    percentual_taxa_ingresso = float(percentual_taxa_ingresso or 0)
 
     for item in itens_recalculados:
         nome = item.get("nmproduto") or "Item Clubbar"
@@ -171,16 +171,11 @@ def _montar_itens_asaas(
         if tipo == "I":
             descricao_item = f"Ingresso LOTE-{item.get('lote_id') or 'SEM-ID'}"
             referencia = f"LOTE-{item.get('lote_id') or 'SEM-ID'}"
-
-            taxa_item = round(
-                subtotal_item * (percentual_taxa_ingresso / 100),
-                2,
-            )
-
-            vr_taxa_ingresso += taxa_item
         else:
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
+
+        vr_taxa_clubbar += round(float(item.get("vrtaxaitvenda") or 0), 2)
 
         itens_asaas.append(
             {
@@ -192,22 +187,41 @@ def _montar_itens_asaas(
             }
         )
 
-    vr_taxa_ingresso = round(vr_taxa_ingresso, 2)
-    valor_total_com_taxa = round(valor_total_com_taxa + vr_taxa_ingresso, 2)
+    vr_taxa_clubbar = round(vr_taxa_clubbar, 2)
+    valor_total_com_taxa = round(valor_total_com_taxa + vr_taxa_clubbar, 2)
 
 
-    if vr_taxa_ingresso > 0:
+    if vr_taxa_clubbar > 0:
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
-                "name": "Taxa de conveniência ingresso",
-                "description": f"Taxa de serviço Clubbar (somente para ingressos) ({percentual_taxa_ingresso:.2f}%)",
+                "name": "Taxa de serviço Clubbar",
+                "description": "Taxa de serviço Clubbar",
                 "quantity": 1,
-                "value": vr_taxa_ingresso,
+                "value": vr_taxa_clubbar,
             }
         )
 
-    return itens_asaas, valor_total_com_taxa
+    return itens_asaas, valor_total_com_taxa, vr_taxa_clubbar
+
+
+def _montar_split_clubbar(
+    valor_taxa_clubbar: float,
+    wallet_loja: str,
+    external_reference: str,
+) -> list[dict]:
+    if valor_taxa_clubbar <= 0:
+        return []
+    if not ASAAS_CLUBBAR_WALLET_ID:
+        raise HTTPException(status_code=503, detail="ASAAS_CLUBBAR_WALLET_ID não configurada")
+    if wallet_loja == ASAAS_CLUBBAR_WALLET_ID:
+        raise HTTPException(status_code=422, detail="A carteira da loja não pode ser a carteira global Clubbar")
+    return [{
+        "walletId": ASAAS_CLUBBAR_WALLET_ID,
+        "fixedValue": round(valor_taxa_clubbar, 2),
+        "externalReference": f"TAXA-{external_reference}",
+        "description": "Taxa de serviço Clubbar",
+    }]
 
 
 @router.post("/pagar-asaas")
@@ -251,25 +265,38 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
+        integracao_asaas = db.query(LojaAsaas).filter(
+            LojaAsaas.loja_id == payload.loja_id,
+            LojaAsaas.organizacao_id == payload.organizacao_id,
+            LojaAsaas.ambiente == APP_ENV,
+            LojaAsaas.statusintegracao == "ATIVA",
+        ).first()
+        if not integracao_asaas:
+            raise HTTPException(status_code=422, detail="Conta Asaas da loja não configurada ou inativa")
+
+        api_key_loja = descriptografar_credencial(
+            integracao_asaas.asaas_api_key_criptografada
+        )
+
         try:
             await obter_ou_criar_customer_asaas(
                 db,
                 cliente_id=payload.cliente_id,
-            )
-
-            await sincronizar_cliente_com_asaas_se_precisar(
-                db,
-                cliente_id=payload.cliente_id,
+                loja_id=payload.loja_id,
+                api_key=api_key_loja,
             )
         except Exception as e:
             print("[ASAAS] Erro ao sincronizar customer:", repr(e))
+            raise
+        external_reference = criar_referencia_checkout_asaas(carrinho_id)
+        items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
+            itens_recalculados
+        )
 
-        external_reference = f"CARRINHO-{carrinho_id}"
-        valor_atual = round(float(total_recalculado or 0), 2)
-
-        items_asaas, valor_total_com_taxa = _montar_itens_asaas(
-            itens_recalculados,
-            percentual_taxa_ingresso=float(payload.percentual_taxa_ingresso or 0),
+        splits = _montar_split_clubbar(
+            valor_taxa_clubbar,
+            integracao_asaas.asaas_wallet_id,
+            external_reference,
         )
 
         pagamento = await criar_checkout_asaas(
@@ -277,6 +304,8 @@ async def pagar_asaas(
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,
+            api_key=api_key_loja,
+            splits=splits,
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
@@ -310,7 +339,10 @@ async def pagar_asaas(
             checkout_url=checkout_url,
             external_reference=external_reference,
             status=status_checkout,
-            valor=valor_atual,
+            valor=valor_total_com_taxa,
+            vrtaxaclubbar=valor_taxa_clubbar,
+            asaas_wallet_loja=integracao_asaas.asaas_wallet_id,
+            asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID or None,
         )
 
         db.add(novo)
@@ -328,9 +360,11 @@ async def pagar_asaas(
         }
 
     except HTTPException:
+        db.rollback()
         raise
 
     except Exception as e:
+        db.rollback()
         print("[ASAAS][ERRO]", repr(e))
         print(traceback.format_exc())
 

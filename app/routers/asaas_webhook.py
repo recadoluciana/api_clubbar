@@ -1,7 +1,6 @@
-import json
 import traceback
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -10,9 +9,12 @@ from app.models.carrinho import Carrinho
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.lojaasaas import LojaAsaas
 
 from app.models.cliente import Cliente
 from app.services.asaas_service import buscar_customer_asaas
+from app.core.config import APP_ENV, PUBLIC_CLIENT_BASE_URL
+from app.core.credential_crypto import descriptografar_credencial, hash_token_webhook
 
 router = APIRouter(
     prefix="/asaas",
@@ -20,47 +22,69 @@ router = APIRouter(
 )
 
 
+def validar_token_webhook_asaas(
+    db: Session,
+    token_recebido: str | None,
+) -> LojaAsaas:
+    if not token_recebido:
+        raise HTTPException(status_code=401, detail="Webhook Asaas não autorizado")
+    integracao = db.query(LojaAsaas).filter(
+        LojaAsaas.webhook_token_hash == hash_token_webhook(token_recebido),
+        LojaAsaas.ambiente == APP_ENV,
+        LojaAsaas.statusintegracao == "ATIVA",
+    ).first()
+    if not integracao:
+        raise HTTPException(status_code=401, detail="Webhook Asaas não autorizado")
+    return integracao
+
+
 @router.post("/webhook")
 async def asaas_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    integracao_asaas = validar_token_webhook_asaas(
+        db,
+        request.headers.get("asaas-access-token"),
+    )
+
     try:
         body = await request.json()
     except Exception:
         body = {}
 
-    print("=" * 80)
-    print("[ASAAS WEBHOOK]")
-    print(json.dumps(body, indent=2, ensure_ascii=False))
-    print("=" * 80)
-
     try:
         evento = str(body.get("event") or "").upper()
 
-        payment = (
-            body.get("payment")
-            or body.get("checkout")
-            or body.get("object")
-            or {}
-        )
+        checkout = body.get("checkout") or {}
+        payment = body.get("payment") or checkout or body.get("object") or {}
 
         status = str(payment.get("status") or body.get("status") or "").upper()
 
         checkout_id = (
             payment.get("checkoutSession")
+            or checkout.get("id")
             or body.get("checkoutId")
             or body.get("checkoutSession")
         )
-
         payment_id = payment.get("id") or body.get("paymentId")
+
+        print(
+            "[ASAAS WEBHOOK]",
+            "event=", evento,
+            "checkout_id=", checkout_id,
+            "payment_id=", payment_id,
+        )
 
         registro_checkout = None
 
         if checkout_id:
             registro_checkout = (
                 db.query(CheckoutAsaas)
-                .filter(CheckoutAsaas.checkout_id == str(checkout_id))
+                .filter(
+                    CheckoutAsaas.checkout_id == str(checkout_id),
+                    CheckoutAsaas.loja_id == integracao_asaas.loja_id,
+                )
                 .first()
             )
 
@@ -70,28 +94,42 @@ async def asaas_webhook(
             or ""
         ).strip()
 
-        if registro_checkout:
-            carrinho_id = int(registro_checkout.carrinho_id)
-            external_reference = (
-                registro_checkout.external_reference
-                or f"CARRINHO-{carrinho_id}"
+        if not registro_checkout and external_reference:
+            registro_checkout = (
+                db.query(CheckoutAsaas)
+                .filter(
+                    CheckoutAsaas.external_reference == external_reference,
+                    CheckoutAsaas.loja_id == integracao_asaas.loja_id,
+                )
+                .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+                .first()
             )
-        else:
-            if not external_reference.startswith("CARRINHO-"):
-                return {
-                    "ok": True,
-                    "ignored": True,
-                    "msg": "Checkout/carrinho não localizado",
-                    "event": evento,
-                    "status": status,
-                    "checkout_id": checkout_id,
-                    "payment_id": payment_id,
-                    "externalReference": external_reference,
-                }
 
-            carrinho_id = int(
-                external_reference.replace("CARRINHO-", "").split("-")[0]
-            )
+        if not registro_checkout:
+            return {
+                "ok": True,
+                "ignored": True,
+                "msg": "Checkout não pertence a este ambiente",
+                "event": evento,
+                "status": status,
+                "checkout_id": checkout_id,
+                "payment_id": payment_id,
+                "externalReference": external_reference,
+            }
+
+        carrinho_id = int(registro_checkout.carrinho_id)
+        referencia_registrada = str(registro_checkout.external_reference or "").strip()
+        if external_reference and referencia_registrada and external_reference != referencia_registrada:
+            return {
+                "ok": True,
+                "ignored": True,
+                "msg": "Referência do checkout divergente",
+                "event": evento,
+                "checkout_id": checkout_id,
+                "payment_id": payment_id,
+            }
+
+        external_reference = referencia_registrada or external_reference
 
         eventos_confirmados = [
             "PAYMENT_RECEIVED",
@@ -131,9 +169,12 @@ async def asaas_webhook(
         )
 
         customer_id = payment.get("customer")
+        api_key_loja = descriptografar_credencial(
+            integracao_asaas.asaas_api_key_criptografada
+        )
 
         if customer_id and registro_checkout:
-            customer = await buscar_customer_asaas(str(customer_id))
+            customer = await buscar_customer_asaas(str(customer_id), api_key_loja)
 
             cliente = (
                 db.query(Cliente)
@@ -160,7 +201,7 @@ async def asaas_webhook(
         customer_id = payment.get("customer")
 
         if customer_id and registro_checkout:
-            customer = await buscar_customer_asaas(str(customer_id))
+            customer = await buscar_customer_asaas(str(customer_id), api_key_loja)
 
             cliente = (
                 db.query(Cliente)
@@ -201,11 +242,10 @@ async def asaas_webhook(
         print("[ASAAS WEBHOOK][ERRO]", repr(e))
         print(traceback.format_exc())
 
-        return {
-            "ok": False,
-            "erro": str(e),
-            "tipo": type(e).__name__,
-        }
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao processar webhook Asaas",
+        ) from e
 
 
 @router.get("/retorno", response_class=HTMLResponse)
@@ -314,7 +354,7 @@ async def asaas_retorno(
         <h1>{titulo}</h1>
         <p>{mensagem}</p>
 
-        <a href="https://app.clubbar.com.br/?pagamento={retorno}&gateway=asaas">
+        <a href="{PUBLIC_CLIENT_BASE_URL or '/'}?pagamento={retorno}&gateway=asaas">
           Voltar para o Clubbar
         </a>
 

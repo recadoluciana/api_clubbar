@@ -4,21 +4,35 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.models.cliente import Cliente
+from app.models.clienteasaas import ClienteAsaas
 import json
 
 import re
+import uuid
 
-ASAAS_API_KEY = os.getenv("ASAAS_API_KEY")
+from app.core.config import APP_ENV, PUBLIC_API_BASE_URL
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
 
 
-def _headers():
-    if not ASAAS_API_KEY:
-        raise HTTPException(status_code=500, detail="ASAAS_API_KEY não configurada")
+def criar_referencia_checkout_asaas(carrinho_id: int) -> str:
+    ambiente = re.sub(r"[^a-z0-9_-]", "-", APP_ENV.lower()).strip("-") or "unknown"
+    identificador = uuid.uuid4().hex[:12]
+    return f"CLUBBAR-{ambiente}-CARRINHO-{int(carrinho_id)}-{identificador}"
 
+
+def _url_api_publica() -> str:
+    if not PUBLIC_API_BASE_URL:
+        raise HTTPException(
+            status_code=500,
+            detail="PUBLIC_API_BASE_URL não configurada",
+        )
+    return PUBLIC_API_BASE_URL
+def _headers(api_key: str):
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Conta Asaas da loja sem API Key")
     return {
         "Content-Type": "application/json",
-        "access_token": ASAAS_API_KEY,
+        "access_token": api_key,
     }
 
 
@@ -26,6 +40,8 @@ async def sincronizar_cliente_com_asaas_se_precisar(
     db: Session,
     *,
     cliente_id: int,
+    loja_id: int,
+    api_key: str,
 ):
     cliente = (
         db.query(Cliente)
@@ -33,7 +49,12 @@ async def sincronizar_cliente_com_asaas_se_precisar(
         .first()
     )
 
-    if not cliente or not cliente.idclienteasaas:
+    vinculo = db.query(ClienteAsaas).filter(
+        ClienteAsaas.cliente_id == cliente_id,
+        ClienteAsaas.loja_id == loja_id,
+    ).first()
+
+    if not cliente or not vinculo:
         return
 
     ja_tem_endereco = all([
@@ -46,7 +67,7 @@ async def sincronizar_cliente_com_asaas_se_precisar(
     if ja_tem_endereco:
         return
 
-    customer = await buscar_customer_asaas(cliente.idclienteasaas)
+    customer = await buscar_customer_asaas(vinculo.asaas_customer_id, api_key)
 
     cliente.endcliente = customer.get("address") or cliente.endcliente
     cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
@@ -63,11 +84,11 @@ async def sincronizar_cliente_com_asaas_se_precisar(
     )
 
 
-async def buscar_customer_asaas(customer_id: str):
+async def buscar_customer_asaas(customer_id: str, api_key: str):
     async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.put(
+        response = await client.get(
             f"{ASAAS_BASE_URL}/customers/{customer_id}",
-            headers=_headers(),
+            headers=_headers(api_key),
         )
 
     data = response.json()
@@ -81,6 +102,8 @@ async def obter_ou_criar_customer_asaas(
     db: Session,
     *,
     cliente_id: int,
+    loja_id: int,
+    api_key: str,
 ):
     cliente = (
         db.query(Cliente)
@@ -107,14 +130,19 @@ async def obter_ou_criar_customer_asaas(
 
     body = {k: v for k, v in body.items() if v}
 
-    if cliente.idclienteasaas:
-        customer_id = cliente.idclienteasaas
+    vinculo = db.query(ClienteAsaas).filter(
+        ClienteAsaas.cliente_id == cliente_id,
+        ClienteAsaas.loja_id == loja_id,
+    ).first()
+
+    if vinculo:
+        customer_id = vinculo.asaas_customer_id
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 f"{ASAAS_BASE_URL}/customers/{customer_id}",
                 json=body,
-                headers=_headers(),
+                headers=_headers(api_key),
             )
 
         data = response.json()
@@ -131,7 +159,7 @@ async def obter_ou_criar_customer_asaas(
         response = await client.post(
             f"{ASAAS_BASE_URL}/customers",
             json=body,
-            headers=_headers(),
+            headers=_headers(api_key),
         )
 
     data = response.json()
@@ -150,10 +178,12 @@ async def obter_ou_criar_customer_asaas(
             detail="Asaas não retornou o customer_id.",
         )
 
-    cliente.idclienteasaas = customer_id
-
+    db.add(ClienteAsaas(
+        cliente_id=cliente_id,
+        loja_id=loja_id,
+        asaas_customer_id=customer_id,
+    ))
     db.commit()
-    db.refresh(cliente)
 
     return customer_id
 
@@ -161,6 +191,8 @@ async def sincronizar_cliente_com_asaas(
     db: Session,
     *,
     cliente_id: int,
+    loja_id: int,
+    api_key: str,
 ):
     cliente = (
         db.query(Cliente)
@@ -171,10 +203,14 @@ async def sincronizar_cliente_com_asaas(
     if not cliente:
         return
 
-    if not cliente.idclienteasaas:
+    vinculo = db.query(ClienteAsaas).filter(
+        ClienteAsaas.cliente_id == cliente_id,
+        ClienteAsaas.loja_id == loja_id,
+    ).first()
+    if not vinculo:
         return
 
-    customer = await buscar_customer_asaas(cliente.idclienteasaas)
+    customer = await buscar_customer_asaas(vinculo.asaas_customer_id, api_key)
 
     cliente.nmcliente = customer.get("name") or cliente.nmcliente
     cliente.emailcliente = customer.get("email") or cliente.emailcliente
@@ -242,6 +278,8 @@ async def criar_checkout_asaas(
     descricao: str,
     external_reference: str,
     carrinho_id: int,
+    api_key: str,
+    splits: list[dict] | None = None,
     nome_cliente: str | None = None,
     email_cliente: str | None = None,
     cpf_cliente: str | None = None,
@@ -277,10 +315,7 @@ async def criar_checkout_asaas(
         cep_limpo and len(cep_limpo) == 8,
     ])
 
-    url_retorno = (
-        f"https://api.clubbar.com.br/asaas/retorno"
-        f"?carrinho_id={carrinho_id}"
-    )
+    url_api_publica = _url_api_publica()
 
     items_asaas = items if items else [
         {
@@ -298,12 +333,15 @@ async def criar_checkout_asaas(
         "minutesToExpire": 10,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso",
-            "cancelUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado",
-            "expiredUrl": f"https://api.clubbar.com.br/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado",
+            "successUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso",
+            "cancelUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado",
+            "expiredUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado",
         },
         "items": items_asaas,
     }
+
+    if splits:
+        body["splits"] = splits
 
     if tem_customer_data_completo:
         body["customerData"] = {
@@ -329,7 +367,7 @@ async def criar_checkout_asaas(
             response = await client.post(
                 f"{ASAAS_BASE_URL}/checkouts",
                 json=body,
-                headers=_headers(),
+                headers=_headers(api_key),
             )
 
         try:
@@ -383,11 +421,11 @@ async def criar_checkout_asaas(
         )
 
 
-async def buscar_qrcode_pix_asaas(payment_id: str):
+async def buscar_qrcode_pix_asaas(payment_id: str, api_key: str):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
             f"{ASAAS_BASE_URL}/payments/{payment_id}/pixQrCode",
-            headers=_headers(),
+            headers=_headers(api_key),
         )
 
     data = response.json()

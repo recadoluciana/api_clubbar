@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS categoria;
 
 DROP TABLE IF EXISTS usuario;
 DROP TABLE IF EXISTS clisenha;
+DROP TABLE IF EXISTS clienteasaas;
+DROP TABLE IF EXISTS lojaasaas;
 DROP TABLE IF EXISTS cliente;
 
 DROP TABLE IF EXISTS lojahorario;

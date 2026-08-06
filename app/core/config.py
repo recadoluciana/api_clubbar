@@ -32,6 +32,22 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
 JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
 
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+ASAAS_CREDENTIAL_ENCRYPTION_KEY = os.getenv("ASAAS_CREDENTIAL_ENCRYPTION_KEY", "").strip()
+ASAAS_CLUBBAR_WALLET_ID = os.getenv("ASAAS_CLUBBAR_WALLET_ID", "").strip()
+
+_railway_public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
+if not PUBLIC_API_BASE_URL and _railway_public_domain:
+    PUBLIC_API_BASE_URL = f"https://{_railway_public_domain}".rstrip("/")
+
+PUBLIC_CLIENT_BASE_URL = (
+    os.getenv("PUBLIC_CLIENT_BASE_URL")
+    or os.getenv("APP_BASE_URL")
+    or ""
+).strip().rstrip("/")
+
+
 BASE_DIR = os.path.dirname(
     os.path.dirname(
         os.path.dirname(os.path.abspath(__file__))

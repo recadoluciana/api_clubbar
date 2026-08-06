@@ -22,6 +22,9 @@ class CheckoutAsaas(Base):
     checkout_url = Column(String(500), nullable=True)
 
     valor = Column(Numeric(10, 2), nullable=True)
+    vrtaxaclubbar = Column(Numeric(10, 2), nullable=False, server_default="0")
+    asaas_wallet_loja = Column(String(100), nullable=True)
+    asaas_wallet_clubbar = Column(String(100), nullable=True)
 
     dtcriacao = Column(
         DateTime,
