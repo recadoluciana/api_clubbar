@@ -30,7 +30,7 @@ class PagVenda(Base):
     provedor = Column(
         String(30),
         nullable=False,
-        server_default="MERCADOPAGO",
+        server_default="ASAAS",
     )
     reference_id = Column(String(80), nullable=True)
     checkout_id = Column(String(120), nullable=True)

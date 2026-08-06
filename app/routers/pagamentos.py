@@ -400,3 +400,12 @@ async def pagamento_pendente(
         "venda_id": venda.venda_id,
         "sitvenda": venda.sitvenda,
     }
+
+
+@router.get("/asaas/status/{checkout_id}")
+def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db)):
+    checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_id == checkout_id).first()
+    if not checkout:
+        raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
+    status_atual = (checkout.status or "PENDENTE").upper()
+    return {"pagamento_id": checkout.checkout_id, "status": "PAGO" if status_atual in {"PAID", "RECEIVED", "CONFIRMED"} else status_atual}

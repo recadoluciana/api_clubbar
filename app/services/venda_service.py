@@ -148,7 +148,7 @@ async def criar_ou_obter_venda_idempotente(
                 vrpagvenda=float(total),
                 sitpagvenda="PENDENTE",
                 reference_id=f"VENDA-{venda.venda_id}",
-                provedor="MERCADOPAGO",
+                provedor="ASAAS",
             )
             db.add(pag)
             db.flush()
@@ -160,7 +160,7 @@ async def criar_ou_obter_venda_idempotente(
                 pag.reference_id = f"VENDA-{venda.venda_id}"
 
             if not getattr(pag, "provedor", None):
-                pag.provedor = "MERCADOPAGO"
+                pag.provedor = "ASAAS"
 
         return {
             "venda_id": int(venda.venda_id),
@@ -196,7 +196,7 @@ async def criar_ou_obter_venda_idempotente(
         vrpagvenda=float(total),
         sitpagvenda="PENDENTE",
         reference_id=reference_id,
-        provedor="MERCADOPAGO",
+        provedor="ASAAS",
     )
 
     db.add(pag)

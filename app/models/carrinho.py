@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, DateTime, Enum, String, Numeric
+from sqlalchemy import Column, BigInteger, DateTime, Enum, String
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -18,8 +18,6 @@ class Carrinho(Base):
     )
 
     # PIX pendente reutilizável
-    idpixmercadopago = Column(String(80), nullable=True)
-    vrpixmercadopago = Column(Numeric(12, 2), nullable=True)
 
     dtcriacao = Column(
         DateTime,

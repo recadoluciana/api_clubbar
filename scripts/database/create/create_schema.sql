@@ -4,6 +4,18 @@
 
 SET NAMES utf8mb4;
 
+CREATE TABLE operador (
+  operador_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  nmoperador VARCHAR(200) NOT NULL,
+  emailoperador VARCHAR(200) NOT NULL,
+  senhahashoperador VARCHAR(255) NOT NULL,
+  perfil VARCHAR(30) NOT NULL DEFAULT 'ADMIN',
+  sitoperador VARCHAR(15) NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_operador_email (emailoperador)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- CLUBBAR / BITBEER - SCHEMA CORRIGIDO
 
@@ -555,7 +567,6 @@ CREATE TABLE usuario (
   emailuser       VARCHAR(200) NOT NULL,
   senhahashuser   VARCHAR(255) NOT NULL,
   dscargo         ENUM(
-    'SUPERADMIN',
     'ADMIN',
     'GERENTE',
     'CAIXA',
@@ -662,8 +673,6 @@ CREATE TABLE carrinho (
   loja_id          BIGINT NOT NULL,
   cliente_id       BIGINT NOT NULL,
   sitcarrinho      ENUM('ABERTO','FECHADO') NOT NULL DEFAULT 'ABERTO',
-  idpixmercadopago VARCHAR(80) NULL,
-  vrpixmercadopago DECIMAL(12,2) NULL,
   dtcriacao        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu         DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -846,7 +855,7 @@ CREATE TABLE pagvenda (
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 ALTER TABLE pagvenda
-  ADD COLUMN provedor VARCHAR(40) NOT NULL DEFAULT 'MERCADOPAGO',
+  ADD COLUMN provedor VARCHAR(40) NOT NULL DEFAULT 'ASAAS',
   ADD COLUMN reference_id VARCHAR(80) NULL,
   ADD COLUMN checkout_id VARCHAR(120) NULL,
   ADD COLUMN pay_url VARCHAR(255) NULL;

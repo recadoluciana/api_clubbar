@@ -26,14 +26,13 @@ from app.routers import eventolotes
 from app.routers import usuarios
 from app.routers import clisenha
 from app.routers import clientes
-from app.routers import mercadopago_webhook
 from app.routers import leadparceiro
 from app.routers import superadmin
-from app.routers import stripe_webhook
 from app.routers import asaas_webhook
 from app.routers import portalparceiro
 from app.routers import painel_gerencial
 from app.routers import lojaasaas
+from app.routers import operadores
 
 
 app = FastAPI(title="clubbar API")
@@ -108,14 +107,13 @@ app.include_router(eventolotes.router)
 app.include_router(usuarios.router)
 app.include_router(clisenha.router)
 app.include_router(clientes.router)
-app.include_router(mercadopago_webhook.router)
 app.include_router(leadparceiro.router)
 app.include_router(superadmin.router)
-app.include_router(stripe_webhook.router)
 app.include_router(asaas_webhook.router)
 app.include_router(portalparceiro.router)
 app.include_router(painel_gerencial.router)
 app.include_router(lojaasaas.router)
+app.include_router(operadores.router)
 
 @app.get("/health")
 def health():

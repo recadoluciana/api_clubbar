@@ -60,3 +60,9 @@ def get_usuario_logado(
         raise HTTPException(status_code=404, detail="Token sem 'sub'")
 
     return payload
+
+
+def get_operador_logado(payload: dict = Depends(get_usuario_logado)) -> dict:
+    if payload.get("role") != "operador":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo de operador Clubbar")
+    return payload

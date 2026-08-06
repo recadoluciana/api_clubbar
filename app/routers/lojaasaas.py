@@ -18,7 +18,7 @@ def _loja_autorizada(db: Session, loja_id: int, usuario: dict) -> Loja:
     if usuario.get("role") != "usuario":
         raise HTTPException(status_code=403, detail="Acesso não autorizado")
     cargo = str(usuario.get("dscargo") or "").upper()
-    if cargo not in {"ADMIN", "SUPERADMIN"}:
+    if cargo != "ADMIN":
         raise HTTPException(status_code=403, detail="Somente administradores configuram contas Asaas")
     try:
         organizacao_id = int(usuario.get("organizacao_id"))

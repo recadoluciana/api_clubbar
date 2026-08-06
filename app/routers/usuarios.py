@@ -12,7 +12,6 @@ router = APIRouter(tags=["Usuários"])
 
 
 CARGOS_VALIDOS = {
-    "SUPERADMIN",
     "ADMIN",
     "GERENTE",
     "CAIXA",

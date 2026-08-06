@@ -18,7 +18,7 @@ from app.schemas.painel_gerencial import PainelGerencialOut
 
 
 router = APIRouter(tags=["Painel gerencial"])
-_CARGOS_ORGANIZACAO = {"ADMIN", "SUPERADMIN"}
+_CARGOS_ORGANIZACAO = {"ADMIN"}
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 

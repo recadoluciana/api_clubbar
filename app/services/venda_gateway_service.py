@@ -160,8 +160,6 @@ async def criar_venda_paga_por_carrinho_gateway(
         payload=pagamento,
     )
 
-    carrinho_db.idpixmercadopago = None
-    carrinho_db.vrpixmercadopago = None
 
     return {
         "ok": True,

@@ -19,7 +19,7 @@ def set_venda_como_paga(
     db: Session,
     *,
     venda_id: int,
-    gateway: str = "MERCADOPAGO",
+    gateway: str = "ASAAS",
     payload: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """
@@ -74,7 +74,7 @@ def set_venda_como_paga(
 
     # atualiza status
     pag.sitpagvenda = "PAGO"
-    pag.provedor = gateway or "MERCADOPAGO"
+    pag.provedor = gateway or "ASAAS"
     pag.dtconftranspagvenda = datetime.now()
     pag.dtultatu = datetime.now()
 
@@ -151,7 +151,7 @@ def set_venda_como_cancelada(
     db: Session,
     *,
     venda_id: int,
-    gateway: str = "MERCADOPAGO",
+    gateway: str = "ASAAS",
     payload: Optional[Dict[str, Any]] = None,
     limpar_carrinho: bool = False,
 ) -> dict:
@@ -196,7 +196,7 @@ def set_venda_como_cancelada(
         return {"ok": True, "already_processed": True, "venda_id": venda_id}
 
     pag.sitpagvenda = "CANCELADO"
-    pag.provedor = gateway or "MERCADOPAGO"
+    pag.provedor = gateway or "ASAAS"
     pag.dtconftranspagvenda = datetime.now()
     pag.dtultatu = datetime.now()
 

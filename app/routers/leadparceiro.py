@@ -12,6 +12,7 @@ from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_operador_logado
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
@@ -204,6 +205,7 @@ def criar_interesse_parceiro(
     response_model=list[LeadParceiroOut],
 )
 def listar_interesses_parceiros(
+    _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
     prioridade_status = case(
@@ -254,6 +256,7 @@ def listar_interesses_parceiros(
 )
 def buscar_interesse_parceiro(
     leadparceiro_id: int,
+    _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
     resultado = _buscar_lead_com_localidade(
@@ -283,6 +286,7 @@ def buscar_interesse_parceiro(
 def atualizar_interesse_parceiro(
     leadparceiro_id: int,
     payload: LeadParceiroUpdate,
+    _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
     lead = (
@@ -397,6 +401,7 @@ def _nome_loja_por_tipo(tipo: str) -> str:
 def converter_lead_em_parceiro(
     leadparceiro_id: int,
     dados: ConverterLeadParceiroIn,
+    _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
     lead = (

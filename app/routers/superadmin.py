@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_operador_logado
 
 from app.models.itvenda import ItVenda
 from app.models.leadparceiro import LeadParceiro
@@ -23,6 +24,7 @@ router = APIRouter(
 
 @router.get("/dashboard")
 def dashboard_superadmin(
+    _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
     hoje_inicio = datetime.combine(

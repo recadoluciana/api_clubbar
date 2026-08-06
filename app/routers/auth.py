@@ -152,7 +152,6 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
         "nmorganizacao": nmorganizacao or "",
 
         "dscargo": user.dscargo,
-        "is_superadmin": user.dscargo == "SUPERADMIN",
     }
 
 @router.get("/debug/hora")
