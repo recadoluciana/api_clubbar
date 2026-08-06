@@ -6,6 +6,7 @@ import shutil
 import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -58,6 +59,14 @@ def hoje_inicio_br() -> datetime:
     return datetime.combine(datetime.now(tz).date(), time.min).replace(tzinfo=None)
 
 
+def filtro_evento_atual_ou_proximo(inicio_dia: datetime):
+    """Inclui eventos que começam hoje/no futuro ou que ainda não terminaram."""
+    return or_(
+        Evento.dtinicioevento >= inicio_dia,
+        Evento.dtfimevento >= inicio_dia,
+    )
+
+
 @router.get("/lojas/{loja_id}/proximos", response_model=list[EventoOutBR])
 def listar_eventos_proximos(
     loja_id: int,
@@ -73,7 +82,7 @@ def listar_eventos_proximos(
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
-        .filter(Evento.dtinicioevento >= hi)
+        .filter(filtro_evento_atual_ou_proximo(hi))
         .order_by(Evento.dtinicioevento.asc())
         .all()
     )
@@ -98,7 +107,7 @@ def listar_eventos_proximos_global(
         )
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
-        .filter(Evento.dtinicioevento >= hi)
+        .filter(filtro_evento_atual_ou_proximo(hi))
     )
 
     if cidade_id:
