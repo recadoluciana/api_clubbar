@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+from app.models.produto import Produto
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
@@ -148,6 +149,14 @@ def atualizar_lote_evento(
         if data.vrprecolote is not None:
             lote.vrprecolote = data.vrprecolote
 
+            produtos_do_lote = (
+                db.query(Produto)
+                .filter(Produto.lote_id == lote_id)
+                .all()
+            )
+            for produto in produtos_do_lote:
+                produto.vrprecoprod = data.vrprecolote
+
         if data.qttotallote is not None:
             lote.qttotallote = data.qttotallote
 
@@ -186,6 +195,7 @@ def atualizar_lote_evento(
         }
 
     except HTTPException:
+        db.rollback()
         raise
 
     except Exception as e:
