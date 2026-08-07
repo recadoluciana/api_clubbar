@@ -13,8 +13,6 @@ from app.schemas.atracao import EventoRapidoAgendaIn
 
 router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
 
-DIAS_SEMANA = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
-
 @router.post("/evento-rapido", status_code=201)
 def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     try:
@@ -29,9 +27,11 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
     if not atracao: raise HTTPException(404,"Atração não encontrada.")
     evento=Evento(
         organizacao_id=org,loja_id=loja.loja_id,
-        nmtituloevento=f"{DIAS_SEMANA[dados.dtinicioatracao.weekday()]} - {loja.nmloja}",
-        dsdescevento=None,dtinicioevento=dados.dtinicioatracao,dtfimevento=None,
-        nmlocalevento=None,dsendlocevento=None,urlbannerevento=None,statusevento="ATIVO",
+        nmtituloevento=f"{loja.nmloja} - {atracao.nmatracao}"[:120],
+        dsdescevento=atracao.dsatracao,
+        dtinicioevento=dados.dtinicioatracao,dtfimevento=None,
+        nmlocalevento=None,dsendlocevento=None,
+        urlbannerevento=atracao.urlbanneratracao,statusevento="ATIVO",
     )
     try:
         db.add(evento); db.flush()

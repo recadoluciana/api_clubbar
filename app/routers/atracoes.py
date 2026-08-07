@@ -1,5 +1,6 @@
 import os, shutil, uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from app.core.config import UPLOAD_ATRACOES
 from app.core.security import get_usuario_logado
@@ -7,6 +8,7 @@ from app.database import get_db
 from app.models.atracao import Atracao
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
+from app.models.eventolote import EventoLote
 from app.schemas.atracao import EventoAtracaoIn, EventoAtracaoUpdate
 
 router = APIRouter(tags=["Atrações"])
@@ -85,8 +87,27 @@ def editar_programacao(programacao_id:int,dados:EventoAtracaoUpdate,payload=Depe
     for k,v in vals.items(): setattr(p,k,v)
     db.commit(); db.refresh(p); return _prog(p)
 
-@router.delete("/eventos/atracoes/{programacao_id}", status_code=204)
+@router.delete("/eventos/atracoes/{programacao_id}")
 def remover(programacao_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
-    p=db.query(EventoAtracao).join(Evento).filter(EventoAtracao.eventoatracao_id==programacao_id,Evento.organizacao_id==_org(payload)).first()
+    org = _org(payload)
+    p=db.query(EventoAtracao).join(Evento).filter(EventoAtracao.eventoatracao_id==programacao_id,Evento.organizacao_id==org).first()
     if not p: raise HTTPException(404,"Programação não encontrada.")
-    db.delete(p); db.commit()
+    evento = db.query(Evento).filter(Evento.evento_id == p.evento_id, Evento.organizacao_id == org).first()
+    total_atracoes = db.query(EventoAtracao).filter(EventoAtracao.evento_id == p.evento_id).count()
+    try:
+        if total_atracoes <= 1:
+            # Os lotes restringem a exclusão do evento e precisam ser
+            # removidos explicitamente antes dele.
+            for lote in db.query(EventoLote).filter(EventoLote.evento_id == p.evento_id).all():
+                db.delete(lote)
+            db.flush()
+            db.delete(evento)
+            db.commit()
+            return {"evento_excluido": True, "mensagem": "A última atração, os lotes e o evento foram excluídos."}
+
+        db.delete(p)
+        db.commit()
+        return {"evento_excluido": False, "mensagem": "Atração removida da agenda."}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Não foi possível excluir o evento porque existem vendas ou outros registros vinculados aos lotes.")
