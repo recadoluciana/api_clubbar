@@ -15,6 +15,8 @@ from app.models.evento import Evento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.eventolote import EventoLote
+from app.models.eventoatracao import EventoAtracao
+from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
@@ -182,6 +184,13 @@ def get_evento_por_id(
         .order_by(EventoLote.lote_id.asc())
         .all()
     )
+    atracoes = (
+        db.query(EventoAtracao, Atracao)
+        .join(Atracao, Atracao.atracao_id == EventoAtracao.atracao_id)
+        .filter(EventoAtracao.evento_id == evento_id)
+        .order_by(EventoAtracao.dtinicioatracao.asc())
+        .all()
+    )
 
     base_url = str(request.base_url).rstrip("/")
 
@@ -205,6 +214,18 @@ def get_evento_por_id(
         "sgestado": sgestado,
         "dsbairroloja": dsbairroloja,
         "endloja": endloja,
+        "atracoes": [
+            {
+                "atracao_id": atracao.atracao_id,
+                "nmatracao": atracao.nmatracao,
+                "dsestilomusical": atracao.dsestilomusical,
+                "dsatracao": atracao.dsatracao,
+                "urlbanneratracao": atracao.urlbanneratracao,
+                "dtinicioatracao": programacao.dtinicioatracao,
+                "dtfimatracao": programacao.dtfimatracao,
+            }
+            for programacao, atracao in atracoes
+        ],
         "lotes": [
             {
                 "lote_id": lista_lotes.lote_id,

@@ -7,6 +7,7 @@ from datetime import datetime, date
 from sqlalchemy import or_, case
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
@@ -387,9 +388,12 @@ def alterar_participante_itvenda(
 def buscar_item_por_token(
     token: str,
     usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     token = token.strip()
+    if str(payload.get("sub", "")) != str(usuario_id):
+        raise HTTPException(status_code=403, detail="Usuário autenticado inválido.")
 
     if not token:
         raise HTTPException(
@@ -423,7 +427,7 @@ def buscar_item_por_token(
             Loja,
             Cliente,
         )
-        .join(
+        .outerjoin(
             Produto,
             Produto.produto_id == ItVenda.produto_id,
         )
@@ -446,7 +450,7 @@ def buscar_item_por_token(
     if not resultado:
         raise HTTPException(
             status_code=404,
-            detail="Produto não encontrado ou QR Code inválido.",
+            detail="Item não encontrado ou QR Code inválido.",
         )
 
     item, produto, venda, loja, cliente = resultado
@@ -472,10 +476,19 @@ def buscar_item_por_token(
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
+        "idtipoproduto": item.idtipoproduto,
         "loja_id": loja.loja_id,
 
-        "nmproduto": produto.nmproduto or "Produto",
-        "urlfotoproduto": produto.urlfotoproduto or "",
+        "nmproduto": (
+            produto.nmproduto
+            if produto
+            else (item.dsobsitvenda or "Ingresso")
+        ),
+        "urlfotoproduto": (
+            produto.urlfotoproduto
+            if produto
+            else ""
+        ),
 
         "nmloja": loja.nmloja or "",
         "nmcliente": cliente.nmcliente or "",
@@ -498,9 +511,12 @@ def buscar_item_por_token(
 def entregar_produto_por_token(
     token: str,
     usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     token = token.strip()
+    if str(payload.get("sub", "")) != str(usuario_id):
+        raise HTTPException(status_code=403, detail="Usuário autenticado inválido.")
 
     if not token:
         raise HTTPException(
@@ -534,7 +550,7 @@ def entregar_produto_por_token(
             Loja,
             Cliente,
         )
-        .join(
+        .outerjoin(
             Produto,
             Produto.produto_id == ItVenda.produto_id,
         )
@@ -557,7 +573,7 @@ def entregar_produto_por_token(
     if not resultado:
         raise HTTPException(
             status_code=404,
-            detail="Produto não encontrado ou QR Code inválido.",
+            detail="Item não encontrado ou QR Code inválido.",
         )
 
     item, produto, venda, loja, cliente = resultado
@@ -608,10 +624,19 @@ def entregar_produto_por_token(
 
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
+        "idtipoproduto": item.idtipoproduto,
         "loja_id": loja.loja_id,
 
-        "nmproduto": produto.nmproduto or "Produto",
-        "urlfotoproduto": produto.urlfotoproduto or "",
+        "nmproduto": (
+            produto.nmproduto
+            if produto
+            else (item.dsobsitvenda or "Ingresso")
+        ),
+        "urlfotoproduto": (
+            produto.urlfotoproduto
+            if produto
+            else ""
+        ),
         "nmloja": loja.nmloja or "",
         "nmcliente": cliente.nmcliente or "",
         "dsobsitvenda": item.dsobsitvenda or "",
