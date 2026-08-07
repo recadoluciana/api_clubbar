@@ -2,6 +2,7 @@ from sqlalchemy import (
     Column, BigInteger, String, Text, DateTime, Enum
 )
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -42,3 +43,4 @@ class Evento(Base):
         server_default=func.now(),
         onupdate=func.now()
     )
+    atracoes = relationship("EventoAtracao", back_populates="evento", cascade="all, delete-orphan")
