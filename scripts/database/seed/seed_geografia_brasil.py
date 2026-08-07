@@ -5,9 +5,14 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from sqlalchemy import text
+
+
+load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
 
 from app.database import SessionLocal
 
