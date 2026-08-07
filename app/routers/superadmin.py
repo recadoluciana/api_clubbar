@@ -52,14 +52,13 @@ def dashboard_superadmin(
 
     # =========================================================
     # PARCEIROS ATIVOS
-    # Não contabiliza a organização principal do Clubbar (ID 1)
+    # Toda organização ativa é contabilizada como parceiro
     # =========================================================
 
     parceiros_ativos = (
         db.query(func.count(Organizacao.organizacao_id))
         .filter(
             Organizacao.sitorganizacao == "ATIVA",
-            Organizacao.organizacao_id != 1,
         )
         .scalar()
         or 0
