@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import traceback
 
 from app.database import get_db
@@ -58,8 +59,8 @@ def listar_todos_lotes_evento(
             "evento_id": lote.evento_id,
             "nmlote": lote.nmlote,
             "vrprecolote": float(lote.vrprecolote or 0),
-            "qttotallote": int(lote.qttotallote or 0),
-            "qtvendidalote": int(lote.qtvendidalote or 0),
+            "qttotallote": lote.qttotallote,
+            "qtvendidalote": lote.qtvendidalote,
             "dtiniciovenda": lote.dtiniciovenda,
             "dtfimvenda": lote.dtfimvenda,
             "statuslote": lote.statuslote,
@@ -84,6 +85,14 @@ def criar_lote_evento(
         loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
+        if not loja.qtcpdloja or loja.qtcpdloja <= 0:
+            raise HTTPException(status_code=422, detail="Informe a capacidade total da loja antes de criar lotes")
+        total_existente = db.query(func.coalesce(func.sum(EventoLote.qttotallote), 0)).filter(EventoLote.evento_id == evento_id).scalar() or 0
+        quantidade_total = data.qttotallote
+        if quantidade_total is None:
+            quantidade_total = max(int(loja.qtcpdloja) - int(total_existente), 0)
+        if quantidade_total <= 0 or int(total_existente) + quantidade_total > int(loja.qtcpdloja):
+            raise HTTPException(status_code=422, detail="A soma dos lotes não pode ultrapassar a capacidade total da loja")
 
         novo = EventoLote(
             organizacao_id=data.organizacao_id,
@@ -91,8 +100,8 @@ def criar_lote_evento(
             evento_id=evento_id,
             nmlote=data.nmlote,
             vrprecolote=data.vrprecolote,
-            qttotallote=data.qttotallote,
-            qtvendidalote=data.qtvendidalote if data.qtvendidalote is not None else 0,
+            qttotallote=quantidade_total,
+            qtvendidalote=data.qtvendidalote,
             dtiniciovenda=data.dtiniciovenda,
             dtfimvenda=data.dtfimvenda,
             statuslote=data.statuslote if data.statuslote else "ATIVO",
@@ -158,6 +167,10 @@ def atualizar_lote_evento(
                 produto.vrprecoprod = data.vrprecolote
 
         if data.qttotallote is not None:
+            loja_capacidade = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
+            total_outros = db.query(func.coalesce(func.sum(EventoLote.qttotallote), 0)).filter(EventoLote.evento_id == lote.evento_id, EventoLote.lote_id != lote_id).scalar() or 0
+            if not loja_capacidade or not loja_capacidade.qtcpdloja or int(total_outros) + data.qttotallote > int(loja_capacidade.qtcpdloja):
+                raise HTTPException(status_code=422, detail="A soma dos lotes não pode ultrapassar a capacidade total da loja")
             lote.qttotallote = data.qttotallote
 
         if data.qtvendidalote is not None:
@@ -184,8 +197,8 @@ def atualizar_lote_evento(
                 "evento_id": lote.evento_id,
                 "nmlote": lote.nmlote,
                 "vrprecolote": float(lote.vrprecolote or 0),
-                "qttotallote": int(lote.qttotallote or 0),
-                "qtvendidalote": int(lote.qtvendidalote or 0),
+                "qttotallote": lote.qttotallote,
+                "qtvendidalote": lote.qtvendidalote,
                 "dtiniciovenda": lote.dtiniciovenda,
                 "dtfimvenda": lote.dtfimvenda,
                 "statuslote": lote.statuslote,
@@ -253,13 +266,15 @@ def quantidade_vendida_lote(
         .count()
     )
 
-    qtd_total = int(lote.qttotallote or 0)
-    qtd_disponivel = max(qtd_total - qtd_vendida, 0)
+    sem_limite = lote.qttotallote is None
+    qtd_total = None if sem_limite else int(lote.qttotallote)
+    qtd_disponivel = None if sem_limite else max(qtd_total - qtd_vendida, 0)
 
     return {
         "lote_id": lote_id,
         "qt_total": qtd_total,
         "qt_vendida": qtd_vendida,
         "qt_disponivel": qtd_disponivel,
-        "esgotado": qtd_disponivel <= 0,
+        "sem_limite": sem_limite,
+        "esgotado": False if sem_limite else qtd_disponivel <= 0,
     }

@@ -35,6 +35,8 @@ from app.routers import lojaasaas
 from app.routers import operadores
 from app.routers import atracoes
 from app.routers import agenda
+from app.routers import lojaperfil
+from app.routers import lojaperfil
 
 
 app = FastAPI(title="clubbar API")
@@ -118,6 +120,8 @@ app.include_router(lojaasaas.router)
 app.include_router(operadores.router)
 app.include_router(atracoes.router)
 app.include_router(agenda.router)
+app.include_router(lojaperfil.router)
+app.include_router(lojaperfil.router)
 
 @app.get("/health")
 def health():

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, UniqueConstraint, CHAR,Numeric
+from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, UniqueConstraint, CHAR,Numeric,Integer
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -26,6 +26,7 @@ class Loja(Base):
     dshorarioloja = Column(String(255))
     aberto24x7 = Column(CHAR(1), nullable=False, default="N")
     nrtelloja = Column(String(25))
+    qtcpdloja = Column(Integer, nullable=True)
 
     dtcriacao = Column(DateTime, server_default=func.now(), nullable=False)
 

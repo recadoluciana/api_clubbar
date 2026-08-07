@@ -18,6 +18,7 @@ class LojaCreate(BaseModel):
     idvalidadeprod: Literal["S", "N"] = "S"
     urllogoloja: Optional[str] = None  # 👈 novo
     urlfachadaloja: Optional[str] = None
+    qtcpdloja: Optional[int] = Field(default=None, ge=1)
 
 
 class LojaUpdate(BaseModel):
@@ -36,3 +37,4 @@ class LojaUpdate(BaseModel):
     idvalidadeprod: Optional[Literal["S", "N"]] = None
     urllogoloja: Optional[str] = None  # 👈 novo
     urlfachadaloja: Optional[str] = None
+    qtcpdloja: Optional[int] = Field(default=None, ge=1)

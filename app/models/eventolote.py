@@ -32,8 +32,8 @@ class EventoLote(Base):
 
     vrprecolote = Column(DECIMAL(10, 2), nullable=False, server_default="0.00")
 
-    qttotallote = Column(Integer, nullable=False, server_default="0")
-    qtvendidalote = Column(Integer, nullable=False, server_default="0")
+    qttotallote = Column(Integer, nullable=True)
+    qtvendidalote = Column(Integer, nullable=True)
 
     dtiniciovenda = Column(DateTime, nullable=True)
     dtfimvenda = Column(DateTime, nullable=True)

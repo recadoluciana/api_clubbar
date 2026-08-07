@@ -11,8 +11,8 @@ class EventoLoteOut(BaseModel):
     nmlote: str
     vrprecolote: float
 
-    qttotallote: int
-    qtvendidalote: int
+    qttotallote: Optional[int] = None
+    qtvendidalote: Optional[int] = None
 
     dtiniciovenda: Optional[datetime] = None
     dtfimvenda: Optional[datetime] = None
@@ -31,8 +31,8 @@ class EventoLoteCreate(BaseModel):
     loja_id: int
     nmlote: str = Field(..., min_length=1, max_length=80)
     vrprecolote: float
-    qttotallote: int
-    qtvendidalote: Optional[int] = 0
+    qttotallote: Optional[int] = None
+    qtvendidalote: Optional[int] = None
     dtiniciovenda: Optional[datetime] = None
     dtfimvenda: Optional[datetime] = None
     statuslote: Optional[Literal["ATIVO", "ESGOTADO", "ENCERRADO", "INATIVO"]] = "ATIVO"

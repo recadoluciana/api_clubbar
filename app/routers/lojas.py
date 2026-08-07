@@ -435,9 +435,12 @@ def criar_loja(
     vrtaxaing: float | None = Form(0),
     urllogoloja: UploadFile | None = File(None),
     urlfachadaloja: UploadFile | None = File(None),
+    qtcpdloja: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
     try:
+        if qtcpdloja is not None and qtcpdloja <= 0:
+            raise HTTPException(status_code=422, detail="A capacidade da loja deve ser maior que zero")
         validar_localidade(db, estado_id, cidade_id)
         aberto24x7 = validar_aberto24x7(aberto24x7)
         nrdiavalidade = nrdiavalidade if nrdiavalidade is not None else 90
@@ -480,6 +483,7 @@ def criar_loja(
             vrtaxaing=vrtaxaing,
             urllogoloja=urllogoloja_aux,
             urlfachadaloja=urlfachadaloja_aux,
+            qtcpdloja=qtcpdloja,
             sitloja="ATIVA",
         )
 
@@ -500,6 +504,7 @@ def criar_loja(
             "aberto24x7": nova.aberto24x7,
             "idvalidadeprod": nova.idvalidadeprod,
             "dsestiloloja": nova.dsestiloloja,
+            "qtcpdloja": nova.qtcpdloja,
         }
 
     except HTTPException:
@@ -549,6 +554,7 @@ def listar_lojas_por_organizacao_todas(
             "urlfachadaloja": loja.urlfachadaloja,
             "vrtaxaprod": float(loja.vrtaxaprod or 0),
             "vrtaxaing": float(loja.vrtaxaing or 0),
+            "qtcpdloja": loja.qtcpdloja,
 
         }
         for loja in lojas
@@ -577,6 +583,7 @@ def atualizar_loja(
     vrtaxaing: float | None = Form(None),
     urllogoloja: UploadFile | None = File(None),
     urlfachadaloja: UploadFile | None = File(None),
+    qtcpdloja: int | None = Form(None),
     db: Session = Depends(get_db),
 ):
     try:
@@ -663,6 +670,10 @@ def atualizar_loja(
 
         if vrtaxaing is not None:
             loja.vrtaxaing = vrtaxaing
+        if qtcpdloja is not None:
+            if qtcpdloja <= 0:
+                raise HTTPException(status_code=422, detail="A capacidade da loja deve ser maior que zero")
+            loja.qtcpdloja = qtcpdloja
 
         if urllogoloja is not None and urllogoloja.filename:
             nova_url_logo = salvar_logo_loja(urllogoloja)
@@ -699,6 +710,7 @@ def atualizar_loja(
                 "sitloja": loja.sitloja,
                 "urllogoloja": loja.urllogoloja,
                 "urlfachadaloja": loja.urlfachadaloja,
+                "qtcpdloja": loja.qtcpdloja,
             }
         }
 

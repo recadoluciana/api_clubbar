@@ -6,8 +6,46 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
+from app.models.atracao import Atracao
+from app.models.eventolote import EventoLote
+from app.models.loja import Loja
+from app.schemas.atracao import EventoRapidoAgendaIn
 
 router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
+
+DIAS_SEMANA = ["Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"]
+
+@router.post("/evento-rapido", status_code=201)
+def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    try:
+        org=int(payload["organizacao_id"])
+    except (KeyError,TypeError,ValueError):
+        raise HTTPException(403,"Organização não identificada no login.")
+    loja=db.query(Loja).filter(Loja.loja_id==dados.loja_id,Loja.organizacao_id==org).first()
+    if not loja: raise HTTPException(404,"Loja não encontrada.")
+    if not loja.qtcpdloja or loja.qtcpdloja <= 0:
+        raise HTTPException(422,"Informe a capacidade total da loja antes de criar eventos.")
+    atracao=db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first()
+    if not atracao: raise HTTPException(404,"Atração não encontrada.")
+    evento=Evento(
+        organizacao_id=org,loja_id=loja.loja_id,
+        nmtituloevento=f"{DIAS_SEMANA[dados.dtinicioatracao.weekday()]} - {loja.nmloja}",
+        dsdescevento=None,dtinicioevento=dados.dtinicioatracao,dtfimevento=None,
+        nmlocalevento=None,dsendlocevento=None,urlbannerevento=None,statusevento="ATIVO",
+    )
+    try:
+        db.add(evento); db.flush()
+        programacao=EventoAtracao(evento_id=evento.evento_id,atracao_id=atracao.atracao_id,dtinicioatracao=dados.dtinicioatracao,dtfimatracao=dados.dtfimatracao)
+        lote=EventoLote(
+            organizacao_id=org,loja_id=loja.loja_id,evento_id=evento.evento_id,
+            nmlote="Lote único",vrprecolote=dados.preco_lote,
+            qttotallote=loja.qtcpdloja,qtvendidalote=0,
+            dtiniciovenda=datetime.now(),dtfimvenda=dados.dtinicioatracao,statuslote="ATIVO",
+        )
+        db.add_all([programacao,lote]); db.commit(); db.refresh(evento); db.refresh(lote)
+        return {"evento_id":evento.evento_id,"lote_id":lote.lote_id,"mensagem":"Evento, atração e lote criados com sucesso."}
+    except Exception:
+        db.rollback(); raise
 
 @router.get("")
 def listar(loja_id:int,ano:int=Query(ge=2000,le=2200),mes:int=Query(ge=1,le=12),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):

@@ -381,6 +381,7 @@ CREATE TABLE loja (
   aberto24x7     CHAR(1) NOT NULL DEFAULT 'N',
   dshorarioloja  VARCHAR(255) NULL,
   nrtelloja      VARCHAR(25) NULL,
+  qtcpdloja      INT NULL,
   nrdiavalidade  BIGINT NOT NULL DEFAULT 90,
   idvalidadeprod CHAR(1) NOT NULL DEFAULT 'S',
   estado_id      BIGINT NOT NULL,
@@ -416,6 +417,25 @@ ALTER TABLE loja
 
 ALTER TABLE loja
   ADD CONSTRAINT chk_idvalidadeprod CHECK (idvalidadeprod IN ('S', 'N'));
+ALTER TABLE loja
+  ADD CONSTRAINT chk_loja_capacidade CHECK (qtcpdloja IS NULL OR qtcpdloja > 0);
+
+CREATE TABLE lojaconteudo (
+  lojaconteudo_id BIGINT AUTO_INCREMENT PRIMARY KEY, loja_id BIGINT NOT NULL,
+  dsdetalhadaloja TEXT NULL, fotos JSON NULL, publicacoes JSON NULL, videos JSON NULL, configuracoes JSON NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_lojaconteudo_loja UNIQUE (loja_id),
+  CONSTRAINT fk_lojaconteudo_loja FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE lojapoliticaingresso (
+  lojapoliticaingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY, loja_id BIGINT NOT NULL,
+  dspoliticaingresso TEXT NULL, urlmapaingressos VARCHAR(255) NULL, dsmapaingressos TEXT NULL,
+  dsorientacoesacesso TEXT NULL, configuracoes JSON NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_lojapoliticaingresso_loja UNIQUE (loja_id),
+  CONSTRAINT fk_lojapoliticaingresso_loja FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 -- MySQL 8+
 -- Uma loja possui no máximo um horário para cada dia da semana.
@@ -961,8 +981,8 @@ CREATE TABLE eventolote (
   evento_id        BIGINT NOT NULL,
   nmlote           VARCHAR(80) NOT NULL,
   vrprecolote      DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  qttotallote      INT NOT NULL DEFAULT 0,
-  qtvendidalote    INT NOT NULL DEFAULT 0,
+  qttotallote      INT NULL,
+  qtvendidalote    INT NULL,
   dtiniciovenda    DATETIME NULL,
   dtfimvenda       DATETIME NULL,
   statuslote       ENUM('ATIVO','ESGOTADO','ENCERRADO','INATIVO') NOT NULL DEFAULT 'ATIVO',
@@ -987,9 +1007,13 @@ CREATE TABLE eventolote (
 
   CONSTRAINT chk_lote_quantidades
     CHECK (
-      qttotallote >= 0
-      AND qtvendidalote >= 0
-      AND qtvendidalote <= qttotallote
+      (qttotallote IS NULL OR qttotallote >= 0)
+      AND (qtvendidalote IS NULL OR qtvendidalote >= 0)
+      AND (
+        qttotallote IS NULL
+        OR qtvendidalote IS NULL
+        OR qtvendidalote <= qttotallote
+      )
     ),
 
   CONSTRAINT chk_lote_preco

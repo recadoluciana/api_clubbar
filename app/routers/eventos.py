@@ -210,8 +210,8 @@ def get_evento_por_id(
                 "lote_id": lista_lotes.lote_id,
                 "nmlote": getattr(lista_lotes, "nmlote", None),
                 "vrprecolote": float(getattr(lista_lotes, "vrprecolote", 0) or 0),
-                "qttotallote": int(getattr(lista_lotes, "qttotallote", 0) or 0),
-                "qtvendidalote": int(getattr(lista_lotes, "qtvendidalote", 0) or 0),
+                "qttotallote": getattr(lista_lotes, "qttotallote", None),
+                "qtvendidalote": getattr(lista_lotes, "qtvendidalote", None),
                 "statuslote": getattr(lista_lotes, "statuslote", None),
             }
             for lista_lotes in lotes
