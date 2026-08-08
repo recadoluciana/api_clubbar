@@ -223,6 +223,13 @@ async def asaas_retorno(
     )
 
     pago = carrinho and (carrinho.sitcarrinho or "").upper() != "ABERTO"
+    checkout_registrado = (
+        db.query(CheckoutAsaas)
+        .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+        .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+        .first()
+    )
+    checkout_id_retorno = checkout_registrado.checkout_id if checkout_registrado else ""
 
     if acao == "cancelado":
         titulo = "Pagamento cancelado"
@@ -316,7 +323,7 @@ async def asaas_retorno(
         <h1>{titulo}</h1>
         <p>{mensagem}</p>
 
-        <a href="{PUBLIC_CLIENT_BASE_URL or '/'}?pagamento={retorno}&gateway=asaas">
+        <a href="{PUBLIC_CLIENT_BASE_URL or '/'}?pagamento={retorno}&gateway=asaas&checkout_id={checkout_id_retorno}">
           Voltar para o Clubbar
         </a>
 

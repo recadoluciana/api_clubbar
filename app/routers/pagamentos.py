@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import traceback
 import uuid
+from decimal import Decimal
 from typing import Any, Dict
 from contextlib import nullcontext
 
@@ -29,7 +30,9 @@ from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
     criar_referencia_checkout_asaas,
+    buscar_pagamento_confirmado_por_referencia,
 )
+from app.services.repasse_service import criar_repasse_da_venda
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -364,9 +367,43 @@ async def pagamento_pendente(
 
 
 @router.get("/asaas/status/{checkout_id}")
-def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db)):
+async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db)):
     checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_id == checkout_id).first()
     if not checkout:
         raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
     status_atual = (checkout.status or "PENDENTE").upper()
+    if status_atual not in {"PAID", "RECEIVED", "CONFIRMED"}:
+        if not ASAAS_API_KEY:
+            raise HTTPException(status_code=503, detail="Conta global Asaas nao configurada")
+        pagamento = await buscar_pagamento_confirmado_por_referencia(
+            str(checkout.external_reference or ""),
+            ASAAS_API_KEY,
+        )
+        if pagamento:
+            valor_pago = Decimal(str(pagamento.get("value") or 0)).quantize(Decimal("0.01"))
+            valor_checkout = Decimal(str(checkout.valor or 0)).quantize(Decimal("0.01"))
+            if valor_pago != valor_checkout:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Valor confirmado pelo Asaas diverge do checkout",
+                )
+            from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
+
+            resultado = await criar_venda_paga_por_carrinho_gateway(
+                db,
+                carrinho_id=int(checkout.carrinho_id),
+                gateway="ASAAS",
+                pagamento=pagamento,
+                metodo_pagamento=None,
+            )
+            checkout.status = str(pagamento.get("status") or "CONFIRMED").upper()
+            checkout.payment_id = str(pagamento.get("id") or "") or checkout.payment_id
+            if resultado.get("venda_id"):
+                criar_repasse_da_venda(
+                    db,
+                    venda_id=int(resultado["venda_id"]),
+                    checkout=checkout,
+                )
+            db.commit()
+            status_atual = checkout.status
     return {"pagamento_id": checkout.checkout_id, "status": "PAGO" if status_atual in {"PAID", "RECEIVED", "CONFIRMED"} else status_atual}
