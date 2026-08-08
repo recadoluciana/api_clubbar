@@ -18,9 +18,7 @@ from app.models.produto import Produto
 from app.models.eventolote import EventoLote
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
-from app.models.lojaasaas import LojaAsaas
-from app.core.config import APP_ENV, ASAAS_CLUBBAR_WALLET_ID
-from app.core.credential_crypto import descriptografar_credencial
+from app.core.config import ASAAS_API_KEY
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -205,25 +203,6 @@ def _montar_itens_asaas(
     return itens_asaas, valor_total_com_taxa, vr_taxa_clubbar
 
 
-def _montar_split_clubbar(
-    valor_taxa_clubbar: float,
-    wallet_loja: str,
-    external_reference: str,
-) -> list[dict]:
-    if valor_taxa_clubbar <= 0:
-        return []
-    if not ASAAS_CLUBBAR_WALLET_ID:
-        raise HTTPException(status_code=503, detail="ASAAS_CLUBBAR_WALLET_ID não configurada")
-    if wallet_loja == ASAAS_CLUBBAR_WALLET_ID:
-        raise HTTPException(status_code=422, detail="A carteira da loja não pode ser a carteira global Clubbar")
-    return [{
-        "walletId": ASAAS_CLUBBAR_WALLET_ID,
-        "fixedValue": round(valor_taxa_clubbar, 2),
-        "externalReference": f"TAXA-{external_reference}",
-        "description": "Taxa de serviço Clubbar",
-    }]
-
-
 @router.post("/pagar-asaas")
 async def pagar_asaas(
     payload: PagarNovoIn,
@@ -265,25 +244,14 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-        integracao_asaas = db.query(LojaAsaas).filter(
-            LojaAsaas.loja_id == payload.loja_id,
-            LojaAsaas.organizacao_id == payload.organizacao_id,
-            LojaAsaas.ambiente == APP_ENV,
-            LojaAsaas.statusintegracao == "ATIVA",
-        ).first()
-        if not integracao_asaas:
-            raise HTTPException(status_code=422, detail="Conta Asaas da loja não configurada ou inativa")
-
-        api_key_loja = descriptografar_credencial(
-            integracao_asaas.asaas_api_key_criptografada
-        )
+        if not ASAAS_API_KEY:
+            raise HTTPException(status_code=503, detail="Conta global Asaas não configurada")
 
         try:
             await obter_ou_criar_customer_asaas(
                 db,
                 cliente_id=payload.cliente_id,
-                loja_id=payload.loja_id,
-                api_key=api_key_loja,
+                api_key=ASAAS_API_KEY,
             )
         except Exception as e:
             print("[ASAAS] Erro ao sincronizar customer:", repr(e))
@@ -293,19 +261,12 @@ async def pagar_asaas(
             itens_recalculados
         )
 
-        splits = _montar_split_clubbar(
-            valor_taxa_clubbar,
-            integracao_asaas.asaas_wallet_id,
-            external_reference,
-        )
-
         pagamento = await criar_checkout_asaas(
             valor=valor_total_com_taxa,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,
-            api_key=api_key_loja,
-            splits=splits,
+            api_key=ASAAS_API_KEY,
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
@@ -341,8 +302,8 @@ async def pagar_asaas(
             status=status_checkout,
             valor=valor_total_com_taxa,
             vrtaxaclubbar=valor_taxa_clubbar,
-            asaas_wallet_loja=integracao_asaas.asaas_wallet_id,
-            asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID or None,
+            asaas_wallet_loja=None,
+            asaas_wallet_clubbar=None,
         )
 
         db.add(novo)

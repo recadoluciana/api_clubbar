@@ -1,5 +1,7 @@
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS repassefinanceiro;
+DROP TABLE IF EXISTS lojacontabancaria;
 DROP TABLE IF EXISTS checkout_asaas;
 DROP TABLE IF EXISTS eventolote;
 DROP TABLE IF EXISTS evento;

@@ -1,8 +1,6 @@
 import unittest
 
-from unittest.mock import patch
-
-from app.routers.pagamentos import _montar_itens_asaas, _montar_split_clubbar
+from app.routers.pagamentos import _montar_itens_asaas
 
 
 class AsaasSplitTest(unittest.TestCase):
@@ -32,13 +30,14 @@ class AsaasSplitTest(unittest.TestCase):
         self.assertEqual("Taxa de serviço Clubbar", itens[-1]["name"])
         self.assertEqual(6.0, itens[-1]["value"])
 
-    def test_split_transfere_somente_taxa_para_wallet_global(self):
-        with patch("app.routers.pagamentos.ASAAS_CLUBBAR_WALLET_ID", "wallet_clubbar"):
-            splits = _montar_split_clubbar(6.0, "wallet_loja", "checkout-1")
-
-        self.assertEqual([{
-            "walletId": "wallet_clubbar",
-            "fixedValue": 6.0,
-            "externalReference": "TAXA-checkout-1",
-            "description": "Taxa de serviço Clubbar",
-        }], splits)
+    def test_checkout_central_mantem_taxa_no_total_sem_split(self):
+        _, total, taxa = _montar_itens_asaas([{
+            "produto_id": 1,
+            "nmproduto": "Ingresso",
+            "idtipoproduto": "I",
+            "qtitcarrinho": 1,
+            "vrunitario": 50,
+            "vrtaxaitvenda": 5,
+        }])
+        self.assertEqual(55.0, total)
+        self.assertEqual(5.0, taxa)

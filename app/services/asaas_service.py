@@ -102,7 +102,6 @@ async def obter_ou_criar_customer_asaas(
     db: Session,
     *,
     cliente_id: int,
-    loja_id: int,
     api_key: str,
 ):
     cliente = (
@@ -130,13 +129,8 @@ async def obter_ou_criar_customer_asaas(
 
     body = {k: v for k, v in body.items() if v}
 
-    vinculo = db.query(ClienteAsaas).filter(
-        ClienteAsaas.cliente_id == cliente_id,
-        ClienteAsaas.loja_id == loja_id,
-    ).first()
-
-    if vinculo:
-        customer_id = vinculo.asaas_customer_id
+    if cliente.idclienteasaas:
+        customer_id = cliente.idclienteasaas
 
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
@@ -178,11 +172,7 @@ async def obter_ou_criar_customer_asaas(
             detail="Asaas não retornou o customer_id.",
         )
 
-    db.add(ClienteAsaas(
-        cliente_id=cliente_id,
-        loja_id=loja_id,
-        asaas_customer_id=customer_id,
-    ))
+    cliente.idclienteasaas = customer_id
     db.commit()
 
     return customer_id

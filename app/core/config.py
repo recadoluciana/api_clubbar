@@ -33,6 +33,8 @@ JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "").strip()
+ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "").strip()
 ASAAS_CREDENTIAL_ENCRYPTION_KEY = os.getenv("ASAAS_CREDENTIAL_ENCRYPTION_KEY", "").strip()
 ASAAS_CLUBBAR_WALLET_ID = os.getenv("ASAAS_CLUBBAR_WALLET_ID", "").strip()
 

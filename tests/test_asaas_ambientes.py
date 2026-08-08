@@ -93,15 +93,16 @@ class AsaasAmbientesTest(unittest.TestCase):
         self.assertEqual("CLUBBAR-development-CARRINHO-42-abcdef123456", referencia)
 
     def test_webhook_exige_token_configurado_e_valido(self):
-        banco = BancoSemCheckout()
-        with self.assertRaises(HTTPException) as erro:
-            validar_token_webhook_asaas(banco, "token-incorreto")
+        with (
+            patch("app.routers.asaas_webhook.ASAAS_WEBHOOK_TOKEN", "token-correto"),
+            self.assertRaises(HTTPException) as erro,
+        ):
+            validar_token_webhook_asaas("token-incorreto")
 
         self.assertEqual(401, erro.exception.status_code)
 
     def test_webhook_nao_converte_referencia_desconhecida_em_carrinho(self):
-        integracao = SimpleNamespace(loja_id=7)
-        banco = BancoSemCheckout([integracao, None, None])
+        banco = BancoSemCheckout([None, None])
         request = RequisicaoFalsa(
             "token-seguro",
             {
@@ -114,11 +115,12 @@ class AsaasAmbientesTest(unittest.TestCase):
             },
         )
 
-        resposta = asyncio.run(asaas_webhook(request=request, db=banco))
+        with patch("app.routers.asaas_webhook.ASAAS_WEBHOOK_TOKEN", "token-seguro"):
+            resposta = asyncio.run(asaas_webhook(request=request, db=banco))
 
         self.assertTrue(resposta["ignored"])
         self.assertEqual("Checkout não pertence a este ambiente", resposta["msg"])
-        self.assertEqual(3, banco.consultas)
+        self.assertEqual(2, banco.consultas)
 
     def test_callback_do_checkout_usa_url_publica_do_ambiente(self):
         ClienteHttpFalso.ultimo_json = None
@@ -142,6 +144,7 @@ class AsaasAmbientesTest(unittest.TestCase):
         callback = ClienteHttpFalso.ultimo_json["callback"]
         self.assertTrue(callback["successUrl"].startswith("https://api-dev.exemplo.com/"))
         self.assertNotIn("api.clubbar.com.br", callback["successUrl"])
+        self.assertNotIn("splits", ClienteHttpFalso.ultimo_json)
 
 
 if __name__ == "__main__":

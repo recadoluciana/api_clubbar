@@ -1,4 +1,5 @@
 import traceback
+import hmac
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -9,12 +10,10 @@ from app.models.carrinho import Carrinho
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 
 from app.models.checkout_asaas import CheckoutAsaas
-from app.models.lojaasaas import LojaAsaas
-
 from app.models.cliente import Cliente
 from app.services.asaas_service import buscar_customer_asaas
-from app.core.config import APP_ENV, PUBLIC_CLIENT_BASE_URL
-from app.core.credential_crypto import descriptografar_credencial, hash_token_webhook
+from app.services.repasse_service import criar_repasse_da_venda
+from app.core.config import ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN, PUBLIC_CLIENT_BASE_URL
 
 router = APIRouter(
     prefix="/asaas",
@@ -23,19 +22,12 @@ router = APIRouter(
 
 
 def validar_token_webhook_asaas(
-    db: Session,
     token_recebido: str | None,
-) -> LojaAsaas:
-    if not token_recebido:
+) -> None:
+    if not ASAAS_WEBHOOK_TOKEN or not token_recebido:
         raise HTTPException(status_code=401, detail="Webhook Asaas não autorizado")
-    integracao = db.query(LojaAsaas).filter(
-        LojaAsaas.webhook_token_hash == hash_token_webhook(token_recebido),
-        LojaAsaas.ambiente == APP_ENV,
-        LojaAsaas.statusintegracao == "ATIVA",
-    ).first()
-    if not integracao:
+    if not hmac.compare_digest(token_recebido, ASAAS_WEBHOOK_TOKEN):
         raise HTTPException(status_code=401, detail="Webhook Asaas não autorizado")
-    return integracao
 
 
 @router.post("/webhook")
@@ -43,10 +35,7 @@ async def asaas_webhook(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    integracao_asaas = validar_token_webhook_asaas(
-        db,
-        request.headers.get("asaas-access-token"),
-    )
+    validar_token_webhook_asaas(request.headers.get("asaas-access-token"))
 
     try:
         body = await request.json()
@@ -81,10 +70,7 @@ async def asaas_webhook(
         if checkout_id:
             registro_checkout = (
                 db.query(CheckoutAsaas)
-                .filter(
-                    CheckoutAsaas.checkout_id == str(checkout_id),
-                    CheckoutAsaas.loja_id == integracao_asaas.loja_id,
-                )
+                .filter(CheckoutAsaas.checkout_id == str(checkout_id))
                 .first()
             )
 
@@ -97,10 +83,7 @@ async def asaas_webhook(
         if not registro_checkout and external_reference:
             registro_checkout = (
                 db.query(CheckoutAsaas)
-                .filter(
-                    CheckoutAsaas.external_reference == external_reference,
-                    CheckoutAsaas.loja_id == integracao_asaas.loja_id,
-                )
+                .filter(CheckoutAsaas.external_reference == external_reference)
                 .order_by(CheckoutAsaas.checkout_asaas_id.desc())
                 .first()
             )
@@ -165,16 +148,13 @@ async def asaas_webhook(
             carrinho_id=carrinho_id,
             gateway="ASAAS",
             pagamento=payment,
-            metodo_pagamento="CREDITO",
+            metodo_pagamento=None,
         )
 
         customer_id = payment.get("customer")
-        api_key_loja = descriptografar_credencial(
-            integracao_asaas.asaas_api_key_criptografada
-        )
 
-        if customer_id and registro_checkout:
-            customer = await buscar_customer_asaas(str(customer_id), api_key_loja)
+        if customer_id and registro_checkout and ASAAS_API_KEY:
+            customer = await buscar_customer_asaas(str(customer_id), ASAAS_API_KEY)
 
             cliente = (
                 db.query(Cliente)
@@ -193,35 +173,17 @@ async def asaas_webhook(
                 cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
                 cliente.ufcliente = customer.get("state") or cliente.ufcliente
                 
-        #await sincronizar_cliente_com_asaas(
-        #    db,
-        #    cliente_id=registro_checkout.cliente_id,
-        #)
-
-        customer_id = payment.get("customer")
-
-        if customer_id and registro_checkout:
-            customer = await buscar_customer_asaas(str(customer_id), api_key_loja)
-
-            cliente = (
-                db.query(Cliente)
-                .filter(Cliente.cliente_id == registro_checkout.cliente_id)
-                .first()
-            )
-
-            if cliente:
-                cliente.nrtelcliente = customer.get("mobilePhone") or customer.get("phone") or cliente.nrtelcliente
-                cliente.nrcpfcliente = customer.get("cpfCnpj") or cliente.nrcpfcliente
-                cliente.endcliente = customer.get("address") or cliente.endcliente
-                cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
-                cliente.complcliente = customer.get("complement") or cliente.complcliente
-                cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
-                cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
-
         if registro_checkout:
             registro_checkout.status = "PAID"
             if payment_id:
                 registro_checkout.payment_id = str(payment_id)
+            venda_id = resultado.get("venda_id")
+            if venda_id:
+                criar_repasse_da_venda(
+                    db,
+                    venda_id=int(venda_id),
+                    checkout=registro_checkout,
+                )
 
         db.commit()
 
