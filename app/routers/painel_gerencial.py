@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -24,6 +24,12 @@ _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 def _hoje_local() -> date:
     return datetime.now(_FUSO_BRASIL).date()
+
+
+def _inicio_local_em_utc_naive(data_local: date) -> datetime:
+    return datetime.combine(data_local, time.min, tzinfo=_FUSO_BRASIL).astimezone(
+        timezone.utc
+    ).replace(tzinfo=None)
 
 
 def _inteiro_positivo(valor: object, nome: str) -> int:
@@ -63,9 +69,9 @@ def painel_gerencial(
 
     hoje = _hoje_local()
     primeiro_dia = hoje.replace(day=1)
-    inicio_mes = datetime.combine(primeiro_dia, time.min)
-    inicio_hoje = datetime.combine(hoje, time.min)
-    fim_exclusivo = datetime.combine(hoje + timedelta(days=1), time.min)
+    inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
+    inicio_hoje = _inicio_local_em_utc_naive(hoje)
+    fim_exclusivo = _inicio_local_em_utc_naive(hoje + timedelta(days=1))
 
     lojas_query = db.query(Loja.loja_id, Loja.nmloja).filter(
         Loja.organizacao_id == organizacao_id

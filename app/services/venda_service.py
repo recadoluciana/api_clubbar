@@ -55,7 +55,7 @@ async def criar_ou_obter_venda_idempotente(
             Venda.loja_id == loja_id,
             Venda.cliente_id == cliente_id,
             Venda.carrinho_id == carrinho_id,
-            Venda.sitvenda == "PAGO",
+            Venda.sitvenda == "PAGA",
         )
         .order_by(Venda.venda_id.desc())
         .first()
