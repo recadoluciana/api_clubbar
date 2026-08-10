@@ -12,8 +12,30 @@ from app.models.estado import Estado
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
 from app.core.config import UPLOAD_LOJAS
+from app.core.security import get_usuario_logado
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
+
+
+def validar_permissao_mutacao_loja(
+    payload: dict,
+    *,
+    organizacao_id: int,
+    loja_id: int | None = None,
+    criando: bool = False,
+) -> None:
+    cargo = str(payload.get("dscargo") or "").strip().upper()
+    organizacao_usuario = payload.get("organizacao_id")
+    loja_usuario = payload.get("loja_id")
+    if payload.get("role") != "usuario" or cargo not in {"ADMIN", "GERENTE"}:
+        raise HTTPException(status_code=403, detail="Você não possui permissão para alterar lojas.")
+    if int(organizacao_usuario or 0) != organizacao_id:
+        raise HTTPException(status_code=403, detail="A loja não pertence à sua organização.")
+    if loja_usuario is not None and (criando or int(loja_usuario) != loja_id):
+        raise HTTPException(
+            status_code=403,
+            detail="Você não pode alterar esta loja. Seu acesso permite apenas consultá-la.",
+        )
 
 
 def validar_localidade(db: Session, estado_id: int, cidade_id: int) -> None:
@@ -437,8 +459,12 @@ def criar_loja(
     urlfachadaloja: UploadFile | None = File(None),
     qtcpdloja: int | None = Form(None),
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
 ):
     try:
+        validar_permissao_mutacao_loja(
+            payload, organizacao_id=organizacao_id, criando=True
+        )
         if qtcpdloja is not None and qtcpdloja <= 0:
             raise HTTPException(status_code=422, detail="A capacidade da loja deve ser maior que zero")
         validar_localidade(db, estado_id, cidade_id)
@@ -585,6 +611,7 @@ def atualizar_loja(
     urlfachadaloja: UploadFile | None = File(None),
     qtcpdloja: int | None = Form(None),
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
 ):
     try:
 
@@ -592,6 +619,16 @@ def atualizar_loja(
 
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+        validar_permissao_mutacao_loja(
+            payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
+        )
+
+        if organizacao_id is not None and organizacao_id != loja.organizacao_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Não é permitido transferir a loja para outra organização.",
+            )
 
         if organizacao_id is not None:
             loja.organizacao_id = organizacao_id
@@ -724,12 +761,16 @@ def atualizar_loja(
 
 
 @router.delete("/{loja_id}")
-def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
+def deletar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
     try:
         loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+        validar_permissao_mutacao_loja(
+            payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
+        )
 
         existe_produto = db.query(Produto).filter(Produto.loja_id == loja_id).first()
 
@@ -757,11 +798,15 @@ def deletar_loja(loja_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{loja_id}/inativar")
-def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
+def inativar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+    validar_permissao_mutacao_loja(
+        payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
+    )
 
     loja.sitloja = "INATIVA"
     db.commit()
@@ -771,11 +816,15 @@ def inativar_loja(loja_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/{loja_id}/reativar")
-def reativar_loja(loja_id: int, db: Session = Depends(get_db)):
+def reativar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
 
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+
+    validar_permissao_mutacao_loja(
+        payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
+    )
 
     loja.sitloja = "ATIVA"
     db.commit()

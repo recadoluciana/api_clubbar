@@ -19,6 +19,7 @@ CARGOS_VALIDOS = {
     "GARCOM",
     "PORTEIRO",
 }
+CARGOS_COM_LOJA_OBRIGATORIA = {"BARMAN", "PORTEIRO"}
 
 
 def _normalizar_email(email: str) -> str:
@@ -63,6 +64,14 @@ def _validar_loja_da_organizacao(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A loja informada não pertence a esta organização.",
+        )
+
+
+def _validar_vinculo_cargo_loja(cargo: str, loja_id: int | None) -> None:
+    if cargo in CARGOS_COM_LOJA_OBRIGATORIA and loja_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Barman e Porteiro devem estar vinculados a uma loja.",
         )
 
 
@@ -130,6 +139,7 @@ def criar_usuario_por_organizacao(
         organizacao_id=organizacao_id,
         loja_id=payload.loja_id,
     )
+    _validar_vinculo_cargo_loja(cargo, payload.loja_id)
 
     novo = Usuario(
         organizacao_id=organizacao_id,
@@ -259,6 +269,8 @@ def atualizar_usuario_por_organizacao(
                 )
         else:
             usuario.dscargo = novo_cargo
+
+    _validar_vinculo_cargo_loja(usuario.dscargo, usuario.loja_id)
 
     # ---------------------------------------------------------
     # STATUS
