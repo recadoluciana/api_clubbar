@@ -6,6 +6,8 @@ from sqlalchemy import func
 import traceback
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
@@ -21,6 +23,7 @@ router = APIRouter(prefix="/eventos", tags=["eventos"])
 def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
 
     lotes = (
@@ -81,6 +84,7 @@ def criar_lote_evento(
         evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
+        validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
 
         loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
         if not loja:
@@ -130,12 +134,14 @@ def atualizar_lote_evento(
     lote_id: int,
     data: EventoLoteUpdate,
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     try:
         lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
 
         if not lote:
             raise HTTPException(status_code=404, detail="Lote não encontrado")
+        validar_mutacao_loja(usuario, lote.organizacao_id, lote.loja_id)
 
         if data.organizacao_id is not None:
             lote.organizacao_id = data.organizacao_id
@@ -221,12 +227,14 @@ def atualizar_lote_evento(
 def deletar_lote_evento(
     lote_id: int,
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     try:
         lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
 
         if not lote:
             raise HTTPException(status_code=404, detail="Lote não encontrado")
+        validar_mutacao_loja(usuario, lote.organizacao_id, lote.loja_id)
 
         if int(lote.qtvendidalote or 0) > 0:
             raise HTTPException(

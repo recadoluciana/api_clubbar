@@ -32,6 +32,8 @@ StatusLeadParceiroSchema = Literal[
 
 
 class ConverterLeadParceiroIn(BaseModel):
+    senha_superadmin: str = Field(min_length=6, max_length=100)
+
     razao_social: str = Field(
         min_length=3,
         max_length=160,

@@ -100,11 +100,12 @@ async def criar_ou_obter_venda_idempotente(
             
             print("ITEM VENDA =", it)
 
-            db.add(
-                ItVenda(
+            for _ in range(qtd):
+                db.add(
+                    ItVenda(
                     venda_id=venda_id,
                     produto_id=produto_id,
-                    qtitvenda=qtd,
+                    qtitvenda=1,
                     vrunititvenda=vr_unit,
                     dsobsitvenda=dsobsitcar,
                     identregaitvenda="NAO",
@@ -117,8 +118,8 @@ async def criar_ou_obter_venda_idempotente(
                     lote_id=it.get("lote_id"),
                     pctaxaitvenda=it.get("pctaxaitvenda"),
                     vrtaxaitvenda=it.get("vrtaxaitvenda"),
+                    )
                 )
-            )
 
     if venda:
         _sync_itens_venda(venda.venda_id)

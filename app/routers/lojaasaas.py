@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.config import APP_ENV
 from app.core.credential_crypto import criptografar_credencial, hash_token_webhook
 from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojaasaas import LojaAsaas
@@ -17,9 +18,6 @@ router = APIRouter(prefix="/lojas", tags=["Integração Asaas das lojas"])
 def _loja_autorizada(db: Session, loja_id: int, usuario: dict) -> Loja:
     if usuario.get("role") != "usuario":
         raise HTTPException(status_code=403, detail="Acesso não autorizado")
-    cargo = str(usuario.get("dscargo") or "").upper()
-    if cargo != "ADMIN":
-        raise HTTPException(status_code=403, detail="Somente administradores configuram contas Asaas")
     try:
         organizacao_id = int(usuario.get("organizacao_id"))
     except (TypeError, ValueError):
@@ -30,6 +28,7 @@ def _loja_autorizada(db: Session, loja_id: int, usuario: dict) -> Loja:
     ).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada na organização")
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja.loja_id)
     return loja
 
 

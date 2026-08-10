@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.security import get_operador_logado
+from app.core.security import hash_senha
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
@@ -33,6 +34,7 @@ from app.database import get_db
 from app.models.leadparceiro import LeadParceiro
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
+from app.models.usuario import Usuario
 from app.services.portal_acesso_service import criar_acesso_portal
 
 
@@ -528,6 +530,18 @@ def converter_lead_em_parceiro(
         # Obtém o loja_id antes do commit.
         db.flush()
 
+        superadmin = Usuario(
+            organizacao_id=nova_organizacao.organizacao_id,
+            loja_id=None,
+            nmusuario=lead.nmresponsavel.strip(),
+            emailuser=lead.email.strip().lower(),
+            senhahashuser=hash_senha(dados.senha_superadmin),
+            dscargo="SUPERADMIN",
+            situsuario="ATIVO",
+        )
+        db.add(superadmin)
+        db.flush()
+
         lead.status = "CONVERTIDO"
 
         db.commit()
@@ -554,6 +568,11 @@ def converter_lead_em_parceiro(
             "loja": {
                 "loja_id": nova_loja.loja_id,
                 "nome": nova_loja.nmloja,
+            },
+            "superadmin": {
+                "usuario_id": superadmin.usuario_id,
+                "nome": superadmin.nmusuario,
+                "email": superadmin.emailuser,
             },
         }
 

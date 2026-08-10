@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado, get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojacontabancaria import LojaContaBancaria
@@ -39,14 +40,15 @@ class RepasseUpdateIn(BaseModel):
 
 
 def _loja_do_parceiro(db: Session, loja_id: int, usuario: dict) -> Loja:
-    if usuario.get("role") != "usuario" or str(usuario.get("dscargo") or "").upper() != "ADMIN":
-        raise HTTPException(status_code=403, detail="Acesso permitido ao administrador parceiro")
+    if usuario.get("role") != "usuario":
+        raise HTTPException(status_code=403, detail="Acesso permitido ao parceiro")
     loja = db.query(Loja).filter(
         Loja.loja_id == loja_id,
         Loja.organizacao_id == int(usuario.get("organizacao_id") or 0),
     ).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja.loja_id)
     return loja
 
 
@@ -140,6 +142,9 @@ def resumo_financeiro_parceiro(
     if organizacao_id <= 0:
         raise HTTPException(status_code=403, detail="Token sem organização válida")
     if loja_id is not None:
+        _loja_do_parceiro(db, loja_id, usuario)
+    elif usuario.get("loja_id") is not None:
+        loja_id = int(usuario["loja_id"])
         _loja_do_parceiro(db, loja_id, usuario)
 
     filtros = [RepasseFinanceiro.organizacao_id == organizacao_id]

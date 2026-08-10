@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 
@@ -79,6 +81,7 @@ def listar_organizacao_do_usuario(
 def atualizar_organizacao_do_usuario(
     usuario_id: int,
     dados: OrganizacaoUpdate,
+    usuario_logado: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     usuario = (
@@ -303,4 +306,15 @@ def cadastrar_organizacao(
         raise HTTPException(
             status_code=500,
             detail=str(e),
+        )
+
+    if int(usuario_logado.get("sub") or 0) != usuario_id:
+        raise HTTPException(status_code=403, detail="Usuário do login não confere.")
+    validar_gerenciamento_organizacao(
+        usuario_logado, usuario.organizacao_id
+    )
+    if usuario_logado.get("loja_id") is not None:
+        raise HTTPException(
+            status_code=403,
+            detail="Usuários vinculados a uma loja não podem alterar os dados globais da organização.",
         )

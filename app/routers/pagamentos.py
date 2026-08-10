@@ -250,15 +250,16 @@ async def pagar_asaas(
         if not ASAAS_API_KEY:
             raise HTTPException(status_code=503, detail="Conta global Asaas não configurada")
 
-        try:
-            await obter_ou_criar_customer_asaas(
-                db,
-                cliente_id=payload.cliente_id,
-                api_key=ASAAS_API_KEY,
-            )
-        except Exception as e:
-            print("[ASAAS] Erro ao sincronizar customer:", repr(e))
-            raise
+        if cliente.emailcliente != "clubbar_caixa@clubbar.app":
+            try:
+                await obter_ou_criar_customer_asaas(
+                    db,
+                    cliente_id=payload.cliente_id,
+                    api_key=ASAAS_API_KEY,
+                )
+            except Exception as e:
+                print("[ASAAS] Erro ao sincronizar customer:", repr(e))
+                raise
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
             itens_recalculados

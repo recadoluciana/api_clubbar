@@ -3,6 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojahorario import LojaHorario
@@ -112,6 +113,7 @@ def atualizar_horarios(
 ):
     loja = _buscar_loja(db, loja_id)
     _validar_organizacao(usuario, loja)
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja.loja_id)
 
     try:
         existentes = (

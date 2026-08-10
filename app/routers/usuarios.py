@@ -5,6 +5,11 @@ from app.database import get_db
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate, UsuarioOut
 from app.core.security import hash_senha
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import (
+    validar_escopo_loja_opcional,
+    validar_gerenciamento_organizacao,
+)
 from app.models.loja import Loja
 
 
@@ -12,6 +17,7 @@ router = APIRouter(tags=["Usuários"])
 
 
 CARGOS_VALIDOS = {
+    "SUPERADMIN",
     "ADMIN",
     "GERENTE",
     "CAIXA",
@@ -19,7 +25,7 @@ CARGOS_VALIDOS = {
     "GARCOM",
     "PORTEIRO",
 }
-CARGOS_COM_LOJA_OBRIGATORIA = {"BARMAN", "PORTEIRO"}
+CARGOS_COM_LOJA_OBRIGATORIA = {"CAIXA", "BARMAN", "GARCOM", "PORTEIRO"}
 
 
 def _normalizar_email(email: str) -> str:
@@ -71,7 +77,7 @@ def _validar_vinculo_cargo_loja(cargo: str, loja_id: int | None) -> None:
     if cargo in CARGOS_COM_LOJA_OBRIGATORIA and loja_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Barman e Porteiro devem estar vinculados a uma loja.",
+            detail="Caixa, Barman, Garçom e Porteiro devem estar vinculados a uma loja.",
         )
 
 
@@ -81,8 +87,10 @@ def _validar_vinculo_cargo_loja(cargo: str, loja_id: int | None) -> None:
 )
 def listar_usuarios_por_organizacao(
     organizacao_id: int,
+    usuario_logado: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
+    validar_gerenciamento_organizacao(usuario_logado, organizacao_id)
     usuarios = (
         db.query(Usuario)
         .filter(
@@ -106,13 +114,22 @@ def listar_usuarios_por_organizacao(
 def criar_usuario_por_organizacao(
     organizacao_id: int,
     payload: UsuarioCreate,
+    usuario_logado: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
+    validar_escopo_loja_opcional(
+        usuario_logado, organizacao_id, payload.loja_id
+    )
     nome = payload.nmusuario.strip()
     email = _normalizar_email(payload.emailuser)
     cargo = _validar_cargo(
         payload.dscargo or "BARMAN",
     )
+    if cargo == "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="SUPERADMIN somente pode ser criado na conversão de um lead em parceiro.",
+        )
 
     if not nome:
         raise HTTPException(
@@ -170,6 +187,7 @@ def atualizar_usuario_por_organizacao(
     organizacao_id: int,
     usuario_id: int,
     payload: UsuarioUpdate,
+    usuario_logado: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     usuario = (
@@ -186,6 +204,15 @@ def atualizar_usuario_por_organizacao(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado para esta organização.",
         )
+
+    loja_final = (
+        payload.loja_id
+        if "loja_id" in payload.model_fields_set
+        else usuario.loja_id
+    )
+    validar_escopo_loja_opcional(
+        usuario_logado, organizacao_id, loja_final
+    )
 
     # ---------------------------------------------------------
     # E-MAIL
@@ -258,6 +285,18 @@ def atualizar_usuario_por_organizacao(
             payload.dscargo,
         )
 
+        if novo_cargo == "SUPERADMIN" and usuario.dscargo != "SUPERADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Não é permitido promover um usuário para SUPERADMIN.",
+            )
+
+        if usuario.dscargo == "SUPERADMIN" and novo_cargo != "SUPERADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="O cargo do SUPERADMIN não pode ser alterado.",
+            )
+
         if usuario_id == 1:
             if novo_cargo != usuario.dscargo:
                 raise HTTPException(
@@ -308,6 +347,7 @@ def atualizar_usuario_por_organizacao(
 def deletar_usuario_por_organizacao(
     organizacao_id: int,
     usuario_id: int,
+    usuario_logado: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     usuario = (
@@ -329,6 +369,16 @@ def deletar_usuario_por_organizacao(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="O usuário principal do sistema não pode ser excluído.",
+        )
+
+    validar_escopo_loja_opcional(
+        usuario_logado, organizacao_id, usuario.loja_id
+    )
+
+    if usuario.dscargo == "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O usuário SUPERADMIN não pode ser excluído pelo cadastro de usuários.",
         )
 
     db.delete(usuario)

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
@@ -21,6 +22,7 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
         raise HTTPException(403,"Organização não identificada no login.")
     loja=db.query(Loja).filter(Loja.loja_id==dados.loja_id,Loja.organizacao_id==org).first()
     if not loja: raise HTTPException(404,"Loja não encontrada.")
+    validar_mutacao_loja(payload,loja.organizacao_id,loja.loja_id)
     if not loja.qtcpdloja or loja.qtcpdloja <= 0:
         raise HTTPException(422,"Informe a capacidade total da loja antes de criar eventos.")
     atracao=db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first()

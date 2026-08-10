@@ -13,6 +13,8 @@ from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
 from app.core.config import UPLOAD_PRODUTOS
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 
 router = APIRouter(tags=["Produtos"])
 
@@ -81,13 +83,18 @@ def calcular_preco_final(produto: Produto):
 
 
 @router.delete("/produtos/{produto_id}")
-def excluir_produto(produto_id: int, db: Session = Depends(get_db)):
+def excluir_produto(
+    produto_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
     produto = db.query(Produto).filter(
         Produto.produto_id == produto_id
     ).first()
 
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
+    validar_mutacao_loja(usuario, produto.organizacao_id, produto.loja_id)
 
     usado_itcarrinho = db.query(
         exists().where(ItCarrinho.produto_id == produto_id)
@@ -123,6 +130,7 @@ def atualizar_produto(
     dtfimdesconto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     try:
         produto = db.query(Produto).filter(
@@ -131,6 +139,7 @@ def atualizar_produto(
 
         if not produto:
             raise HTTPException(status_code=404, detail="Produto não encontrado")
+        validar_mutacao_loja(usuario, produto.organizacao_id, produto.loja_id)
 
         if urlfotoproduto is not None and urlfotoproduto.filename:
             if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
@@ -268,7 +277,9 @@ async def criar_produto(
     dtfimdesconto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
+    validar_mutacao_loja(usuario, organizacao_id, loja_id)
     nmproduto = nmproduto.strip()
 
     if not nmproduto:

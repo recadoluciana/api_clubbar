@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 CargoUsuario = Literal[
+    "SUPERADMIN",
     "ADMIN",
     "GERENTE",
     "CAIXA",

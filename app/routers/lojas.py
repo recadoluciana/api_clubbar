@@ -27,7 +27,7 @@ def validar_permissao_mutacao_loja(
     cargo = str(payload.get("dscargo") or "").strip().upper()
     organizacao_usuario = payload.get("organizacao_id")
     loja_usuario = payload.get("loja_id")
-    if payload.get("role") != "usuario" or cargo not in {"ADMIN", "GERENTE"}:
+    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "GERENTE"}:
         raise HTTPException(status_code=403, detail="Você não possui permissão para alterar lojas.")
     if int(organizacao_usuario or 0) != organizacao_id:
         raise HTTPException(status_code=403, detail="A loja não pertence à sua organização.")

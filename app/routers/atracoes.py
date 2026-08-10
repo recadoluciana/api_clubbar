@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from app.core.config import UPLOAD_ATRACOES
 from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.database import get_db
 from app.models.atracao import Atracao
 from app.models.evento import Evento
@@ -37,6 +38,7 @@ def listar(payload=Depends(get_usuario_logado), db:Session=Depends(get_db)):
 
 @router.post("/atracoes", status_code=201)
 def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    validar_gerenciamento_organizacao(payload,_org(payload))
     nome=nmatracao.strip()
     if not nome: raise HTTPException(422,"Informe o nome da atração.")
     a=Atracao(organizacao_id=_org(payload),nmatracao=nome,dsestilomusical=(dsestilomusical or "").strip() or None,dsatracao=(dsatracao or "").strip() or None,urlbanneratracao=_banner(urlbanneratracao))
@@ -44,6 +46,7 @@ def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),dsatracao:
 
 @router.put("/atracoes/{atracao_id}")
 def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    validar_gerenciamento_organizacao(payload,_org(payload))
     a=db.query(Atracao).filter(Atracao.atracao_id==atracao_id,Atracao.organizacao_id==_org(payload)).first()
     if not a: raise HTTPException(404,"Atração não encontrada.")
     if not nmatracao.strip(): raise HTTPException(422,"Informe o nome da atração.")
@@ -53,6 +56,7 @@ def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Fo
 
 @router.delete("/atracoes/{atracao_id}", status_code=204)
 def excluir(atracao_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    validar_gerenciamento_organizacao(payload,_org(payload))
     a=db.query(Atracao).filter(Atracao.atracao_id==atracao_id,Atracao.organizacao_id==_org(payload)).first()
     if not a: raise HTTPException(404,"Atração não encontrada.")
     if db.query(EventoAtracao).filter(EventoAtracao.atracao_id==atracao_id).first(): raise HTTPException(409,"A atração está vinculada a uma agenda e não pode ser excluída.")
@@ -71,7 +75,7 @@ def listar_programacao(evento_id:int,payload=Depends(get_usuario_logado),db:Sess
 
 @router.post("/eventos/{evento_id}/atracoes", status_code=201)
 def adicionar(evento_id:int,dados:EventoAtracaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
-    org=_org(payload); _evento(db,evento_id,org)
+    org=_org(payload); evento=_evento(db,evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
     if not db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     p=EventoAtracao(evento_id=evento_id,**dados.model_dump()); db.add(p); db.commit()
     p=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).filter(EventoAtracao.eventoatracao_id==p.eventoatracao_id).first(); return _prog(p)
@@ -80,6 +84,7 @@ def adicionar(evento_id:int,dados:EventoAtracaoIn,payload=Depends(get_usuario_lo
 def editar_programacao(programacao_id:int,dados:EventoAtracaoUpdate,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload); p=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).join(Evento).filter(EventoAtracao.eventoatracao_id==programacao_id,Evento.organizacao_id==org).first()
     if not p: raise HTTPException(404,"Programação não encontrada.")
+    evento=_evento(db,p.evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
     vals=dados.model_dump(exclude_none=True)
     if "atracao_id" in vals and not db.query(Atracao).filter(Atracao.atracao_id==vals["atracao_id"],Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     inicio=vals.get("dtinicioatracao",p.dtinicioatracao); fim=vals.get("dtfimatracao",p.dtfimatracao)
@@ -93,6 +98,7 @@ def remover(programacao_id:int,payload=Depends(get_usuario_logado),db:Session=De
     p=db.query(EventoAtracao).join(Evento).filter(EventoAtracao.eventoatracao_id==programacao_id,Evento.organizacao_id==org).first()
     if not p: raise HTTPException(404,"Programação não encontrada.")
     evento = db.query(Evento).filter(Evento.evento_id == p.evento_id, Evento.organizacao_id == org).first()
+    validar_mutacao_loja(payload,org,evento.loja_id)
     total_atracoes = db.query(EventoAtracao).filter(EventoAtracao.evento_id == p.evento_id).count()
     try:
         if total_atracoes <= 1:

@@ -18,7 +18,7 @@ from app.schemas.painel_gerencial import PainelGerencialOut
 
 
 router = APIRouter(tags=["Painel gerencial"])
-_CARGOS_ORGANIZACAO = {"ADMIN"}
+_CARGOS_ORGANIZACAO = {"SUPERADMIN", "ADMIN", "GERENTE"}
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 
@@ -49,7 +49,7 @@ def _extrair_escopo(usuario: dict) -> tuple[int, int | None]:
     organizacao_id = _inteiro_positivo(usuario.get("organizacao_id"), "organizacao_id")
     cargo = str(usuario.get("dscargo") or "").strip().upper()
 
-    if cargo in _CARGOS_ORGANIZACAO:
+    if cargo in _CARGOS_ORGANIZACAO and usuario.get("loja_id") is None:
         return organizacao_id, None
 
     loja_id = _inteiro_positivo(usuario.get("loja_id"), "loja_id")

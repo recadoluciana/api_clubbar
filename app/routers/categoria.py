@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.models.categoria import Categoria
 from app.models.produto import Produto
@@ -98,11 +100,13 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
 def criar_categoria_por_loja(
     loja_id: int,
     payload: CategoriaCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
     nome = payload.nmcategoria.strip()
 
@@ -157,11 +161,13 @@ def atualizar_categoria_por_loja(
     loja_id: int,
     categoria_id: int,
     payload: CategoriaUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
     categoria = (
         db.query(Categoria)
@@ -227,7 +233,8 @@ def atualizar_categoria_por_loja(
 def deletar_categoria_por_loja(
     loja_id: int,
     categoria_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
 
     categoria = db.query(Categoria).filter(
@@ -237,6 +244,7 @@ def deletar_categoria_por_loja(
 
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
+    validar_mutacao_loja(usuario, categoria.organizacao_id, loja_id)
 
     # 🔒 verifica produtos da MESMA LOJA (isso é importante!)
     existe_produto = db.query(Produto).filter(
@@ -259,11 +267,13 @@ def deletar_categoria_por_loja(
 def reativar_categoria_por_loja(
     loja_id: int,
     categoria_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
     categoria = (
         db.query(Categoria)

@@ -10,6 +10,8 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.models.evento import Evento
 from app.models.cidade import Cidade
@@ -253,11 +255,13 @@ def criar_evento(
     statusevento: str = Form("RASCUNHO"),
     urlbannerevento: UploadFile | None = File(None),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     try:
         loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
+        validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
         banner_url = salvar_banner_evento(urlbannerevento)
 
@@ -307,12 +311,14 @@ def atualizar_evento(
     statusevento: str | None = Form(None),
     urlbannerevento: UploadFile | None = File(None),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     try:
         evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
 
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
+        validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
 
         if organizacao_id is not None:
             evento.organizacao_id = organizacao_id
@@ -377,12 +383,17 @@ def atualizar_evento(
 
 
 @router.delete("/{evento_id}")
-def deletar_evento(evento_id: int, db: Session = Depends(get_db)):
+def deletar_evento(
+    evento_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
     try:
         evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
 
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
+        validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
 
         db.delete(evento)
         db.commit()
