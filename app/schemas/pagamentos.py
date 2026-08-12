@@ -29,6 +29,7 @@ CVVStr       = constr(pattern=r"^\d{3,4}$")
 
 class PagarNovoIn(BaseModel):
     cliente_id: int
+    usuario_id: Optional[int] = None
     organizacao_id: int
     loja_id: int
 

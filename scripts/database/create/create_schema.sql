@@ -485,6 +485,7 @@ CREATE TABLE cliente (
 
   sitcliente     VARCHAR(15) NOT NULL DEFAULT 'ATIVO',
   emailconf      CHAR(1) NOT NULL DEFAULT 'N',
+  cliente_padrao CHAR(1) NOT NULL DEFAULT 'N',
 
   nrtelcliente   VARCHAR(25) NULL,
   nrcpfcliente   CHAR(11) NULL,
@@ -525,6 +526,9 @@ CREATE TABLE cliente (
 
   CONSTRAINT chk_cliente_emailconf
     CHECK (emailconf IN ('S', 'N')),
+
+  CONSTRAINT chk_cliente_padrao
+    CHECK (cliente_padrao IN ('S', 'N')),
 
   CONSTRAINT chk_cliente_localizacao
     CHECK (
@@ -590,6 +594,7 @@ CREATE TABLE usuario (
     'ADMIN',
     'GERENTE',
     'CAIXA',
+    'TOTEM',
     'BARMAN',
     'GARCOM',
     'PORTEIRO'
@@ -692,6 +697,7 @@ CREATE TABLE carrinho (
   organizacao_id   BIGINT NOT NULL,
   loja_id          BIGINT NOT NULL,
   cliente_id       BIGINT NOT NULL,
+  usuario_id       BIGINT NULL,
   sitcarrinho      ENUM('ABERTO','FECHADO') NOT NULL DEFAULT 'ABERTO',
   dtcriacao        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu         DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -705,6 +711,11 @@ CREATE TABLE carrinho (
     FOREIGN KEY (cliente_id)
     REFERENCES cliente(cliente_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_carrinho_usuario
+    FOREIGN KEY (usuario_id)
+    REFERENCES usuario(usuario_id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
 
   UNIQUE KEY uk_carrinho_venda (
     carrinho_id,
@@ -722,6 +733,9 @@ CREATE TABLE carrinho (
 
 CREATE INDEX idx_carrinho_aberto_cliente_loja
   ON carrinho(organizacao_id, loja_id, cliente_id, sitcarrinho);
+
+CREATE INDEX idx_carrinho_usuario
+  ON carrinho(usuario_id);
 
 CREATE TABLE itcarrinho (
   itcarrinho_id    BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -766,6 +780,7 @@ CREATE TABLE venda (
   organizacao_id   BIGINT NOT NULL,
   loja_id          BIGINT NOT NULL,
   cliente_id       BIGINT NOT NULL,
+  usuario_id       BIGINT NULL,
   carrinho_id      BIGINT NOT NULL,
   dsplataforma     ENUM('ANDROID','TOTEM','IOS','WEB','OUTROS') NOT NULL DEFAULT 'OUTROS',
   sitvenda         ENUM('PENDENTE','PAGA','CANCELADA') NOT NULL DEFAULT 'PENDENTE',
@@ -790,6 +805,11 @@ CREATE TABLE venda (
 
   UNIQUE KEY uk_venda_carrinho (carrinho_id),
 
+  CONSTRAINT fk_venda_usuario
+    FOREIGN KEY (usuario_id)
+    REFERENCES usuario(usuario_id)
+    ON DELETE SET NULL ON UPDATE CASCADE,
+
   CONSTRAINT chk_venda_total
     CHECK (totalvenda >= 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -799,6 +819,9 @@ CREATE INDEX idx_venda_loja_cliente_data
 
 CREATE INDEX idx_venda_cliente_data
   ON venda(cliente_id, dtcriacao);
+
+CREATE INDEX idx_venda_usuario_data
+  ON venda(usuario_id, dtcriacao);
 
 CREATE TABLE itvenda (
   itvenda_id            BIGINT AUTO_INCREMENT PRIMARY KEY,

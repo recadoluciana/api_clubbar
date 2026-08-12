@@ -17,6 +17,7 @@ class Venda(Base):
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
 
     carrinho_id = Column(BigInteger, ForeignKey("carrinho.carrinho_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
+    usuario_id = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
 
     dsplataforma = Column(Enum("ANDROID", "TOTEM", "IOS", "OUTROS", name="dsplataforma_enum"), nullable=False, server_default="OUTROS")
     sitvenda = Column(Enum("PENDENTE", "PAGA", "CANCELADA", name="sitvenda_enum"), nullable=False, server_default="PENDENTE")

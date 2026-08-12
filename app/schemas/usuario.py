@@ -8,6 +8,7 @@ CargoUsuario = Literal[
     "ADMIN",
     "GERENTE",
     "CAIXA",
+    "TOTEM",
     "BARMAN",
     "GARCOM",
     "PORTEIRO",

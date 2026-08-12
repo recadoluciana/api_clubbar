@@ -134,6 +134,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         db.query(Carrinho)
         .filter(
             Carrinho.cliente_id == payload.cliente_id,
+            Carrinho.usuario_id == payload.usuario_id,
             Carrinho.organizacao_id == payload.organizacao_id,
             Carrinho.loja_id == payload.loja_id,
             Carrinho.sitcarrinho == "ABERTO",
@@ -145,6 +146,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             organizacao_id=payload.organizacao_id,
             loja_id=payload.loja_id,
             cliente_id=payload.cliente_id,
+            usuario_id=payload.usuario_id,
         )
         db.add(carr)
         db.flush()

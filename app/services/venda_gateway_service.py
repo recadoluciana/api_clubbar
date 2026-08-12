@@ -49,6 +49,7 @@ async def criar_venda_paga_por_carrinho_gateway(
         db,
         carrinho_db.cliente_id,
         carrinho_db.loja_id,
+        carrinho_db.usuario_id,
     )
 
     if not carrinho:
@@ -105,6 +106,7 @@ async def criar_venda_paga_por_carrinho_gateway(
     venda = await criar_ou_obter_venda_idempotente(
         db,
         cliente_id=carrinho_db.cliente_id,
+        usuario_id=carrinho_db.usuario_id,
         organizacao_id=carrinho_db.organizacao_id,
         loja_id=carrinho_db.loja_id,
         carrinho={

@@ -222,7 +222,12 @@ async def pagar_asaas(
     db: Session = Depends(get_db),
 ):
     try:
-        carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
+        carrinho = get_carrinho(
+            db,
+            payload.cliente_id,
+            payload.loja_id,
+            payload.usuario_id,
+        )
 
         if not carrinho:
             raise HTTPException(status_code=404, detail="Carrinho nÃ£o encontrado")
@@ -260,7 +265,7 @@ async def pagar_asaas(
         if not ASAAS_API_KEY:
             raise HTTPException(status_code=503, detail="Conta global Asaas nÃ£o configurada")
 
-        if cliente.emailcliente != "clubbar_caixa@clubbar.app":
+        if cliente.cliente_padrao != "S":
             try:
                 await obter_ou_criar_customer_asaas(
                     db,

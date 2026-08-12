@@ -21,11 +21,12 @@ CARGOS_VALIDOS = {
     "ADMIN",
     "GERENTE",
     "CAIXA",
+    "TOTEM",
     "BARMAN",
     "GARCOM",
     "PORTEIRO",
 }
-CARGOS_COM_LOJA_OBRIGATORIA = {"CAIXA", "BARMAN", "GARCOM", "PORTEIRO"}
+CARGOS_COM_LOJA_OBRIGATORIA = {"CAIXA", "TOTEM", "BARMAN", "GARCOM", "PORTEIRO"}
 
 
 def _normalizar_email(email: str) -> str:

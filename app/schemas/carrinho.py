@@ -4,6 +4,7 @@ from typing import Optional, Literal
 
 class AddItemIn(BaseModel):
     cliente_id: int
+    usuario_id: Optional[int] = None
     organizacao_id: int
     loja_id: int
     idtipoproduto: Literal["P", "I"]

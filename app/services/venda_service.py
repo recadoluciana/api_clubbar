@@ -24,6 +24,7 @@ async def criar_ou_obter_venda_idempotente(
     loja_id: int,
     organizacao_id: int,
     carrinho: Dict[str, Any],
+    usuario_id: int | None = None,
     chave: Optional[str] = None,
     plataforma: str = "ANDROID",
     metodo_pagamento: str = "CREDITO",  # PIX, CREDITO, DEBITO
@@ -122,6 +123,8 @@ async def criar_ou_obter_venda_idempotente(
                 )
 
     if venda:
+        if venda.usuario_id is None:
+            venda.usuario_id = usuario_id
         _sync_itens_venda(venda.venda_id)
 
         venda.totalvenda = float(total)
@@ -173,6 +176,7 @@ async def criar_ou_obter_venda_idempotente(
         loja_id=loja_id,
         organizacao_id=organizacao_id,
         cliente_id=cliente_id,
+        usuario_id=usuario_id,
         carrinho_id=carrinho_id,
         sitvenda="PENDENTE",
         totalvenda=float(total),

@@ -20,7 +20,7 @@ from app.services.carrinho_service import get_carrinho
 
 
 router = APIRouter(prefix="/caixa", tags=["Frente de caixa"])
-EMAIL_CLIENTE_CAIXA = "clubbar_caixa@clubbar.app"
+EMAIL_CLIENTE_PADRAO = "consumidor.nao.identificado@clubbar.app"
 
 
 class CaixaItemIn(BaseModel):
@@ -30,7 +30,8 @@ class CaixaItemIn(BaseModel):
 
 
 def _contexto_caixa(payload: dict, db: Session) -> tuple[Loja, Cliente]:
-    if payload.get("role") != "usuario" or str(payload.get("dscargo") or "").upper() != "CAIXA":
+    cargo = str(payload.get("dscargo") or "").upper()
+    if payload.get("role") != "usuario" or cargo not in {"CAIXA", "TOTEM"}:
         raise HTTPException(403, "Acesso exclusivo para usuários CAIXA.")
     loja_id = payload.get("loja_id")
     organizacao_id = payload.get("organizacao_id")
@@ -42,14 +43,15 @@ def _contexto_caixa(payload: dict, db: Session) -> tuple[Loja, Cliente]:
     ).first()
     if not loja:
         raise HTTPException(404, "Loja do caixa não encontrada.")
-    cliente = db.query(Cliente).filter(Cliente.emailcliente == EMAIL_CLIENTE_CAIXA).first()
+    cliente = db.query(Cliente).filter(Cliente.cliente_padrao == "S").first()
     if not cliente:
         cliente = Cliente(
-            nmcliente="CLUBBAR_CAIXA",
-            emailcliente=EMAIL_CLIENTE_CAIXA,
+            nmcliente="Consumidor nao identificado",
+            emailcliente=EMAIL_CLIENTE_PADRAO,
             senhahashcli=hash_senha(uuid.uuid4().hex),
             sitcliente="ATIVO",
             emailconf="S",
+            cliente_padrao="S",
         )
         db.add(cliente)
         db.commit()
@@ -86,6 +88,7 @@ def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario
     return adicionar_item(
         AddItemIn(
             cliente_id=cliente.cliente_id,
+            usuario_id=int(payload["sub"]),
             organizacao_id=loja.organizacao_id,
             loja_id=loja.loja_id,
             idtipoproduto="P",
@@ -100,11 +103,19 @@ def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario
 @router.get("/carrinho")
 def consultar_carrinho(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
-    return get_carrinho(db, cliente.cliente_id, loja.loja_id) or {
-        "carrinho_id": 0,
-        "itens": [],
-        "total": 0,
-    }
+    try:
+        return get_carrinho(
+            db, cliente.cliente_id, loja.loja_id, int(payload["sub"])
+        )
+    except HTTPException as exc:
+        if exc.status_code not in {400, 404}:
+            raise
+        return {
+            "carrinho_id": 0,
+            "usuario_id": int(payload["sub"]),
+            "itens": [],
+            "total": 0,
+        }
 
 
 @router.post("/checkout")
@@ -113,6 +124,7 @@ async def checkout(payload: dict = Depends(get_usuario_logado), db: Session = De
     return await pagar_asaas(
         PagarNovoIn(
             cliente_id=cliente.cliente_id,
+            usuario_id=int(payload["sub"]),
             organizacao_id=loja.organizacao_id,
             loja_id=loja.loja_id,
             dsmetodopag="PIX",

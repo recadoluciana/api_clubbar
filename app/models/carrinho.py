@@ -10,6 +10,7 @@ class Carrinho(Base):
     organizacao_id = Column(BigInteger, nullable=False)
     loja_id = Column(BigInteger, nullable=False)
     cliente_id = Column(BigInteger, nullable=False)
+    usuario_id = Column(BigInteger, nullable=True)
 
     sitcarrinho = Column(
         Enum("ABERTO", "FECHADO", name="sitcarrinho_enum"),
