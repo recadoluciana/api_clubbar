@@ -66,13 +66,13 @@ def _recalcular_itens_carrinho(
         if not produto:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Produto {produto_id_int} não encontrado",
+                detail=f"Produto {produto_id_int} nÃ£o encontrado",
             )
 
         if (produto.sitproduto or "").upper() != "ATIVO":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Produto '{produto.nmproduto}' não está mais disponível. Retire do carrinho",
+                detail=f"Produto '{produto.nmproduto}' nÃ£o estÃ¡ mais disponÃ­vel. Retire do carrinho",
             )
 
 
@@ -88,13 +88,16 @@ def _recalcular_itens_carrinho(
             if not lote:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Lote {lote_id_int} não encontrado",
+                    detail=f"Lote {lote_id_int} nÃ£o encontrado",
                 )
 
             vrunitario = round(float(lote.vrprecolote or 0), 2)
             subtotal   = round(vrunitario * qt_prod, 2)
 
-            total_geral += subtotal + round(float(it.get("vrtaxaitvenda") or 0), 2)
+            percentual_taxa = round(float(it.get("pctaxaitvenda") or 0), 2)
+            taxa_unitaria = round(vrunitario * percentual_taxa / 100, 2)
+            taxa_linha = round(taxa_unitaria * qt_prod, 2)
+            total_geral += subtotal + taxa_linha
 
             itens_recalculados.append(
                 {
@@ -106,7 +109,7 @@ def _recalcular_itens_carrinho(
                     "qtitcarrinho"   : qt_prod,
                     "vrunitario"     : vrunitario,
                     "subtotal"       : subtotal,
-                    "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
+                    "total_com_taxa" : round(subtotal + taxa_linha, 2),
                     "tipodesconto"   : "NENHUM",
                     "vrdesconto"     : 0,
                     "descontoativo"  : False,
@@ -114,7 +117,7 @@ def _recalcular_itens_carrinho(
                     "nmparticipante" : it.get("nmparticipante"),
                     "cpfparticipante": it.get("cpfparticipante"),
                     "pctaxaitvenda"  : it.get("pctaxaitvenda"),
-                    "vrtaxaitvenda"  : it.get("vrtaxaitvenda"),                
+                    "vrtaxaitvenda"  : taxa_unitaria,
                 }
             )
 
@@ -124,7 +127,10 @@ def _recalcular_itens_carrinho(
         vrunitario = round(float(vrprecofinal), 2)
         subtotal   = round(vrunitario * qt_prod, 2)
 
-        total_geral += subtotal + round(float(it.get("vrtaxaitvenda") or 0), 2)
+        percentual_taxa = round(float(it.get("pctaxaitvenda") or 0), 2)
+        taxa_unitaria = round(vrunitario * percentual_taxa / 100, 2)
+        taxa_linha = round(taxa_unitaria * qt_prod, 2)
+        total_geral += subtotal
 
         itens_recalculados.append(
             {
@@ -136,7 +142,7 @@ def _recalcular_itens_carrinho(
                 "qtitcarrinho"   : qt_prod,
                 "vrunitario"     : vrunitario,
                 "subtotal"       : subtotal,
-                "total_com_taxa" : subtotal+it.get("vrtaxaitvenda"),
+                "total_com_taxa" : subtotal,
                 "tipodesconto"   : produto.tipodesconto or "NENHUM",
                 "vrdesconto"     : float(produto.vrdesconto or 0),
                 "descontoativo"  : descontoativo,
@@ -144,7 +150,7 @@ def _recalcular_itens_carrinho(
                 "nmparticipante" : it.get("nmparticipante"),
                 "cpfparticipante": it.get("cpfparticipante"),
                 "pctaxaitvenda"  : it.get("pctaxaitvenda"),
-                "vrtaxaitvenda"  : it.get("vrtaxaitvenda"),            
+                "vrtaxaitvenda"  : taxa_unitaria,
             }
         )
 
@@ -176,7 +182,11 @@ def _montar_itens_asaas(
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
 
-        vr_taxa_clubbar += round(float(item.get("vrtaxaitvenda") or 0), 2)
+        taxa_unitaria = round(float(item.get("vrtaxaitvenda") or 0), 2)
+        taxa_linha = round(taxa_unitaria * quantidade, 2)
+        if tipo == "I":
+            valor_total_com_taxa += taxa_linha
+        vr_taxa_clubbar += taxa_linha
 
         itens_asaas.append(
             {
@@ -189,17 +199,17 @@ def _montar_itens_asaas(
         )
 
     vr_taxa_clubbar = round(vr_taxa_clubbar, 2)
-    valor_total_com_taxa = round(valor_total_com_taxa + vr_taxa_clubbar, 2)
+    valor_total_com_taxa = round(valor_total_com_taxa, 2)
 
 
-    if vr_taxa_clubbar > 0:
+    if any((item.get("idtipoproduto") or "P").upper() == "I" and float(item.get("vrtaxaitvenda") or 0) > 0 for item in itens_recalculados):
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
-                "name": "Taxa de serviço Clubbar",
-                "description": "Taxa de serviço Clubbar",
+                "name": "Taxa de serviÃ§o Clubbar",
+                "description": "Taxa de serviÃ§o Clubbar",
                 "quantity": 1,
-                "value": vr_taxa_clubbar,
+                "value": sum(round(float(item.get("vrtaxaitvenda") or 0), 2) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados if (item.get("idtipoproduto") or "P").upper() == "I"),
             }
         )
 
@@ -215,14 +225,14 @@ async def pagar_asaas(
         carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id)
 
         if not carrinho:
-            raise HTTPException(status_code=404, detail="Carrinho não encontrado")
+            raise HTTPException(status_code=404, detail="Carrinho nÃ£o encontrado")
 
         itens_car = carrinho.get("itens") or []
 
         if not isinstance(itens_car, list):
             raise HTTPException(
                 status_code=500,
-                detail="Formato inválido dos itens do carrinho",
+                detail="Formato invÃ¡lido dos itens do carrinho",
             )
 
         if not itens_car:
@@ -236,7 +246,7 @@ async def pagar_asaas(
         carrinho_id = int(carrinho.get("carrinho_id") or 0)
 
         if carrinho_id == 0:
-            raise HTTPException(status_code=400, detail="Carrinho inválido")
+            raise HTTPException(status_code=400, detail="Carrinho invÃ¡lido")
 
         cliente = (
             db.query(Cliente)
@@ -245,10 +255,10 @@ async def pagar_asaas(
         )
 
         if not cliente:
-            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+            raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado")
 
         if not ASAAS_API_KEY:
-            raise HTTPException(status_code=503, detail="Conta global Asaas não configurada")
+            raise HTTPException(status_code=503, detail="Conta global Asaas nÃ£o configurada")
 
         if cliente.emailcliente != "clubbar_caixa@clubbar.app":
             try:
@@ -291,7 +301,7 @@ async def pagar_asaas(
             raise HTTPException(
                 status_code=500,
                 detail={
-                    "erro": "Asaas não retornou id ou link do checkout.",
+                    "erro": "Asaas nÃ£o retornou id ou link do checkout.",
                     "asaas_response": pagamento,
                 },
             )
