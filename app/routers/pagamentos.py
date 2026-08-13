@@ -180,10 +180,8 @@ def _montar_itens_asaas(
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
 
-        taxa_unitaria = round(float(item.get("vrtaxaitvenda") or 0), 2)
-        taxa_linha = round(taxa_unitaria * quantidade, 2)
-        if tipo == "I":
-            valor_total_com_taxa += taxa_linha
+        taxa_linha = round(float(item.get("vrtaxaitvenda") or 0), 2)
+        valor_total_com_taxa += taxa_linha
         vr_taxa_clubbar += taxa_linha
 
         itens_asaas.append(
@@ -204,10 +202,10 @@ def _montar_itens_asaas(
         itens_asaas.append(
             {
                 "externalReference": "TAXA-CONVENIENCIA",
-                "name": "Taxa de serviÃ§o Clubbar",
-                "description": "Taxa de serviÃ§o Clubbar",
+                "name": "Taxa de servi\u00e7o Clubbar",
+                "description": "Taxa de servi\u00e7o Clubbar",
                 "quantity": 1,
-                "value": sum(round(float(item.get("vrtaxaitvenda") or 0), 2) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados if (item.get("idtipoproduto") or "P").upper() == "I"),
+                "value": vr_taxa_clubbar,
             }
         )
 

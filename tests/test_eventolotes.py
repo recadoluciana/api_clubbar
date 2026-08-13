@@ -68,6 +68,13 @@ def criar_lote():
 
 
 class AtualizarLoteTest(unittest.TestCase):
+    usuario = {
+        "role": "usuario",
+        "dscargo": "ADMIN",
+        "organizacao_id": 1,
+        "loja_id": 2,
+    }
+
     def test_preco_do_lote_e_dos_produtos_sao_salvos_em_um_commit(self):
         lote = criar_lote()
         produto = Registro()
@@ -79,6 +86,7 @@ class AtualizarLoteTest(unittest.TestCase):
             lote_id=5,
             data=EventoLoteUpdate(vrprecolote=75.5),
             db=banco,
+            usuario=self.usuario,
         )
 
         self.assertEqual(75.5, lote.vrprecolote)
@@ -99,6 +107,7 @@ class AtualizarLoteTest(unittest.TestCase):
                 lote_id=5,
                 data=EventoLoteUpdate(vrprecolote=80),
                 db=banco,
+                usuario=self.usuario,
             )
 
         self.assertEqual(500, erro.exception.status_code)
@@ -113,6 +122,7 @@ class AtualizarLoteTest(unittest.TestCase):
             lote_id=5,
             data=EventoLoteUpdate(vrprecolote=90),
             db=banco,
+            usuario=self.usuario,
         )
 
         self.assertEqual(90, lote.vrprecolote)

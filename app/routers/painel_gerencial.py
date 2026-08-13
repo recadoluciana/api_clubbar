@@ -18,7 +18,7 @@ from app.schemas.painel_gerencial import PainelGerencialOut
 
 
 router = APIRouter(tags=["Painel gerencial"])
-_CARGOS_GERENCIAL = {"SUPERADMIN", "ADMIN"}
+_CARGOS_GERENCIAL = {"SUPERADMIN", "ADMIN", "GERENTE"}
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 
@@ -52,11 +52,13 @@ def _extrair_escopo(usuario: dict) -> tuple[int, int | None]:
     if cargo not in _CARGOS_GERENCIAL:
         raise HTTPException(
             status_code=403,
-            detail="O painel gerencial é exclusivo para SUPERADMIN e ADMIN",
+            detail="O painel gerencial é exclusivo para SUPERADMIN, ADMIN e GERENTE",
         )
 
-    # O painel gerencial é sempre consolidado para toda a organização,
-    # inclusive quando o administrador possui uma loja vinculada.
+    if cargo == "GERENTE":
+        return organizacao_id, _inteiro_positivo(usuario.get("loja_id"), "loja_id")
+
+    # Administradores recebem a visão consolidada de toda a organização.
     return organizacao_id, None
 
 
