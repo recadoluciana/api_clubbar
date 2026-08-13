@@ -292,7 +292,7 @@ async def criar_checkout_asaas(
         nome_limpo = f"{nome_limpo} Clubbar"
 
     cpf_limpo = somente_numeros(cpf_cliente)
-    
+
     telefone_limpo = "".join(filter(str.isdigit, celular_cliente or ""))
     cep_limpo = "".join(filter(str.isdigit, cepcliente or ""))
 
@@ -318,7 +318,7 @@ async def criar_checkout_asaas(
             "value": round(float(valor), 2),
         }
     ]
-    
+
     origem_normalizada = "PARTNER" if origem_checkout.upper() == "PARTNER" else "CLIENT"
 
     body = {
@@ -468,6 +468,32 @@ async def criar_qrcode_pix_estatico_asaas(
     if not data.get("id") or not data.get("payload"):
         raise HTTPException(502, "Asaas nao retornou o QR Code Pix completo")
     return data
+
+
+async def pagar_qrcode_pix_sandbox_asaas(
+    *, payload: str, valor: float, api_key_pagador: str,
+):
+    if APP_ENV in {"production", "prod"} or "api-sandbox.asaas.com" not in ASAAS_BASE_URL:
+        raise HTTPException(404, "Simulacao PIX disponivel somente no Sandbox")
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/pix/qrCodes/pay",
+            headers=_headers(api_key_pagador),
+            json={
+                "qrCode": {"payload": payload},
+                "value": round(float(valor), 2),
+                "description": "Teste PIX Clubbar Sandbox",
+            },
+        )
+    if response.status_code not in (200, 201):
+        detalhe = response.text
+        try:
+            erros = (response.json().get("errors") or [])
+            if erros: detalhe = erros[0].get("description") or detalhe
+        except Exception:
+            pass
+        raise HTTPException(response.status_code, detalhe)
+    return response.json()
 
 
 async def buscar_pagamento_confirmado_por_referencia(

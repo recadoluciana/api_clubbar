@@ -5,9 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
+from app.core.config import (
+    APP_ENV,
+    ASAAS_API_KEY,
+    ASAAS_PIX_ADDRESS_KEY,
+    ASAAS_SANDBOX_PAYER_API_KEY,
+)
 from app.core.security import get_usuario_logado, hash_senha
 from app.database import get_db
+from app.models.carrinho import Carrinho
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
 from app.models.itvenda import ItVenda
@@ -24,7 +30,10 @@ from app.routers.pagamentos import (
 from app.schemas.carrinho import AddItemIn
 from app.schemas.pagamentos import PagarNovoIn
 from app.services.carrinho_service import get_carrinho
-from app.services.asaas_service import criar_qrcode_pix_estatico_asaas
+from app.services.asaas_service import (
+    criar_qrcode_pix_estatico_asaas,
+    pagar_qrcode_pix_sandbox_asaas,
+)
 from app.services.venda_service import criar_ou_obter_venda_idempotente
 
 
@@ -85,6 +94,24 @@ def contexto(payload: dict = Depends(get_usuario_logado), db: Session = Depends(
 @router.post("/carrinho/itens")
 def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
+    carrinho_aberto = db.query(Carrinho).filter(
+        Carrinho.cliente_id == cliente.cliente_id,
+        Carrinho.loja_id == loja.loja_id,
+        Carrinho.usuario_id == int(payload["sub"]),
+        Carrinho.sitcarrinho == "ABERTO",
+    ).first()
+    if carrinho_aberto:
+        pix_pendente = db.query(CheckoutAsaas).filter(
+            CheckoutAsaas.carrinho_id == carrinho_aberto.carrinho_id,
+            CheckoutAsaas.status == "PENDING",
+            CheckoutAsaas.pix_qr_code_id.isnot(None),
+            CheckoutAsaas.pix_expiration_date > datetime.now(),
+        ).first()
+        if pix_pendente:
+            raise HTTPException(
+                409,
+                "Carrinho bloqueado enquanto o QR Code PIX estiver aguardando pagamento.",
+            )
     produto = db.query(Produto).filter(
         Produto.produto_id == dados.produto_id,
         Produto.loja_id == loja.loja_id,
@@ -181,6 +208,9 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
             "expiration_date": qr_ativo.pix_expiration_date.isoformat(),
             "status": "PENDENTE",
             "reutilizado": True,
+            "simulacao_sandbox_disponivel": bool(
+                APP_ENV not in {"production", "prod"} and ASAAS_SANDBOX_PAYER_API_KEY
+            ),
         }
 
     venda = await criar_ou_obter_venda_idempotente(
@@ -233,6 +263,43 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         "expiration_date": qr.get("expirationDate"),
         "status": "PENDENTE",
         "reutilizado": False,
+        "simulacao_sandbox_disponivel": bool(
+            APP_ENV not in {"production", "prod"} and ASAAS_SANDBOX_PAYER_API_KEY
+        ),
+    }
+
+
+@router.post("/checkout/{checkout_id}/simular-pagamento-pix")
+async def simular_pagamento_pix(
+    checkout_id: str,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja, cliente = _contexto_caixa(payload, db)
+    if APP_ENV in {"production", "prod"} or not ASAAS_SANDBOX_PAYER_API_KEY:
+        raise HTTPException(404, "Simulacao PIX nao disponivel")
+    checkout = db.query(CheckoutAsaas).filter(
+        CheckoutAsaas.checkout_id == checkout_id,
+        CheckoutAsaas.loja_id == loja.loja_id,
+        CheckoutAsaas.cliente_id == cliente.cliente_id,
+        CheckoutAsaas.status == "PENDING",
+    ).first()
+    if not checkout or not checkout.pix_payload:
+        raise HTTPException(404, "PIX pendente nao encontrado")
+    if checkout.pix_expiration_date and checkout.pix_expiration_date <= datetime.now():
+        raise HTTPException(410, "QR Code PIX expirado")
+    resultado = await pagar_qrcode_pix_sandbox_asaas(
+        payload=checkout.pix_payload,
+        valor=float(checkout.valor or 0),
+        api_key_pagador=ASAAS_SANDBOX_PAYER_API_KEY,
+    )
+    return {
+        "id": resultado.get("id"),
+        "status": resultado.get("status"),
+        "mensagem": (
+            "Pagamento Sandbox enviado. Autorize a acao critica na conta "
+            "pagadora, se solicitado."
+        ),
     }
 
 
