@@ -7,7 +7,8 @@ from fastapi import HTTPException
 from cryptography.fernet import Fernet
 
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
-from app.routers.asaas_webhook import asaas_webhook, validar_token_webhook_asaas
+from app.routers.asaas_webhook import asaas_retorno, asaas_webhook, validar_token_webhook_asaas
+from app.routers.pagamentos import status_checkout_asaas
 from app.services.asaas_service import criar_checkout_asaas, criar_referencia_checkout_asaas
 
 
@@ -171,6 +172,32 @@ class AsaasAmbientesTest(unittest.TestCase):
         self.assertEqual(["PIX"], body["billingTypes"])
         for url in body["callback"].values():
             self.assertIn("origem=PARTNER", url)
+
+    def test_callback_de_sucesso_nao_aprova_pagamento(self):
+        carrinho = SimpleNamespace(sitcarrinho="ABERTO")
+        checkout = SimpleNamespace(checkout_id="chk_1")
+        banco = BancoSemCheckout([carrinho, checkout])
+
+        html = asyncio.run(
+            asaas_retorno(
+                carrinho_id=42,
+                acao="sucesso",
+                origem="PARTNER",
+                db=banco,
+            )
+        )
+
+        self.assertEqual("ABERTO", carrinho.sitcarrinho)
+        self.assertIn("Pagamento em processamento", html)
+
+    def test_consulta_de_status_nao_aprova_pagamento(self):
+        checkout = SimpleNamespace(checkout_id="chk_1", status="ACTIVE")
+        banco = BancoSemCheckout([checkout])
+
+        resposta = asyncio.run(status_checkout_asaas("chk_1", db=banco))
+
+        self.assertEqual("ACTIVE", checkout.status)
+        self.assertEqual("ACTIVE", resposta["status"])
 
 
 if __name__ == "__main__":
