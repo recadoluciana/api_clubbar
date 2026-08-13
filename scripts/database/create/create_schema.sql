@@ -545,6 +545,7 @@ CREATE TABLE lojaasaas (
   lojaasaas_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
   loja_id BIGINT NOT NULL,
+  venda_id BIGINT NULL,
   ambiente VARCHAR(20) NOT NULL,
   asaas_account_id VARCHAR(100) NULL,
   asaas_wallet_id VARCHAR(100) NOT NULL,
@@ -1078,6 +1079,7 @@ CREATE TABLE checkout_asaas (
 
   checkout_id VARCHAR(100) NOT NULL,
   payment_id VARCHAR(100) NULL,
+  pix_qr_code_id VARCHAR(100) NULL,
   external_reference VARCHAR(100) NULL,
   status VARCHAR(30) NULL DEFAULT 'ACTIVE',
 
@@ -1091,6 +1093,8 @@ CREATE TABLE checkout_asaas (
   PRIMARY KEY (checkout_asaas_id),
   UNIQUE KEY uk_checkout_asaas_checkout_id (checkout_id),
   UNIQUE KEY uk_checkout_asaas_payment_id (payment_id),
+  UNIQUE KEY uk_checkout_asaas_pix_qr_code_id (pix_qr_code_id),
+  INDEX idx_checkout_asaas_venda_id (venda_id),
   INDEX idx_checkout_asaas_carrinho_id (carrinho_id),
   INDEX idx_checkout_asaas_cliente_id (cliente_id),
   INDEX idx_checkout_asaas_loja_id (loja_id),
@@ -1099,7 +1103,10 @@ CREATE TABLE checkout_asaas (
   CONSTRAINT fk_checkout_asaas_carrinho
     FOREIGN KEY (carrinho_id, cliente_id, loja_id)
     REFERENCES carrinho(carrinho_id, cliente_id, loja_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_checkout_asaas_venda
+    FOREIGN KEY (venda_id) REFERENCES venda(venda_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE lojacontabancaria (

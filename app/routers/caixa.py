@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.core.config import ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
 from app.core.security import get_usuario_logado, hash_senha
 from app.database import get_db
 from app.models.checkout_asaas import CheckoutAsaas
@@ -13,10 +14,17 @@ from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.venda import Venda
 from app.routers.carrinho import adicionar_item
-from app.routers.pagamentos import pagar_asaas, status_checkout_asaas
+from app.routers.pagamentos import (
+    _montar_itens_asaas,
+    _recalcular_itens_carrinho,
+    pagar_asaas,
+    status_checkout_asaas,
+)
 from app.schemas.carrinho import AddItemIn
 from app.schemas.pagamentos import PagarNovoIn
 from app.services.carrinho_service import get_carrinho
+from app.services.asaas_service import criar_qrcode_pix_estatico_asaas
+from app.services.venda_service import criar_ou_obter_venda_idempotente
 
 
 router = APIRouter(prefix="/caixa", tags=["Frente de caixa"])
@@ -118,8 +126,8 @@ def consultar_carrinho(payload: dict = Depends(get_usuario_logado), db: Session 
         }
 
 
-@router.post("/checkout")
-async def checkout(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+@router.post("/checkout/cartao")
+async def checkout_cartao(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
     return await pagar_asaas(
         PagarNovoIn(
@@ -127,13 +135,77 @@ async def checkout(payload: dict = Depends(get_usuario_logado), db: Session = De
             usuario_id=int(payload["sub"]),
             organizacao_id=loja.organizacao_id,
             loja_id=loja.loja_id,
-            dsmetodopag="PIX",
+            dsmetodopag="CREDIT_CARD",
             percentual_taxa_ingresso=float(loja.vrtaxaing or 0),
             percentual_taxa_produto=float(loja.vrtaxaprod or 0),
             origem_checkout="PARTNER",
         ),
         db,
     )
+
+
+@router.post("/checkout/pix")
+async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    loja, cliente = _contexto_caixa(payload, db)
+    if not ASAAS_API_KEY:
+        raise HTTPException(503, "Conta global Asaas nao configurada")
+
+    carrinho = get_carrinho(db, cliente.cliente_id, loja.loja_id, int(payload["sub"]))
+    itens = carrinho.get("itens") or []
+    if not itens:
+        raise HTTPException(400, "Carrinho vazio")
+
+    itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
+    _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
+    carrinho_id = int(carrinho["carrinho_id"])
+
+    venda = await criar_ou_obter_venda_idempotente(
+        db,
+        cliente_id=cliente.cliente_id,
+        usuario_id=int(payload["sub"]),
+        organizacao_id=loja.organizacao_id,
+        loja_id=loja.loja_id,
+        carrinho={
+            **carrinho,
+            "total": valor_total,
+            "itens": itens_recalculados,
+        },
+        chave=f"PIX-CAIXA-{carrinho_id}",
+        plataforma="TOTEM",
+        metodo_pagamento="PIX",
+    )
+    venda_id = int(venda["venda_id"])
+
+    qr = await criar_qrcode_pix_estatico_asaas(
+        address_key=ASAAS_PIX_ADDRESS_KEY,
+        valor=valor_total,
+        descricao=f"Clubbar venda {venda_id}",
+        api_key=ASAAS_API_KEY,
+    )
+    pix_qr_code_id = str(qr["id"])
+    registro = CheckoutAsaas(
+        carrinho_id=carrinho_id,
+        cliente_id=cliente.cliente_id,
+        loja_id=loja.loja_id,
+        venda_id=venda_id,
+        checkout_id=pix_qr_code_id,
+        pix_qr_code_id=pix_qr_code_id,
+        external_reference=f"VENDA-{venda_id}",
+        status="PENDING",
+        valor=valor_total,
+        vrtaxaclubbar=valor_taxa,
+    )
+    db.add(registro)
+    db.commit()
+    return {
+        "venda_id": venda_id,
+        "pagamento_id": pix_qr_code_id,
+        "pix_qr_code_id": pix_qr_code_id,
+        "encoded_image": qr.get("encodedImage"),
+        "payload": qr["payload"],
+        "expiration_date": qr.get("expirationDate"),
+        "status": "PENDENTE",
+    }
 
 
 @router.get("/checkout/{checkout_id}/tickets")

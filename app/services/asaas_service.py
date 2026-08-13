@@ -433,6 +433,43 @@ async def buscar_qrcode_pix_asaas(payment_id: str, api_key: str):
     return data
 
 
+async def criar_qrcode_pix_estatico_asaas(
+    *,
+    address_key: str,
+    valor: float,
+    descricao: str,
+    api_key: str,
+    expiracao_segundos: int = 600,
+) -> dict:
+    if not address_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Chave Pix da conta Asaas nao configurada",
+        )
+    body = {
+        "addressKey": address_key,
+        "description": descricao[:140],
+        "value": round(float(valor), 2),
+        "format": "ALL",
+        "expirationSeconds": expiracao_segundos,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/pix/qrCodes/static",
+            json=body,
+            headers=_headers(api_key),
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=data)
+    if not data.get("id") or not data.get("payload"):
+        raise HTTPException(502, "Asaas nao retornou o QR Code Pix completo")
+    return data
+
+
 async def buscar_pagamento_confirmado_por_referencia(
     external_reference: str,
     api_key: str,

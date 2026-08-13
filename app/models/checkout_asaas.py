@@ -1,5 +1,5 @@
 #checkout_asaas.py
-from sqlalchemy import BigInteger, Column, DateTime, String, text, Numeric
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, text, Numeric
 
 from app.database import Base
 
@@ -12,9 +12,11 @@ class CheckoutAsaas(Base):
     carrinho_id = Column(BigInteger, nullable=False)
     cliente_id = Column(BigInteger, nullable=False)
     loja_id = Column(BigInteger, nullable=False)
+    venda_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
 
     checkout_id = Column(String(100), unique=True, nullable=False)
     payment_id = Column(String(100))
+    pix_qr_code_id = Column(String(100), unique=True, nullable=True)
 
     external_reference = Column(String(100))
     status = Column(String(30), server_default=text("'ACTIVE'"))

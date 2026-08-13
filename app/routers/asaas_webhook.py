@@ -1,5 +1,6 @@
 import traceback
 import hmac
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -62,6 +63,7 @@ async def asaas_webhook(
             or body.get("checkoutSession")
         )
         payment_id = payment.get("id") or body.get("paymentId")
+        pix_qr_code_id = payment.get("pixQrCodeId") or body.get("pixQrCodeId")
 
         print(
             "[ASAAS WEBHOOK]",
@@ -90,6 +92,13 @@ async def asaas_webhook(
                 db.query(CheckoutAsaas)
                 .filter(CheckoutAsaas.external_reference == external_reference)
                 .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+                .first()
+            )
+
+        if not registro_checkout and pix_qr_code_id:
+            registro_checkout = (
+                db.query(CheckoutAsaas)
+                .filter(CheckoutAsaas.pix_qr_code_id == str(pix_qr_code_id))
                 .first()
             )
 
@@ -131,7 +140,19 @@ async def asaas_webhook(
             "PAID",
         ]
 
-        if evento not in eventos_confirmados and status not in status_confirmados:
+        pix_direto = bool(registro_checkout.pix_qr_code_id)
+        evento_confirma = (
+            evento == "PAYMENT_RECEIVED"
+            if pix_direto
+            else evento in eventos_confirmados
+        )
+        status_confirma = (
+            status == "RECEIVED"
+            if pix_direto
+            else status in status_confirmados
+        )
+
+        if not evento_confirma and not status_confirma:
             if registro_checkout:
                 registro_checkout.status = status or evento or registro_checkout.status
                 if payment_id:
@@ -145,6 +166,14 @@ async def asaas_webhook(
                 "status": status,
                 "carrinho_id": carrinho_id,
             }
+
+        valor_recebido = Decimal(str(payment.get("value") or 0)).quantize(Decimal("0.01"))
+        valor_esperado = Decimal(str(registro_checkout.valor or 0)).quantize(Decimal("0.01"))
+        if valor_recebido != valor_esperado:
+            raise HTTPException(
+                status_code=409,
+                detail="Valor recebido pelo Asaas diverge da venda",
+            )
 
         print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
 
