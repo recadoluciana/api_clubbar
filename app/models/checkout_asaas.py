@@ -1,5 +1,5 @@
 #checkout_asaas.py
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, text, Numeric
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, String, Text, text, Numeric
 
 from app.database import Base
 
@@ -17,6 +17,9 @@ class CheckoutAsaas(Base):
     checkout_id = Column(String(100), unique=True, nullable=False)
     payment_id = Column(String(100))
     pix_qr_code_id = Column(String(100), unique=True, nullable=True)
+    pix_payload = Column(Text, nullable=True)
+    pix_encoded_image = Column(Text, nullable=True)
+    pix_expiration_date = Column(DateTime, nullable=True)
 
     external_reference = Column(String(100))
     status = Column(String(30), server_default=text("'ACTIVE'"))

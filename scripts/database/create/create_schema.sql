@@ -1080,6 +1080,9 @@ CREATE TABLE checkout_asaas (
   checkout_id VARCHAR(100) NOT NULL,
   payment_id VARCHAR(100) NULL,
   pix_qr_code_id VARCHAR(100) NULL,
+  pix_payload TEXT NULL,
+  pix_encoded_image LONGTEXT NULL,
+  pix_expiration_date DATETIME NULL,
   external_reference VARCHAR(100) NULL,
   status VARCHAR(30) NULL DEFAULT 'ACTIVE',
 

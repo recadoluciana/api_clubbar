@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -159,6 +160,29 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
     _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
     carrinho_id = int(carrinho["carrinho_id"])
 
+    qr_ativo = (
+        db.query(CheckoutAsaas)
+        .filter(
+            CheckoutAsaas.carrinho_id == carrinho_id,
+            CheckoutAsaas.pix_qr_code_id.isnot(None),
+            CheckoutAsaas.status == "PENDING",
+            CheckoutAsaas.pix_expiration_date > datetime.now(),
+        )
+        .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+        .first()
+    )
+    if qr_ativo and qr_ativo.pix_payload and qr_ativo.pix_encoded_image:
+        return {
+            "venda_id": int(qr_ativo.venda_id),
+            "pagamento_id": qr_ativo.pix_qr_code_id,
+            "pix_qr_code_id": qr_ativo.pix_qr_code_id,
+            "encoded_image": qr_ativo.pix_encoded_image,
+            "payload": qr_ativo.pix_payload,
+            "expiration_date": qr_ativo.pix_expiration_date.isoformat(),
+            "status": "PENDENTE",
+            "reutilizado": True,
+        }
+
     venda = await criar_ou_obter_venda_idempotente(
         db,
         cliente_id=cliente.cliente_id,
@@ -190,6 +214,9 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         venda_id=venda_id,
         checkout_id=pix_qr_code_id,
         pix_qr_code_id=pix_qr_code_id,
+        pix_payload=str(qr["payload"]),
+        pix_encoded_image=str(qr.get("encodedImage") or ""),
+        pix_expiration_date=datetime.now() + timedelta(minutes=10),
         external_reference=f"VENDA-{venda_id}",
         status="PENDING",
         valor=valor_total,
@@ -205,6 +232,7 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         "payload": qr["payload"],
         "expiration_date": qr.get("expirationDate"),
         "status": "PENDENTE",
+        "reutilizado": False,
     }
 
 

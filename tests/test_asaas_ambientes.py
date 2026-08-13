@@ -7,9 +7,18 @@ from fastapi import HTTPException
 from cryptography.fernet import Fernet
 
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
-from app.routers.asaas_webhook import asaas_retorno, asaas_webhook, validar_token_webhook_asaas
+from app.routers.asaas_webhook import (
+    asaas_retorno,
+    asaas_webhook,
+    evento_confirma_pagamento_asaas,
+    validar_token_webhook_asaas,
+)
 from app.routers.pagamentos import status_checkout_asaas
-from app.services.asaas_service import criar_checkout_asaas, criar_referencia_checkout_asaas
+from app.services.asaas_service import (
+    criar_checkout_asaas,
+    criar_qrcode_pix_estatico_asaas,
+    criar_referencia_checkout_asaas,
+)
 
 
 class QuerySemResultado:
@@ -71,6 +80,24 @@ class ClienteHttpFalso:
     async def post(self, url, json, headers):
         type(self).ultimo_json = json
         return RespostaAsaasFalsa()
+
+
+class RespostaPixFalsa:
+    status_code = 200
+    text = ""
+
+    def json(self):
+        return {
+            "id": "pix_qr_1",
+            "payload": "000201-pix-copia-e-cola",
+            "encodedImage": "imagem-base64",
+        }
+
+
+class ClienteHttpPixFalso(ClienteHttpFalso):
+    async def post(self, url, json, headers):
+        type(self).ultimo_json = json
+        return RespostaPixFalsa()
 
 
 class AsaasAmbientesTest(unittest.TestCase):
@@ -198,6 +225,37 @@ class AsaasAmbientesTest(unittest.TestCase):
 
         self.assertEqual("ACTIVE", checkout.status)
         self.assertEqual("ACTIVE", resposta["status"])
+
+    def test_pix_direto_so_e_liberado_com_payment_received(self):
+        self.assertFalse(
+            evento_confirma_pagamento_asaas(
+                "PAYMENT_CONFIRMED", "CONFIRMED", pix_direto=True
+            )
+        )
+        self.assertTrue(
+            evento_confirma_pagamento_asaas(
+                "PAYMENT_RECEIVED", "RECEIVED", pix_direto=True
+            )
+        )
+
+    def test_pix_direto_usa_chave_valor_e_expiracao(self):
+        ClienteHttpPixFalso.ultimo_json = None
+        with patch(
+            "app.services.asaas_service.httpx.AsyncClient", ClienteHttpPixFalso
+        ):
+            resposta = asyncio.run(
+                criar_qrcode_pix_estatico_asaas(
+                    address_key="chave-pix-teste",
+                    valor=25.5,
+                    descricao="Clubbar venda 10",
+                    api_key="api-key-teste",
+                )
+            )
+
+        self.assertEqual("pix_qr_1", resposta["id"])
+        self.assertEqual("chave-pix-teste", ClienteHttpPixFalso.ultimo_json["addressKey"])
+        self.assertEqual(25.5, ClienteHttpPixFalso.ultimo_json["value"])
+        self.assertEqual(600, ClienteHttpPixFalso.ultimo_json["expirationSeconds"])
 
 
 if __name__ == "__main__":

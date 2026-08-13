@@ -27,6 +27,18 @@ router = APIRouter(
 )
 
 
+def evento_confirma_pagamento_asaas(evento: str, status: str, *, pix_direto: bool) -> bool:
+    if pix_direto:
+        # Para Pix, PAYMENT_CONFIRMED pode representar analise cautelar. A
+        # liberacao ocorre apenas quando o Asaas informa o recebimento.
+        return evento == "PAYMENT_RECEIVED" or status == "RECEIVED"
+    return evento in {"PAYMENT_RECEIVED", "PAYMENT_CONFIRMED", "CHECKOUT_PAID"} or status in {
+        "RECEIVED",
+        "CONFIRMED",
+        "PAID",
+    }
+
+
 def validar_token_webhook_asaas(
     token_recebido: str | None,
 ) -> None:
@@ -128,31 +140,12 @@ async def asaas_webhook(
 
         external_reference = referencia_registrada or external_reference
 
-        eventos_confirmados = [
-            "PAYMENT_RECEIVED",
-            "PAYMENT_CONFIRMED",
-            "CHECKOUT_PAID",
-        ]
-
-        status_confirmados = [
-            "RECEIVED",
-            "CONFIRMED",
-            "PAID",
-        ]
-
         pix_direto = bool(registro_checkout.pix_qr_code_id)
-        evento_confirma = (
-            evento == "PAYMENT_RECEIVED"
-            if pix_direto
-            else evento in eventos_confirmados
-        )
-        status_confirma = (
-            status == "RECEIVED"
-            if pix_direto
-            else status in status_confirmados
-        )
-
-        if not evento_confirma and not status_confirma:
+        if not evento_confirma_pagamento_asaas(
+            evento,
+            status,
+            pix_direto=pix_direto,
+        ):
             if registro_checkout:
                 registro_checkout.status = status or evento or registro_checkout.status
                 if payment_id:
@@ -169,7 +162,7 @@ async def asaas_webhook(
 
         valor_recebido = Decimal(str(payment.get("value") or 0)).quantize(Decimal("0.01"))
         valor_esperado = Decimal(str(registro_checkout.valor or 0)).quantize(Decimal("0.01"))
-        if valor_recebido != valor_esperado:
+        if pix_direto and valor_recebido != valor_esperado:
             raise HTTPException(
                 status_code=409,
                 detail="Valor recebido pelo Asaas diverge da venda",
