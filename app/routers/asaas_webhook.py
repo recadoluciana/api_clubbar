@@ -39,6 +39,46 @@ def evento_confirma_pagamento_asaas(evento: str, status: str, *, pix_direto: boo
     }
 
 
+def _somente_digitos(valor: object) -> str:
+    return "".join(char for char in str(valor or "") if char.isdigit())
+
+
+def atualizar_cliente_com_customer_asaas(
+    db: Session,
+    cliente: Cliente,
+    customer: dict,
+) -> None:
+    # O cliente padrão do caixa é compartilhado entre consumidores e nunca
+    # deve receber dados pessoais da conta que efetuou um pagamento.
+    if str(cliente.cliente_padrao or "N").upper() == "S":
+        return
+
+    cpf = _somente_digitos(customer.get("cpfCnpj"))
+    if cpf:
+        cpf_em_uso = (
+            db.query(Cliente.cliente_id)
+            .filter(
+                Cliente.nrcpfcliente == cpf,
+                Cliente.cliente_id != cliente.cliente_id,
+            )
+            .first()
+        )
+        if not cpf_em_uso:
+            cliente.nrcpfcliente = cpf
+
+    cliente.nrtelcliente = (
+        customer.get("mobilePhone")
+        or customer.get("phone")
+        or cliente.nrtelcliente
+    )
+    cliente.endcliente = customer.get("address") or cliente.endcliente
+    cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
+    cliente.complcliente = customer.get("complement") or cliente.complcliente
+    cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
+    cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
+    cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
+    cliente.ufcliente = customer.get("state") or cliente.ufcliente
+
 def validar_token_webhook_asaas(
     token_recebido: str | None,
 ) -> None:
@@ -190,16 +230,7 @@ async def asaas_webhook(
             )
 
             if cliente:
-                cliente.nrtelcliente = customer.get("mobilePhone") or customer.get("phone") or cliente.nrtelcliente
-                cliente.nrcpfcliente = customer.get("cpfCnpj") or cliente.nrcpfcliente
-                cliente.endcliente = customer.get("address") or cliente.endcliente
-                cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
-                cliente.complcliente = customer.get("complement") or cliente.complcliente
-                cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
-                cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
-                cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
-                cliente.ufcliente = customer.get("state") or cliente.ufcliente
-                
+                atualizar_cliente_com_customer_asaas(db, cliente, customer)
         if registro_checkout:
             registro_checkout.status = "PAID"
             if payment_id:

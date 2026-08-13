@@ -180,9 +180,10 @@ def _montar_itens_asaas(
             descricao_item = "Produto"
             referencia = f"PRODUTO-{item.get('produto_id') or 'SEM-ID'}"
 
-        taxa_linha = round(float(item.get("vrtaxaitvenda") or 0), 2)
-        valor_total_com_taxa += taxa_linha
-        vr_taxa_clubbar += taxa_linha
+        if tipo == "I":
+            taxa_linha = round(float(item.get("vrtaxaitvenda") or 0), 2)
+            valor_total_com_taxa += taxa_linha
+            vr_taxa_clubbar += taxa_linha
 
         itens_asaas.append(
             {

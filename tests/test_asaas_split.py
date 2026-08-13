@@ -4,7 +4,7 @@ from app.routers.pagamentos import _montar_itens_asaas
 
 
 class AsaasSplitTest(unittest.TestCase):
-    def test_soma_taxas_de_produto_e_ingresso_sem_confiar_no_payload(self):
+    def test_somente_taxa_de_ingresso_e_cobrada_do_cliente(self):
         itens, total, taxa = _montar_itens_asaas([
             {
                 "produto_id": 1,
@@ -25,10 +25,10 @@ class AsaasSplitTest(unittest.TestCase):
             },
         ])
 
-        self.assertEqual(6.0, taxa)
-        self.assertEqual(76.0, total)
+        self.assertEqual(5.0, taxa)
+        self.assertEqual(75.0, total)
         self.assertEqual("Taxa de serviço Clubbar", itens[-1]["name"])
-        self.assertEqual(6.0, itens[-1]["value"])
+        self.assertEqual(5.0, itens[-1]["value"])
 
     def test_checkout_central_mantem_taxa_no_total_sem_split(self):
         _, total, taxa = _montar_itens_asaas([{
