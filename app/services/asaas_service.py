@@ -280,6 +280,8 @@ async def criar_checkout_asaas(
     bairrocliente: str | None = None,
     cepcliente: str | None = None,
     items: list[dict] | None = None,
+    billing_types: list[str] | None = None,
+    origem_checkout: str = "CLIENT",
 ):
     nome_limpo = (nome_cliente or "").strip()
 
@@ -317,15 +319,17 @@ async def criar_checkout_asaas(
         }
     ]
     
+    origem_normalizada = "PARTNER" if origem_checkout.upper() == "PARTNER" else "CLIENT"
+
     body = {
-        "billingTypes": ["PIX", "CREDIT_CARD"],
+        "billingTypes": billing_types or ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED"],
         "minutesToExpire": 10,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso",
-            "cancelUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado",
-            "expiredUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado",
+            "successUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso&origem={origem_normalizada}",
+            "cancelUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado&origem={origem_normalizada}",
+            "expiredUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado&origem={origem_normalizada}",
         },
         "items": items_asaas,
     }

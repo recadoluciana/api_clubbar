@@ -130,6 +130,7 @@ async def checkout(payload: dict = Depends(get_usuario_logado), db: Session = De
             dsmetodopag="PIX",
             percentual_taxa_ingresso=float(loja.vrtaxaing or 0),
             percentual_taxa_produto=float(loja.vrtaxaprod or 0),
+            origem_checkout="PARTNER",
         ),
         db,
     )

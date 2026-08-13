@@ -13,7 +13,12 @@ from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
 from app.services.asaas_service import buscar_customer_asaas
 from app.services.repasse_service import criar_repasse_da_venda
-from app.core.config import ASAAS_API_KEY, ASAAS_WEBHOOK_TOKEN, PUBLIC_CLIENT_BASE_URL
+from app.core.config import (
+    ASAAS_API_KEY,
+    ASAAS_WEBHOOK_TOKEN,
+    PUBLIC_CLIENT_BASE_URL,
+    PUBLIC_PARTNER_BASE_URL,
+)
 
 router = APIRouter(
     prefix="/asaas",
@@ -214,6 +219,7 @@ async def asaas_webhook(
 async def asaas_retorno(
     carrinho_id: int,
     acao: str = "sucesso",
+    origem: str = "CLIENT",
     db: Session = Depends(get_db),
 ):
     carrinho = (
@@ -230,6 +236,12 @@ async def asaas_retorno(
         .first()
     )
     checkout_id_retorno = checkout_registrado.checkout_id if checkout_registrado else ""
+    origem_normalizada = origem.strip().upper()
+    url_retorno = (
+        PUBLIC_PARTNER_BASE_URL
+        if origem_normalizada == "PARTNER"
+        else PUBLIC_CLIENT_BASE_URL
+    ) or "/"
 
     if acao == "cancelado":
         titulo = "Pagamento cancelado"
@@ -323,7 +335,7 @@ async def asaas_retorno(
         <h1>{titulo}</h1>
         <p>{mensagem}</p>
 
-        <a href="{PUBLIC_CLIENT_BASE_URL or '/'}?pagamento={retorno}&gateway=asaas&checkout_id={checkout_id_retorno}">
+        <a href="{url_retorno}?pagamento={retorno}&gateway=asaas&checkout_id={checkout_id_retorno}">
           Voltar para o Clubbar
         </a>
 

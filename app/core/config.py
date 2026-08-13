@@ -49,6 +49,12 @@ PUBLIC_CLIENT_BASE_URL = (
     or ""
 ).strip().rstrip("/")
 
+PUBLIC_PARTNER_BASE_URL = (
+    os.getenv("PUBLIC_PARTNER_BASE_URL")
+    or os.getenv("PARTNER_URL")
+    or ""
+).strip().rstrip("/")
+
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(

@@ -146,6 +146,32 @@ class AsaasAmbientesTest(unittest.TestCase):
         self.assertNotIn("api.clubbar.com.br", callback["successUrl"])
         self.assertNotIn("splits", ClienteHttpFalso.ultimo_json)
 
+    def test_checkout_pix_do_partner_configura_qrcode_e_retorno_corretos(self):
+        ClienteHttpFalso.ultimo_json = None
+        with (
+            patch(
+                "app.services.asaas_service.PUBLIC_API_BASE_URL",
+                "https://api-dev.exemplo.com",
+            ),
+            patch("app.services.asaas_service.httpx.AsyncClient", ClienteHttpFalso),
+        ):
+            asyncio.run(
+                criar_checkout_asaas(
+                    valor=10,
+                    descricao="Venda no caixa",
+                    external_reference="CLUBBAR-development-CARRINHO-42-token",
+                    carrinho_id=42,
+                    api_key="chave-teste",
+                    billing_types=["PIX"],
+                    origem_checkout="PARTNER",
+                )
+            )
+
+        body = ClienteHttpFalso.ultimo_json
+        self.assertEqual(["PIX"], body["billingTypes"])
+        for url in body["callback"].values():
+            self.assertIn("origem=PARTNER", url)
+
 
 if __name__ == "__main__":
     unittest.main()

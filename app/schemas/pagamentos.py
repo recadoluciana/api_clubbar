@@ -61,6 +61,9 @@ class PagarNovoIn(BaseModel):
     # Idempotência
     idempotency_key: Optional[str] = None
 
+    # Define para qual aplicativo o Checkout Asaas deve retornar.
+    origem_checkout: Literal["CLIENT", "PARTNER"] = "CLIENT"
+
 class PagarNovoOut(BaseModel):
     venda_id: int
     pagbank_order_id: Optional[str] = None

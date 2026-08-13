@@ -296,6 +296,14 @@ async def pagar_asaas(
             bairrocliente=cliente.bairrocliente,
             cepcliente=cliente.cepcliente,
             items=items_asaas,
+            billing_types=(
+                ["PIX"]
+                if payload.dsmetodopag == "PIX"
+                else ["CREDIT_CARD"]
+                if payload.dsmetodopag in {"CREDIT_CARD", "CREDITO"}
+                else ["PIX", "CREDIT_CARD"]
+            ),
+            origem_checkout=payload.origem_checkout,
         )
 
         checkout_id = pagamento.get("id")
