@@ -11,6 +11,7 @@ from app.models.carrinho import Carrinho
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_asaas_pagador import CheckoutAsaasPagador
 from app.models.cliente import Cliente
 from app.services.asaas_service import buscar_customer_asaas
 from app.services.repasse_service import criar_repasse_da_venda
@@ -42,6 +43,37 @@ def evento_confirma_pagamento_asaas(evento: str, status: str, *, pix_direto: boo
 def _somente_digitos(valor: object) -> str:
     return "".join(char for char in str(valor or "") if char.isdigit())
 
+
+def registrar_pagador_asaas(
+    db: Session,
+    checkout: CheckoutAsaas,
+    customer: dict,
+    payment_id: str | None,
+) -> CheckoutAsaasPagador:
+    pagador = (
+        db.query(CheckoutAsaasPagador)
+        .filter(CheckoutAsaasPagador.checkout_asaas_id == checkout.checkout_asaas_id)
+        .first()
+    )
+    if not pagador:
+        pagador = CheckoutAsaasPagador(checkout_asaas_id=checkout.checkout_asaas_id)
+        db.add(pagador)
+
+    pagador.venda_id = checkout.venda_id
+    pagador.payment_id = str(payment_id) if payment_id else pagador.payment_id
+    pagador.asaas_customer_id = str(customer.get("id") or "") or None
+    pagador.nome = customer.get("name")
+    pagador.cpf_cnpj = _somente_digitos(customer.get("cpfCnpj")) or None
+    pagador.email = customer.get("email")
+    pagador.telefone = customer.get("mobilePhone") or customer.get("phone")
+    pagador.endereco = customer.get("address")
+    pagador.numero = customer.get("addressNumber")
+    pagador.complemento = customer.get("complement")
+    pagador.bairro = customer.get("province")
+    pagador.cep = customer.get("postalCode")
+    pagador.cidade = customer.get("city")
+    pagador.uf = customer.get("state")
+    return pagador
 
 def atualizar_cliente_com_customer_asaas(
     db: Session,
@@ -222,6 +254,7 @@ async def asaas_webhook(
 
         if customer_id and registro_checkout and ASAAS_API_KEY:
             customer = await buscar_customer_asaas(str(customer_id), ASAAS_API_KEY)
+            registrar_pagador_asaas(db, registro_checkout, customer, payment_id)
 
             cliente = (
                 db.query(Cliente)

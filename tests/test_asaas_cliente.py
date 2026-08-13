@@ -1,7 +1,12 @@
 import unittest
+
+import main  # Carrega todos os modelos e relacionamentos SQLAlchemy.
 from types import SimpleNamespace
 
-from app.routers.asaas_webhook import atualizar_cliente_com_customer_asaas
+from app.routers.asaas_webhook import (
+    atualizar_cliente_com_customer_asaas,
+    registrar_pagador_asaas,
+)
 
 
 class QueryFalsa:
@@ -13,6 +18,18 @@ class QueryFalsa:
 
     def first(self):
         return self.resultado
+
+
+class BancoPagadorFalso:
+    def __init__(self, resultado=None):
+        self.resultado = resultado
+        self.adicionados = []
+
+    def query(self, *args):
+        return QueryFalsa(self.resultado)
+
+    def add(self, item):
+        self.adicionados.append(item)
 
 
 class BancoFalso:
@@ -42,6 +59,54 @@ def cliente(**kwargs):
 
 
 class AtualizarClienteAsaasTest(unittest.TestCase):
+
+    def test_pagador_e_criado_por_checkout(self):
+        banco = BancoPagadorFalso()
+        checkout = SimpleNamespace(checkout_asaas_id=15, venda_id=10)
+        pagador = registrar_pagador_asaas(
+            banco,
+            checkout,
+            {
+                "id": "cus_123",
+                "name": "Pessoa Pagadora",
+                "cpfCnpj": "294.197.818-60",
+                "email": "pagador@example.com",
+            },
+            "pay_123",
+        )
+        self.assertEqual(1, len(banco.adicionados))
+        self.assertEqual(15, pagador.checkout_asaas_id)
+        self.assertEqual(10, pagador.venda_id)
+        self.assertEqual("29419781860", pagador.cpf_cnpj)
+        self.assertEqual("pay_123", pagador.payment_id)
+
+    def test_reenvio_atualiza_pagador_sem_duplicar(self):
+        existente = SimpleNamespace(
+            checkout_asaas_id=15,
+            venda_id=None,
+            payment_id=None,
+            asaas_customer_id=None,
+            nome=None,
+            cpf_cnpj=None,
+            email=None,
+            telefone=None,
+            endereco=None,
+            numero=None,
+            complemento=None,
+            bairro=None,
+            cep=None,
+            cidade=None,
+            uf=None,
+        )
+        banco = BancoPagadorFalso(existente)
+        checkout = SimpleNamespace(checkout_asaas_id=15, venda_id=10)
+        pagador = registrar_pagador_asaas(
+            banco, checkout, {"id": "cus_123", "name": "Pagador"}, "pay_123"
+        )
+        self.assertEqual([], banco.adicionados)
+        self.assertIs(existente, pagador)
+        self.assertEqual(10, pagador.venda_id)
+        self.assertEqual("Pagador", pagador.nome)
     def test_cliente_padrao_nao_recebe_dados_pessoais_do_pagador(self):
         registro = cliente(cliente_padrao="S")
         atualizar_cliente_com_customer_asaas(
