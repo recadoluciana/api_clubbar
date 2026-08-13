@@ -1076,6 +1076,7 @@ CREATE TABLE checkout_asaas (
   carrinho_id BIGINT NOT NULL,
   cliente_id BIGINT NOT NULL,
   loja_id BIGINT NOT NULL,
+  venda_id BIGINT NULL,
 
   checkout_id VARCHAR(100) NOT NULL,
   payment_id VARCHAR(100) NULL,
