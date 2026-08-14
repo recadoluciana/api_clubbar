@@ -15,6 +15,8 @@ from app.core.security import get_usuario_logado, hash_senha
 from app.database import get_db
 from app.models.carrinho import Carrinho
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_asaas_item import CheckoutAsaasItem
+from app.models.itcarrinho import ItCarrinho
 from app.models.cliente import Cliente
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
@@ -35,7 +37,6 @@ from app.services.asaas_service import (
     excluir_qrcode_pix_estatico_asaas,
     pagar_qrcode_pix_sandbox_asaas,
 )
-from app.services.venda_service import criar_ou_obter_venda_idempotente
 
 
 router = APIRouter(prefix="/caixa", tags=["Frente de caixa"])
@@ -95,24 +96,6 @@ def contexto(payload: dict = Depends(get_usuario_logado), db: Session = Depends(
 @router.post("/carrinho/itens")
 def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
-    carrinho_aberto = db.query(Carrinho).filter(
-        Carrinho.cliente_id == cliente.cliente_id,
-        Carrinho.loja_id == loja.loja_id,
-        Carrinho.usuario_id == int(payload["sub"]),
-        Carrinho.sitcarrinho == "ABERTO",
-    ).first()
-    if carrinho_aberto:
-        pix_pendente = db.query(CheckoutAsaas).filter(
-            CheckoutAsaas.carrinho_id == carrinho_aberto.carrinho_id,
-            CheckoutAsaas.status == "PENDING",
-            CheckoutAsaas.pix_qr_code_id.isnot(None),
-            CheckoutAsaas.pix_expiration_date > datetime.now(),
-        ).first()
-        if pix_pendente:
-            raise HTTPException(
-                409,
-                "Carrinho bloqueado enquanto o QR Code PIX estiver aguardando pagamento.",
-            )
     produto = db.query(Produto).filter(
         Produto.produto_id == dados.produto_id,
         Produto.loja_id == loja.loja_id,
@@ -155,6 +138,27 @@ def consultar_carrinho(payload: dict = Depends(get_usuario_logado), db: Session 
         }
 
 
+@router.delete("/carrinho")
+def limpar_carrinho_caixa(
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja, cliente = _contexto_caixa(payload, db)
+    carrinho = db.query(Carrinho).filter(
+        Carrinho.cliente_id == cliente.cliente_id,
+        Carrinho.loja_id == loja.loja_id,
+        Carrinho.usuario_id == int(payload["sub"]),
+        Carrinho.sitcarrinho == "ABERTO",
+    ).first()
+    if not carrinho:
+        return {"ok": True, "itens_removidos": 0}
+    removidos = db.query(ItCarrinho).filter(
+        ItCarrinho.carrinho_id == carrinho.carrinho_id
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"ok": True, "itens_removidos": removidos}
+
+
 @router.post("/checkout/cartao")
 async def checkout_cartao(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
@@ -188,53 +192,10 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
     _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
     carrinho_id = int(carrinho["carrinho_id"])
 
-    qr_ativo = (
-        db.query(CheckoutAsaas)
-        .filter(
-            CheckoutAsaas.carrinho_id == carrinho_id,
-            CheckoutAsaas.pix_qr_code_id.isnot(None),
-            CheckoutAsaas.status == "PENDING",
-            CheckoutAsaas.pix_expiration_date > datetime.now(),
-        )
-        .order_by(CheckoutAsaas.checkout_asaas_id.desc())
-        .first()
-    )
-    if qr_ativo and qr_ativo.pix_payload and qr_ativo.pix_encoded_image:
-        return {
-            "venda_id": int(qr_ativo.venda_id),
-            "pagamento_id": qr_ativo.pix_qr_code_id,
-            "pix_qr_code_id": qr_ativo.pix_qr_code_id,
-            "encoded_image": qr_ativo.pix_encoded_image,
-            "payload": qr_ativo.pix_payload,
-            "expiration_date": qr_ativo.pix_expiration_date.isoformat(),
-            "status": "PENDENTE",
-            "reutilizado": True,
-            "simulacao_sandbox_disponivel": bool(
-                APP_ENV not in {"production", "prod"} and ASAAS_SANDBOX_PAYER_API_KEY
-            ),
-        }
-
-    venda = await criar_ou_obter_venda_idempotente(
-        db,
-        cliente_id=cliente.cliente_id,
-        usuario_id=int(payload["sub"]),
-        organizacao_id=loja.organizacao_id,
-        loja_id=loja.loja_id,
-        carrinho={
-            **carrinho,
-            "total": valor_total,
-            "itens": itens_recalculados,
-        },
-        chave=f"PIX-CAIXA-{carrinho_id}",
-        plataforma="TOTEM",
-        metodo_pagamento="PIX",
-    )
-    venda_id = int(venda["venda_id"])
-
     qr = await criar_qrcode_pix_estatico_asaas(
         address_key=ASAAS_PIX_ADDRESS_KEY,
         valor=valor_total,
-        descricao=f"Clubbar venda {venda_id}",
+        descricao=f"Clubbar carrinho {carrinho_id}",
         api_key=ASAAS_API_KEY,
     )
     pix_qr_code_id = str(qr["id"])
@@ -242,21 +203,45 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         carrinho_id=carrinho_id,
         cliente_id=cliente.cliente_id,
         loja_id=loja.loja_id,
-        venda_id=venda_id,
+        venda_id=None,
         checkout_id=pix_qr_code_id,
         pix_qr_code_id=pix_qr_code_id,
         pix_payload=str(qr["payload"]),
         pix_encoded_image=str(qr.get("encodedImage") or ""),
         pix_expiration_date=datetime.now() + timedelta(minutes=10),
-        external_reference=f"VENDA-{venda_id}",
+        external_reference=(
+            f"PIX-{APP_ENV.upper()}-CAIXA-{carrinho_id}-{uuid.uuid4().hex[:12]}"
+        ),
         status="PENDING",
         valor=valor_total,
         vrtaxaclubbar=valor_taxa,
     )
     db.add(registro)
+    db.flush()
+    for item in itens_recalculados:
+        quantidade = int(item.get("qtitcarrinho") or item.get("qt_prod") or 1)
+        db.add(CheckoutAsaasItem(
+            checkout_asaas_id=registro.checkout_asaas_id,
+            produto_id=int(item["produto_id"]),
+            lote_id=item.get("lote_id"),
+            idtipoproduto=str(item.get("idtipoproduto") or "P"),
+            nmproduto=str(item.get("nmproduto") or "Produto"),
+            quantidade=quantidade,
+            vrunitario=float(item.get("vrunitario") or 0),
+            subtotal=float(item.get("subtotal") or 0),
+            total_com_taxa=float(item.get("total_com_taxa") or 0),
+            pctaxaitvenda=float(item.get("pctaxaitvenda") or 0),
+            vrtaxaitvenda=float(item.get("vrtaxaitvenda") or 0),
+            dsobsitem=item.get("dsobsitcar"),
+            nmparticipante=item.get("nmparticipante"),
+            cpfparticipante=item.get("cpfparticipante"),
+        ))
+    db.query(ItCarrinho).filter(
+        ItCarrinho.carrinho_id == carrinho_id
+    ).delete(synchronize_session=False)
     db.commit()
     return {
-        "venda_id": venda_id,
+        "venda_id": None,
         "pagamento_id": pix_qr_code_id,
         "pix_qr_code_id": pix_qr_code_id,
         "encoded_image": qr.get("encodedImage"),
@@ -288,10 +273,31 @@ async def cancelar_pix(
     await excluir_qrcode_pix_estatico_asaas(
         checkout.pix_qr_code_id, ASAAS_API_KEY
     )
+    itens_atuais = db.query(ItCarrinho).filter(
+        ItCarrinho.carrinho_id == checkout.carrinho_id
+    ).count()
+    if itens_atuais:
+        raise HTTPException(
+            409,
+            "O caixa ja iniciou outro atendimento; o pedido cancelado nao pode ser restaurado.",
+        )
+    snapshots = db.query(CheckoutAsaasItem).filter(
+        CheckoutAsaasItem.checkout_asaas_id == checkout.checkout_asaas_id
+    ).all()
+    for item in snapshots:
+        db.add(ItCarrinho(
+            carrinho_id=checkout.carrinho_id,
+            produto_id=item.produto_id,
+            lote_id=item.lote_id,
+            qtitcarrinho=item.quantidade,
+            dsobsitcar=item.dsobsitem,
+            nmparticipante=item.nmparticipante,
+            cpfparticipante=item.cpfparticipante,
+        ))
     checkout.status = "CANCELLED"
     checkout.pix_expiration_date = datetime.now()
     db.commit()
-    return {"status": "CANCELADO", "carrinho_liberado": True}
+    return {"status": "CANCELADO", "carrinho_restaurado": True}
 
 
 @router.post("/checkout/{checkout_id}/simular-pagamento-pix")
@@ -328,25 +334,10 @@ async def simular_pagamento_pix(
     }
 
 
-@router.get("/checkout/{checkout_id}/tickets")
-async def tickets(checkout_id: str, payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
-    loja, cliente = _contexto_caixa(payload, db)
-    status_checkout = await status_checkout_asaas(checkout_id, db)
-    checkout_db = db.query(CheckoutAsaas).filter(
-        CheckoutAsaas.checkout_id == checkout_id,
-        CheckoutAsaas.loja_id == loja.loja_id,
-        CheckoutAsaas.cliente_id == cliente.cliente_id,
-    ).first()
-    if not checkout_db:
-        raise HTTPException(404, "Checkout não encontrado.")
-    venda = db.query(Venda).filter(
-        Venda.carrinho_id == checkout_db.carrinho_id,
-        Venda.loja_id == loja.loja_id,
-        Venda.cliente_id == cliente.cliente_id,
-    ).order_by(Venda.venda_id.desc()).first()
-    if not venda or venda.sitvenda != "PAGA":
-        return {"status": status_checkout.get("status", "PENDENTE"), "tickets": []}
-    itens = db.query(ItVenda, Produto).join(Produto, Produto.produto_id == ItVenda.produto_id).filter(
+def _tickets_da_venda(venda: Venda, loja: Loja, db: Session) -> dict:
+    itens = db.query(ItVenda, Produto).join(
+        Produto, Produto.produto_id == ItVenda.produto_id
+    ).filter(
         ItVenda.venda_id == venda.venda_id
     ).order_by(ItVenda.itvenda_id).all()
     return {
@@ -364,3 +355,43 @@ async def tickets(checkout_id: str, payload: dict = Depends(get_usuario_logado),
             for item, produto in itens
         ],
     }
+
+
+@router.get("/vendas/ultima/tickets")
+def tickets_ultima_venda(
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja, cliente = _contexto_caixa(payload, db)
+    venda = db.query(Venda).filter(
+        Venda.loja_id == loja.loja_id,
+        Venda.cliente_id == cliente.cliente_id,
+        Venda.usuario_id == int(payload["sub"]),
+        Venda.sitvenda == "PAGA",
+    ).order_by(Venda.venda_id.desc()).first()
+    if not venda:
+        raise HTTPException(404, "Nenhuma venda paga encontrada para este caixa")
+    return _tickets_da_venda(venda, loja, db)
+
+
+@router.get("/checkout/{checkout_id}/tickets")
+async def tickets(checkout_id: str, payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    loja, cliente = _contexto_caixa(payload, db)
+    status_checkout = await status_checkout_asaas(checkout_id, db)
+    checkout_db = db.query(CheckoutAsaas).filter(
+        CheckoutAsaas.checkout_id == checkout_id,
+        CheckoutAsaas.loja_id == loja.loja_id,
+        CheckoutAsaas.cliente_id == cliente.cliente_id,
+    ).first()
+    if not checkout_db:
+        raise HTTPException(404, "Checkout não encontrado.")
+    venda = None
+    if checkout_db.venda_id:
+        venda = db.query(Venda).filter(
+            Venda.venda_id == checkout_db.venda_id,
+            Venda.loja_id == loja.loja_id,
+            Venda.cliente_id == cliente.cliente_id,
+        ).first()
+    if not venda or venda.sitvenda != "PAGA":
+        return {"status": status_checkout.get("status", "PENDENTE"), "tickets": []}
+    return _tickets_da_venda(venda, loja, db)

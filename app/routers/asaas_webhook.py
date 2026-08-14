@@ -8,9 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.carrinho import Carrinho
-from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
+from app.services.venda_gateway_service import (
+    criar_venda_paga_por_carrinho_gateway,
+    criar_venda_paga_por_checkout_snapshot,
+)
 
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.models.checkout_asaas_pagador import CheckoutAsaasPagador
 from app.models.cliente import Cliente
 from app.services.asaas_service import buscar_customer_asaas
@@ -219,7 +223,8 @@ async def asaas_webhook(
             pix_direto=pix_direto,
         ):
             if registro_checkout:
-                registro_checkout.status = status or evento or registro_checkout.status
+                # Estados intermediarios do Asaas nao liberam nem concluem
+                # a tentativa local; apenas guardamos o payment_id.
                 if payment_id:
                     registro_checkout.payment_id = str(payment_id)
                 db.commit()
@@ -242,13 +247,28 @@ async def asaas_webhook(
 
         print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
 
-        resultado = await criar_venda_paga_por_carrinho_gateway(
-            db,
-            carrinho_id=carrinho_id,
-            gateway="ASAAS",
-            pagamento=payment,
-            metodo_pagamento=None,
-        )
+        possui_snapshot = db.query(CheckoutAsaasItem).filter(
+            CheckoutAsaasItem.checkout_asaas_id
+            == registro_checkout.checkout_asaas_id
+        ).first() is not None
+        if possui_snapshot:
+            resultado = await criar_venda_paga_por_checkout_snapshot(
+                db,
+                checkout_asaas_id=registro_checkout.checkout_asaas_id,
+                gateway="ASAAS",
+                pagamento=payment,
+            )
+        else:
+            resultado = await criar_venda_paga_por_carrinho_gateway(
+                db,
+                carrinho_id=carrinho_id,
+                gateway="ASAAS",
+                pagamento=payment,
+                metodo_pagamento=None,
+            )
+        venda_id = resultado.get("venda_id")
+        if venda_id:
+            registro_checkout.venda_id = int(venda_id)
 
         customer_id = payment.get("customer")
 
@@ -268,7 +288,6 @@ async def asaas_webhook(
             registro_checkout.status = "PAID"
             if payment_id:
                 registro_checkout.payment_id = str(payment_id)
-            venda_id = resultado.get("venda_id")
             if venda_id:
                 criar_repasse_da_venda(
                     db,

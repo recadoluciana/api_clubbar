@@ -7,13 +7,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.venda import Venda 
+from app.models.venda import Venda
 from app.models.pagvenda import PagVenda
 from app.models.loja import Loja
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.carrinho import Carrinho
-from app.models.itcarrinho import ItCarrinho 
+from app.models.itcarrinho import ItCarrinho
 
 def set_venda_como_paga(
     db: Session,
@@ -21,6 +21,7 @@ def set_venda_como_paga(
     venda_id: int,
     gateway: str = "ASAAS",
     payload: Optional[Dict[str, Any]] = None,
+    finalizar_carrinho: bool = True,
 ) -> dict:
     """
     - PagVenda.sitpagvenda = PAGO
@@ -124,7 +125,7 @@ def set_venda_como_paga(
     # fecha carrinho + limpa itens
     carrinho_id = venda.carrinho_id
     carrinho_ok = False
-    if carrinho_id:
+    if finalizar_carrinho and carrinho_id:
         carrinho = (
             db.query(Carrinho)
             .filter(Carrinho.carrinho_id == carrinho_id)
