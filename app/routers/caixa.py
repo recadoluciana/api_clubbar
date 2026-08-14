@@ -105,19 +105,55 @@ def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario
     ).first()
     if not produto:
         raise HTTPException(404, "Produto não encontrado nesta loja.")
-    return adicionar_item(
-        AddItemIn(
-            cliente_id=cliente.cliente_id,
-            usuario_id=int(payload["sub"]),
-            organizacao_id=loja.organizacao_id,
-            loja_id=loja.loja_id,
-            idtipoproduto="P",
-            produto_id=produto.produto_id,
-            qt=dados.quantidade,
-            obs=dados.observacao,
-        ),
-        db,
-    )
+    resultado = None
+    for _ in range(dados.quantidade):
+        resultado = adicionar_item(
+            AddItemIn(
+                cliente_id=cliente.cliente_id,
+                usuario_id=int(payload["sub"]),
+                organizacao_id=loja.organizacao_id,
+                loja_id=loja.loja_id,
+                idtipoproduto="P",
+                produto_id=produto.produto_id,
+                qt=1,
+                obs=dados.observacao,
+            ),
+            db,
+        )
+    return resultado
+
+
+@router.delete("/carrinho/itens/{produto_id}/um")
+def remover_uma_unidade_caixa(
+    produto_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja, cliente = _contexto_caixa(payload, db)
+    carrinho = db.query(Carrinho).filter(
+        Carrinho.cliente_id == cliente.cliente_id,
+        Carrinho.loja_id == loja.loja_id,
+        Carrinho.usuario_id == int(payload["sub"]),
+        Carrinho.sitcarrinho == "ABERTO",
+    ).first()
+    if not carrinho:
+        raise HTTPException(404, "Carrinho aberto nao encontrado")
+    item = db.query(ItCarrinho).filter(
+        ItCarrinho.carrinho_id == carrinho.carrinho_id,
+        ItCarrinho.produto_id == produto_id,
+    ).order_by(
+        ItCarrinho.dtcriacao.desc(),
+        ItCarrinho.itcarrinho_id.desc(),
+    ).first()
+    if not item:
+        raise HTTPException(404, "Produto nao encontrado no carrinho")
+    quantidade = int(item.qtitcarrinho or 1)
+    if quantidade > 1:
+        item.qtitcarrinho = quantidade - 1
+    else:
+        db.delete(item)
+    db.commit()
+    return {"ok": True, "produto_id": produto_id, "quantidade_removida": 1}
 
 
 @router.get("/carrinho")
@@ -239,6 +275,9 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
     db.query(ItCarrinho).filter(
         ItCarrinho.carrinho_id == carrinho_id
     ).delete(synchronize_session=False)
+    db.query(Carrinho).filter(
+        Carrinho.carrinho_id == carrinho_id
+    ).update({"sitcarrinho": "FECHADO"}, synchronize_session=False)
     db.commit()
     return {
         "venda_id": None,
@@ -273,31 +312,41 @@ async def cancelar_pix(
     await excluir_qrcode_pix_estatico_asaas(
         checkout.pix_qr_code_id, ASAAS_API_KEY
     )
-    itens_atuais = db.query(ItCarrinho).filter(
-        ItCarrinho.carrinho_id == checkout.carrinho_id
-    ).count()
-    if itens_atuais:
-        raise HTTPException(
-            409,
-            "O caixa ja iniciou outro atendimento; o pedido cancelado nao pode ser restaurado.",
-        )
-    snapshots = db.query(CheckoutAsaasItem).filter(
-        CheckoutAsaasItem.checkout_asaas_id == checkout.checkout_asaas_id
-    ).all()
-    for item in snapshots:
-        db.add(ItCarrinho(
-            carrinho_id=checkout.carrinho_id,
-            produto_id=item.produto_id,
-            lote_id=item.lote_id,
-            qtitcarrinho=item.quantidade,
-            dsobsitcar=item.dsobsitem,
-            nmparticipante=item.nmparticipante,
-            cpfparticipante=item.cpfparticipante,
-        ))
+    carrinho_origem = db.query(Carrinho).filter(
+        Carrinho.carrinho_id == checkout.carrinho_id
+    ).with_for_update().first()
+    carrinho_novo = None
+    if carrinho_origem:
+        carrinho_novo = db.query(Carrinho).filter(
+            Carrinho.usuario_id == carrinho_origem.usuario_id,
+            Carrinho.loja_id == carrinho_origem.loja_id,
+            Carrinho.sitcarrinho == "ABERTO",
+            Carrinho.carrinho_id != carrinho_origem.carrinho_id,
+        ).first()
+
+    restaurado = False
+    if carrinho_origem and not carrinho_novo:
+        snapshots = db.query(CheckoutAsaasItem).filter(
+            CheckoutAsaasItem.checkout_asaas_id == checkout.checkout_asaas_id
+        ).all()
+        carrinho_origem.sitcarrinho = "ABERTO"
+        for item in snapshots:
+            for _ in range(int(item.quantidade or 1)):
+                db.add(ItCarrinho(
+                    carrinho_id=checkout.carrinho_id,
+                    produto_id=item.produto_id,
+                    lote_id=item.lote_id,
+                    qtitcarrinho=1,
+                    dsobsitcar=item.dsobsitem,
+                    nmparticipante=item.nmparticipante,
+                    cpfparticipante=item.cpfparticipante,
+                ))
+        restaurado = True
+
     checkout.status = "CANCELLED"
     checkout.pix_expiration_date = datetime.now()
     db.commit()
-    return {"status": "CANCELADO", "carrinho_restaurado": True}
+    return {"status": "CANCELADO", "carrinho_restaurado": restaurado}
 
 
 @router.post("/checkout/{checkout_id}/simular-pagamento-pix")

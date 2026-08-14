@@ -16,7 +16,7 @@ class Venda(Base):
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
 
-    carrinho_id = Column(BigInteger, ForeignKey("carrinho.carrinho_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True)
+    carrinho_id = Column(BigInteger, ForeignKey("carrinho.carrinho_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
     usuario_id = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
 
     dsplataforma = Column(Enum("ANDROID", "TOTEM", "IOS", "OUTROS", name="dsplataforma_enum"), nullable=False, server_default="OUTROS")

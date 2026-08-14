@@ -110,6 +110,8 @@ class CaixaSnapshotTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(resultado["venda_id"], 101)
         self.assertEqual(checkout.venda_id, 101)
+        venda = next(x for x in db.adicionados if isinstance(x, Venda))
+        self.assertEqual(venda.carrinho_id, 8)
         self.assertEqual(len([x for x in db.adicionados if isinstance(x, ItVenda)]), 2)
         pagamento = next(x for x in db.adicionados if isinstance(x, PagVenda))
         self.assertEqual(pagamento.dsmetodopag, "PIX")
