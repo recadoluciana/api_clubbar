@@ -452,6 +452,7 @@ async def criar_qrcode_pix_estatico_asaas(
         "value": round(float(valor), 2),
         "format": "ALL",
         "expirationSeconds": expiracao_segundos,
+        "allowsMultiplePayments": False,
     }
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
@@ -468,6 +469,26 @@ async def criar_qrcode_pix_estatico_asaas(
     if not data.get("id") or not data.get("payload"):
         raise HTTPException(502, "Asaas nao retornou o QR Code Pix completo")
     return data
+
+
+async def excluir_qrcode_pix_estatico_asaas(
+    qrcode_id: str, api_key: str,
+) -> None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.delete(
+            f"{ASAAS_BASE_URL}/pix/qrCodes/static/{qrcode_id}",
+            headers=_headers(api_key),
+        )
+    if response.status_code not in (200, 204):
+        detalhe = response.text
+        try:
+            data = response.json()
+            erros = data.get("errors") or []
+            if erros:
+                detalhe = erros[0].get("description") or detalhe
+        except Exception:
+            pass
+        raise HTTPException(response.status_code, detalhe)
 
 
 async def pagar_qrcode_pix_sandbox_asaas(

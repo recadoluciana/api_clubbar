@@ -32,6 +32,7 @@ from app.schemas.pagamentos import PagarNovoIn
 from app.services.carrinho_service import get_carrinho
 from app.services.asaas_service import (
     criar_qrcode_pix_estatico_asaas,
+    excluir_qrcode_pix_estatico_asaas,
     pagar_qrcode_pix_sandbox_asaas,
 )
 from app.services.venda_service import criar_ou_obter_venda_idempotente
@@ -267,6 +268,30 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
             APP_ENV not in {"production", "prod"} and ASAAS_SANDBOX_PAYER_API_KEY
         ),
     }
+
+
+@router.post("/checkout/{checkout_id}/cancelar-pix")
+async def cancelar_pix(
+    checkout_id: str,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja, cliente = _contexto_caixa(payload, db)
+    checkout = db.query(CheckoutAsaas).filter(
+        CheckoutAsaas.checkout_id == checkout_id,
+        CheckoutAsaas.loja_id == loja.loja_id,
+        CheckoutAsaas.cliente_id == cliente.cliente_id,
+        CheckoutAsaas.status == "PENDING",
+    ).first()
+    if not checkout or not checkout.pix_qr_code_id:
+        raise HTTPException(404, "PIX pendente nao encontrado")
+    await excluir_qrcode_pix_estatico_asaas(
+        checkout.pix_qr_code_id, ASAAS_API_KEY
+    )
+    checkout.status = "CANCELLED"
+    checkout.pix_expiration_date = datetime.now()
+    db.commit()
+    return {"status": "CANCELADO", "carrinho_liberado": True}
 
 
 @router.post("/checkout/{checkout_id}/simular-pagamento-pix")
