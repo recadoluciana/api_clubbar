@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojacontabancaria import LojaContaBancaria
 from app.models.repassefinanceiro import RepasseFinanceiro
+from app.models.venda import Venda
 
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
@@ -60,13 +61,18 @@ def _conta_saida(conta: LojaContaBancaria) -> dict:
     )}
 
 
-def _repasse_saida(repasse: RepasseFinanceiro, nmloja: str | None = None) -> dict:
+def _repasse_saida(
+    repasse: RepasseFinanceiro,
+    nmloja: str | None = None,
+    dtvenda: datetime | None = None,
+) -> dict:
     return {
         "repassefinanceiro_id": repasse.repassefinanceiro_id,
         "organizacao_id": repasse.organizacao_id,
         "loja_id": repasse.loja_id,
         "nmloja": nmloja,
         "venda_id": repasse.venda_id,
+        "dtvenda": dtvenda,
         "vrbruto": float(repasse.vrbruto or 0),
         "vrtaxaclubbar": float(repasse.vrtaxaclubbar or 0),
         "vrrepasse": float(repasse.vrrepasse or 0),
@@ -141,11 +147,12 @@ def resumo_financeiro_parceiro(
     organizacao_id = int(usuario.get("organizacao_id") or 0)
     if organizacao_id <= 0:
         raise HTTPException(status_code=403, detail="Token sem organização válida")
+    loja = None
     if loja_id is not None:
-        _loja_do_parceiro(db, loja_id, usuario)
+        loja = _loja_do_parceiro(db, loja_id, usuario)
     elif usuario.get("loja_id") is not None:
         loja_id = int(usuario["loja_id"])
-        _loja_do_parceiro(db, loja_id, usuario)
+        loja = _loja_do_parceiro(db, loja_id, usuario)
 
     filtros = [RepasseFinanceiro.organizacao_id == organizacao_id]
     if loja_id is not None:
@@ -159,14 +166,20 @@ def resumo_financeiro_parceiro(
     for status_repasse, total in linhas:
         totais[str(status_repasse).upper()] = float(total or 0)
 
-    recentes = db.query(RepasseFinanceiro, Loja.nmloja).join(
+    recentes = db.query(RepasseFinanceiro, Loja.nmloja, Venda.dtcriacao).join(
         Loja, Loja.loja_id == RepasseFinanceiro.loja_id
+    ).join(
+        Venda, Venda.venda_id == RepasseFinanceiro.venda_id
     ).filter(*filtros).order_by(RepasseFinanceiro.dtcriacao.desc()).limit(100).all()
     return {
+        "nmloja": loja.nmloja if loja is not None else None,
         "totais": totais,
         "total_a_receber": totais["BLOQUEADO"] + totais["PENDENTE"] + totais["AGENDADO"],
         "total_recebido": totais["PAGO"],
-        "repasses": [_repasse_saida(repasse, nmloja) for repasse, nmloja in recentes],
+        "repasses": [
+            _repasse_saida(repasse, nmloja, dtvenda)
+            for repasse, nmloja, dtvenda in recentes
+        ],
     }
 
 
