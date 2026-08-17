@@ -4,12 +4,18 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 
 from datetime import datetime, timedelta
+from secrets import randbelow
 
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
+from app.models.usuariosenha import UsuarioSenha
 from app.models.organizacao import Organizacao
-from app.schemas.auth import ClienteRegister, ClienteLogin, ClientePublic, UserLogin
-from app.core.security import hash_senha, verificar_senha, criar_jwt, get_usuario_logado    
+from app.schemas.auth import (
+    ClienteRegister, ClienteLogin, ClientePublic, UserLogin,
+    EsqueciSenhaUsuarioRequest, RedefinirSenhaUsuarioRequest,
+)
+from app.core.security import hash_senha, verificar_senha, criar_jwt, get_usuario_logado
+from app.services.email_service import enviar_email_codigo
 
 from passlib.exc import UnknownHashError
 
@@ -69,7 +75,7 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
 
 @router.post("/login")
 def login(data: ClienteLogin, db: Session = Depends(get_db)):
-    
+
     email = data.email.lower().strip()
 
     cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
@@ -153,6 +159,68 @@ def loginuser(data: UserLogin, db: Session = Depends(get_db)):
 
         "dscargo": user.dscargo,
     }
+
+@router.post("/esqueci-senha-user")
+def esqueci_senha_usuario(
+    data: EsqueciSenhaUsuarioRequest,
+    db: Session = Depends(get_db),
+):
+    email = data.email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.emailuser == email).first()
+    mensagem = (
+        "Se o e-mail estiver cadastrado, enviaremos um código de recuperação. "
+        "Verifique também sua caixa de spam."
+    )
+    if not usuario:
+        return {"message": mensagem}
+
+    codigo = f"{randbelow(1_000_000):06d}"
+    agora = datetime.now()
+    db.query(UsuarioSenha).filter(
+        UsuarioSenha.usuario_id == usuario.usuario_id,
+        UsuarioSenha.usado == "N",
+    ).update({"usado": "S"}, synchronize_session=False)
+    db.add(UsuarioSenha(
+        usuario_id=usuario.usuario_id,
+        codigohash=hash_senha(codigo),
+        expiracao=agora + timedelta(minutes=15),
+        usado="N",
+        dtcriacao=agora,
+    ))
+    db.commit()
+    enviar_email_codigo(usuario.emailuser, codigo)
+    return {"message": mensagem}
+
+
+@router.post("/redefinir-senha-user")
+def redefinir_senha_usuario(
+    data: RedefinirSenhaUsuarioRequest,
+    db: Session = Depends(get_db),
+):
+    email = data.email.lower().strip()
+    usuario = db.query(Usuario).filter(Usuario.emailuser == email).first()
+    if not usuario:
+        raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+
+    registros = db.query(UsuarioSenha).filter(
+        UsuarioSenha.usuario_id == usuario.usuario_id,
+        UsuarioSenha.usado == "N",
+    ).order_by(UsuarioSenha.usuariosenha_id.desc()).limit(5).all()
+    agora = datetime.now()
+    registro_valido = next((registro for registro in registros
+        if registro.expiracao >= agora and verificar_senha(data.codigo, registro.codigohash)
+    ), None)
+    if registro_valido is None:
+        raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+
+    usuario.senhahashuser = hash_senha(data.nova_senha)
+    registro_valido.usado = "S"
+    db.query(UsuarioSenha).filter(
+        UsuarioSenha.usuario_id == usuario.usuario_id,
+        UsuarioSenha.usado == "N",
+    ).update({"usado": "S"}, synchronize_session=False)
+    db.commit()
+    return {"message": "Senha redefinida com sucesso."}
 
 @router.get("/debug/hora")
 def debug_hora():

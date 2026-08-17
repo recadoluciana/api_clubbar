@@ -26,3 +26,10 @@ class ClientePublic(BaseModel):
     nmcliente: str
     emailcliente: EmailStr
     emailconf: str  # "S" / "N"
+class EsqueciSenhaUsuarioRequest(BaseModel):
+    email: EmailStr
+
+class RedefinirSenhaUsuarioRequest(BaseModel):
+    email: EmailStr
+    codigo: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    nova_senha: str = Field(min_length=6, max_length=72)
