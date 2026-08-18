@@ -592,6 +592,7 @@ CREATE TABLE usuario (
   emailuser       VARCHAR(200) NOT NULL,
   senhahashuser   VARCHAR(255) NOT NULL,
   dscargo         ENUM(
+    'SUPERADMIN',
     'ADMIN',
     'GERENTE',
     'CAIXA',

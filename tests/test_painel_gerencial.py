@@ -87,7 +87,7 @@ class PainelGerencialTest(unittest.TestCase):
             "role": "usuario",
             "dscargo": "ADMIN",
             "organizacao_id": 9,
-            "loja_id": 1,
+            "loja_id": None,
         }
 
         dados = painel_gerencial(db=banco, usuario=usuario)

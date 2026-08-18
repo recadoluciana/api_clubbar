@@ -13,6 +13,7 @@ from app.models.organizacao import Organizacao
 from app.models.produto import Produto
 from app.core.config import UPLOAD_LOJAS
 from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_gerenciamento_organizacao
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -547,10 +548,15 @@ def listar_lojas_por_organizacao_todas(
     organizacao_id: int,
     request: Request,
     db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
 ):
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    consulta = db.query(Loja).filter(Loja.organizacao_id == organizacao_id)
+    loja_usuario = payload.get("loja_id")
+    if loja_usuario is not None:
+        consulta = consulta.filter(Loja.loja_id == int(loja_usuario))
     lojas = (
-        db.query(Loja)
-        .filter(Loja.organizacao_id == organizacao_id)
+        consulta
         .order_by(Loja.nmloja.asc())
         .all()
     )

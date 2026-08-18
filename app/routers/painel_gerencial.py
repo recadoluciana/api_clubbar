@@ -1,8 +1,9 @@
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from typing import Annotated
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -66,18 +67,36 @@ def _dinheiro(valor: object) -> float:
     return float(round(Decimal(str(valor or 0)), 2))
 
 
+def _periodo_selecionado(ano: int | None, mes: int | None) -> tuple[date, date]:
+    hoje = _hoje_local()
+    ano_final = ano if ano is not None else hoje.year
+    mes_final = mes if mes is not None else hoje.month
+    primeiro_dia = date(ano_final, mes_final, 1)
+    if primeiro_dia > hoje.replace(day=1):
+        raise HTTPException(status_code=422, detail="Nao e permitido consultar mes futuro.")
+    if ano_final == hoje.year and mes_final == hoje.month:
+        return primeiro_dia, hoje
+    proximo_mes = (
+        date(ano_final + 1, 1, 1)
+        if mes_final == 12
+        else date(ano_final, mes_final + 1, 1)
+    )
+    return primeiro_dia, proximo_mes - timedelta(days=1)
+
+
 @router.get("/painel-gerencial", response_model=PainelGerencialOut)
 def painel_gerencial(
+    ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
+    mes: Annotated[int | None, Query(ge=1, le=12)] = None,
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
     organizacao_id, loja_id = _extrair_escopo(usuario)
 
-    hoje = _hoje_local()
-    primeiro_dia = hoje.replace(day=1)
+    primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
     inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
-    inicio_hoje = _inicio_local_em_utc_naive(hoje)
-    fim_exclusivo = _inicio_local_em_utc_naive(hoje + timedelta(days=1))
+    inicio_hoje = _inicio_local_em_utc_naive(ultimo_dia)
+    fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
 
     lojas_query = db.query(Loja.loja_id, Loja.nmloja).filter(
         Loja.organizacao_id == organizacao_id
@@ -189,7 +208,7 @@ def painel_gerencial(
     ).order_by(quantidade_ingresso.desc(), Evento.nmtituloevento, EventoLote.nmlote).all()
 
     return {
-        "periodo": {"inicio": primeiro_dia, "fim": hoje},
+        "periodo": {"inicio": primeiro_dia, "fim": ultimo_dia},
         "total_hoje": _dinheiro(total_hoje),
         "total_mes": total_mes,
         "pedidos_mes": int(resumo.pedidos_mes or 0),

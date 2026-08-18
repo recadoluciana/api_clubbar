@@ -11,10 +11,30 @@ def validar_gerenciamento_organizacao(payload: dict, organizacao_id: int) -> Non
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Seu cargo permite somente utilizar as funções operacionais.",
         )
+
+
+def validar_edicao_organizacao(payload: dict, organizacao_id: int) -> None:
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    cargo = str(payload.get("dscargo") or "").strip().upper()
+    if cargo != "SUPERADMIN" or payload.get("loja_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente o SUPERADMIN pode editar os dados da organizacao.",
+        )
     if int(payload.get("organizacao_id") or 0) != int(organizacao_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="O cadastro não pertence à sua organização.",
+        )
+
+
+def validar_edicao_organizacao(payload: dict, organizacao_id: int) -> None:
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    cargo = str(payload.get("dscargo") or "").strip().upper()
+    if cargo != "SUPERADMIN" or payload.get("loja_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente o SUPERADMIN pode editar os dados da organizacao.",
         )
 
 
@@ -25,6 +45,16 @@ def validar_mutacao_loja(payload: dict, organizacao_id: int, loja_id: int) -> No
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Você não pode alterar itens desta loja. Seu acesso é somente para consulta.",
+        )
+
+
+def validar_edicao_organizacao(payload: dict, organizacao_id: int) -> None:
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    cargo = str(payload.get("dscargo") or "").strip().upper()
+    if cargo != "SUPERADMIN" or payload.get("loja_id") is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Somente o SUPERADMIN pode editar os dados da organizacao.",
         )
 
 

@@ -26,7 +26,15 @@ CARGOS_VALIDOS = {
     "GARCOM",
     "PORTEIRO",
 }
-CARGOS_COM_LOJA_OBRIGATORIA = {"CAIXA", "TOTEM", "BARMAN", "GARCOM", "PORTEIRO"}
+CARGOS_SEM_LOJA = {"SUPERADMIN", "ADMIN"}
+CARGOS_COM_LOJA_OBRIGATORIA = {
+    "GERENTE",
+    "CAIXA",
+    "TOTEM",
+    "BARMAN",
+    "GARCOM",
+    "PORTEIRO",
+}
 
 
 def _normalizar_email(email: str) -> str:
@@ -75,10 +83,15 @@ def _validar_loja_da_organizacao(
 
 
 def _validar_vinculo_cargo_loja(cargo: str, loja_id: int | None) -> None:
+    if cargo in CARGOS_SEM_LOJA and loja_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="SUPERADMIN e ADMIN nao podem estar vinculados a uma loja.",
+        )
     if cargo in CARGOS_COM_LOJA_OBRIGATORIA and loja_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Caixa, Barman, Garçom e Porteiro devem estar vinculados a uma loja.",
+            detail="Gerente e cargos operacionais devem estar vinculados a uma loja.",
         )
 
 
@@ -92,11 +105,12 @@ def listar_usuarios_por_organizacao(
     db: Session = Depends(get_db),
 ):
     validar_gerenciamento_organizacao(usuario_logado, organizacao_id)
+    consulta = db.query(Usuario).filter(Usuario.organizacao_id == organizacao_id)
+    loja_usuario = usuario_logado.get("loja_id")
+    if loja_usuario is not None:
+        consulta = consulta.filter(Usuario.loja_id == int(loja_usuario))
     usuarios = (
-        db.query(Usuario)
-        .filter(
-            Usuario.organizacao_id == organizacao_id,
-        )
+        consulta
         .order_by(
             Usuario.usuario_id.asc(),
             Usuario.nmusuario.asc(),
@@ -204,6 +218,12 @@ def atualizar_usuario_por_organizacao(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado para esta organização.",
+        )
+
+    if usuario.dscargo.strip().upper() == "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="O SUPERADMIN nao pode ser alterado pelo cadastro de usuarios.",
         )
 
     loja_final = (
