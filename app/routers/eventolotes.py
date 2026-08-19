@@ -23,7 +23,6 @@ router = APIRouter(prefix="/eventos", tags=["eventos"])
 def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
-    usuario: dict = Depends(get_usuario_logado),
 ):
 
     lotes = (
