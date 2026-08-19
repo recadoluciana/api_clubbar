@@ -15,7 +15,7 @@ class ClienteLogin(BaseModel):
 
 class UserLogin(BaseModel):
     email: EmailStr
-    senha: str = Field(min_length=6, max_length=72)
+    senha: str = Field(min_length=4, max_length=72)
 
 class TokenResponse(BaseModel):
     access_token: str
