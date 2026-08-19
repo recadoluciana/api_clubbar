@@ -77,10 +77,30 @@ origins = [
     "https://clubbarpartner-desenvolvimento.up.railway.app",
 ]
 
+origens_configuradas = [
+    origem.strip().rstrip("/")
+    for origem in os.getenv("CORS_ORIGINS", "").split(",")
+    if origem.strip()
+]
+origins.extend(
+    origem for origem in origens_configuradas if origem not in origins
+)
+
+# Aceita portas variáveis do Flutter Web, subdomínios oficiais e variações
+# geradas pelo Railway somente para serviços do ecossistema Clubbar.
+cors_origin_regex = (
+    r"^(?:"
+    r"http://(?:localhost|127\.0\.0\.1):\d+"
+    r"|https://(?:[a-z0-9-]+\.)?clubbar\.com\.br"
+    r"|https://(?:clubbar[a-z0-9-]*|bitbeer[a-z0-9-]*)\.up\.railway\.app"
+    r")$"
+)
+
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
