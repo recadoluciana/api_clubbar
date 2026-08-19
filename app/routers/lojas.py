@@ -214,6 +214,7 @@ def listar_todas_lojas_ativas(
             Loja.vrtaxaing,
             Loja.dsestiloloja,
             Estado.sgestado,
+            Loja.dtcriacao,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
@@ -249,6 +250,7 @@ def listar_todas_lojas_ativas(
             "vrtaxaing": float(r.vrtaxaing or 0),
             "dsestiloloja": r.dsestiloloja,
             "sgestado": r.sgestado or "",
+            "dtcriacao": r.dtcriacao,
         }
         for r in lojas
     ]

@@ -1,7 +1,7 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import exists
+from sqlalchemy import exists, func
 import os
 import uuid
 import shutil
@@ -12,6 +12,9 @@ from app.models.categoria import Categoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
+from app.models.loja import Loja
+from app.models.organizacao import Organizacao
+from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
@@ -80,6 +83,58 @@ def calcular_preco_final(produto: Produto):
         vrprecofinal = vrprecoprod
 
     return round(vrprecofinal, 2), True
+
+
+@router.get("/produtos/mais-vendidos")
+def listar_produtos_mais_vendidos(
+    limite: int = 10,
+    db: Session = Depends(get_db),
+):
+    limite = max(1, min(limite, 50))
+    quantidade = func.count(ItVenda.itvenda_id).label("quantidade_vendida")
+
+    rows = (
+        db.query(Produto, Loja.nmloja, quantidade)
+        .join(ItVenda, ItVenda.produto_id == Produto.produto_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Loja, Loja.loja_id == Produto.loja_id)
+        .join(
+            Organizacao,
+            Organizacao.organizacao_id == Produto.organizacao_id,
+        )
+        .filter(
+            Venda.sitvenda == "PAGA",
+            Produto.sitproduto == "ATIVO",
+            Produto.idtipoproduto == "P",
+            Loja.sitloja == "ATIVA",
+            Organizacao.sitorganizacao == "ATIVA",
+        )
+        .group_by(Produto.produto_id, Loja.nmloja)
+        .order_by(quantidade.desc(), Produto.nmproduto.asc())
+        .limit(limite)
+        .all()
+    )
+
+    resultado = []
+    for produto, nmloja, quantidade_vendida in rows:
+        vrprecofinal, descontoativo = calcular_preco_final(produto)
+        resultado.append(
+            {
+                "produto_id": produto.produto_id,
+                "organizacao_id": produto.organizacao_id,
+                "loja_id": produto.loja_id,
+                "nmloja": nmloja,
+                "nmproduto": produto.nmproduto,
+                "dsproduto": produto.dsproduto or "",
+                "vrprecoprod": float(produto.vrprecoprod),
+                "vrprecofinal": vrprecofinal,
+                "descontoativo": descontoativo,
+                "urlfotoproduto": produto.urlfotoproduto,
+                "quantidade_vendida": int(quantidade_vendida or 0),
+            }
+        )
+
+    return resultado
 
 
 @router.delete("/produtos/{produto_id}")
