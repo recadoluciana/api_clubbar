@@ -32,7 +32,7 @@ StatusLeadParceiroSchema = Literal[
 
 
 class ConverterLeadParceiroIn(BaseModel):
-    senha_superadmin: str = Field(min_length=6, max_length=100)
+    senha_superadmin: str | None = Field(default=None, min_length=6, max_length=100)
 
     razao_social: str = Field(
         min_length=3,
@@ -64,8 +64,8 @@ class ConverterLeadParceiroIn(BaseModel):
         max_length=120,
     )
 
-    bairro: str | None = Field(
-        default=None,
+    bairro: str = Field(
+        min_length=2,
         max_length=120,
     )
 

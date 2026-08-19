@@ -59,7 +59,7 @@ def get_carrinho(
     )
     map_prod = {p.produto_id: p for p in produtos}
 
-    itens_out = []
+    itens_agrupados = {}
     qt_total = 0
     total = 0.0
     percentual_taxa = 0.0
@@ -90,14 +90,16 @@ def get_carrinho(
 
         valor_taxa = round(subtotal * (percentual_taxa / 100), 2)
 
-        itens_out.append(
-            {
+        observacao = (getattr(it, "dsobsitcar", None) or "").strip()
+        chave = (int(it.produto_id), observacao)
+        if chave not in itens_agrupados:
+            itens_agrupados[chave] = {
                 "itcarrinho_id": it.itcarrinho_id,
                 "produto_id": it.produto_id,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,
-                "dsobsitcar": getattr(it, "dsobsitcar", None),
+                "dsobsitcar": observacao or None,
                 "nmparticipante": it.nmparticipante,
                 "cpfparticipante": it.cpfparticipante,
                 "subtotal": subtotal,
@@ -106,9 +108,15 @@ def get_carrinho(
                 "pctaxaitvenda": percentual_taxa,
                 "vrtaxaitvenda": valor_taxa,
             }
-        )
+        else:
+            agrupado = itens_agrupados[chave]
+            agrupado["qtitcarrinho"] += qt_aux
+            agrupado["subtotal"] = round(agrupado["subtotal"] + subtotal, 2)
+            agrupado["vrtaxaitvenda"] = round(
+                agrupado["vrtaxaitvenda"] + valor_taxa, 2
+            )
 
-    print('carrinho service itens_out >>>>>>>>>>>>>>>>>>', itens_out)
+    itens_out = list(itens_agrupados.values())
 
     return {
         "carrinho_id": carrinho_selec.carrinho_id,

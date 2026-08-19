@@ -126,6 +126,7 @@ def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario
 @router.delete("/carrinho/itens/{produto_id}/um")
 def remover_uma_unidade_caixa(
     produto_id: int,
+    observacao: str = "",
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
@@ -141,6 +142,7 @@ def remover_uma_unidade_caixa(
     item = db.query(ItCarrinho).filter(
         ItCarrinho.carrinho_id == carrinho.carrinho_id,
         ItCarrinho.produto_id == produto_id,
+        ItCarrinho.dsobsitcar == (observacao.strip() or None),
     ).order_by(
         ItCarrinho.dtcriacao.desc(),
         ItCarrinho.itcarrinho_id.desc(),
@@ -198,7 +200,7 @@ def limpar_carrinho_caixa(
 @router.post("/checkout/cartao")
 async def checkout_cartao(payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     loja, cliente = _contexto_caixa(payload, db)
-    return await pagar_asaas(
+    retorno = await pagar_asaas(
         PagarNovoIn(
             cliente_id=cliente.cliente_id,
             usuario_id=int(payload["sub"]),
@@ -211,6 +213,42 @@ async def checkout_cartao(payload: dict = Depends(get_usuario_logado), db: Sessi
         ),
         db,
     )
+    checkout = db.query(CheckoutAsaas).filter(
+        CheckoutAsaas.checkout_id == str(retorno["pagamento_id"])
+    ).first()
+    if checkout and not checkout.venda_id:
+        carrinho = get_carrinho(
+            db, cliente.cliente_id, loja.loja_id, int(payload["sub"])
+        )
+        itens_recalculados, _ = _recalcular_itens_carrinho(
+            db, carrinho.get("itens") or []
+        )
+        for item in itens_recalculados:
+            db.add(CheckoutAsaasItem(
+                checkout_asaas_id=checkout.checkout_asaas_id,
+                produto_id=int(item["produto_id"]),
+                lote_id=item.get("lote_id"),
+                idtipoproduto=str(item.get("idtipoproduto") or "P"),
+                nmproduto=str(item.get("nmproduto") or "Produto"),
+                quantidade=int(item.get("qtitcarrinho") or 1),
+                vrunitario=float(item.get("vrunitario") or 0),
+                subtotal=float(item.get("subtotal") or 0),
+                total_com_taxa=float(item.get("total_com_taxa") or 0),
+                pctaxaitvenda=float(item.get("pctaxaitvenda") or 0),
+                vrtaxaitvenda=float(item.get("vrtaxaitvenda") or 0),
+                dsobsitem=item.get("dsobsitcar"),
+                nmparticipante=item.get("nmparticipante"),
+                cpfparticipante=item.get("cpfparticipante"),
+            ))
+        carrinho_id = int(carrinho["carrinho_id"])
+        db.query(ItCarrinho).filter(
+            ItCarrinho.carrinho_id == carrinho_id
+        ).delete(synchronize_session=False)
+        db.query(Carrinho).filter(
+            Carrinho.carrinho_id == carrinho_id
+        ).update({"sitcarrinho": "FECHADO"}, synchronize_session=False)
+        db.commit()
+    return retorno
 
 
 @router.post("/checkout/pix")
@@ -228,11 +266,15 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
     _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
     carrinho_id = int(carrinho["carrinho_id"])
 
+    external_reference = (
+        f"PIX-{APP_ENV.upper()}-CAIXA-{carrinho_id}-{uuid.uuid4().hex[:12]}"
+    )
     qr = await criar_qrcode_pix_estatico_asaas(
         address_key=ASAAS_PIX_ADDRESS_KEY,
         valor=valor_total,
         descricao=f"Clubbar carrinho {carrinho_id}",
         api_key=ASAAS_API_KEY,
+        external_reference=external_reference,
     )
     pix_qr_code_id = str(qr["id"])
     registro = CheckoutAsaas(
@@ -245,9 +287,7 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         pix_payload=str(qr["payload"]),
         pix_encoded_image=str(qr.get("encodedImage") or ""),
         pix_expiration_date=datetime.now() + timedelta(minutes=10),
-        external_reference=(
-            f"PIX-{APP_ENV.upper()}-CAIXA-{carrinho_id}-{uuid.uuid4().hex[:12]}"
-        ),
+        external_reference=external_reference,
         status="PENDING",
         valor=valor_total,
         vrtaxaclubbar=valor_taxa,

@@ -29,6 +29,8 @@ from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
     criar_referencia_checkout_asaas,
+    buscar_pagamento_confirmado_por_qrcode_pix,
+    buscar_pagamento_confirmado_por_referencia,
 )
 from app.services.repasse_service import criar_repasse_da_venda
 
@@ -393,6 +395,32 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     if not checkout:
         raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
     status_atual = (checkout.status or "PENDENTE").upper()
-    # Este endpoint e somente leitura. A confirmacao financeira e a criacao da
-    # venda acontecem exclusivamente no webhook autenticado do Asaas.
+    if (
+        status_atual not in {"PAID", "RECEIVED", "CONFIRMED"}
+        and ASAAS_API_KEY
+        and getattr(checkout, "checkout_asaas_id", None)
+    ):
+        if getattr(checkout, "pix_qr_code_id", None):
+            pagamento = await buscar_pagamento_confirmado_por_qrcode_pix(
+                checkout.pix_qr_code_id, ASAAS_API_KEY
+            )
+        else:
+            pagamento = await buscar_pagamento_confirmado_por_referencia(
+                getattr(checkout, "external_reference", ""), ASAAS_API_KEY
+            )
+        if pagamento:
+            from app.services.venda_gateway_service import (
+                criar_venda_paga_por_checkout_snapshot,
+            )
+
+            await criar_venda_paga_por_checkout_snapshot(
+                db,
+                checkout_asaas_id=checkout.checkout_asaas_id,
+                gateway="ASAAS",
+                pagamento=pagamento,
+            )
+            checkout.status = "PAID"
+            checkout.payment_id = str(pagamento.get("id") or "") or None
+            db.commit()
+            status_atual = "PAID"
     return {"pagamento_id": checkout.checkout_id, "status": "PAGO" if status_atual in {"PAID", "RECEIVED", "CONFIRMED"} else status_atual}

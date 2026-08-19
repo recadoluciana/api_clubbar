@@ -439,6 +439,7 @@ async def criar_qrcode_pix_estatico_asaas(
     valor: float,
     descricao: str,
     api_key: str,
+    external_reference: str | None = None,
     expiracao_segundos: int = 600,
 ) -> dict:
     if not address_key:
@@ -454,6 +455,8 @@ async def criar_qrcode_pix_estatico_asaas(
         "expirationSeconds": expiracao_segundos,
         "allowsMultiplePayments": False,
     }
+    if external_reference:
+        body["externalReference"] = external_reference[:100]
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{ASAAS_BASE_URL}/pix/qrCodes/static",
@@ -539,5 +542,33 @@ async def buscar_pagamento_confirmado_por_referencia(
     confirmados = {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"}
     for pagamento in pagamentos:
         if str(pagamento.get("status") or "").upper() in confirmados:
+            return pagamento
+    return None
+
+
+async def buscar_pagamento_confirmado_por_qrcode_pix(
+    pix_qr_code_id: str,
+    api_key: str,
+) -> dict | None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f"{ASAAS_BASE_URL}/payments",
+            params={"pixQrCodeId": pix_qr_code_id, "limit": 20},
+            headers=_headers(api_key),
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=data)
+    pagamentos = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(pagamentos, list):
+        return None
+    for pagamento in pagamentos:
+        if str(pagamento.get("status") or "").upper() in {
+            "RECEIVED",
+            "RECEIVED_IN_CASH",
+        }:
             return pagamento
     return None

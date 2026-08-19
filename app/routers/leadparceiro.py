@@ -15,6 +15,7 @@ from app.database import get_db
 from app.core.security import get_operador_logado
 from app.core.security import hash_senha
 from app.models.cidade import Cidade
+from app.models.categoria import Categoria
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
 from app.schemas.leadparceiro import (
@@ -36,6 +37,17 @@ from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 from app.services.portal_acesso_service import criar_acesso_portal
+
+
+CATEGORIAS_PADRAO = (
+    "Cervejas",
+    "Drinks",
+    "Destilados",
+    "Bebidas sem álcool",
+    "Porções",
+    "Lanches",
+    "Outros",
+)
 
 
 router = APIRouter(
@@ -395,6 +407,19 @@ def _nome_loja_por_tipo(tipo: str) -> str:
             f'Tipo de estabelecimento não reconhecido: "{tipo}".'
         ),
     )
+
+
+def _senha_inicial_superadmin(documento: str, nome_responsavel: str) -> str:
+    numeros = _somente_numeros(documento)
+    nome = "".join(
+        caractere for caractere in nome_responsavel.strip() if caractere.isalnum()
+    )
+    if len(numeros) < 6 or len(nome) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Documento e nome do responsavel devem possuir ao menos 6 caracteres.",
+        )
+    return f"{numeros[:6]}{nome[:6]}"
     
 @router.post(
     "/{leadparceiro_id}/converter-em-parceiro",
@@ -450,11 +475,18 @@ def converter_lead_em_parceiro(
         )
 
     cnpj = _somente_numeros(dados.cnpj)
+    cep = _somente_numeros(dados.cep)
 
     if len(cnpj) != 14:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="O CNPJ deve possuir 14 números.",
+        )
+
+    if len(cep) != 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="O CEP deve possuir 8 números.",
         )
 
     organizacao_existente = (
@@ -472,6 +504,7 @@ def converter_lead_em_parceiro(
         )
 
     nome_loja = _nome_loja_por_tipo(lead.tipo)
+    senha_inicial = _senha_inicial_superadmin(cnpj, lead.nmresponsavel)
 
     try:
         nova_organizacao = Organizacao(
@@ -480,7 +513,7 @@ def converter_lead_em_parceiro(
             cnpjorganizacao=cnpj,
             emailorganizacao=lead.email.strip().lower(),
             telorganizacao=lead.telefone.strip(),
-            ceporganizacao=dados.cep.strip(),
+            ceporganizacao=cep,
             endorganizacao=dados.endereco.strip(),
             nrendorganizacao=dados.numero.strip(),
             complorganizacao=(
@@ -488,6 +521,7 @@ def converter_lead_em_parceiro(
                 if dados.complemento
                 else None
             ),
+            estado_id=lead.estado_id,
             cidade_id=lead.cidade_id,
             nmbairro=(
                 dados.bairro.strip()
@@ -507,11 +541,16 @@ def converter_lead_em_parceiro(
             organizacao_id=nova_organizacao.organizacao_id,
             nmloja=nome_loja,
             endloja=dados.endereco.strip(),
-            nrceploja=dados.cep.strip(),
+            nrceploja=cep,
             nrendeloja=dados.numero.strip(),
             dsbairroloja=(
                 dados.bairro.strip()
                 if dados.bairro
+                else None
+            ),
+            dsrefeloja=(
+                dados.complemento.strip()
+                if dados.complemento
                 else None
             ),
             sitloja="ATIVA",
@@ -530,12 +569,24 @@ def converter_lead_em_parceiro(
         # Obtém o loja_id antes do commit.
         db.flush()
 
+        categorias = [
+            Categoria(
+                organizacao_id=nova_organizacao.organizacao_id,
+                loja_id=nova_loja.loja_id,
+                nmcategoria=nome_categoria,
+                sitcategoria="ATIVA",
+                idordcategoria=ordem,
+            )
+            for ordem, nome_categoria in enumerate(CATEGORIAS_PADRAO, start=1)
+        ]
+        db.add_all(categorias)
+
         superadmin = Usuario(
             organizacao_id=nova_organizacao.organizacao_id,
             loja_id=None,
-            nmusuario=lead.nmresponsavel.strip(),
-            emailuser=lead.email.strip().lower(),
-            senhahashuser=hash_senha(dados.senha_superadmin),
+            nmusuario=f"SUPERADMIN {nova_organizacao.nmorganizacao}",
+            emailuser=nova_organizacao.emailorganizacao,
+            senhahashuser=hash_senha(senha_inicial),
             dscargo="SUPERADMIN",
             situsuario="ATIVO",
         )
@@ -573,7 +624,9 @@ def converter_lead_em_parceiro(
                 "usuario_id": superadmin.usuario_id,
                 "nome": superadmin.nmusuario,
                 "email": superadmin.emailuser,
+                "senha_inicial": senha_inicial,
             },
+            "categorias": [categoria.nmcategoria for categoria in categorias],
         }
 
     except HTTPException:
