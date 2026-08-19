@@ -67,7 +67,9 @@ class UsuarioOut(BaseModel):
     loja_id: Optional[int] = None
 
     nmusuario: str
-    emailuser: EmailStr
+    # Registros legados podem conter domínios internos. A entrada continua
+    # validada com EmailStr, mas a listagem não deve falhar por dado histórico.
+    emailuser: str
 
     dscargo: CargoUsuario
     situsuario: str

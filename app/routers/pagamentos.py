@@ -29,6 +29,7 @@ from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
     criar_checkout_asaas,
     criar_referencia_checkout_asaas,
+    buscar_pagamento_confirmado_por_checkout,
     buscar_pagamento_confirmado_por_qrcode_pix,
     buscar_pagamento_confirmado_por_referencia,
 )
@@ -405,9 +406,13 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 checkout.pix_qr_code_id, ASAAS_API_KEY
             )
         else:
-            pagamento = await buscar_pagamento_confirmado_por_referencia(
-                getattr(checkout, "external_reference", ""), ASAAS_API_KEY
+            pagamento = await buscar_pagamento_confirmado_por_checkout(
+                checkout.checkout_id, ASAAS_API_KEY
             )
+            if not pagamento:
+                pagamento = await buscar_pagamento_confirmado_por_referencia(
+                    getattr(checkout, "external_reference", ""), ASAAS_API_KEY
+                )
         if pagamento:
             from app.services.venda_gateway_service import (
                 criar_venda_paga_por_checkout_snapshot,

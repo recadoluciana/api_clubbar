@@ -221,6 +221,8 @@ async def criar_venda_paga_por_checkout_snapshot(
         "CREDIT_CARD": "CREDITO",
         "DEBIT_CARD": "DEBITO",
     }.get(billing_type, "OUTRO")
+    if metodo == "OUTRO" and not checkout.pix_qr_code_id:
+        metodo = "CREDITO"
 
     venda = Venda(
         organizacao_id=carrinho.organizacao_id,
@@ -228,7 +230,7 @@ async def criar_venda_paga_por_checkout_snapshot(
         cliente_id=checkout.cliente_id,
         usuario_id=carrinho.usuario_id,
         carrinho_id=checkout.carrinho_id,
-        dsplataforma="TOTEM",
+        dsplataforma="ANDROID",
         sitvenda="PENDENTE",
         totalvenda=checkout.valor or 0,
     )
