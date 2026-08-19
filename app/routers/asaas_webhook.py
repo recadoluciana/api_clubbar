@@ -333,7 +333,6 @@ async def asaas_retorno(
         .first()
     )
 
-    pago = carrinho and (carrinho.sitcarrinho or "").upper() != "ABERTO"
     checkout_registrado = (
         db.query(CheckoutAsaas)
         .filter(CheckoutAsaas.carrinho_id == carrinho_id)
@@ -341,6 +340,32 @@ async def asaas_retorno(
         .first()
     )
     checkout_id_retorno = checkout_registrado.checkout_id if checkout_registrado else ""
+    if (
+        acao == "sucesso"
+        and checkout_registrado
+        and not getattr(checkout_registrado, "venda_id", None)
+    ):
+        try:
+            from app.routers.pagamentos import status_checkout_asaas
+
+            await status_checkout_asaas(checkout_registrado.checkout_id, db)
+            db.refresh(checkout_registrado)
+        except Exception as exc:
+            if hasattr(db, "rollback"):
+                db.rollback()
+            print("[ASAAS RETORNO][RECONCILIACAO PENDENTE]", repr(exc))
+            checkout_registrado = (
+                db.query(CheckoutAsaas)
+                .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+                .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+                .first()
+            )
+    pago = bool(
+        checkout_registrado
+        and checkout_registrado.venda_id
+        and (checkout_registrado.status or "").upper()
+        in {"PAID", "RECEIVED", "CONFIRMED"}
+    )
     origem_normalizada = origem.strip().upper()
     url_retorno = (
         PUBLIC_PARTNER_BASE_URL
