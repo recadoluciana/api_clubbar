@@ -18,6 +18,7 @@ from app.models.produto import Produto
 from app.models.eventolote import EventoLote
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.core.config import ASAAS_API_KEY
 
 from app.services.carrinho_service import get_carrinho
@@ -415,15 +416,33 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 )
         if pagamento:
             from app.services.venda_gateway_service import (
+                criar_venda_paga_por_carrinho_gateway,
                 criar_venda_paga_por_checkout_snapshot,
             )
 
-            await criar_venda_paga_por_checkout_snapshot(
-                db,
-                checkout_asaas_id=checkout.checkout_asaas_id,
-                gateway="ASAAS",
-                pagamento=pagamento,
+            possui_snapshot = (
+                db.query(CheckoutAsaasItem)
+                .filter(
+                    CheckoutAsaasItem.checkout_asaas_id
+                    == checkout.checkout_asaas_id
+                )
+                .first()
+                is not None
             )
+            if possui_snapshot:
+                await criar_venda_paga_por_checkout_snapshot(
+                    db,
+                    checkout_asaas_id=checkout.checkout_asaas_id,
+                    gateway="ASAAS",
+                    pagamento=pagamento,
+                )
+            else:
+                await criar_venda_paga_por_carrinho_gateway(
+                    db,
+                    carrinho_id=checkout.carrinho_id,
+                    gateway="ASAAS",
+                    pagamento=pagamento,
+                )
             checkout.status = "PAID"
             checkout.payment_id = str(pagamento.get("id") or "") or None
             db.commit()
