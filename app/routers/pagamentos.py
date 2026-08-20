@@ -463,6 +463,10 @@ async def pagar_asaas(
         )
 
         db.add(novo)
+        db.flush()
+        _salvar_snapshot_checkout(
+            db, int(novo.checkout_asaas_id), itens_recalculados
+        )
         db.commit()
 
         return {
@@ -528,7 +532,6 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     if (
         status_atual not in {"PAID", "RECEIVED", "CONFIRMED"}
         and ASAAS_API_KEY
-        and not getattr(checkout, 'pix_qr_code_id', None)
         and getattr(checkout, "checkout_asaas_id", None)
     ):
         if getattr(checkout, "pix_qr_code_id", None):
@@ -547,7 +550,18 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
             from app.services.venda_gateway_service import (
                 criar_venda_paga_por_carrinho_gateway,
                 criar_venda_paga_por_checkout_snapshot,
+                validar_confirmacao_asaas_checkout,
             )
+
+            validar_confirmacao_asaas_checkout(
+                db,
+                checkout=checkout,
+                pagamento=pagamento,
+                origem_confirmacao='RECONCILIACAO',
+            )
+            if not checkout.dsorigemconfirmacao:
+                checkout.dsorigemconfirmacao = 'RECONCILIACAO'
+                checkout.dtconfirmacao = datetime.now()
 
             possui_snapshot = (
                 db.query(CheckoutAsaasItem)
@@ -562,6 +576,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 await criar_venda_paga_por_checkout_snapshot(
                     db,
                     checkout_asaas_id=checkout.checkout_asaas_id,
+                    origem_confirmacao='RECONCILIACAO',
                     gateway="ASAAS",
                     pagamento=pagamento,
                 )

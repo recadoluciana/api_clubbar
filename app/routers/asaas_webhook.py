@@ -1,5 +1,6 @@
 import traceback
 import hmac
+from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,6 +12,7 @@ from app.models.carrinho import Carrinho
 from app.services.venda_gateway_service import (
     criar_venda_paga_por_carrinho_gateway,
     criar_venda_paga_por_checkout_snapshot,
+    validar_confirmacao_asaas_checkout,
 )
 
 from app.models.checkout_asaas import CheckoutAsaas
@@ -247,6 +249,16 @@ async def asaas_webhook(
 
         print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
 
+        validar_confirmacao_asaas_checkout(
+            db,
+            checkout=registro_checkout,
+            pagamento=payment,
+            origem_confirmacao='WEBHOOK',
+        )
+        if not registro_checkout.dsorigemconfirmacao:
+            registro_checkout.dsorigemconfirmacao = 'WEBHOOK'
+            registro_checkout.dtconfirmacao = datetime.now()
+
         possui_snapshot = db.query(CheckoutAsaasItem).filter(
             CheckoutAsaasItem.checkout_asaas_id
             == registro_checkout.checkout_asaas_id
@@ -255,6 +267,7 @@ async def asaas_webhook(
             resultado = await criar_venda_paga_por_checkout_snapshot(
                 db,
                 checkout_asaas_id=registro_checkout.checkout_asaas_id,
+                origem_confirmacao='WEBHOOK',
                 gateway="ASAAS",
                 pagamento=payment,
             )
@@ -306,6 +319,19 @@ async def asaas_webhook(
             "checkout_id": checkout_id,
             "payment_id": payment_id,
             "resultado": resultado,
+        }
+
+    except HTTPException as e:
+        db.rollback()
+        print('[ASAAS WEBHOOK][IGNORADO]', e.status_code, e.detail)
+        if e.status_code >= 500:
+            raise
+        return {
+            'ok': True,
+            'ignored': True,
+            'event': evento,
+            'status': status,
+            'reason': str(e.detail),
         }
 
     except Exception as e:

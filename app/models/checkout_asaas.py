@@ -20,6 +20,8 @@ class CheckoutAsaas(Base):
     pix_payload = Column(Text, nullable=True)
     pix_encoded_image = Column(Text, nullable=True)
     pix_expiration_date = Column(DateTime, nullable=True)
+    dsorigemconfirmacao = Column(String(20), nullable=True)
+    dtconfirmacao = Column(DateTime, nullable=True)
 
     external_reference = Column(String(100))
     status = Column(String(30), server_default=text("'ACTIVE'"))

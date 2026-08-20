@@ -1100,6 +1100,8 @@ CREATE TABLE checkout_asaas (
   pix_expiration_date DATETIME NULL,
   external_reference VARCHAR(100) NULL,
   status VARCHAR(30) NULL DEFAULT 'ACTIVE',
+  dsorigemconfirmacao VARCHAR(20) NULL,
+  dtconfirmacao DATETIME NULL,
 
   dtcriacao DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
   checkout_url VARCHAR(500) NULL,
@@ -1117,6 +1119,7 @@ CREATE TABLE checkout_asaas (
   INDEX idx_checkout_asaas_cliente_id (cliente_id),
   INDEX idx_checkout_asaas_loja_id (loja_id),
   INDEX idx_checkout_asaas_status (status),
+  INDEX idx_checkout_asaas_origem_confirmacao (dsorigemconfirmacao, dtconfirmacao),
 
   CONSTRAINT fk_checkout_asaas_carrinho
     FOREIGN KEY (carrinho_id, cliente_id, loja_id)
