@@ -5,9 +5,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 import app.models as app_models
-from app.core.config import UPLOAD_DIR
+from app.core.config import APP_ENV, UPLOAD_DIR
+from app.database import engine
 
 from app.routers import cidades
 from app.routers import localidades
@@ -153,7 +155,21 @@ app.include_router(caixa.router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    banco_online = False
+    try:
+        with engine.connect() as conexao:
+            conexao.execute(text("SELECT 1"))
+        banco_online = True
+    except Exception:
+        logging.exception("Falha no health check do banco de dados")
+
+    producao = APP_ENV in {"production", "prod"}
+    return {
+        "status": "ok" if banco_online else "degraded",
+        "api": "online",
+        "database": "online" if banco_online else "offline",
+        "environment": "P" if producao else "D",
+    }
 
 
 @app.get("/")
