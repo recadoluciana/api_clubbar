@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import traceback
 import uuid
+from datetime import datetime, timedelta
 from typing import Any, Dict
 from contextlib import nullcontext
 
@@ -19,7 +20,7 @@ from app.models.eventolote import EventoLote
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
-from app.core.config import ASAAS_API_KEY
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -33,6 +34,7 @@ from app.services.asaas_service import (
     buscar_pagamento_confirmado_por_checkout,
     buscar_pagamento_confirmado_por_qrcode_pix,
     buscar_pagamento_confirmado_por_referencia,
+    criar_qrcode_pix_estatico_asaas,
 )
 from app.services.repasse_service import criar_repasse_da_venda
 
@@ -215,6 +217,132 @@ def _montar_itens_asaas(
         )
 
     return itens_asaas, valor_total_com_taxa, vr_taxa_clubbar
+
+
+def _salvar_snapshot_checkout(
+    db: Session,
+    checkout_asaas_id: int,
+    itens: list[Dict[str, Any]],
+) -> None:
+    for item in itens:
+        db.add(CheckoutAsaasItem(
+            checkout_asaas_id=checkout_asaas_id,
+            produto_id=int(item['produto_id']),
+            lote_id=item.get('lote_id'),
+            idtipoproduto=str(item.get('idtipoproduto') or 'P'),
+            nmproduto=str(item.get('nmproduto') or 'Produto'),
+            quantidade=int(item.get('qtitcarrinho') or item.get('qt_prod') or 1),
+            vrunitario=float(item.get('vrunitario') or 0),
+            subtotal=float(item.get('subtotal') or 0),
+            total_com_taxa=float(item.get('total_com_taxa') or 0),
+            pctaxaitvenda=float(item.get('pctaxaitvenda') or 0),
+            vrtaxaitvenda=float(item.get('vrtaxaitvenda') or 0),
+            dsobsitem=item.get('dsobsitcar'),
+            nmparticipante=item.get('nmparticipante'),
+            cpfparticipante=item.get('cpfparticipante'),
+        ))
+
+
+@router.post('/pix')
+async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db)):
+    try:
+        if not ASAAS_API_KEY or not ASAAS_PIX_ADDRESS_KEY:
+            raise HTTPException(status_code=503, detail='PIX Asaas nao configurado')
+        carrinho = get_carrinho(
+            db, payload.cliente_id, payload.loja_id, payload.usuario_id
+        )
+        if not carrinho:
+            raise HTTPException(status_code=404, detail='Carrinho nao encontrado')
+        itens = carrinho.get('itens') or []
+        if not itens:
+            raise HTTPException(status_code=400, detail='Carrinho vazio')
+        carrinho_id = int(carrinho.get('carrinho_id') or 0)
+        if not carrinho_id:
+            raise HTTPException(status_code=400, detail='Carrinho invalido')
+
+        agora = datetime.now()
+        existente = (
+            db.query(CheckoutAsaas)
+            .filter(
+                CheckoutAsaas.carrinho_id == carrinho_id,
+                CheckoutAsaas.cliente_id == payload.cliente_id,
+                CheckoutAsaas.loja_id == payload.loja_id,
+                CheckoutAsaas.pix_qr_code_id.isnot(None),
+                CheckoutAsaas.status == 'PENDING',
+                CheckoutAsaas.pix_expiration_date > agora,
+            )
+            .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+            .first()
+        )
+        if existente:
+            return {
+                'venda_id': existente.venda_id,
+                'pagamento_id': existente.checkout_id,
+                'pix_qr_code_id': existente.pix_qr_code_id,
+                'pix_copia_cola': existente.pix_payload,
+                'encoded_image': existente.pix_encoded_image,
+                'expiration_date': existente.pix_expiration_date,
+                'valor_total': float(existente.valor or 0),
+                'status': 'PENDENTE',
+                'reutilizado': True,
+            }
+        itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
+        _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
+        external_reference = (
+            f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
+        )
+        qr = await criar_qrcode_pix_estatico_asaas(
+            address_key=ASAAS_PIX_ADDRESS_KEY,
+            valor=valor_total,
+            descricao=f'Clubbar carrinho {carrinho_id}',
+            api_key=ASAAS_API_KEY,
+            external_reference=external_reference,
+        )
+        pix_id = str(qr['id'])
+        registro = CheckoutAsaas(
+            carrinho_id=carrinho_id,
+            cliente_id=payload.cliente_id,
+            loja_id=payload.loja_id,
+            venda_id=None,
+            checkout_id=pix_id,
+            pix_qr_code_id=pix_id,
+            pix_payload=str(qr['payload']),
+            pix_encoded_image=str(qr.get('encodedImage') or ''),
+            pix_expiration_date=agora + timedelta(minutes=10),
+            external_reference=external_reference,
+            status='PENDING',
+            valor=valor_total,
+            vrtaxaclubbar=valor_taxa,
+        )
+        db.add(registro)
+        db.flush()
+        _salvar_snapshot_checkout(
+            db, int(registro.checkout_asaas_id), itens_recalculados
+        )
+        # Somente o webhook PAYMENT_RECEIVED cria a venda e fecha o carrinho.
+        db.commit()
+        return {
+            'venda_id': None,
+            'pagamento_id': pix_id,
+            'pix_qr_code_id': pix_id,
+            'pix_copia_cola': qr['payload'],
+            'encoded_image': qr.get('encodedImage'),
+            'expiration_date': qr.get('expirationDate'),
+            'valor_total': valor_total,
+            'status': 'PENDENTE',
+            'reutilizado': False,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        print('[ASAAS PIX CLIENT][ERRO]', repr(exc))
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f'Erro ao gerar PIX Asaas ({type(exc).__name__}): {exc}',
+        )
 
 
 @router.post("/pagar-asaas")
@@ -400,6 +528,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     if (
         status_atual not in {"PAID", "RECEIVED", "CONFIRMED"}
         and ASAAS_API_KEY
+        and not getattr(checkout, 'pix_qr_code_id', None)
         and getattr(checkout, "checkout_asaas_id", None)
     ):
         if getattr(checkout, "pix_qr_code_id", None):
