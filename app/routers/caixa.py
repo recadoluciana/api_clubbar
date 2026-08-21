@@ -26,6 +26,7 @@ from app.routers.carrinho import adicionar_item
 from app.routers.pagamentos import (
     _montar_itens_asaas,
     _recalcular_itens_carrinho,
+    _cancelar_tentativas_anteriores,
     pagar_asaas,
     status_checkout_asaas,
 )
@@ -213,41 +214,6 @@ async def checkout_cartao(payload: dict = Depends(get_usuario_logado), db: Sessi
         ),
         db,
     )
-    checkout = db.query(CheckoutAsaas).filter(
-        CheckoutAsaas.checkout_id == str(retorno["pagamento_id"])
-    ).first()
-    if checkout and not checkout.venda_id:
-        carrinho = get_carrinho(
-            db, cliente.cliente_id, loja.loja_id, int(payload["sub"])
-        )
-        itens_recalculados, _ = _recalcular_itens_carrinho(
-            db, carrinho.get("itens") or []
-        )
-        for item in itens_recalculados:
-            db.add(CheckoutAsaasItem(
-                checkout_asaas_id=checkout.checkout_asaas_id,
-                produto_id=int(item["produto_id"]),
-                lote_id=item.get("lote_id"),
-                idtipoproduto=str(item.get("idtipoproduto") or "P"),
-                nmproduto=str(item.get("nmproduto") or "Produto"),
-                quantidade=int(item.get("qtitcarrinho") or 1),
-                vrunitario=float(item.get("vrunitario") or 0),
-                subtotal=float(item.get("subtotal") or 0),
-                total_com_taxa=float(item.get("total_com_taxa") or 0),
-                pctaxaitvenda=float(item.get("pctaxaitvenda") or 0),
-                vrtaxaitvenda=float(item.get("vrtaxaitvenda") or 0),
-                dsobsitem=item.get("dsobsitcar"),
-                nmparticipante=item.get("nmparticipante"),
-                cpfparticipante=item.get("cpfparticipante"),
-            ))
-        carrinho_id = int(carrinho["carrinho_id"])
-        db.query(ItCarrinho).filter(
-            ItCarrinho.carrinho_id == carrinho_id
-        ).delete(synchronize_session=False)
-        db.query(Carrinho).filter(
-            Carrinho.carrinho_id == carrinho_id
-        ).update({"sitcarrinho": "FECHADO"}, synchronize_session=False)
-        db.commit()
     return retorno
 
 
@@ -265,6 +231,8 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
     itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
     _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
     carrinho_id = int(carrinho["carrinho_id"])
+
+    await _cancelar_tentativas_anteriores(db, carrinho_id)
 
     external_reference = (
         f"PIX-{APP_ENV.upper()}-CAIXA-{carrinho_id}-{uuid.uuid4().hex[:12]}"
@@ -293,47 +261,20 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         vrtaxaclubbar=valor_taxa,
     )
     db.add(registro)
-    db.flush()
-    for item in itens_recalculados:
-        quantidade = int(item.get("qtitcarrinho") or item.get("qt_prod") or 1)
-        db.add(CheckoutAsaasItem(
-            checkout_asaas_id=registro.checkout_asaas_id,
-            produto_id=int(item["produto_id"]),
-            lote_id=item.get("lote_id"),
-            idtipoproduto=str(item.get("idtipoproduto") or "P"),
-            nmproduto=str(item.get("nmproduto") or "Produto"),
-            quantidade=quantidade,
-            vrunitario=float(item.get("vrunitario") or 0),
-            subtotal=float(item.get("subtotal") or 0),
-            total_com_taxa=float(item.get("total_com_taxa") or 0),
-            pctaxaitvenda=float(item.get("pctaxaitvenda") or 0),
-            vrtaxaitvenda=float(item.get("vrtaxaitvenda") or 0),
-            dsobsitem=item.get("dsobsitcar"),
-            nmparticipante=item.get("nmparticipante"),
-            cpfparticipante=item.get("cpfparticipante"),
-        ))
-    db.query(ItCarrinho).filter(
-        ItCarrinho.carrinho_id == carrinho_id
-    ).delete(synchronize_session=False)
-    db.query(Carrinho).filter(
-        Carrinho.carrinho_id == carrinho_id
-    ).update({"sitcarrinho": "FECHADO"}, synchronize_session=False)
     db.commit()
     return {
-        "venda_id": None,
-        "pagamento_id": pix_qr_code_id,
-        "pix_qr_code_id": pix_qr_code_id,
-        "encoded_image": qr.get("encodedImage"),
-        "payload": qr["payload"],
-        "expiration_date": qr.get("expirationDate"),
-        "status": "PENDENTE",
-        "reutilizado": False,
-        "simulacao_sandbox_disponivel": bool(
-            APP_ENV not in {"production", "prod"} and ASAAS_SANDBOX_PAYER_API_KEY
+        'venda_id': None,
+        'pagamento_id': pix_qr_code_id,
+        'pix_qr_code_id': pix_qr_code_id,
+        'encoded_image': qr.get('encodedImage'),
+        'payload': qr['payload'],
+        'expiration_date': qr.get('expirationDate'),
+        'status': 'PENDENTE',
+        'reutilizado': False,
+        'simulacao_sandbox_disponivel': bool(
+            APP_ENV not in {'production', 'prod'} and ASAAS_SANDBOX_PAYER_API_KEY
         ),
     }
-
-
 @router.post("/checkout/{checkout_id}/cancelar-pix")
 async def cancelar_pix(
     checkout_id: str,

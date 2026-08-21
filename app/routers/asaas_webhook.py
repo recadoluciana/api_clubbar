@@ -138,6 +138,13 @@ async def asaas_webhook(
     except Exception:
         body = {}
 
+    print('[ASAAS WEBHOOK][NAO PROCESSADO]', body.get('event'))
+    return {
+        'ok': True,
+        'ignored': True,
+        'reason': 'Confirmacao realizada somente por retorno ou consulta',
+    }
+
     try:
         evento = str(body.get("event") or "").upper()
 
@@ -379,7 +386,7 @@ async def asaas_retorno(
         except Exception as exc:
             if hasattr(db, "rollback"):
                 db.rollback()
-            print("[ASAAS RETORNO][RECONCILIACAO PENDENTE]", repr(exc))
+            print('[ASAAS RETORNO][CONSULTA PENDENTE]', repr(exc))
             checkout_registrado = (
                 db.query(CheckoutAsaas)
                 .filter(CheckoutAsaas.carrinho_id == carrinho_id)

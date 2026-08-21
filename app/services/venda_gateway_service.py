@@ -46,7 +46,7 @@ def validar_confirmacao_asaas_checkout(
     origem_confirmacao: str = 'WEBHOOK',
 ) -> Carrinho:
     origem = (origem_confirmacao or '').upper()
-    if origem not in {'WEBHOOK', 'RECONCILIACAO'}:
+    if origem not in {'CONSULTA', 'RETORNO', 'WEBHOOK', 'RECONCILIACAO'}:
         raise HTTPException(400, 'Origem da confirmacao Asaas invalida')
 
     status = str(pagamento.get('status') or '').upper()
@@ -171,6 +171,17 @@ async def criar_venda_paga_por_carrinho_gateway(
         db,
         itens,
     )
+    valor_pago = Decimal(str(pagamento.get('value') or 0)).quantize(
+        Decimal('0.01')
+    )
+    valor_carrinho = Decimal(str(total_recalculado or 0)).quantize(
+        Decimal('0.01')
+    )
+    if valor_pago != valor_carrinho:
+        raise HTTPException(
+            status_code=409,
+            detail='O carrinho foi alterado. Gere uma nova tentativa de pagamento.',
+        )
     print("depois de recalcular itens >>>>>>>>>>>", itens_recalculados)
 
     payment_id = str(pagamento.get("id") or "").strip()

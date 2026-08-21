@@ -35,10 +35,39 @@ from app.services.asaas_service import (
     buscar_pagamento_confirmado_por_qrcode_pix,
     buscar_pagamento_confirmado_por_referencia,
     criar_qrcode_pix_estatico_asaas,
+    cancelar_checkout_asaas,
+    excluir_qrcode_pix_estatico_asaas,
 )
 from app.services.repasse_service import criar_repasse_da_venda
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
+
+
+async def _cancelar_tentativas_anteriores(
+    db: Session,
+    carrinho_id: int,
+) -> None:
+    tentativas = (
+        db.query(CheckoutAsaas)
+        .filter(
+            CheckoutAsaas.carrinho_id == carrinho_id,
+            CheckoutAsaas.venda_id.is_(None),
+            CheckoutAsaas.status.notin_(['CANCELLED', 'CANCELED', 'EXPIRED']),
+        )
+        .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+        .all()
+    )
+    for tentativa in tentativas:
+        if tentativa.pix_qr_code_id:
+            await excluir_qrcode_pix_estatico_asaas(
+                tentativa.pix_qr_code_id, ASAAS_API_KEY
+            )
+        elif tentativa.checkout_id:
+            await cancelar_checkout_asaas(tentativa.checkout_id, ASAAS_API_KEY)
+        tentativa.status = 'CANCELLED'
+
+    if tentativas:
+        db.commit()
 
 
 def db_tx(db: Session):
@@ -261,31 +290,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             raise HTTPException(status_code=400, detail='Carrinho invalido')
 
         agora = datetime.now()
-        existente = (
-            db.query(CheckoutAsaas)
-            .filter(
-                CheckoutAsaas.carrinho_id == carrinho_id,
-                CheckoutAsaas.cliente_id == payload.cliente_id,
-                CheckoutAsaas.loja_id == payload.loja_id,
-                CheckoutAsaas.pix_qr_code_id.isnot(None),
-                CheckoutAsaas.status == 'PENDING',
-                CheckoutAsaas.pix_expiration_date > agora,
-            )
-            .order_by(CheckoutAsaas.checkout_asaas_id.desc())
-            .first()
-        )
-        if existente:
-            return {
-                'venda_id': existente.venda_id,
-                'pagamento_id': existente.checkout_id,
-                'pix_qr_code_id': existente.pix_qr_code_id,
-                'pix_copia_cola': existente.pix_payload,
-                'encoded_image': existente.pix_encoded_image,
-                'expiration_date': existente.pix_expiration_date,
-                'valor_total': float(existente.valor or 0),
-                'status': 'PENDENTE',
-                'reutilizado': True,
-            }
+        await _cancelar_tentativas_anteriores(db, carrinho_id)
         itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
         _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
         external_reference = (
@@ -316,10 +321,6 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
         )
         db.add(registro)
         db.flush()
-        _salvar_snapshot_checkout(
-            db, int(registro.checkout_asaas_id), itens_recalculados
-        )
-        # Somente o webhook PAYMENT_RECEIVED cria a venda e fecha o carrinho.
         db.commit()
         return {
             'venda_id': None,
@@ -381,6 +382,8 @@ async def pagar_asaas(
 
         if carrinho_id == 0:
             raise HTTPException(status_code=400, detail="Carrinho invÃ¡lido")
+
+        await _cancelar_tentativas_anteriores(db, carrinho_id)
 
         cliente = (
             db.query(Cliente)
@@ -464,9 +467,6 @@ async def pagar_asaas(
 
         db.add(novo)
         db.flush()
-        _salvar_snapshot_checkout(
-            db, int(novo.checkout_asaas_id), itens_recalculados
-        )
         db.commit()
 
         return {
@@ -525,7 +525,38 @@ async def pagamento_pendente(
 
 @router.get("/asaas/status/{checkout_id}")
 async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db)):
-    checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_id == checkout_id).first()
+    checkout_consultado = (
+        db.query(CheckoutAsaas)
+        .filter(CheckoutAsaas.checkout_id == checkout_id)
+        .first()
+    )
+    if (
+        checkout_consultado
+        and getattr(checkout_consultado, 'carrinho_id', None) is not None
+        and not getattr(checkout_consultado, 'venda_id', None)
+    ):
+        tentativa_atual = (
+            db.query(CheckoutAsaas)
+            .filter(
+                CheckoutAsaas.carrinho_id == checkout_consultado.carrinho_id,
+                CheckoutAsaas.venda_id.is_(None),
+            )
+            .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+            .first()
+        )
+        if (
+            (checkout_consultado.status or '').upper()
+            in {'CANCELLED', 'CANCELED', 'EXPIRED'}
+            or tentativa_atual is None
+            or tentativa_atual.checkout_asaas_id
+            != checkout_consultado.checkout_asaas_id
+        ):
+            return {
+                'pagamento_id': checkout_consultado.checkout_id,
+                'status': 'SUBSTITUIDO',
+                'detail': 'Esta tentativa foi substituida por uma mais recente.',
+            }
+    checkout = checkout_consultado
     if not checkout:
         raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
     status_atual = (checkout.status or "PENDENTE").upper()
@@ -553,11 +584,27 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 validar_confirmacao_asaas_checkout,
             )
 
+            checkout_bloqueado = (
+                db.query(CheckoutAsaas)
+                .filter(CheckoutAsaas.checkout_asaas_id == checkout.checkout_asaas_id)
+                .with_for_update()
+                .first()
+            )
+            if not checkout_bloqueado:
+                raise HTTPException(404, 'Checkout Asaas nao encontrado')
+            checkout = checkout_bloqueado
+            if checkout.venda_id:
+                db.commit()
+                return {
+                    'pagamento_id': checkout.checkout_id,
+                    'status': 'PAGO',
+                }
+
             validar_confirmacao_asaas_checkout(
                 db,
                 checkout=checkout,
                 pagamento=pagamento,
-                origem_confirmacao='RECONCILIACAO',
+                origem_confirmacao='CONSULTA',
             )
             possui_snapshot = (
                 db.query(CheckoutAsaasItem)
@@ -568,21 +615,23 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 .first()
                 is not None
             )
+            possui_snapshot = False
             if possui_snapshot:
                 await criar_venda_paga_por_checkout_snapshot(
                     db,
                     checkout_asaas_id=checkout.checkout_asaas_id,
-                    origem_confirmacao='RECONCILIACAO',
+                    origem_confirmacao='CONSULTA',
                     gateway="ASAAS",
                     pagamento=pagamento,
                 )
             else:
-                await criar_venda_paga_por_carrinho_gateway(
+                resultado_venda = await criar_venda_paga_por_carrinho_gateway(
                     db,
                     carrinho_id=checkout.carrinho_id,
                     gateway="ASAAS",
                     pagamento=pagamento,
                 )
+                checkout.venda_id = resultado_venda.get('venda_id')
             checkout.status = "PAID"
             checkout.payment_id = str(pagamento.get("id") or "") or None
             db.commit()

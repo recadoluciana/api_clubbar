@@ -494,6 +494,23 @@ async def excluir_qrcode_pix_estatico_asaas(
         raise HTTPException(response.status_code, detalhe)
 
 
+async def cancelar_checkout_asaas(checkout_id: str, api_key: str) -> None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f'{ASAAS_BASE_URL}/checkouts/{checkout_id}/cancel',
+            headers=_headers(api_key),
+        )
+    if response.status_code not in (200, 204, 404):
+        detalhe = response.text
+        try:
+            erros = (response.json().get('errors') or [])
+            if erros:
+                detalhe = erros[0].get('description') or detalhe
+        except Exception:
+            pass
+        raise HTTPException(response.status_code, detalhe)
+
+
 async def pagar_qrcode_pix_sandbox_asaas(
     *, payload: str, valor: float, api_key_pagador: str,
 ):

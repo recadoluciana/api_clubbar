@@ -129,7 +129,7 @@ class AsaasAmbientesTest(unittest.TestCase):
 
         self.assertEqual(401, erro.exception.status_code)
 
-    def test_webhook_nao_converte_referencia_desconhecida_em_carrinho(self):
+    def test_webhook_nao_processa_pagamento(self):
         banco = BancoSemCheckout([None, None])
         request = RequisicaoFalsa(
             "token-seguro",
@@ -146,9 +146,9 @@ class AsaasAmbientesTest(unittest.TestCase):
         with patch("app.routers.asaas_webhook.ASAAS_WEBHOOK_TOKEN", "token-seguro"):
             resposta = asyncio.run(asaas_webhook(request=request, db=banco))
 
-        self.assertTrue(resposta["ignored"])
-        self.assertEqual("Checkout não pertence a este ambiente", resposta["msg"])
-        self.assertEqual(2, banco.consultas)
+        self.assertTrue(resposta['ignored'])
+        self.assertIn('retorno ou consulta', resposta['reason'])
+        self.assertEqual(0, banco.consultas)
 
     def test_callback_do_checkout_usa_url_publica_do_ambiente(self):
         ClienteHttpFalso.ultimo_json = None
