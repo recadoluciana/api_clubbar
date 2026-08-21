@@ -21,7 +21,7 @@ class _Query:
     def filter(self, *args):
         return self
 
-    def with_for_update(self):
+    def with_for_update(self, **kwargs):
         return self
 
     def order_by(self, *args):

@@ -559,10 +559,6 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 pagamento=pagamento,
                 origem_confirmacao='RECONCILIACAO',
             )
-            if not checkout.dsorigemconfirmacao:
-                checkout.dsorigemconfirmacao = 'RECONCILIACAO'
-                checkout.dtconfirmacao = datetime.now()
-
             possui_snapshot = (
                 db.query(CheckoutAsaasItem)
                 .filter(

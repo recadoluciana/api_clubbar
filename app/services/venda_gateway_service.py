@@ -292,10 +292,11 @@ async def criar_venda_paga_por_checkout_snapshot(
     checkout = (
         db.query(CheckoutAsaas)
         .filter(CheckoutAsaas.checkout_asaas_id == checkout_asaas_id)
-        .with_for_update()
+        .with_for_update(skip_locked=True)
         .first()
     )
     if not checkout:
+        raise HTTPException(409, 'Checkout Asaas em processamento')
         raise HTTPException(404, "Checkout Asaas nao encontrado")
     if checkout.venda_id:
         payment_id_recebido = str(pagamento.get('id') or '').strip()
