@@ -82,7 +82,20 @@ def enviar_email_codigo(destinatario: str, codigo: str):
     print(response.text)
 
     if response.status_code >= 400:
+        resposta = response.text.lower()
+        if response.status_code == 401 and (
+            'unrecognised ip address' in resposta
+            or 'unauthorized ip' in resposta
+            or 'authorised_ips' in resposta
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    'O serviço de e-mail está temporariamente indisponível. '
+                    'Tente novamente em alguns minutos.'
+                ),
+            )
         raise HTTPException(
-            status_code=response.status_code,
-            detail=response.text,
+            status_code=502,
+            detail='Não foi possível enviar o e-mail de recuperação.',
         )

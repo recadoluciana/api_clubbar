@@ -187,8 +187,13 @@ def esqueci_senha_usuario(
         usado="N",
         dtcriacao=agora,
     ))
-    db.commit()
-    enviar_email_codigo(usuario.emailuser, codigo)
+    db.flush()
+    try:
+        enviar_email_codigo(usuario.emailuser, codigo)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"message": mensagem}
 
 

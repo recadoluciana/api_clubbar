@@ -54,10 +54,14 @@ def esqueci_senha(
     )
 
     db.add(novo)
-    db.commit()
+    db.flush()
 
-    # 🔥 TEMPORÁRIO (sem email ainda)
-    enviar_email_codigo(cliente.emailcliente, codigo)
+    try:
+        enviar_email_codigo(cliente.emailcliente, codigo)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
     return {
         "message": (
