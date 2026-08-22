@@ -21,6 +21,9 @@ class QueryFalsa:
     def join(self, *args, **kwargs):
         return self
 
+    def select_from(self, *args):
+        return self
+
     def group_by(self, *args):
         return self
 
@@ -57,11 +60,12 @@ class PainelGerencialTest(unittest.TestCase):
                 SimpleNamespace(loja_id=1, nmloja="Loja A"),
                 SimpleNamespace(loja_id=2, nmloja="Loja B"),
             ],
-            SimpleNamespace(total_mes=Decimal("300.00"), pedidos_mes=3),
-            Decimal("120.00"),
+            3,
+            SimpleNamespace(produtos=Decimal("95.00"), ingressos=Decimal("200.00")),
+            Decimal("115.00"),
             4,
             [
-                SimpleNamespace(loja_id=1, valor=Decimal("225.00")),
+                SimpleNamespace(loja_id=1, valor=Decimal("220.00")),
                 SimpleNamespace(loja_id=2, valor=Decimal("75.00")),
             ],
             [
@@ -69,7 +73,7 @@ class PainelGerencialTest(unittest.TestCase):
                     produto_id=10,
                     nome="Cerveja",
                     quantidade=5,
-                    valor=Decimal("100.00"),
+                    valor=Decimal("95.00"),
                 )
             ],
             [
@@ -93,11 +97,17 @@ class PainelGerencialTest(unittest.TestCase):
         dados = painel_gerencial(db=banco, usuario=usuario)
 
         self.assertEqual({"inicio": date(2026, 8, 1), "fim": date(2026, 8, 4)}, dados["periodo"])
-        self.assertEqual(120.0, dados["total_hoje"])
-        self.assertEqual(300.0, dados["total_mes"])
+        self.assertEqual(115.0, dados["total_hoje"])
+        self.assertEqual(295.0, dados["total_mes"])
+        self.assertEqual(95.0, dados["total_produtos_mes"])
+        self.assertEqual(200.0, dados["total_ingressos_mes"])
+        self.assertEqual(
+            dados["total_mes"],
+            dados["total_produtos_mes"] + dados["total_ingressos_mes"],
+        )
         self.assertEqual(3, dados["pedidos_mes"])
         self.assertEqual(4, dados["ingressos_vendidos_mes"])
-        self.assertEqual(75.0, dados["participacao_lojas"][0]["percentual"])
+        self.assertEqual(74.58, dados["participacao_lojas"][0]["percentual"])
         self.assertEqual("Cerveja", dados["produtos_mais_vendidos"][0]["nome"])
         self.assertEqual("Festival - Lote 1", dados["ingressos_mais_vendidos"][0]["nome"])
         filtros = " ".join(filtro for query in banco.filtros_por_query for filtro in query)
@@ -109,7 +119,8 @@ class PainelGerencialTest(unittest.TestCase):
         hoje_local.return_value = date(2026, 8, 4)
         banco = BancoFalso([
             [SimpleNamespace(loja_id=4, nmloja="Loja Gerenciada")],
-            SimpleNamespace(total_mes=Decimal("0"), pedidos_mes=0),
+            0,
+            SimpleNamespace(produtos=Decimal("0"), ingressos=Decimal("0")),
             Decimal("0"),
             0,
             [],

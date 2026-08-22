@@ -33,6 +33,8 @@ class PainelGerencialOut(BaseModel):
     periodo: PainelPeriodo
     total_hoje: float
     total_mes: float
+    total_produtos_mes: float
+    total_ingressos_mes: float
     pedidos_mes: int
     ingressos_vendidos_mes: int
     participacao_lojas: list[ParticipacaoLoja]

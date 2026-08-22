@@ -4,7 +4,7 @@ from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
@@ -95,7 +95,9 @@ def painel_gerencial(
 
     primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
     inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
-    inicio_hoje = _inicio_local_em_utc_naive(ultimo_dia)
+    hoje = _hoje_local()
+    inicio_hoje = _inicio_local_em_utc_naive(hoje)
+    fim_hoje_exclusivo = _inicio_local_em_utc_naive(hoje + timedelta(days=1))
     fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
 
     lojas_query = db.query(Loja.loja_id, Loja.nmloja).filter(
@@ -117,22 +119,43 @@ def painel_gerencial(
     if loja_id is not None:
         filtros_mes.append(Venda.loja_id == loja_id)
 
-    resumo = db.query(
-        func.coalesce(func.sum(Venda.totalvenda), 0).label("total_mes"),
-        func.count(Venda.venda_id).label("pedidos_mes"),
+    pedidos_mes = db.query(func.count(Venda.venda_id)).filter(*filtros_mes).scalar()
+
+    quantidade = func.coalesce(ItVenda.qtitvenda, 1)
+    valor_bruto_item = quantidade * ItVenda.vrunititvenda
+    eh_ingresso = or_(ItVenda.lote_id.isnot(None), Produto.idtipoproduto == "I")
+    eh_produto = and_(ItVenda.lote_id.is_(None), Produto.idtipoproduto != "I")
+    # A taxa do Clubbar nao e receita do parceiro. Para produtos ela e
+    # descontada do valor bruto; para ingressos consideramos apenas o valor-base.
+    valor_liquido_item = case(
+        (eh_ingresso, valor_bruto_item),
+        else_=valor_bruto_item - func.coalesce(ItVenda.vrtaxaitvenda, 0),
+    )
+
+    totais_mes = db.query(
+        func.coalesce(func.sum(case((eh_produto, valor_liquido_item), else_=0)), 0).label("produtos"),
+        func.coalesce(func.sum(case((eh_ingresso, valor_liquido_item), else_=0)), 0).label("ingressos"),
+    ).select_from(ItVenda).join(
+        Venda, Venda.venda_id == ItVenda.venda_id
+    ).join(
+        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_mes).one()
 
     filtros_hoje = [
         Venda.organizacao_id == organizacao_id,
         Venda.sitvenda == "PAGA",
         Venda.dtcriacao >= inicio_hoje,
-        Venda.dtcriacao < fim_exclusivo,
+        Venda.dtcriacao < fim_hoje_exclusivo,
     ]
     if loja_id is not None:
         filtros_hoje.append(Venda.loja_id == loja_id)
 
     total_hoje = db.query(
-        func.coalesce(func.sum(Venda.totalvenda), 0)
+        func.coalesce(func.sum(valor_liquido_item), 0)
+    ).select_from(ItVenda).join(
+        Venda, Venda.venda_id == ItVenda.venda_id
+    ).join(
+        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_hoje).scalar()
 
     ingressos_vendidos = db.query(
@@ -144,10 +167,16 @@ def painel_gerencial(
 
     participacao_rows = db.query(
         Venda.loja_id,
-        func.coalesce(func.sum(Venda.totalvenda), 0).label("valor"),
+        func.coalesce(func.sum(valor_liquido_item), 0).label("valor"),
+    ).select_from(ItVenda).join(
+        Venda, Venda.venda_id == ItVenda.venda_id
+    ).join(
+        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_mes).group_by(Venda.loja_id).all()
     valores_por_loja = {int(row.loja_id): _dinheiro(row.valor) for row in participacao_rows}
-    total_mes = _dinheiro(resumo.total_mes)
+    total_produtos_mes = _dinheiro(totais_mes.produtos)
+    total_ingressos_mes = _dinheiro(totais_mes.ingressos)
+    total_mes = _dinheiro(Decimal(str(total_produtos_mes)) + Decimal(str(total_ingressos_mes)))
 
     participacao_lojas = []
     for loja in lojas:
@@ -161,7 +190,7 @@ def painel_gerencial(
         })
 
     quantidade_produto = func.sum(ItVenda.qtitvenda).label("quantidade")
-    valor_produto = func.sum(ItVenda.qtitvenda * ItVenda.vrunititvenda).label("valor")
+    valor_produto = func.sum(valor_liquido_item).label("valor")
     produtos_query = db.query(
         Produto.produto_id,
         Produto.nmproduto.label("nome"),
@@ -211,7 +240,9 @@ def painel_gerencial(
         "periodo": {"inicio": primeiro_dia, "fim": ultimo_dia},
         "total_hoje": _dinheiro(total_hoje),
         "total_mes": total_mes,
-        "pedidos_mes": int(resumo.pedidos_mes or 0),
+        "total_produtos_mes": total_produtos_mes,
+        "total_ingressos_mes": total_ingressos_mes,
+        "pedidos_mes": int(pedidos_mes or 0),
         "ingressos_vendidos_mes": int(ingressos_vendidos or 0),
         "participacao_lojas": participacao_lojas,
         "produtos_mais_vendidos": [
