@@ -754,7 +754,8 @@ CREATE INDEX idx_carrinho_usuario
 
 CREATE TABLE itcarrinho (
   itcarrinho_id    BIGINT AUTO_INCREMENT PRIMARY KEY,
-  carrinho_id      BIGINT NOT NULL,
+  carrinho_id      BIGINT NULL,
+  reserva_ingresso_id BIGINT NULL,
   produto_id       BIGINT NOT NULL,
   lote_id          BIGINT NULL,
   qtitcarrinho     INT NOT NULL DEFAULT 1,
@@ -819,14 +820,15 @@ CREATE TABLE venda (
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
   UNIQUE KEY uk_venda_carrinho (carrinho_id),
+  UNIQUE KEY uk_venda_reserva_ingresso (reserva_ingresso_id),
 
   CONSTRAINT fk_venda_usuario
     FOREIGN KEY (usuario_id)
     REFERENCES usuario(usuario_id)
     ON DELETE SET NULL ON UPDATE CASCADE,
 
-  CONSTRAINT chk_venda_total
-    CHECK (totalvenda >= 0)
+  CONSTRAINT chk_venda_total CHECK (totalvenda >= 0),
+  CONSTRAINT chk_venda_origem CHECK ((carrinho_id IS NULL) <> (reserva_ingresso_id IS NULL))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_venda_loja_cliente_data
@@ -899,6 +901,41 @@ CREATE INDEX idx_itvenda_lote
 
 CREATE INDEX idx_itvenda_entrega
   ON itvenda(identregaitvenda, dtentregaitvenda);
+
+CREATE TABLE reserva_ingresso (
+  reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
+  evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, produto_id BIGINT NOT NULL,
+  venda_id BIGINT NULL, qtreservada INT NOT NULL,
+  vrunitario DECIMAL(10,2) NOT NULL, pctaxa DECIMAL(10,2) NOT NULL DEFAULT 0,
+  vrtaxa DECIMAL(10,2) NOT NULL DEFAULT 0, vrtotal DECIMAL(10,2) NOT NULL,
+  sitreserva ENUM('PREENCHENDO','AGUARDANDO_PAGAMENTO','CONFIRMADA','EXPIRADA','CANCELADA') NOT NULL DEFAULT 'PREENCHENDO',
+  dtexpiracao DATETIME NOT NULL, dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_reserva_venda (venda_id),
+  INDEX idx_reserva_lote_status_expiracao (lote_id, sitreserva, dtexpiracao),
+  INDEX idx_reserva_cliente (cliente_id, dtcriacao),
+  FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
+  FOREIGN KEY (loja_id) REFERENCES loja(loja_id), FOREIGN KEY (cliente_id) REFERENCES cliente(cliente_id),
+  FOREIGN KEY (evento_id) REFERENCES evento(evento_id),
+  FOREIGN KEY (produto_id) REFERENCES produto(produto_id), FOREIGN KEY (venda_id) REFERENCES venda(venda_id),
+  CHECK (qtreservada > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE reserva_ingresso_participante (
+  reserva_ingresso_participante_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  reserva_ingresso_id BIGINT NOT NULL, ordem INT NOT NULL,
+  nmparticipante VARCHAR(150) NOT NULL, cpfparticipante VARCHAR(11) NOT NULL,
+  itvenda_id BIGINT NULL, dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_reserva_participante_ordem (reserva_ingresso_id, ordem),
+  INDEX idx_reserva_participante_cpf (cpfparticipante),
+  FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso(reserva_ingresso_id) ON DELETE CASCADE,
+  FOREIGN KEY (itvenda_id) REFERENCES itvenda(itvenda_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE venda ADD CONSTRAINT fk_venda_reserva_ingresso
+  FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso(reserva_ingresso_id);
 
 CREATE TABLE pagvenda (
   pagvenda_id           BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -1088,10 +1125,16 @@ ALTER TABLE itvenda
   REFERENCES produto(produto_id, lote_id)
   ON DELETE RESTRICT ON UPDATE RESTRICT;
 
+ALTER TABLE reserva_ingresso
+  ADD CONSTRAINT fk_reserva_lote
+  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+
 
 CREATE TABLE checkout_asaas (
   checkout_asaas_id BIGINT NOT NULL AUTO_INCREMENT,
-  carrinho_id BIGINT NOT NULL,
+  carrinho_id BIGINT NULL,
+  reserva_ingresso_id BIGINT NULL,
   cliente_id BIGINT NOT NULL,
   loja_id BIGINT NOT NULL,
   venda_id BIGINT NULL,
@@ -1120,6 +1163,7 @@ CREATE TABLE checkout_asaas (
   UNIQUE KEY uk_checkout_asaas_pix_qr_code_id (pix_qr_code_id),
   INDEX idx_checkout_asaas_venda_id (venda_id),
   INDEX idx_checkout_asaas_carrinho_id (carrinho_id),
+  INDEX idx_checkout_asaas_reserva (reserva_ingresso_id),
   INDEX idx_checkout_asaas_cliente_id (cliente_id),
   INDEX idx_checkout_asaas_loja_id (loja_id),
   INDEX idx_checkout_asaas_status (status),
@@ -1131,7 +1175,11 @@ CREATE TABLE checkout_asaas (
     ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_checkout_asaas_venda
     FOREIGN KEY (venda_id) REFERENCES venda(venda_id)
-    ON DELETE RESTRICT ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_checkout_asaas_reserva
+    FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso(reserva_ingresso_id),
+  CONSTRAINT chk_checkout_asaas_origem
+    CHECK ((carrinho_id IS NULL) <> (reserva_ingresso_id IS NULL))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS checkout_asaas_item (

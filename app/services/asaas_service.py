@@ -268,7 +268,8 @@ async def criar_checkout_asaas(
     valor: float,
     descricao: str,
     external_reference: str,
-    carrinho_id: int,
+    carrinho_id: int | None,
+    reserva_ingresso_id: int | None = None,
     api_key: str,
     splits: list[dict] | None = None,
     nome_cliente: str | None = None,
@@ -283,6 +284,7 @@ async def criar_checkout_asaas(
     items: list[dict] | None = None,
     billing_types: list[str] | None = None,
     origem_checkout: str = "CLIENT",
+    max_installment_count: int = 1,
 ):
     nome_limpo = (nome_cliente or "").strip()
 
@@ -322,18 +324,27 @@ async def criar_checkout_asaas(
 
     origem_normalizada = "PARTNER" if origem_checkout.upper() == "PARTNER" else "CLIENT"
 
+    if (carrinho_id is None) == (reserva_ingresso_id is None):
+        raise HTTPException(400, "Informe carrinho ou reserva de ingresso")
+    origem_parametro = (
+        f"reserva_ingresso_id={reserva_ingresso_id}"
+        if reserva_ingresso_id is not None
+        else f"carrinho_id={carrinho_id}"
+    )
     body = {
         "billingTypes": billing_types or ["PIX", "CREDIT_CARD"],
-        "chargeTypes": ["DETACHED"],
+        "chargeTypes": ["DETACHED", "INSTALLMENT"] if max_installment_count > 1 else ["DETACHED"],
         "minutesToExpire": 10,
         "externalReference": external_reference,
         "callback": {
-            "successUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=sucesso&origem={origem_normalizada}",
-            "cancelUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=cancelado&origem={origem_normalizada}",
-            "expiredUrl": f"{url_api_publica}/asaas/retorno?carrinho_id={carrinho_id}&acao=expirado&origem={origem_normalizada}",
+            "successUrl": f"{url_api_publica}/asaas/retorno?{origem_parametro}&acao=sucesso&origem={origem_normalizada}",
+            "cancelUrl": f"{url_api_publica}/asaas/retorno?{origem_parametro}&acao=cancelado&origem={origem_normalizada}",
+            "expiredUrl": f"{url_api_publica}/asaas/retorno?{origem_parametro}&acao=expirado&origem={origem_normalizada}",
         },
         "items": items_asaas,
     }
+    if max_installment_count > 1:
+        body["installment"] = {"maxInstallmentCount": min(int(max_installment_count), 12)}
 
     if splits:
         body["splits"] = splits

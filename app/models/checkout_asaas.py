@@ -9,7 +9,8 @@ class CheckoutAsaas(Base):
 
     checkout_asaas_id = Column(BigInteger, primary_key=True, autoincrement=True)
 
-    carrinho_id = Column(BigInteger, nullable=False)
+    carrinho_id = Column(BigInteger, nullable=True)
+    reserva_ingresso_id = Column(BigInteger, ForeignKey("reserva_ingresso.reserva_ingresso_id"), nullable=True, index=True)
     cliente_id = Column(BigInteger, nullable=False)
     loja_id = Column(BigInteger, nullable=False)
     venda_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)

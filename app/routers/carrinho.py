@@ -99,8 +99,11 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
     if payload.idtipoproduto == "P" and not payload.produto_id:
         raise HTTPException(status_code=400, detail="produto_id obrigatório")
 
-    if payload.idtipoproduto == "I" and not payload.lote_id:
-        raise HTTPException(status_code=400, detail="lote_id obrigatório")
+    if (payload.idtipoproduto or "P").upper() == "I" or payload.lote_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Ingressos devem ser comprados diretamente pela reserva do evento.",
+        )
 
     # 1) define produto_id_final dependendo do tipo
     if payload.idtipoproduto == "P":

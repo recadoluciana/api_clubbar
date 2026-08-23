@@ -84,6 +84,11 @@ def _recalcular_itens_carrinho(
 
     for it in itens:
         tipo_prod  = (it.get("idtipoproduto") or "P").upper()
+        if tipo_prod == "I" or it.get("lote_id"):
+            raise HTTPException(
+                status_code=409,
+                detail="Carrinho aceita somente produtos. Compre ingressos pela reserva do evento.",
+            )
         qt_prod    = (it.get("qtitcarrinho") or 1)
         produto_id = it.get("produto_id")
         lote_id    = it.get("lote_id")

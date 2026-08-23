@@ -355,33 +355,40 @@ async def asaas_webhook(
 
 @router.get("/retorno", response_class=HTMLResponse)
 async def asaas_retorno(
-    carrinho_id: int,
+    carrinho_id: int | None = None,
+    reserva_ingresso_id: int | None = None,
     acao: str = "sucesso",
     origem: str = "CLIENT",
     db: Session = Depends(get_db),
 ):
-    carrinho = (
-        db.query(Carrinho)
-        .filter(Carrinho.carrinho_id == carrinho_id)
-        .first()
-    )
+    if (carrinho_id is None) == (reserva_ingresso_id is None):
+        raise HTTPException(400, "Retorno sem origem de compra válida")
+    if carrinho_id is not None:
+        db.query(Carrinho).filter(Carrinho.carrinho_id == carrinho_id).first()
 
     checkout_registrado = (
         db.query(CheckoutAsaas)
-        .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+        .filter(
+            CheckoutAsaas.reserva_ingresso_id == reserva_ingresso_id
+            if reserva_ingresso_id is not None
+            else CheckoutAsaas.carrinho_id == carrinho_id
+        )
         .order_by(CheckoutAsaas.checkout_asaas_id.desc())
         .first()
     )
-    checkout_id_retorno = checkout_registrado.checkout_id if checkout_registrado else ""
+    checkout_id_retorno = getattr(checkout_registrado, "checkout_id", "") if checkout_registrado else ""
     if (
         acao == "sucesso"
         and checkout_registrado
         and not getattr(checkout_registrado, "venda_id", None)
     ):
         try:
-            from app.routers.pagamentos import status_checkout_asaas
-
-            await status_checkout_asaas(checkout_registrado.checkout_id, db)
+            if reserva_ingresso_id is not None:
+                from app.routers.reservas_ingressos import status_reserva
+                await status_reserva(reserva_ingresso_id, checkout_registrado.cliente_id, db)
+            else:
+                from app.routers.pagamentos import status_checkout_asaas
+                await status_checkout_asaas(checkout_registrado.checkout_id, db)
             db.refresh(checkout_registrado)
         except Exception as exc:
             if hasattr(db, "rollback"):
@@ -389,7 +396,11 @@ async def asaas_retorno(
             print('[ASAAS RETORNO][CONSULTA PENDENTE]', repr(exc))
             checkout_registrado = (
                 db.query(CheckoutAsaas)
-                .filter(CheckoutAsaas.carrinho_id == carrinho_id)
+                .filter(
+                    CheckoutAsaas.reserva_ingresso_id == reserva_ingresso_id
+                    if reserva_ingresso_id is not None
+                    else CheckoutAsaas.carrinho_id == carrinho_id
+                )
                 .order_by(CheckoutAsaas.checkout_asaas_id.desc())
                 .first()
             )

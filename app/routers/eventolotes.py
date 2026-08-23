@@ -273,14 +273,20 @@ def quantidade_vendida_lote(
         .count()
     )
 
+    from app.services.reserva_ingresso_service import expirar_reservas, quantidade_reservada
+    expirar_reservas(db, lote_id)
+    qtd_reservada = quantidade_reservada(db, lote_id)
+    if qtd_reservada:
+        db.commit()
     sem_limite = lote.qttotallote is None
     qtd_total = None if sem_limite else int(lote.qttotallote)
-    qtd_disponivel = None if sem_limite else max(qtd_total - qtd_vendida, 0)
+    qtd_disponivel = None if sem_limite else max(qtd_total - qtd_vendida - qtd_reservada, 0)
 
     return {
         "lote_id": lote_id,
         "qt_total": qtd_total,
         "qt_vendida": qtd_vendida,
+        "qt_reservada": qtd_reservada,
         "qt_disponivel": qtd_disponivel,
         "sem_limite": sem_limite,
         "esgotado": False if sem_limite else qtd_disponivel <= 0,
