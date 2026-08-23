@@ -302,6 +302,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             descricao=f'Clubbar carrinho {carrinho_id}',
             api_key=ASAAS_API_KEY,
             external_reference=external_reference,
+            expiracao_segundos=300,
         )
         pix_id = str(qr['id'])
         registro = CheckoutAsaas(
@@ -313,7 +314,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             pix_qr_code_id=pix_id,
             pix_payload=str(qr['payload']),
             pix_encoded_image=str(qr.get('encodedImage') or ''),
-            pix_expiration_date=agora + timedelta(minutes=10),
+            pix_expiration_date=agora + timedelta(minutes=5),
             external_reference=external_reference,
             status='PENDING',
             valor=valor_total,
