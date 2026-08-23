@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from sqlalchemy import or_, case
 
 from app.database import get_db
@@ -14,11 +15,31 @@ from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
+from app.models.evento import Evento
+from app.models.eventolote import EventoLote
+from app.models.pagvenda import PagVenda
+from app.core.config import ASAAS_API_KEY
+from app.services.asaas_service import estornar_pagamento_asaas
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
-from datetime import datetime
-    
 router = APIRouter(prefix="/entregas", tags=["entregas"])
+_FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+
+def _hoje_brasil() -> date:
+    return datetime.now(_FUSO_BRASIL).date()
+
+
+def _cancelamento_ingresso_permitido(
+    data_compra: datetime,
+    data_evento: datetime,
+    agora: datetime | None = None,
+) -> bool:
+    momento_atual = agora or datetime.now()
+    return (
+        momento_atual <= data_compra + timedelta(days=7)
+        and momento_atual <= data_evento - timedelta(hours=48)
+    )
 
 
 @router.get("/pendentes")
@@ -32,7 +53,7 @@ def listar_itens_nao_entregues(
     loja_id = 0 -> todas as lojas
     """
 
-    hoje = date.today()
+    hoje = _hoje_brasil()
 
     query = (
         db.query(
@@ -60,14 +81,31 @@ def listar_itens_nao_entregues(
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
         .filter(Venda.sitvenda == "PAGA")
         .filter(ItVenda.identregaitvenda == "NAO")
+        .filter(ItVenda.sititvenda == "ATIVO")
         .filter(
             or_(
-                ItVenda.dtexpiraitvenda.is_(None),
-                ItVenda.dtexpiraitvenda >= date.today()
+                (
+                    (Produto.idtipoproduto != "I")
+                    & or_(
+                        ItVenda.dtexpiraitvenda.is_(None),
+                        ItVenda.dtexpiraitvenda >= hoje,
+                    )
+                ),
+                (
+                    (Produto.idtipoproduto == "I")
+                    & (Evento.dtinicioevento.isnot(None))
+                    & (func.date(Evento.dtinicioevento) >= hoje)
+                ),
             )
+        )
+        .add_columns(
+            Evento.nmtituloevento,
+            Evento.dtinicioevento,
         )
     )
 
@@ -92,7 +130,10 @@ def listar_itens_nao_entregues(
             "dtexpiraitvenda": row.dtexpiraitvenda,
             "dtexpiraitvenda_fmt": row.dtexpiraitvenda.strftime("%d/%m/%Y") if row.dtexpiraitvenda else None,
             "dtcriacao": row.dtcriacao,
-            "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y") if row.dtcriacao else None,
+            "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y %H:%M") if row.dtcriacao else None,
+            "nmevento": row.nmtituloevento,
+            "dtinicioevento": row.dtinicioevento,
+            "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
             "loja_id": row.loja_id,
             "nmloja" : row.nmloja,
             "urllogoloja": row.urllogoloja,
@@ -103,6 +144,124 @@ def listar_itens_nao_entregues(
         }
         for row in itens
     ]
+
+
+@router.post("/itvenda/{itvenda_id}/cancelar-ingresso")
+async def cancelar_ingresso(
+    itvenda_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    if payload.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    resultado = (
+        db.query(ItVenda, Venda, Produto, EventoLote, Evento, PagVenda)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Evento, Evento.evento_id == EventoLote.evento_id)
+        .join(PagVenda, PagVenda.venda_id == Venda.venda_id)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .with_for_update()
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Ingresso não encontrado.")
+
+    item, venda, produto, lote, evento, pagamento = resultado
+    if str(venda.cliente_id) != str(payload.get("sub")):
+        raise HTTPException(status_code=403, detail="Este ingresso pertence a outro cliente.")
+    if (produto.idtipoproduto or "").upper() != "I":
+        raise HTTPException(status_code=400, detail="O item informado não é um ingresso.")
+    if item.sititvenda == "CANCELADO":
+        return {"ok": True, "cancelado": True, "itvenda_id": item.itvenda_id}
+    if pagamento.sitpagvenda != "PAGO":
+        raise HTTPException(status_code=409, detail="O pagamento da venda não está confirmado.")
+    if item.sititvenda == "CANCELAMENTO_SOLICITADO":
+        raise HTTPException(status_code=409, detail="Cancelamento já está sendo processado.")
+    if (item.identregaitvenda or "NAO").upper() == "SIM":
+        raise HTTPException(status_code=409, detail="Ingresso já utilizado não pode ser cancelado.")
+
+    if not _cancelamento_ingresso_permitido(
+        venda.dtcriacao,
+        evento.dtinicioevento,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Cancelamento não permitido. O ingresso só pode ser cancelado "
+                "em até 7 dias após a compra e com no mínimo 48 horas de "
+                "antecedência do início do evento."
+            ),
+        )
+    payment_id = str(pagamento.idtransacaopagvenda or "").strip()
+    if not payment_id or not ASAAS_API_KEY:
+        raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
+
+    valor_reembolso = round(
+        float(item.vrunititvenda or 0) * int(item.qtitvenda or 1)
+        + float(item.vrtaxaitvenda or 0),
+        2,
+    )
+    item.sititvenda = "CANCELAMENTO_SOLICITADO"
+    db.commit()
+
+    try:
+        estorno = await estornar_pagamento_asaas(
+            payment_id=payment_id,
+            valor=valor_reembolso,
+            descricao=f"Cancelamento ingresso Clubbar item {item.itvenda_id}",
+            api_key=ASAAS_API_KEY,
+        )
+    except HTTPException as exc:
+        db.rollback()
+        if exc.status_code < 500:
+            item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+            if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
+                item.sititvenda = "ATIVO"
+                db.commit()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "O Asaas ainda não confirmou o cancelamento. A solicitação foi "
+                "mantida em processamento para evitar reembolso duplicado."
+            ),
+        ) from exc
+
+    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == item.lote_id).first()
+    item.sititvenda = "CANCELADO"
+    item.dtcancelamento = datetime.now()
+    item.vrreembolso = valor_reembolso
+    item.idreembolso = str(estorno.get("id") or "")
+    if lote and lote.qtvendidalote:
+        lote.qtvendidalote = max(
+            0,
+            lote.qtvendidalote - int(item.qtitvenda or 1),
+        )
+    itens_ativos = (
+        db.query(func.count(ItVenda.itvenda_id))
+        .filter(
+            ItVenda.venda_id == venda.venda_id,
+            ItVenda.sititvenda != "CANCELADO",
+        )
+        .scalar()
+        or 0
+    )
+    if itens_ativos == 0:
+        venda.sitvenda = "CANCELADA"
+        pagamento.sitpagvenda = "CANCELADO"
+    db.commit()
+    return {
+        "ok": True,
+        "cancelado": True,
+        "itvenda_id": item.itvenda_id,
+        "valor_reembolso": valor_reembolso,
+    }
 
 
 @router.post("/{itvenda_id}/entregarproduto")
@@ -128,6 +287,7 @@ def entregar_produto(
         db.query(ItVenda)
         .filter(ItVenda.itvenda_id == itvenda_id)
         .filter(ItVenda.identregaitvenda != "SIM")
+        .filter(ItVenda.sititvenda == "ATIVO")
         .update(
             {
                 ItVenda.identregaitvenda: "SIM",
@@ -272,14 +432,30 @@ def get_qt_itens_naoentregues(
                 ).label("valor_total"),
             )
             .join(Venda, Venda.venda_id == ItVenda.venda_id)
+            .join(Produto, Produto.produto_id == ItVenda.produto_id)
+            .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+            .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
             .filter(
                 Venda.cliente_id == cliente_id,
                 Venda.sitvenda == "PAGA",
                 ItVenda.identregaitvenda == "NAO",
+                ItVenda.sititvenda == "ATIVO",
             )
             .filter(
-                (ItVenda.dtexpiraitvenda == None)
-                | (ItVenda.dtexpiraitvenda >= func.current_date())
+                or_(
+                    (
+                        (Produto.idtipoproduto != "I")
+                        & or_(
+                            ItVenda.dtexpiraitvenda.is_(None),
+                            ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+                        )
+                    ),
+                    (
+                        (Produto.idtipoproduto == "I")
+                        & (Evento.dtinicioevento.isnot(None))
+                        & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
+                    ),
+                )
             )
         )
 
@@ -324,12 +500,28 @@ def listar_lojas_com_retirada_pendente(
         )
         .join(Venda, Venda.loja_id == Loja.loja_id)
         .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
+        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
         .filter(Venda.sitvenda == "PAGA")
         .filter(ItVenda.identregaitvenda == "NAO")
+        .filter(ItVenda.sititvenda == "ATIVO")
         .filter(
-            (ItVenda.dtexpiraitvenda == None) |
-            (ItVenda.dtexpiraitvenda >= func.current_date())
+            or_(
+                (
+                    (Produto.idtipoproduto != "I")
+                    & or_(
+                        ItVenda.dtexpiraitvenda.is_(None),
+                        ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+                    )
+                ),
+                (
+                    (Produto.idtipoproduto == "I")
+                    & (Evento.dtinicioevento.isnot(None))
+                    & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
+                ),
+            )
         )
         .group_by(
             Loja.loja_id,
@@ -455,6 +647,9 @@ def buscar_item_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    if item.sititvenda != "ATIVO":
+        raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
+
     # Impede o usuário de visualizar produto de outra loja
     if venda.loja_id != usuario.loja_id:
         raise HTTPException(
@@ -578,6 +773,9 @@ def entregar_produto_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    if item.sititvenda != "ATIVO":
+        raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
+
     # Segurança obrigatória antes da baixa
     if venda.loja_id != usuario.loja_id:
         raise HTTPException(
@@ -592,6 +790,7 @@ def entregar_produto_por_token(
     quantidade_atualizada = (
         db.query(ItVenda)
         .filter(ItVenda.itvenda_id == item.itvenda_id)
+        .filter(ItVenda.sititvenda == "ATIVO")
         .filter(
             (ItVenda.identregaitvenda.is_(None))
             | (ItVenda.identregaitvenda != "SIM")

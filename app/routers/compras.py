@@ -28,7 +28,7 @@ def listar_compras(
         )
         .filter(
             Venda.cliente_id == cliente_id,
-            Venda.sitvenda == "PAGA"
+            Venda.sitvenda.in_(["PAGA", "CANCELADA"])
         )
         .order_by(Venda.dtcriacao.desc())
         .all()
@@ -79,6 +79,9 @@ def listar_compras(
             "userentregaitvenda": it.userentregaitvenda,
             "nmuserentregaitvenda": it.nmuserentregaitvenda,
             "dsobsitvenda": it.dsobsitvenda,
+            "sititvenda": it.sititvenda,
+            "dtcancelamento": formatar_data_br(it.dtcancelamento),
+            "vrreembolso": float(it.vrreembolso) if it.vrreembolso is not None else None,
         })
 
     # 3) Resposta final

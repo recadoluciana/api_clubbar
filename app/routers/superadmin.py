@@ -170,6 +170,7 @@ def dashboard_superadmin(
         .filter(
             Venda.sitvenda == "PAGA",
             Produto.idtipoproduto == "P",
+            ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
         or 0
@@ -199,6 +200,7 @@ def dashboard_superadmin(
         .filter(
             Venda.sitvenda == "PAGA",
             Produto.idtipoproduto == "I",
+            ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
         or 0
@@ -230,6 +232,7 @@ def dashboard_superadmin(
             Venda.dtcriacao < hoje_fim,
             Produto.idtipoproduto == "P",
             ItVenda.lote_id.is_(None),
+            ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
         or 0
@@ -260,6 +263,7 @@ def dashboard_superadmin(
             Venda.dtcriacao >= hoje_inicio,
             Venda.dtcriacao < hoje_fim,
             or_(Produto.idtipoproduto == "I", ItVenda.lote_id.isnot(None)),
+            ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
         or 0
@@ -480,7 +484,7 @@ def detalhar_vendas_hoje(
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .join(Organizacao, Organizacao.organizacao_id == Venda.organizacao_id)
-        .filter(*filtros)
+        .filter(*filtros, ItVenda.sititvenda == "ATIVO")
         .group_by(
             Organizacao.organizacao_id,
             Organizacao.nmorganizacao,

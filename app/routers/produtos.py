@@ -104,6 +104,7 @@ def listar_produtos_mais_vendidos(
         )
         .filter(
             Venda.sitvenda == "PAGA",
+            ItVenda.sititvenda == "ATIVO",
             Produto.sitproduto == "ATIVO",
             Produto.idtipoproduto == "P",
             Loja.sitloja == "ATIVA",

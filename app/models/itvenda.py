@@ -39,3 +39,11 @@ class ItVenda(Base):
 
     pctaxaitvenda = Column(Numeric(10, 2), default=0)
     vrtaxaitvenda = Column(Numeric(10, 2), default=0)
+    sititvenda = Column(
+        Enum("ATIVO", "CANCELAMENTO_SOLICITADO", "CANCELADO", name="sititvenda_enum"),
+        nullable=False,
+        server_default="ATIVO",
+    )
+    dtcancelamento = Column(DateTime, nullable=True)
+    vrreembolso = Column(Numeric(10, 2), nullable=True)
+    idreembolso = Column(String(120), nullable=True)

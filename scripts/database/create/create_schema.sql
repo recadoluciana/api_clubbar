@@ -856,6 +856,10 @@ CREATE TABLE itvenda (
   cpfparticipante       VARCHAR(14) NULL,
   pctaxaitvenda         DECIMAL(5,2) NOT NULL DEFAULT 5.00,
   vrtaxaitvenda         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  sititvenda            ENUM('ATIVO','CANCELAMENTO_SOLICITADO','CANCELADO') NOT NULL DEFAULT 'ATIVO',
+  dtcancelamento        DATETIME NULL,
+  vrreembolso           DECIMAL(10,2) NULL,
+  idreembolso           VARCHAR(120) NULL,
   dtcriacao             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu              DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 

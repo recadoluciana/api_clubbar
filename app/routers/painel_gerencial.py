@@ -139,7 +139,7 @@ def painel_gerencial(
         Venda, Venda.venda_id == ItVenda.venda_id
     ).join(
         Produto, Produto.produto_id == ItVenda.produto_id
-    ).filter(*filtros_mes).one()
+    ).filter(*filtros_mes, ItVenda.sititvenda == "ATIVO").one()
 
     filtros_hoje = [
         Venda.organizacao_id == organizacao_id,
@@ -156,13 +156,14 @@ def painel_gerencial(
         Venda, Venda.venda_id == ItVenda.venda_id
     ).join(
         Produto, Produto.produto_id == ItVenda.produto_id
-    ).filter(*filtros_hoje).scalar()
+    ).filter(*filtros_hoje, ItVenda.sititvenda == "ATIVO").scalar()
 
     ingressos_vendidos = db.query(
         func.coalesce(func.sum(ItVenda.qtitvenda), 0)
     ).join(Venda, Venda.venda_id == ItVenda.venda_id).filter(
         *filtros_mes,
         ItVenda.lote_id.isnot(None),
+        ItVenda.sititvenda == "ATIVO",
     ).scalar()
 
     participacao_rows = db.query(
@@ -172,7 +173,7 @@ def painel_gerencial(
         Venda, Venda.venda_id == ItVenda.venda_id
     ).join(
         Produto, Produto.produto_id == ItVenda.produto_id
-    ).filter(*filtros_mes).group_by(Venda.loja_id).all()
+    ).filter(*filtros_mes, ItVenda.sititvenda == "ATIVO").group_by(Venda.loja_id).all()
     valores_por_loja = {int(row.loja_id): _dinheiro(row.valor) for row in participacao_rows}
     total_produtos_mes = _dinheiro(totais_mes.produtos)
     total_ingressos_mes = _dinheiro(totais_mes.ingressos)
@@ -203,6 +204,7 @@ def painel_gerencial(
         Produto.organizacao_id == organizacao_id,
         Produto.idtipoproduto == "P",
         ItVenda.lote_id.is_(None),
+        ItVenda.sititvenda == "ATIVO",
     )
     if loja_id is not None:
         produtos_query = produtos_query.filter(Produto.loja_id == loja_id)
@@ -224,6 +226,7 @@ def painel_gerencial(
         *filtros_mes,
         EventoLote.organizacao_id == organizacao_id,
         Evento.organizacao_id == organizacao_id,
+        ItVenda.sititvenda == "ATIVO",
     )
     if loja_id is not None:
         ingressos_query = ingressos_query.filter(

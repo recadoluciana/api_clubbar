@@ -531,6 +531,35 @@ async def cancelar_checkout_asaas(checkout_id: str, api_key: str) -> None:
         raise HTTPException(response.status_code, detalhe)
 
 
+async def estornar_pagamento_asaas(
+    payment_id: str,
+    valor: float,
+    descricao: str,
+    api_key: str,
+) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f'{ASAAS_BASE_URL}/payments/{payment_id}/refund',
+            headers=_headers(api_key),
+            json={
+                'value': round(float(valor), 2),
+                'description': descricao[:255],
+            },
+        )
+    data = {}
+    try:
+        data = response.json()
+    except Exception:
+        pass
+    if response.status_code not in (200, 201):
+        detalhe = response.text
+        erros = data.get('errors') or []
+        if erros:
+            detalhe = erros[0].get('description') or detalhe
+        raise HTTPException(response.status_code, detalhe)
+    return data
+
+
 async def pagar_qrcode_pix_sandbox_asaas(
     *, payload: str, valor: float, api_key_pagador: str,
 ):
