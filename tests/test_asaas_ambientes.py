@@ -15,10 +15,37 @@ from app.routers.asaas_webhook import (
 )
 from app.routers.pagamentos import status_checkout_asaas
 from app.services.asaas_service import (
+    cancelar_checkout_asaas,
     criar_checkout_asaas,
     criar_qrcode_pix_estatico_asaas,
     criar_referencia_checkout_asaas,
 )
+
+
+class RespostaCancelamentoFalsa:
+    def __init__(self, status_code, detalhe):
+        self.status_code = status_code
+        self.text = detalhe
+        self._detalhe = detalhe
+
+    def json(self):
+        return {'errors': [{'description': self._detalhe}]}
+
+
+class ClienteHttpCancelamentoFalso:
+    resposta = None
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+    async def post(self, *args, **kwargs):
+        return self.resposta
 
 
 class QuerySemResultado:
@@ -101,6 +128,31 @@ class ClienteHttpPixFalso(ClienteHttpFalso):
 
 
 class AsaasAmbientesTest(unittest.TestCase):
+    def test_cancelamento_de_checkout_ja_inativo_e_idempotente(self):
+        ClienteHttpCancelamentoFalso.resposta = RespostaCancelamentoFalsa(
+            400, 'O checkout não está ativo para ser cancelado'
+        )
+        with patch(
+            'app.services.asaas_service.httpx.AsyncClient',
+            ClienteHttpCancelamentoFalso,
+        ):
+            asyncio.run(cancelar_checkout_asaas('checkout-1', 'api-key'))
+
+    def test_cancelamento_de_checkout_preserva_erros_reais(self):
+        ClienteHttpCancelamentoFalso.resposta = RespostaCancelamentoFalsa(
+            400, 'Checkout inválido'
+        )
+        with (
+            patch(
+                'app.services.asaas_service.httpx.AsyncClient',
+                ClienteHttpCancelamentoFalso,
+            ),
+            self.assertRaises(HTTPException) as erro,
+        ):
+            asyncio.run(cancelar_checkout_asaas('checkout-1', 'api-key'))
+
+        self.assertEqual(400, erro.exception.status_code)
+
     def test_api_key_da_loja_e_armazenada_criptografada(self):
         chave = Fernet.generate_key().decode()
         with patch("app.core.credential_crypto.ASAAS_CREDENTIAL_ENCRYPTION_KEY", chave):

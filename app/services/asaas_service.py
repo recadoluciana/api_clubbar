@@ -9,6 +9,7 @@ import json
 
 import re
 import uuid
+import unicodedata
 
 from app.core.config import APP_ENV, PUBLIC_API_BASE_URL
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
@@ -482,7 +483,8 @@ async def excluir_qrcode_pix_estatico_asaas(
             f"{ASAAS_BASE_URL}/pix/qrCodes/static/{qrcode_id}",
             headers=_headers(api_key),
         )
-    if response.status_code not in (200, 204):
+    # Excluir um QR Code que ja nao existe produz o mesmo estado desejado.
+    if response.status_code not in (200, 204, 404):
         detalhe = response.text
         try:
             data = response.json()
@@ -508,6 +510,24 @@ async def cancelar_checkout_asaas(checkout_id: str, api_key: str) -> None:
                 detalhe = erros[0].get('description') or detalhe
         except Exception:
             pass
+        detalhe_normalizado = unicodedata.normalize('NFKD', str(detalhe))
+        detalhe_normalizado = ''.join(
+            caractere
+            for caractere in detalhe_normalizado
+            if not unicodedata.combining(caractere)
+        ).lower()
+        checkout_ja_inativo = (
+            response.status_code == 400
+            and 'checkout' in detalhe_normalizado
+            and 'cancel' in detalhe_normalizado
+            and (
+                'nao esta ativo' in detalhe_normalizado
+                or 'not active' in detalhe_normalizado
+                or 'already cancel' in detalhe_normalizado
+            )
+        )
+        if checkout_ja_inativo:
+            return
         raise HTTPException(response.status_code, detalhe)
 
 
