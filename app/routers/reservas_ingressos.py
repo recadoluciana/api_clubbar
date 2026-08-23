@@ -14,6 +14,7 @@ from app.services.reserva_ingresso_service import criar_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_qrcode_pix_estatico_asaas, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
+from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
@@ -32,7 +33,7 @@ def _saida(reserva: ReservaIngresso) -> dict:
         "valor_taxa_unitaria": float(reserva.vrtaxa),
         "valor_total": float(reserva.vrtotal),
         "status": reserva.sitreserva,
-        "data_expiracao": reserva.dtexpiracao.isoformat(),
+        "data_expiracao": iso_utc(reserva.dtexpiracao),
         "venda_id": reserva.venda_id,
     }
 
@@ -108,7 +109,7 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
         db.add(checkout)
         reserva.dtexpiracao = datetime.now() + timedelta(minutes=5)
         db.commit()
-        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "pix_qr_code_id": checkout.pix_qr_code_id, "pix_copia_cola": checkout.pix_payload, "encoded_image": checkout.pix_encoded_image, "pix_expiration_date": checkout.pix_expiration_date.isoformat(), "valor_total": float(reserva.vrtotal), "status": "PENDENTE"}
+        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "pix_qr_code_id": checkout.pix_qr_code_id, "pix_copia_cola": checkout.pix_payload, "encoded_image": checkout.pix_encoded_image, "pix_expiration_date": iso_utc(checkout.pix_expiration_date), "valor_total": float(reserva.vrtotal), "status": "PENDENTE"}
     except HTTPException:
         db.rollback(); raise
 

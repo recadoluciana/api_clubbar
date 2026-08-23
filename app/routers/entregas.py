@@ -5,6 +5,7 @@ from sqlalchemy import func
 
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
+from app.utils.datetime_utils import formatar_data_br, iso_utc
 from sqlalchemy import or_, case
 
 from app.database import get_db
@@ -129,8 +130,8 @@ def listar_itens_nao_entregues(
             "dsobsitvenda": row.dsobsitvenda,
             "dtexpiraitvenda": row.dtexpiraitvenda,
             "dtexpiraitvenda_fmt": row.dtexpiraitvenda.strftime("%d/%m/%Y") if row.dtexpiraitvenda else None,
-            "dtcriacao": row.dtcriacao,
-            "dtcriacao_fmt": row.dtcriacao.strftime("%d/%m/%Y %H:%M") if row.dtcriacao else None,
+            "dtcriacao": iso_utc(row.dtcriacao),
+            "dtcriacao_fmt": formatar_data_br(row.dtcriacao) if row.dtcriacao else None,
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
