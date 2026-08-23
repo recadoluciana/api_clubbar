@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,10 +25,9 @@ router = APIRouter(
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 
-def _limites_hoje_utc() -> tuple[datetime, datetime]:
-    hoje_local = datetime.now(_FUSO_BRASIL).date()
+def _limites_data_utc(data_local: date) -> tuple[datetime, datetime]:
     inicio_local = datetime.combine(
-        hoje_local,
+        data_local,
         datetime.min.time(),
         tzinfo=_FUSO_BRASIL,
     )
@@ -37,6 +36,10 @@ def _limites_hoje_utc() -> tuple[datetime, datetime]:
         inicio_local.astimezone(timezone.utc).replace(tzinfo=None),
         fim_local.astimezone(timezone.utc).replace(tzinfo=None),
     )
+
+
+def _limites_hoje_utc() -> tuple[datetime, datetime]:
+    return _limites_data_utc(datetime.now(_FUSO_BRASIL).date())
 
 
 @router.get("/dashboard")
@@ -436,12 +439,14 @@ def listar_usuarios_da_organizacao(
 
 @router.get("/vendas-hoje")
 def detalhar_vendas_hoje(
+    data: date | None = Query(default=None),
     organizacao_id: int | None = Query(default=None, ge=1),
     loja_id: int | None = Query(default=None, ge=1),
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    hoje_inicio, hoje_fim = _limites_hoje_utc()
+    data_consulta = data or datetime.now(_FUSO_BRASIL).date()
+    hoje_inicio, hoje_fim = _limites_data_utc(data_consulta)
     filtros = [
         Venda.sitvenda == "PAGA",
         Venda.dtcriacao >= hoje_inicio,
@@ -501,7 +506,7 @@ def detalhar_vendas_hoje(
         for row in rows
     ]
     return {
-        "data": datetime.now(_FUSO_BRASIL).date(),
+        "data": data_consulta,
         "quantidade_vendas": sum(item["quantidade_vendas"] for item in detalhes),
         "taxa_produtos": sum(item["taxa_produtos"] for item in detalhes),
         "taxa_ingressos": sum(item["taxa_ingressos"] for item in detalhes),
