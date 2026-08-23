@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
 from decimal import Decimal
+from datetime import datetime
+from datetime import datetime
 
 class ProdutoCreate(BaseModel):
     organizacao_id: int
@@ -17,6 +19,8 @@ class ProdutoCreate(BaseModel):
     vrdesconto: Optional[Decimal] = Decimal("0.00")
     dtinidesconto: Optional[datetime] = None
     dtfimdesconto: Optional[datetime] = None
+    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
+    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
 
     @field_validator("nmproduto")
     @classmethod
@@ -54,6 +58,8 @@ class ProdutoOut(BaseModel):
     dtfimdesconto: Optional[datetime] = None
     vrprecofinal: Decimal
     descontoativo: bool
+    pccashback: Optional[Decimal] = None
+    pccashback: Optional[Decimal] = None
 
     class Config:
         from_attributes = True
@@ -72,3 +78,5 @@ class ProdutoUpdate(BaseModel):
     vrdesconto: Optional[Decimal] = None
     dtinidesconto: Optional[datetime] = None
     dtfimdesconto: Optional[datetime] = None
+    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
+    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)

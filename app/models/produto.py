@@ -32,6 +32,7 @@ class Produto(Base):
     )
 
     vrdesconto = Column(DECIMAL(10, 2), nullable=False, default=0.00)
+    pccashback = Column(DECIMAL(10, 2), nullable=True)
 
     dtinidesconto = Column(DateTime, nullable=True)
     dtfimdesconto = Column(DateTime, nullable=True)

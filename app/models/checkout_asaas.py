@@ -31,6 +31,7 @@ class CheckoutAsaas(Base):
 
     valor = Column(Numeric(10, 2), nullable=True)
     vrtaxaclubbar = Column(Numeric(10, 2), nullable=False, server_default="0")
+    vrcashbackusado = Column(Numeric(10, 2), nullable=False, server_default="0")
     asaas_wallet_loja = Column(String(100), nullable=True)
     asaas_wallet_clubbar = Column(String(100), nullable=True)
 

@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict
 from contextlib import nullcontext
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -39,6 +40,7 @@ from app.services.asaas_service import (
     excluir_qrcode_pix_estatico_asaas,
 )
 from app.services.repasse_service import criar_repasse_da_venda
+from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -65,6 +67,7 @@ async def _cancelar_tentativas_anteriores(
         elif tentativa.checkout_id:
             await cancelar_checkout_asaas(tentativa.checkout_id, ASAAS_API_KEY)
         tentativa.status = 'CANCELLED'
+        cancelar_uso_pendente(db, tentativa)
 
     if tentativas:
         db.commit()
@@ -298,12 +301,16 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
         await _cancelar_tentativas_anteriores(db, carrinho_id)
         itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
         _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
+        valor_taxa = round(sum(float(item.get("vrtaxaitvenda") or 0) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados), 2)
+        valor_cashback, debitos_cashback = reservar_uso(db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id, loja_id=payload.loja_id, total_produtos=valor_total, valor_solicitado=payload.valor_cashback) if payload.usar_cashback else (Decimal("0"), [])
+        valor_cobrado = round(float(Decimal(str(valor_total)) - valor_cashback), 2)
+        valor_taxa = round(valor_taxa * (valor_cobrado / valor_total), 2) if valor_total else 0
         external_reference = (
             f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
         )
         qr = await criar_qrcode_pix_estatico_asaas(
             address_key=ASAAS_PIX_ADDRESS_KEY,
-            valor=valor_total,
+            valor=valor_cobrado,
             descricao=f'Clubbar carrinho {carrinho_id}',
             api_key=ASAAS_API_KEY,
             external_reference=external_reference,
@@ -322,11 +329,13 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             pix_expiration_date=agora + timedelta(minutes=5),
             external_reference=external_reference,
             status='PENDING',
-            valor=valor_total,
+            valor=valor_cobrado,
             vrtaxaclubbar=valor_taxa,
+            vrcashbackusado=valor_cashback,
         )
         db.add(registro)
         db.flush()
+        vincular_uso_ao_checkout(db, debitos_cashback, registro)
         db.commit()
         return {
             'venda_id': None,
@@ -335,7 +344,9 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             'pix_copia_cola': qr['payload'],
             'encoded_image': qr.get('encodedImage'),
             'expiration_date': qr.get('expirationDate'),
-            'valor_total': valor_total,
+            'valor_total': valor_cobrado,
+            'valor_original': valor_total,
+            'cashback_utilizado': float(valor_cashback),
             'status': 'PENDENTE',
             'reutilizado': False,
         }
@@ -417,9 +428,15 @@ async def pagar_asaas(
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
             itens_recalculados
         )
+        valor_cashback, debitos_cashback = reservar_uso(db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id, loja_id=payload.loja_id, total_produtos=valor_total_com_taxa, valor_solicitado=payload.valor_cashback) if payload.usar_cashback else (Decimal("0"), [])
+        valor_cobrado = round(float(Decimal(str(valor_total_com_taxa)) - valor_cashback), 2)
+        taxa_produtos = round(sum(float(item.get("vrtaxaitvenda") or 0) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados), 2)
+        valor_taxa_clubbar = round(taxa_produtos * (valor_cobrado / valor_total_com_taxa), 2) if valor_total_com_taxa else 0
+        if valor_cashback > 0:
+            items_asaas = [{"externalReference": f"CARRINHO-{carrinho_id}", "name": "Compra Clubbar", "description": "Produtos com desconto de cashback", "quantity": 1, "value": valor_cobrado}]
 
         pagamento = await criar_checkout_asaas(
-            valor=valor_total_com_taxa,
+            valor=valor_cobrado,
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,
@@ -465,14 +482,16 @@ async def pagar_asaas(
             checkout_url=checkout_url,
             external_reference=external_reference,
             status=status_checkout,
-            valor=valor_total_com_taxa,
+            valor=valor_cobrado,
             vrtaxaclubbar=valor_taxa_clubbar,
+            vrcashbackusado=valor_cashback,
             asaas_wallet_loja=None,
             asaas_wallet_clubbar=None,
         )
 
         db.add(novo)
         db.flush()
+        vincular_uso_ao_checkout(db, debitos_cashback, novo)
         db.commit()
 
         return {
@@ -484,6 +503,9 @@ async def pagar_asaas(
             "checkout_url": checkout_url,
             "external_reference": external_reference,
             "reutilizado": False,
+            "valor_original": valor_total_com_taxa,
+            "valor_cobrado": valor_cobrado,
+            "cashback_utilizado": float(valor_cashback),
         }
 
     except HTTPException:

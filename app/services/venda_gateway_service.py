@@ -21,6 +21,7 @@ from app.services.venda_service import (
 )
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.routers.pagamentos import _recalcular_itens_carrinho
+from app.services.cashback_service import confirmar_uso, gerar_cashback_venda
 
 
 def _finalizar_carrinho_pago(db: Session, carrinho_id: int) -> None:
@@ -177,11 +178,17 @@ async def criar_venda_paga_por_carrinho_gateway(
     valor_carrinho = Decimal(str(total_recalculado or 0)).quantize(
         Decimal('0.01')
     )
-    if valor_pago != valor_carrinho:
+    checkout_cashback = db.query(CheckoutAsaas).filter(CheckoutAsaas.carrinho_id == carrinho_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).with_for_update().first() if gateway == "ASAAS" else None
+    desconto_cashback = Decimal(str(getattr(checkout_cashback, "vrcashbackusado", 0) or 0)).quantize(Decimal("0.01"))
+    if valor_pago != valor_carrinho - desconto_cashback:
         raise HTTPException(
             status_code=409,
             detail='O carrinho foi alterado. Gere uma nova tentativa de pagamento.',
         )
+    fator_taxa = (valor_pago / valor_carrinho) if valor_carrinho else Decimal("1")
+    if desconto_cashback > 0:
+        for item in itens_recalculados:
+            item["vrtaxaitvenda"] = (Decimal(str(item.get("vrtaxaitvenda") or 0)) * fator_taxa).quantize(Decimal("0.01"))
     print("depois de recalcular itens >>>>>>>>>>>", itens_recalculados)
 
     payment_id = str(pagamento.get("id") or "").strip()
@@ -249,6 +256,7 @@ async def criar_venda_paga_por_carrinho_gateway(
         raise HTTPException(status_code=404, detail="PagVenda não encontrada")
 
     pag.dsmetodopag = metodo_pagamento
+    pag.vrpagvenda = valor_pago
     pag.sitpagvenda = "PAGO"
     pag.idtransacaopagvenda = payment_id or external_reference
     pag.checkout_id = payment_id or external_reference
@@ -278,6 +286,9 @@ async def criar_venda_paga_por_carrinho_gateway(
         gateway=gateway,
         payload=pagamento,
     )
+    if checkout_cashback:
+        confirmar_uso(db, checkout_cashback, venda_id)
+    gerar_cashback_venda(db, venda_id)
 
 
     return {

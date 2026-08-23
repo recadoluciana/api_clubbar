@@ -206,6 +206,8 @@ def set_venda_como_cancelada(
 
     venda.sitvenda = "CANCELADA"
     venda.dtultatu = datetime.now()
+    from app.services.cashback_service import cancelar_cashback_da_venda
+    cancelar_cashback_da_venda(db, venda_id)
 
     carrinho_id = venda.carrinho_id
     carrinho_fechado = False

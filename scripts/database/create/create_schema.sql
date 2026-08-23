@@ -673,6 +673,7 @@ CREATE TABLE produto (
   urlfotoproduto   VARCHAR(255) NULL,
   tipodesconto     ENUM('NENHUM','PERCENTUAL','VALOR') NOT NULL DEFAULT 'NENHUM',
   vrdesconto       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  pccashback       DECIMAL(10,2) NULL,
   dtinidesconto    DATETIME NULL,
   dtfimdesconto    DATETIME NULL,
 
@@ -692,7 +693,8 @@ CREATE TABLE produto (
     CHECK (vrprecoprod >= 0),
 
   CONSTRAINT chk_produto_desconto
-    CHECK (vrdesconto >= 0)
+    CHECK (vrdesconto >= 0),
+    CHECK (pccashback IS NULL OR (pccashback >= 0 AND pccashback <= 100))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_produto_org_loja_sit
@@ -1154,6 +1156,7 @@ CREATE TABLE checkout_asaas (
   checkout_url VARCHAR(500) NULL,
   valor DECIMAL(10,2) NULL,
   vrtaxaclubbar DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  vrcashbackusado DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   asaas_wallet_loja VARCHAR(100) NULL,
   asaas_wallet_clubbar VARCHAR(100) NULL,
 
@@ -1317,7 +1320,7 @@ CREATE TABLE cashback_config (
         DEFAULT NULL,
 
     nrdiapliberacao INT
-        NOT NULL DEFAULT 0,
+        NOT NULL DEFAULT 7,
 
     nrdiavalidade INT
         NOT NULL DEFAULT 90,
@@ -1327,7 +1330,7 @@ CREATE TABLE cashback_config (
         NOT NULL DEFAULT 'S',
 
     pcmaxusocompra DECIMAL(10,2)
-        DEFAULT NULL,
+        NOT NULL DEFAULT 30.00,
 
     dtcriacao DATETIME
         NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1414,6 +1417,8 @@ CREATE TABLE cashback_movimento (
 
     venda_origem_id BIGINT DEFAULT NULL,
     venda_uso_id BIGINT DEFAULT NULL,
+    checkout_asaas_id BIGINT DEFAULT NULL,
+    cashback_movimento_origem_id BIGINT DEFAULT NULL,
 
     tipomovimento VARCHAR(15)
         COLLATE utf8mb4_unicode_ci
@@ -1471,6 +1476,8 @@ CREATE TABLE cashback_movimento (
     KEY idx_cashback_movimento_venda_uso (
         venda_uso_id
     ),
+    KEY idx_cashback_movimento_checkout (checkout_asaas_id),
+    KEY idx_cashback_movimento_origem (cashback_movimento_origem_id),
 
     KEY idx_cashback_movimento_loja (
         organizacao_id,
@@ -1518,6 +1525,8 @@ CREATE TABLE cashback_movimento (
         )
         ON DELETE RESTRICT
         ON UPDATE RESTRICT,
+    CONSTRAINT fk_cashback_movimento_checkout FOREIGN KEY (checkout_asaas_id) REFERENCES checkout_asaas(checkout_asaas_id),
+    CONSTRAINT fk_cashback_movimento_origem FOREIGN KEY (cashback_movimento_origem_id) REFERENCES cashback_movimento(cashback_movimento_id),
 
     CONSTRAINT chk_cashback_movimento_percentual
         CHECK (

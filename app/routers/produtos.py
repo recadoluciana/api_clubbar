@@ -184,6 +184,8 @@ def atualizar_produto(
     vrdesconto: float | None = Form(None),
     dtinidesconto: str | None = Form(None),
     dtfimdesconto: str | None = Form(None),
+    pccashback: float | None = Form(None),
+    usacashbackproduto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -242,6 +244,13 @@ def atualizar_produto(
         if dtfimdesconto is not None:
             produto.dtfimdesconto = _parse_datetime(dtfimdesconto)
 
+        if usacashbackproduto is not None and usacashbackproduto.strip().upper() == "N":
+            produto.pccashback = None
+        elif pccashback is not None:
+            if pccashback < 0 or pccashback > 100:
+                raise HTTPException(status_code=400, detail="O percentual de cashback deve ficar entre 0% e 100%.")
+            produto.pccashback = pccashback
+
         if (produto.tipodesconto or "NENHUM").upper() == "NENHUM":
             produto.vrdesconto = 0
             produto.dtinidesconto = None
@@ -265,6 +274,7 @@ def atualizar_produto(
             "vrdesconto": float(produto.vrdesconto or 0),
             "dtinidesconto": produto.dtinidesconto,
             "dtfimdesconto": produto.dtfimdesconto,
+            "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
         }
 
     except HTTPException:
@@ -309,6 +319,7 @@ def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
                 "dtfimdesconto": produto.dtfimdesconto,
                 "vrprecofinal": vrprecofinal,
                 "descontoativo": descontoativo,
+                "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
             }
         )
 
@@ -331,6 +342,8 @@ async def criar_produto(
     vrdesconto: float = Form(0),
     dtinidesconto: str | None = Form(None),
     dtfimdesconto: str | None = Form(None),
+    pccashback: float | None = Form(None),
+    usacashbackproduto: str = Form("N"),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -343,6 +356,9 @@ async def criar_produto(
 
     if vrprecoprod <= 0:
         raise HTTPException(status_code=400, detail="Preço do produto deve ser maior que zero.")
+
+    if pccashback is not None and (pccashback < 0 or pccashback > 100):
+        raise HTTPException(status_code=400, detail="O percentual de cashback deve ficar entre 0% e 100%.")
 
     if idtipoproduto == "I" and not lote_id:
         raise HTTPException(
@@ -417,6 +433,7 @@ async def criar_produto(
         vrdesconto=vrdesconto,
         dtinidesconto=dtini,
         dtfimdesconto=dtfim,
+        pccashback=pccashback if usacashbackproduto.strip().upper() == "S" else None,
     )
 
     db.add(novo_produto)
@@ -441,6 +458,7 @@ async def criar_produto(
         "vrdesconto": float(novo_produto.vrdesconto or 0),
         "dtinidesconto": novo_produto.dtinidesconto,
         "dtfimdesconto": novo_produto.dtfimdesconto,
+        "pccashback": float(novo_produto.pccashback) if novo_produto.pccashback is not None else None,
     }
 
 # >>>>> dados de apenas 1 prouduto >>>>>>>>>
@@ -479,4 +497,5 @@ def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
         "dtfimdesconto": produto.dtfimdesconto,
         "vrprecofinal": vrprecofinal,
         "descontoativo": descontoativo,
+        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
     }

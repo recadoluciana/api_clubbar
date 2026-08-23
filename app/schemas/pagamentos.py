@@ -63,6 +63,8 @@ class PagarNovoIn(BaseModel):
 
     # Define para qual aplicativo o Checkout Asaas deve retornar.
     origem_checkout: Literal["CLIENT", "PARTNER"] = "CLIENT"
+    usar_cashback: bool = False
+    valor_cashback: Optional[float] = Field(default=None, ge=0)
 
 class PagarNovoOut(BaseModel):
     venda_id: int

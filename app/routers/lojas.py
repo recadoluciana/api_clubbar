@@ -14,6 +14,8 @@ from app.models.produto import Produto
 from app.core.config import UPLOAD_LOJAS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao
+from app.models.cashback_config import CashbackConfig
+from app.services.cashback_service import obter_ou_criar_config
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -461,6 +463,8 @@ def criar_loja(
     urllogoloja: UploadFile | None = File(None),
     urlfachadaloja: UploadFile | None = File(None),
     qtcpdloja: int | None = Form(None),
+    usacashback: str = Form("N"),
+    pccashback: float = Form(0),
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
@@ -517,6 +521,11 @@ def criar_loja(
         )
 
         db.add(nova)
+        db.flush()
+        usar = usacashback.strip().upper() == "S"
+        if pccashback < 0 or pccashback > 100 or (usar and pccashback <= 0):
+            raise HTTPException(422, "Informe um percentual de cashback entre 0,01% e 100%")
+        obter_ou_criar_config(db, nova.organizacao_id, nova.loja_id, ativo=usar, percentual=pccashback)
         db.commit()
         db.refresh(nova)
 
@@ -562,6 +571,7 @@ def listar_lojas_por_organizacao_todas(
         .order_by(Loja.nmloja.asc())
         .all()
     )
+    configs = {c.loja_id: c for c in db.query(CashbackConfig).filter(CashbackConfig.organizacao_id == organizacao_id).all()}
 
     base_url = str(request.base_url).rstrip("/")
 
@@ -589,6 +599,8 @@ def listar_lojas_por_organizacao_todas(
             "vrtaxaprod": float(loja.vrtaxaprod or 0),
             "vrtaxaing": float(loja.vrtaxaing or 0),
             "qtcpdloja": loja.qtcpdloja,
+            "usacashback": "S" if configs.get(loja.loja_id) and configs[loja.loja_id].sitcashback == "ATIVO" else "N",
+            "pccashback": float(configs[loja.loja_id].pccashback) if configs.get(loja.loja_id) else 0.0,
 
         }
         for loja in lojas
@@ -618,6 +630,8 @@ def atualizar_loja(
     urllogoloja: UploadFile | None = File(None),
     urlfachadaloja: UploadFile | None = File(None),
     qtcpdloja: int | None = Form(None),
+    usacashback: str | None = Form(None),
+    pccashback: float | None = Form(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
@@ -728,6 +742,16 @@ def atualizar_loja(
         if urlfachadaloja is not None and urlfachadaloja.filename:
             loja.urlfachadaloja = salvar_logo_loja(urlfachadaloja)
 
+        config = obter_ou_criar_config(db, loja.organizacao_id, loja.loja_id)
+        if usacashback is not None:
+            config.sitcashback = "ATIVO" if usacashback.strip().upper() == "S" else "INATIVO"
+        if pccashback is not None:
+            if pccashback < 0 or pccashback > 100:
+                raise HTTPException(422, "Percentual de cashback inválido")
+            config.pccashback = pccashback
+        if config.sitcashback == "ATIVO" and float(config.pccashback or 0) <= 0:
+            raise HTTPException(422, "Cashback ativo exige percentual maior que zero")
+
         db.commit()
         db.refresh(loja)
 
@@ -753,6 +777,8 @@ def atualizar_loja(
                 "nrdiavalidade": loja.nrdiavalidade,
                 "idvalidadeprod": loja.idvalidadeprod,
                 "sitloja": loja.sitloja,
+                "usacashback": "S" if config.sitcashback == "ATIVO" else "N",
+                "pccashback": float(config.pccashback or 0),
                 "urllogoloja": loja.urllogoloja,
                 "urlfachadaloja": loja.urlfachadaloja,
                 "qtcpdloja": loja.qtcpdloja,
