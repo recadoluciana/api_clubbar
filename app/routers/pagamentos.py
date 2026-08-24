@@ -18,6 +18,7 @@ from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
 from app.models.eventolote import EventoLote
+from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
@@ -43,6 +44,21 @@ from app.services.repasse_service import criar_repasse_da_venda
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
+
+
+def _valor_cashback_gerado(db: Session, venda_id: int | None) -> float:
+    if not venda_id:
+        return 0.0
+    movimento = (
+        db.query(CashbackMovimento)
+        .filter(
+            CashbackMovimento.venda_origem_id == venda_id,
+            CashbackMovimento.tipomovimento == "CREDITO",
+            CashbackMovimento.sitcashback.in_(["PENDENTE", "DISPONIVEL"]),
+        )
+        .first()
+    )
+    return float(movimento.vrcashback or 0) if movimento else 0.0
 
 
 async def _cancelar_tentativas_anteriores(
@@ -626,6 +642,10 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 return {
                     'pagamento_id': checkout.checkout_id,
                     'status': 'PAGO',
+                    'venda_id': checkout.venda_id,
+                    'cashback_gerado': _valor_cashback_gerado(
+                        db, checkout.venda_id
+                    ),
                 }
 
             validar_confirmacao_asaas_checkout(
@@ -664,4 +684,12 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
             checkout.payment_id = str(pagamento.get("id") or "") or None
             db.commit()
             status_atual = "PAID"
-    return {"pagamento_id": checkout.checkout_id, "status": "PAGO" if status_atual in {"PAID", "RECEIVED", "CONFIRMED"} else status_atual}
+    pago = status_atual in {"PAID", "RECEIVED", "CONFIRMED"}
+    return {
+        "pagamento_id": checkout.checkout_id,
+        "status": "PAGO" if pago else status_atual,
+        "venda_id": checkout.venda_id if pago else None,
+        "cashback_gerado": _valor_cashback_gerado(db, checkout.venda_id)
+        if pago
+        else 0.0,
+    }

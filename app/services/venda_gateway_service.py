@@ -288,7 +288,7 @@ async def criar_venda_paga_por_carrinho_gateway(
     )
     if checkout_cashback:
         confirmar_uso(db, checkout_cashback, venda_id)
-    gerar_cashback_venda(db, venda_id)
+    cashback_gerado = gerar_cashback_venda(db, venda_id)
 
 
     return {
@@ -301,6 +301,9 @@ async def criar_venda_paga_por_carrinho_gateway(
         "payment_id": payment_id,
         "external_reference": external_reference,
         "resultado": resultado,
+        "cashback_gerado": float(cashback_gerado.vrcashback or 0)
+        if cashback_gerado
+        else 0.0,
     }
 
 async def criar_venda_paga_por_checkout_snapshot(
