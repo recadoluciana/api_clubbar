@@ -6,7 +6,7 @@ import shutil
 import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -20,6 +20,7 @@ from app.models.eventolote import EventoLote
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
+from app.models.venda import Venda
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
 
@@ -40,7 +41,13 @@ def salvar_banner_evento(arquivo: UploadFile | None) -> str | None:
     return f"/uploads/eventos/{nome_arquivo}"
 
 
-def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None = None):
+def evento_to_out_br(
+    ev: Evento,
+    nmloja: str | None = None,
+    nmcidade: str | None = None,
+    urllogoloja: str | None = None,
+    total_vendas_loja: int = 0,
+):
     return {
         "evento_id": ev.evento_id,
         "organizacao_id": ev.organizacao_id,
@@ -55,6 +62,8 @@ def evento_to_out_br(ev: Evento, nmloja: str | None = None, nmcidade: str | None
         "statusevento": ev.statusevento,
         "nmloja": nmloja,
         "nmcidade": nmcidade,
+        "urllogoloja": urllogoloja,
+        "total_vendas_loja": total_vendas_loja,
     }
 
 
@@ -101,10 +110,27 @@ def listar_eventos_proximos_global(
 ):
     hi = hoje_inicio_br()
 
+    vendas_por_loja = (
+        db.query(
+            Venda.loja_id.label("loja_id"),
+            func.count(Venda.venda_id).label("total_vendas"),
+        )
+        .filter(Venda.sitvenda == "PAGA")
+        .group_by(Venda.loja_id)
+        .subquery()
+    )
+
     q = (
-        db.query(Evento, Loja.nmloja, Cidade.nmcidade)
+        db.query(
+            Evento,
+            Loja.nmloja,
+            Cidade.nmcidade,
+            Loja.urllogoloja,
+            func.coalesce(vendas_por_loja.c.total_vendas, 0).label("total_vendas_loja"),
+        )
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .outerjoin(vendas_por_loja, vendas_por_loja.c.loja_id == Loja.loja_id)
         .join(
             Organizacao,
             Organizacao.organizacao_id == Evento.organizacao_id,
@@ -117,11 +143,19 @@ def listar_eventos_proximos_global(
     if cidade_id:
         q = q.filter(Loja.cidade_id == cidade_id)
 
-    eventos = q.order_by(Evento.dtinicioevento.asc()).all()
+    eventos = (
+        q.order_by(
+            func.coalesce(vendas_por_loja.c.total_vendas, 0).desc(),
+            Evento.dtinicioevento.asc(),
+            Evento.evento_id.asc(),
+        )
+        .limit(10)
+        .all()
+    )
 
     return [
-        evento_to_out_br(ev, nmloja, nmcidade)
-        for ev, nmloja, nmcidade in eventos
+        evento_to_out_br(ev, nmloja, nmcidade, urllogoloja, total_vendas_loja)
+        for ev, nmloja, nmcidade, urllogoloja, total_vendas_loja in eventos
     ]
 
 

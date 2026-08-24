@@ -22,6 +22,8 @@ class EventoOutBR(BaseModel):
 
     nmloja: Optional[str] = None
     nmcidade: Optional[str] = None
+    urllogoloja: Optional[str] = None
+    total_vendas_loja: int = 0
 
 class ListaEventoIn(BaseModel):
     cidade_id: int
