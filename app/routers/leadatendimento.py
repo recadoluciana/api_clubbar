@@ -1,12 +1,16 @@
 import os
+import shutil
+import uuid
+from pathlib import Path
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado
+from app.core.config import UPLOAD_MATERIAIS_LEAD
 from app.database import get_db
 from app.models.leadagendamento import LeadAgendamento
 from app.models.leadmaterial import LeadMaterial
@@ -105,6 +109,48 @@ def criar_material(lead_id: int, dados: MaterialIn, _: dict = Depends(get_operad
     db.add(item)
     db.commit()
     return {'ok': True}
+
+
+@router.post('/{lead_id}/materiais-upload', status_code=201)
+def upload_material(
+    lead_id: int,
+    titulo: str = Form(...),
+    descricao: str | None = Form(None),
+    tipo: Literal['APRESENTACAO', 'PROPOSTA', 'CONTRATO', 'VIDEO', 'OUTRO'] = Form('OUTRO'),
+    arquivo: UploadFile = File(...),
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    _lead(db, lead_id)
+    extensao = Path(arquivo.filename or '').suffix.lower()
+    permitidas = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'}
+    if extensao not in permitidas:
+        raise HTTPException(status_code=400, detail='Formato nao permitido. Envie PDF, imagem ou documento Office.')
+    nome = f'{uuid.uuid4().hex}{extensao}'
+    destino = UPLOAD_MATERIAIS_LEAD / nome
+    try:
+        with destino.open('wb') as saida:
+            shutil.copyfileobj(arquivo.file, saida)
+        if destino.stat().st_size > 20 * 1024 * 1024:
+            destino.unlink(missing_ok=True)
+            raise HTTPException(status_code=413, detail='O arquivo deve ter no maximo 20 MB.')
+        item = LeadMaterial(
+            leadparceiro_id=lead_id,
+            titulo=titulo.strip(),
+            descricao=descricao.strip() if descricao else None,
+            tipo=tipo,
+            urlarquivo=f'/uploads/materiais-lead/{nome}',
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        return {'ok': True, 'leadmaterial_id': item.leadmaterial_id, 'urlarquivo': item.urlarquivo}
+    except HTTPException:
+        raise
+    except Exception:
+        destino.unlink(missing_ok=True)
+        db.rollback()
+        raise
 
 
 @router.delete('/{lead_id}/materiais/{item_id}')
