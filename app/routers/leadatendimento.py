@@ -76,7 +76,9 @@ def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session 
 
 @router.post('/{lead_id}/mensagens', status_code=201)
 def enviar_mensagem(lead_id: int, dados: MensagemIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    _lead(db, lead_id)
+    lead = _lead(db, lead_id)
+    if lead.status == 'NOVO':
+        lead.status = 'CONTATADO'
     item = LeadMensagem(leadparceiro_id=lead_id, origem='CLUBBAR', mensagem=dados.mensagem.strip(), lida='N')
     db.add(item)
     db.commit()
@@ -85,7 +87,9 @@ def enviar_mensagem(lead_id: int, dados: MensagemIn, _: dict = Depends(get_opera
 
 @router.post('/{lead_id}/agendamentos', status_code=201)
 def criar_agendamento(lead_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    _lead(db, lead_id)
+    lead = _lead(db, lead_id)
+    if lead.status in {'NOVO', 'CONTATADO'}:
+        lead.status = 'NEGOCIANDO'
     item = LeadAgendamento(leadparceiro_id=lead_id, **dados.model_dump())
     db.add(item)
     db.commit()
