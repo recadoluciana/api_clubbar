@@ -57,10 +57,7 @@ def enviar_convite_parceiro(
 
 
 def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
-    site = os.getenv(
-        'PUBLIC_CLIENT_BASE_URL',
-        os.getenv('PUBLIC_SITE_URL', 'https://clubbar.com.br'),
-    ).rstrip('/')
+    site = os.getenv('PUBLIC_SITE_URL', 'https://clubbar.com.br').rstrip('/')
     link = f'{site}/portal-parceiro.html#acesso={token}'
     conteudo = f'''
     <p>Ola, <b>{nome}</b>.</p>
