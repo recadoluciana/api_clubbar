@@ -1,4 +1,7 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -6,10 +9,97 @@ from app.models.cashback_config import CashbackConfig
 from app.models.cashback_movimento import CashbackMovimento
 from app.models.cashback_saldo import CashbackSaldo
 from app.models.loja import Loja
-from app.services.cashback_service import atualizar_estados, dinheiro
+from app.services.cashback_service import atualizar_estados, dinheiro, obter_ou_criar_config
 from app.utils.datetime_utils import formatar_data_br
+from app.core.security import get_usuario_logado
+from app.core.permissoes_loja import validar_mutacao_loja
 
 router = APIRouter(prefix="/cashback", tags=["Cashback"])
+
+
+class CashbackConfigIn(BaseModel):
+    sitcashback: str = "INATIVO"
+    pccashback: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    vrmincompra: Decimal = Field(default=Decimal("0"), ge=0)
+    vrmaxcashback: Decimal | None = Field(default=None, ge=0)
+    nrdiapliberacao: int = Field(default=7, ge=0)
+    nrdiavalidade: int = Field(default=90, ge=1)
+    permiteusoparcial: str = "S"
+    pcmaxusocompra: Decimal = Field(default=Decimal("30"), gt=0, le=100)
+
+
+def _config_out(config: CashbackConfig) -> dict:
+    return {
+        "cashback_config_id": config.cashback_config_id,
+        "organizacao_id": config.organizacao_id,
+        "loja_id": config.loja_id,
+        "sitcashback": config.sitcashback,
+        "pccashback": float(config.pccashback or 0),
+        "vrmincompra": float(config.vrmincompra or 0),
+        "vrmaxcashback": (
+            float(config.vrmaxcashback) if config.vrmaxcashback is not None else None
+        ),
+        "nrdiapliberacao": int(config.nrdiapliberacao or 0),
+        "nrdiavalidade": int(config.nrdiavalidade or 90),
+        "permiteusoparcial": config.permiteusoparcial,
+        "pcmaxusocompra": float(config.pcmaxusocompra or 30),
+    }
+
+
+@router.get("/config/{loja_id}")
+def consultar_configuracao(
+    loja_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
+    config = obter_ou_criar_config(db, loja.organizacao_id, loja.loja_id)
+    db.commit()
+    db.refresh(config)
+    return _config_out(config)
+
+
+@router.put("/config/{loja_id}")
+def atualizar_configuracao(
+    loja_id: int,
+    dados: CashbackConfigIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
+    validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
+
+    status = dados.sitcashback.strip().upper()
+    if status not in {"ATIVO", "INATIVO"}:
+        raise HTTPException(status_code=422, detail="Situação do cashback inválida")
+    parcial = dados.permiteusoparcial.strip().upper()
+    if parcial not in {"S", "N"}:
+        raise HTTPException(status_code=422, detail="Uso parcial deve ser S ou N")
+    if status == "ATIVO" and dados.pccashback <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Cashback ativo exige percentual maior que zero",
+        )
+
+    config = obter_ou_criar_config(db, loja.organizacao_id, loja.loja_id)
+    config.sitcashback = status
+    config.pccashback = dinheiro(dados.pccashback)
+    config.vrmincompra = dinheiro(dados.vrmincompra)
+    config.vrmaxcashback = (
+        dinheiro(dados.vrmaxcashback) if dados.vrmaxcashback is not None else None
+    )
+    config.nrdiapliberacao = dados.nrdiapliberacao
+    config.nrdiavalidade = dados.nrdiavalidade
+    config.permiteusoparcial = parcial
+    config.pcmaxusocompra = dinheiro(dados.pcmaxusocompra)
+    db.commit()
+    db.refresh(config)
+    return _config_out(config)
 
 
 @router.get("/carteira")

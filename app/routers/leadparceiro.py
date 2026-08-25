@@ -1,4 +1,6 @@
 import re
+import secrets
+import traceback
 import unicodedata
 from datetime import datetime
 
@@ -37,6 +39,7 @@ from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 from app.services.portal_acesso_service import criar_acesso_portal
+from app.services.email_service import enviar_convite_parceiro
 
 
 CATEGORIAS_PADRAO = (
@@ -474,62 +477,29 @@ def converter_lead_em_parceiro(
             ),
         )
 
-    cnpj = _somente_numeros(dados.cnpj)
-    cep = _somente_numeros(dados.cep)
-
-    if len(cnpj) != 14:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="O CNPJ deve possuir 14 números.",
-        )
-
-    if len(cep) != 8:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="O CEP deve possuir 8 números.",
-        )
-
-    organizacao_existente = (
-        db.query(Organizacao)
-        .filter(
-            Organizacao.cnpjorganizacao == cnpj,
-        )
-        .first()
-    )
-
-    if organizacao_existente:
+    email_responsavel = str(dados.email_responsavel).strip().lower()
+    if db.query(Usuario).filter(Usuario.emailuser == email_responsavel).first():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe uma organização com este CNPJ.",
+            detail="Já existe um usuário cadastrado com este e-mail.",
         )
 
-    nome_loja = _nome_loja_por_tipo(lead.tipo)
-    senha_inicial = _senha_inicial_superadmin(cnpj, lead.nmresponsavel)
+    if lead.status != "APROVADO_CADASTRO":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="O lead precisa estar aprovado para cadastro antes da conversão.",
+        )
+    senha_inicial = secrets.token_urlsafe(9)
 
     try:
         nova_organizacao = Organizacao(
-            nmorganizacao=lead.nmestabelecimento.strip(),
-            rzsocialorganizacao=dados.razao_social.strip(),
-            cnpjorganizacao=cnpj,
-            emailorganizacao=lead.email.strip().lower(),
+            nmorganizacao=dados.nome_organizacao.strip(),
+            emailorganizacao=email_responsavel,
             telorganizacao=lead.telefone.strip(),
-            ceporganizacao=cep,
-            endorganizacao=dados.endereco.strip(),
-            nrendorganizacao=dados.numero.strip(),
-            complorganizacao=(
-                dados.complemento.strip()
-                if dados.complemento
-                else None
-            ),
-            estado_id=lead.estado_id,
-            cidade_id=lead.cidade_id,
-            nmbairro=(
-                dados.bairro.strip()
-                if dados.bairro
-                else None
-            ),
             sitorganizacao="ATIVA",
             leadparceiro_id=lead.leadparceiro_id,
+            nmresponsavelprincipal=lead.nmresponsavel.strip(),
+            tipooperacao=dados.tipo_loja,
         )
 
         db.add(nova_organizacao)
@@ -539,20 +509,12 @@ def converter_lead_em_parceiro(
 
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,
-            nmloja=nome_loja,
-            endloja=dados.endereco.strip(),
-            nrceploja=cep,
-            nrendeloja=dados.numero.strip(),
-            dsbairroloja=(
-                dados.bairro.strip()
-                if dados.bairro
-                else None
-            ),
-            dsrefeloja=(
-                dados.complemento.strip()
-                if dados.complemento
-                else None
-            ),
+            nmloja=dados.nome_loja.strip(),
+            endloja=None,
+            nrceploja=None,
+            nrendeloja=None,
+            dsbairroloja=None,
+            dsrefeloja=None,
             sitloja="ATIVA",
             aberto24x7="N",
             nrtelloja=lead.telefone.strip(),
@@ -560,8 +522,12 @@ def converter_lead_em_parceiro(
             idvalidadeprod="S",
             estado_id=lead.estado_id,
             cidade_id=lead.cidade_id,
-            vrtaxaprod=5.00,
-            vrtaxaing=5.00,
+            vrtaxaprod=dados.taxa_produtos,
+            vrtaxaing=dados.taxa_ingressos,
+            tipoloja=dados.tipo_loja,
+            atendimentofisico="N" if dados.tipo_loja == "PRODUTOR_EVENTOS" else "S",
+            vendaprodutos="S" if lead.tipovenda in {"PRODUTOS", "AMBOS"} else "N",
+            vendaingressos="S" if lead.tipovenda in {"INGRESSOS", "AMBOS"} else "N",
         )
 
         db.add(nova_loja)
@@ -585,7 +551,7 @@ def converter_lead_em_parceiro(
             organizacao_id=nova_organizacao.organizacao_id,
             loja_id=None,
             nmusuario=f"SUPERADMIN {nova_organizacao.nmorganizacao}",
-            emailuser=nova_organizacao.emailorganizacao,
+            emailuser=email_responsavel,
             senhahashuser=hash_senha(senha_inicial),
             dscargo="SUPERADMIN",
             situsuario="ATIVO",
@@ -600,6 +566,18 @@ def converter_lead_em_parceiro(
         db.refresh(nova_organizacao)
         db.refresh(nova_loja)
         db.refresh(lead)
+
+        convite_enviado = True
+        try:
+            enviar_convite_parceiro(
+                destinatario=email_responsavel,
+                nome_responsavel=lead.nmresponsavel,
+                nome_organizacao=nova_organizacao.nmorganizacao,
+                senha_inicial=senha_inicial,
+            )
+        except Exception:
+            convite_enviado = False
+            traceback.print_exc()
 
         return {
             "ok": True,
@@ -625,6 +603,7 @@ def converter_lead_em_parceiro(
                 "nome": superadmin.nmusuario,
                 "email": superadmin.emailuser,
                 "senha_inicial": senha_inicial,
+                "convite_enviado": convite_enviado,
             },
             "categorias": [categoria.nmcategoria for categoria in categorias],
         }

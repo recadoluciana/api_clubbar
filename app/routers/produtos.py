@@ -17,6 +17,7 @@ from app.models.organizacao import Organizacao
 from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.core.permissoes_loja import validar_mutacao_loja
 
 router = APIRouter(tags=["Produtos"])
@@ -230,6 +231,8 @@ def atualizar_produto(
             produto.vrprecoprod = vrprecoprod
 
         if sitproduto is not None:
+            if sitproduto.upper() == 'ATIVO':
+                validar_publicacao_loja(db, produto.loja_id)
             produto.sitproduto = sitproduto
 
         if tipodesconto is not None:
@@ -349,6 +352,8 @@ async def criar_produto(
     usuario: dict = Depends(get_usuario_logado),
 ):
     validar_mutacao_loja(usuario, organizacao_id, loja_id)
+    if sitproduto.upper() == 'ATIVO':
+        validar_publicacao_loja(db, loja_id)
     nmproduto = nmproduto.strip()
 
     if not nmproduto:

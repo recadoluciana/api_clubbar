@@ -9,6 +9,53 @@ BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
 BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Clubbar")
 
 
+def _enviar_email(destinatario: str, assunto: str, html: str) -> None:
+    if not BREVO_API_KEY:
+        raise HTTPException(status_code=500, detail="BREVO_API_KEY não configurada.")
+    response = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        json={
+            "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+            "to": [{"email": destinatario}],
+            "subject": assunto,
+            "htmlContent": html,
+        },
+        headers={
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": BREVO_API_KEY,
+        },
+        timeout=30,
+    )
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail="Não foi possível enviar o e-mail.")
+
+
+def enviar_convite_parceiro(
+    destinatario: str,
+    nome_responsavel: str,
+    nome_organizacao: str,
+    senha_inicial: str,
+) -> None:
+    portal = os.getenv("PARTNER_PORTAL_URL", "https://parceiro.clubbar.com.br")
+    conteudo = f"""
+    <p>Olá, <b>{nome_responsavel}</b>.</p>
+    <p>A organização <b>{nome_organizacao}</b> foi aprovada no Clubbar.</p>
+    <p>Acesse <a href="{portal}">{portal}</a> usando:</p>
+    <p><b>E-mail:</b> {destinatario}<br><b>Senha inicial:</b> {senha_inicial}</p>
+    <p>Depois de entrar, complete a organização, a loja e o onboarding financeiro.</p>
+    """
+    _enviar_email(
+        destinatario,
+        "Seu acesso ao Clubbar Partner",
+        template_email_clubbar(
+            titulo="Bem-vindo ao Clubbar Partner",
+            subtitulo="Seu cadastro comercial foi aprovado.",
+            conteudo_html=conteudo,
+        ),
+    )
+
+
 def enviar_email_codigo(destinatario: str, codigo: str):
     if not BREVO_API_KEY:
         raise HTTPException(

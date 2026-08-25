@@ -13,6 +13,7 @@ TipoParceiro = Literal[
     "BAR",
     "CASA_NOTURNA",
     "PRODUTOR_EVENTOS",
+    "CASA_EVENTOS",
 ]
 
 
@@ -26,48 +27,19 @@ StatusLeadParceiroSchema = Literal[
     "NOVO",
     "CONTATADO",
     "NEGOCIANDO",
+    "APROVADO_CADASTRO",
     "CONVERTIDO",
     "PERDIDO",
 ]
 
 
 class ConverterLeadParceiroIn(BaseModel):
-    senha_superadmin: str | None = Field(default=None, min_length=6, max_length=100)
-
-    razao_social: str = Field(
-        min_length=3,
-        max_length=160,
-    )
-
-    cnpj: str = Field(
-        min_length=14,
-        max_length=18,
-    )
-
-    cep: str = Field(
-        min_length=8,
-        max_length=9,
-    )
-
-    endereco: str = Field(
-        min_length=3,
-        max_length=255,
-    )
-
-    numero: str = Field(
-        min_length=1,
-        max_length=20,
-    )
-
-    complemento: str | None = Field(
-        default=None,
-        max_length=120,
-    )
-
-    bairro: str = Field(
-        min_length=2,
-        max_length=120,
-    )
+    nome_organizacao: str = Field(min_length=2, max_length=120)
+    nome_loja: str = Field(min_length=2, max_length=120)
+    tipo_loja: TipoParceiro
+    email_responsavel: EmailStr
+    taxa_produtos: float = Field(default=5, ge=0, le=100)
+    taxa_ingressos: float = Field(default=5, ge=0, le=100)
 
 class LeadParceiroCreate(BaseModel):
     nmresponsavel: str = Field(

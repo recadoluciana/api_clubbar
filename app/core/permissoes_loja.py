@@ -40,6 +40,11 @@ def validar_edicao_organizacao(payload: dict, organizacao_id: int) -> None:
 
 def validar_mutacao_loja(payload: dict, organizacao_id: int, loja_id: int) -> None:
     validar_gerenciamento_organizacao(payload, organizacao_id)
+    if int(payload.get("organizacao_id") or 0) != int(organizacao_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A loja não pertence à sua organização.",
+        )
     loja_usuario = payload.get("loja_id")
     if loja_usuario is not None and int(loja_usuario) != int(loja_id):
         raise HTTPException(

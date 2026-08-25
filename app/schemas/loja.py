@@ -4,11 +4,15 @@ from typing import Literal, Optional
 
 class LojaCreate(BaseModel):
     organizacao_id: int
-    estado_id: int
-    cidade_id: int  # 👈 obrigatório
+    estado_id: Optional[int] = None
+    cidade_id: Optional[int] = None
     nmloja: str
-    nrceploja: str = Field(min_length=1, max_length=9)
-    nrendeloja: str = Field(min_length=1, max_length=20)
+    nrceploja: Optional[str] = Field(default=None, min_length=1, max_length=9)
+    nrendeloja: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    tipoloja: Optional[str] = None
+    atendimentofisico: Literal[S, N] = S
+    vendaprodutos: Literal[S, N] = S
+    vendaingressos: Literal[S, N] = S
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
     dshorarioloja: Optional[str] = None
@@ -22,6 +26,10 @@ class LojaCreate(BaseModel):
 
 
 class LojaUpdate(BaseModel):
+    tipoloja: Optional[str] = None
+    atendimentofisico: Optional[Literal[S, N]] = None
+    vendaprodutos: Optional[Literal[S, N]] = None
+    vendaingressos: Optional[Literal[S, N]] = None
     organizacao_id: Optional[int] = None
     estado_id: Optional[int] = None
     cidade_id: Optional[int] = None

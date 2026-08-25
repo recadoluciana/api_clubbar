@@ -333,8 +333,7 @@ def listar_organizacoes_parceiras(
         db.query(
             Organizacao.organizacao_id,
             Organizacao.nmorganizacao,
-            Organizacao.rzsocialorganizacao,
-            Organizacao.cnpjorganizacao,
+            Organizacao.nmresponsavelprincipal,
             Organizacao.emailorganizacao,
             Organizacao.telorganizacao,
             Organizacao.sitorganizacao,
@@ -347,8 +346,7 @@ def listar_organizacoes_parceiras(
         .group_by(
             Organizacao.organizacao_id,
             Organizacao.nmorganizacao,
-            Organizacao.rzsocialorganizacao,
-            Organizacao.cnpjorganizacao,
+            Organizacao.nmresponsavelprincipal,
             Organizacao.emailorganizacao,
             Organizacao.telorganizacao,
             Organizacao.sitorganizacao,
@@ -361,8 +359,7 @@ def listar_organizacoes_parceiras(
         {
             "organizacao_id": int(row.organizacao_id),
             "nmorganizacao": row.nmorganizacao,
-            "rzsocialorganizacao": row.rzsocialorganizacao,
-            "cnpjorganizacao": row.cnpjorganizacao,
+            "nmresponsavelprincipal": row.nmresponsavelprincipal,
             "emailorganizacao": row.emailorganizacao,
             "telorganizacao": row.telorganizacao,
             "sitorganizacao": row.sitorganizacao,

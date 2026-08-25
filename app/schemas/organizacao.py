@@ -4,91 +4,25 @@ from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
-SituacaoOrganizacao = Literal[
-    "ATIVA",
-    "INATIVA",
-]
+SituacaoOrganizacao = Literal['ATIVA', 'INATIVA']
+TipoOperacao = Literal['BAR', 'CASA_NOTURNA', 'PRODUTOR_EVENTOS', 'CASA_EVENTOS']
 
 
 class OrganizacaoCreate(BaseModel):
-    nmorganizacao: str = Field(..., min_length=3, max_length=120)
-    rzsocialorganizacao: str = Field(..., min_length=3, max_length=160)
-    cnpjorganizacao: str = Field(..., min_length=14, max_length=14)
+    nmorganizacao: str = Field(min_length=3, max_length=120)
+    nmresponsavelprincipal: str | None = Field(default=None, min_length=2, max_length=120)
     emailorganizacao: EmailStr
-    telorganizacao: str = Field(..., min_length=10, max_length=25)
-    ceporganizacao: str | None = Field(default=None, max_length=20)
-    endorganizacao: str = Field(..., min_length=3, max_length=255)
-    nrendorganizacao: str = Field(..., min_length=1, max_length=20)
-    complorganizacao: str | None = Field(default=None, max_length=120)
-    estado_id: int = Field(..., gt=0)
-    cidade_id: int = Field(..., gt=0)
-    nmbairro: str | None = Field(default=None, max_length=120)
+    telorganizacao: str = Field(min_length=10, max_length=25)
+    tipooperacao: TipoOperacao | None = None
     leadparceiro_id: int | None = Field(default=None, gt=0)
 
 
 class OrganizacaoUpdate(BaseModel):
-    nmorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=120,
-    )
-
-    rzsocialorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=160,
-    )
-
-    cnpjorganizacao: str | None = Field(
-        default=None,
-        min_length=14,
-        max_length=14,
-    )
-
+    nmorganizacao: str | None = Field(default=None, min_length=3, max_length=120)
+    nmresponsavelprincipal: str | None = Field(default=None, min_length=2, max_length=120)
     emailorganizacao: EmailStr | None = None
-
-    telorganizacao: str | None = Field(
-        default=None,
-        min_length=10,
-        max_length=25,
-    )
-
-    ceporganizacao: str | None = Field(
-        default=None,
-        max_length=20,
-    )
-
-    endorganizacao: str | None = Field(
-        default=None,
-        min_length=3,
-        max_length=255,
-    )
-
-    nrendorganizacao: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=20,
-    )
-
-    complorganizacao: str | None = Field(
-        default=None,
-        max_length=120,
-    )
-
-    estado_id: int | None = Field(
-        default=None,
-        gt=0,
-    )
-
-    cidade_id: int | None = Field(
-        default=None,
-        gt=0,
-    )
-
-    nmbairro: str | None = Field(
-        default=None,
-        max_length=120,
-    )
+    telorganizacao: str | None = Field(default=None, min_length=10, max_length=25)
+    tipooperacao: TipoOperacao | None = None
 
 
 class OrganizacaoSituacaoUpdate(BaseModel):
@@ -97,29 +31,13 @@ class OrganizacaoSituacaoUpdate(BaseModel):
 
 class OrganizacaoOut(BaseModel):
     organizacao_id: int
-
     nmorganizacao: str
-    rzsocialorganizacao: str
-    cnpjorganizacao: str
+    nmresponsavelprincipal: str | None = None
     emailorganizacao: str
     telorganizacao: str
-
-    ceporganizacao: str | None = None
-    endorganizacao: str
-    nrendorganizacao: str
-    complorganizacao: str | None = None
-
-    estado_id: int
-    cidade_id: int
-    nmcidade: str | None = None
-    nmestado: str | None = None
-    sgestado: str | None = None
-
-    nmbairro: str | None = None
+    tipooperacao: str | None = None
     leadparceiro_id: int | None = None
-
     sitorganizacao: SituacaoOrganizacao
-
     dtcriacao: datetime
     dtultatu: datetime | None = None
 

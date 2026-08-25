@@ -10,8 +10,8 @@ class Loja(Base):
 
     nmloja = Column(String(120), nullable=False)
     endloja = Column(String(255))
-    nrceploja = Column(String(9), nullable=False)
-    nrendeloja = Column(String(20), nullable=False)
+    nrceploja = Column(String(9), nullable=True)
+    nrendeloja = Column(String(20), nullable=True)
     dsbairroloja = Column(String(120))
     dsinstaloja = Column(String(255))
     sitloja = Column(String(15), nullable=False, default="ATIVA")
@@ -31,7 +31,12 @@ class Loja(Base):
     dtcriacao = Column(DateTime, server_default=func.now(), nullable=False)
 
     cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=True)
-    estado_id = Column(BigInteger, ForeignKey("estado.estado_id"), nullable=False)
+    estado_id = Column(BigInteger, ForeignKey("estado.estado_id"), nullable=True)
+
+    tipoloja = Column(String(30), nullable=True)
+    atendimentofisico = Column(CHAR(1), nullable=False, default="S")
+    vendaprodutos = Column(CHAR(1), nullable=False, default="S")
+    vendaingressos = Column(CHAR(1), nullable=False, default="S")
     
     dtultatu = Column(DateTime, onupdate=func.now())
 

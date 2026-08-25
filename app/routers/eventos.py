@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.models.evento import Evento
@@ -296,6 +297,8 @@ def criar_evento(
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
         validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
+        if statusevento.upper() == 'ATIVO':
+            validar_publicacao_loja(db, loja_id)
 
         banner_url = salvar_banner_evento(urlbannerevento)
 
@@ -382,6 +385,8 @@ def atualizar_evento(
             evento.dsendlocevento = dsendlocevento
 
         if statusevento is not None:
+            if statusevento.upper() == 'ATIVO':
+                validar_publicacao_loja(db, evento.loja_id)
             evento.statusevento = statusevento
 
         if urlbannerevento is not None and urlbannerevento.filename:

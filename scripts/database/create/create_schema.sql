@@ -288,23 +288,12 @@ CREATE TABLE organizacao (
 
     -- Identificação
     nmorganizacao VARCHAR(120) NOT NULL,
-    rzsocialorganizacao VARCHAR(160) NOT NULL,
-    cnpjorganizacao CHAR(14) NOT NULL,
+    nmresponsavelprincipal VARCHAR(120) NULL,
 
     -- Contato administrativo
     emailorganizacao VARCHAR(255) NOT NULL,
     telorganizacao VARCHAR(25) NOT NULL,
-
-    -- Endereço fiscal/administrativo
-    ceporganizacao VARCHAR(20) NULL,
-    endorganizacao VARCHAR(255) NOT NULL,
-    nrendorganizacao VARCHAR(20) NOT NULL,
-    complorganizacao VARCHAR(120) NULL,
-
-    estado_id BIGINT NOT NULL,
-    cidade_id BIGINT NOT NULL,
-    nmbairro varchar(120) NULL,
-
+    tipooperacao VARCHAR(30) NULL,
     -- Controle
     sitorganizacao VARCHAR(15) NOT NULL DEFAULT 'ATIVA',
     leadparceiro_id BIGINT NULL,
@@ -315,10 +304,6 @@ CREATE TABLE organizacao (
         ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (organizacao_id),
-
-    UNIQUE KEY uk_organizacao_cnpj (
-        cnpjorganizacao
-    ),
 
     UNIQUE KEY uk_organizacao_leadparceiro (
       leadparceiro_id
@@ -331,22 +316,6 @@ CREATE TABLE organizacao (
     KEY idx_organizacao_situacao (
         sitorganizacao
     ),
-
-    KEY idx_organizacao_cidade (
-        cidade_id
-    ),
-
-    CONSTRAINT fk_organizacao_estado
-        FOREIGN KEY (estado_id)
-        REFERENCES estado(estado_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT,
-
-    CONSTRAINT fk_organizacao_cidade
-        FOREIGN KEY (cidade_id)
-        REFERENCES cidade(cidade_id)
-        ON DELETE RESTRICT
-        ON UPDATE RESTRICT,
 
     CONSTRAINT fk_organizacao_leadparceiro
         FOREIGN KEY (leadparceiro_id)
