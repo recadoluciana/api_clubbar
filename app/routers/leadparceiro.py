@@ -38,8 +38,10 @@ from app.models.leadparceiro import LeadParceiro
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
+from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
 from app.services.email_service import enviar_convite_parceiro
+from app.services.email_service import enviar_acesso_portal_lead
 
 
 CATEGORIAS_PADRAO = (
@@ -422,6 +424,13 @@ def _senha_inicial_superadmin(documento: str, nome_responsavel: str) -> str:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Documento e nome do responsavel devem possuir ao menos 6 caracteres.",
         )
+
+        db.add(LeadMensagem(
+            leadparceiro_id=lead.leadparceiro_id,
+            origem='CLUBBAR',
+            mensagem='Ola! Recebemos seu interesse. Use este portal para conversar com nossa equipe e acompanhar os proximos passos.',
+            lida='N',
+        ))
     return f"{numeros[:6]}{nome[:6]}"
     
 @router.post(
@@ -566,6 +575,15 @@ def converter_lead_em_parceiro(
         db.refresh(nova_organizacao)
         db.refresh(nova_loja)
         db.refresh(lead)
+
+        try:
+            enviar_acesso_portal_lead(
+                lead.email,
+                lead.nmresponsavel,
+                acesso_portal,
+            )
+        except Exception:
+            traceback.print_exc()
 
         convite_enviado = True
         try:

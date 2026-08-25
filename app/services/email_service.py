@@ -56,6 +56,26 @@ def enviar_convite_parceiro(
     )
 
 
+def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
+    site = os.getenv('PUBLIC_SITE_URL', 'https://clubbar.com.br').rstrip('/')
+    link = f'{site}/portal-parceiro.html#acesso={token}'
+    conteudo = f'''
+    <p>Ola, <b>{nome}</b>.</p>
+    <p>Use o botao abaixo para acompanhar sua proposta, conversar com a equipe Clubbar e responder agendamentos.</p>
+    <p><a href='{link}' style='display:inline-block;padding:14px 22px;background:#ffc107;color:#000;text-decoration:none;border-radius:10px;font-weight:bold'>Acessar meu atendimento</a></p>
+    <p>Este link e pessoal e tem validade de 30 dias.</p>
+    '''
+    _enviar_email(
+        destinatario,
+        'Acesso ao seu atendimento Clubbar',
+        template_email_clubbar(
+            titulo='Seu atendimento Clubbar',
+            subtitulo='Acompanhe a conversa com nossa equipe.',
+            conteudo_html=conteudo,
+        ),
+    )
+
+
 def enviar_email_codigo(destinatario: str, codigo: str):
     if not BREVO_API_KEY:
         raise HTTPException(
