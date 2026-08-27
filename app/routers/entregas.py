@@ -43,6 +43,25 @@ def _cancelamento_ingresso_permitido(
     )
 
 
+def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> None:
+    cargo_normalizado = (cargo or "").strip().upper()
+    tipo_normalizado = (idtipoproduto or "").strip().upper()
+
+    if tipo_normalizado == "I":
+        if cargo_normalizado != "PORTEIRO":
+            raise HTTPException(
+                status_code=403,
+                detail="Somente o Ticketman pode validar e baixar ingressos.",
+            )
+        return
+
+    if cargo_normalizado not in {"BARMAN", "GARCOM"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Somente Barman ou Waiter podem validar e baixar produtos.",
+        )
+
+
 @router.get("/pendentes")
 def listar_itens_nao_entregues(
     cliente_id: int = Query(...),
@@ -648,6 +667,11 @@ def buscar_item_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    _validar_cargo_leitura_qr(
+        usuario.dscargo,
+        produto.idtipoproduto if produto else None,
+    )
+
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
 
@@ -672,7 +696,7 @@ def buscar_item_por_token(
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
-        "idtipoproduto": item.idtipoproduto,
+        "idtipoproduto": produto.idtipoproduto if produto else "",
         "loja_id": loja.loja_id,
 
         "nmproduto": (
@@ -774,6 +798,11 @@ def entregar_produto_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    _validar_cargo_leitura_qr(
+        usuario.dscargo,
+        produto.idtipoproduto if produto else None,
+    )
+
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
 
@@ -824,7 +853,7 @@ def entregar_produto_por_token(
 
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
-        "idtipoproduto": item.idtipoproduto,
+        "idtipoproduto": produto.idtipoproduto if produto else "",
         "loja_id": loja.loja_id,
 
         "nmproduto": (
