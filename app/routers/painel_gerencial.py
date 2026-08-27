@@ -123,8 +123,8 @@ def painel_gerencial(
 
     quantidade = func.coalesce(ItVenda.qtitvenda, 1)
     valor_bruto_item = quantidade * ItVenda.vrunititvenda
-    eh_ingresso = or_(ItVenda.lote_id.isnot(None), Produto.idtipoproduto == "I")
-    eh_produto = and_(ItVenda.lote_id.is_(None), Produto.idtipoproduto != "I")
+    eh_ingresso = ItVenda.tipoitem == "INGRESSO"
+    eh_produto = ItVenda.tipoitem == "PRODUTO"
     # A taxa do Clubbar nao e receita do parceiro. Para produtos ela e
     # descontada do valor bruto; para ingressos consideramos apenas o valor-base.
     valor_liquido_item = case(
@@ -137,8 +137,6 @@ def painel_gerencial(
         func.coalesce(func.sum(case((eh_ingresso, valor_liquido_item), else_=0)), 0).label("ingressos"),
     ).select_from(ItVenda).join(
         Venda, Venda.venda_id == ItVenda.venda_id
-    ).join(
-        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_mes, ItVenda.sititvenda == "ATIVO").one()
 
     filtros_hoje = [
@@ -154,8 +152,6 @@ def painel_gerencial(
         func.coalesce(func.sum(valor_liquido_item), 0)
     ).select_from(ItVenda).join(
         Venda, Venda.venda_id == ItVenda.venda_id
-    ).join(
-        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_hoje, ItVenda.sititvenda == "ATIVO").scalar()
 
     ingressos_vendidos = db.query(
@@ -171,8 +167,6 @@ def painel_gerencial(
         func.coalesce(func.sum(valor_liquido_item), 0).label("valor"),
     ).select_from(ItVenda).join(
         Venda, Venda.venda_id == ItVenda.venda_id
-    ).join(
-        Produto, Produto.produto_id == ItVenda.produto_id
     ).filter(*filtros_mes, ItVenda.sititvenda == "ATIVO").group_by(Venda.loja_id).all()
     valores_por_loja = {int(row.loja_id): _dinheiro(row.valor) for row in participacao_rows}
     total_produtos_mes = _dinheiro(totais_mes.produtos)
@@ -202,8 +196,7 @@ def painel_gerencial(
     ).filter(
         *filtros_mes,
         Produto.organizacao_id == organizacao_id,
-        Produto.idtipoproduto == "P",
-        ItVenda.lote_id.is_(None),
+        ItVenda.tipoitem == "PRODUTO",
         ItVenda.sititvenda == "ATIVO",
     )
     if loja_id is not None:

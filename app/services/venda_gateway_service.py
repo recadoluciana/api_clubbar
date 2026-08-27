@@ -431,6 +431,7 @@ async def criar_venda_paga_por_checkout_snapshot(
         cliente_id=checkout.cliente_id,
         usuario_id=carrinho.usuario_id,
         carrinho_id=checkout.carrinho_id,
+        tipovenda="PRODUTO",
         dsplataforma="ANDROID",
         sitvenda="PENDENTE",
         totalvenda=checkout.valor or 0,
@@ -442,8 +443,9 @@ async def criar_venda_paga_por_checkout_snapshot(
         for _ in range(int(item.quantidade or 1)):
             db.add(ItVenda(
                 venda_id=venda.venda_id,
+                tipoitem="PRODUTO",
                 produto_id=item.produto_id,
-                lote_id=item.lote_id,
+                lote_id=None,
                 qtitvenda=1,
                 vrunititvenda=item.vrunitario,
                 dsobsitvenda=item.dsobsitem,

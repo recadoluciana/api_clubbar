@@ -105,6 +105,7 @@ async def criar_ou_obter_venda_idempotente(
                 db.add(
                     ItVenda(
                     venda_id=venda_id,
+                    tipoitem="PRODUTO",
                     produto_id=produto_id,
                     qtitvenda=1,
                     vrunititvenda=vr_unit,
@@ -116,13 +117,14 @@ async def criar_ou_obter_venda_idempotente(
                     dtexpiraitvenda=None,
                     nmparticipante=it.get("nmparticipante"),
                     cpfparticipante=it.get("cpfparticipante"),
-                    lote_id=it.get("lote_id"),
+                    lote_id=None,
                     pctaxaitvenda=it.get("pctaxaitvenda"),
                     vrtaxaitvenda=it.get("vrtaxaitvenda"),
                     )
                 )
 
     if venda:
+        venda.tipovenda = "PRODUTO"
         if venda.usuario_id is None:
             venda.usuario_id = usuario_id
         _sync_itens_venda(venda.venda_id)
@@ -178,6 +180,7 @@ async def criar_ou_obter_venda_idempotente(
         cliente_id=cliente_id,
         usuario_id=usuario_id,
         carrinho_id=carrinho_id,
+        tipovenda="PRODUTO",
         sitvenda="PENDENTE",
         totalvenda=float(total),
     )

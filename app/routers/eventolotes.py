@@ -11,7 +11,6 @@ from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
-from app.models.produto import Produto
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
@@ -162,14 +161,6 @@ def atualizar_lote_evento(
 
         if data.vrprecolote is not None:
             lote.vrprecolote = data.vrprecolote
-
-            produtos_do_lote = (
-                db.query(Produto)
-                .filter(Produto.lote_id == lote_id)
-                .all()
-            )
-            for produto in produtos_do_lote:
-                produto.vrprecoprod = data.vrprecolote
 
         if data.qttotallote is not None:
             loja_capacidade = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()

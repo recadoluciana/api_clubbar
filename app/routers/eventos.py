@@ -55,6 +55,9 @@ def evento_to_out_br(
         "loja_id": ev.loja_id,
         "nmtituloevento": ev.nmtituloevento,
         "dsdescevento": ev.dsdescevento,
+        "dspoliticacancelamento": ev.dspoliticacancelamento,
+        "dspoliticareembolso": ev.dspoliticareembolso,
+        "dspoliticacashback": ev.dspoliticacashback,
         "dtinicioevento": ev.dtinicioevento,
         "dtfimevento": ev.dtfimevento,
         "nmlocalevento": ev.nmlocalevento,
@@ -182,6 +185,9 @@ def listar_eventos_da_loja(
             "loja_id": evento.loja_id,
             "nmtituloevento": evento.nmtituloevento,
             "dsdescevento": evento.dsdescevento,
+            "dspoliticacancelamento": evento.dspoliticacancelamento,
+            "dspoliticareembolso": evento.dspoliticareembolso,
+            "dspoliticacashback": evento.dspoliticacashback,
             "dtinicioevento": evento.dtinicioevento,
             "dtfimevento": evento.dtfimevento,
             "nmlocalevento": evento.nmlocalevento,
@@ -244,6 +250,9 @@ def get_evento_por_id(
         "nmlocalevento": local_evento,
         "dsendlocevento": endereco_evento,
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
+        "dspoliticacancelamento": evento_obj.dspoliticacancelamento,
+        "dspoliticareembolso": evento_obj.dspoliticareembolso,
+        "dspoliticacashback": evento_obj.dspoliticacashback,
         "urlbannerevento": f"{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,
@@ -283,6 +292,9 @@ def criar_evento(
     loja_id: int = Form(...),
     nmtituloevento: str = Form(...),
     dsdescevento: str | None = Form(None),
+    dspoliticacancelamento: str | None = Form(None),
+    dspoliticareembolso: str | None = Form(None),
+    dspoliticacashback: str | None = Form(None),
     dtinicioevento: str = Form(...),
     dtfimevento: str | None = Form(None),
     nmlocalevento: str | None = Form(None),
@@ -307,6 +319,9 @@ def criar_evento(
             loja_id=loja_id,
             nmtituloevento=nmtituloevento,
             dsdescevento=dsdescevento,
+            dspoliticacancelamento=dspoliticacancelamento,
+            dspoliticareembolso=dspoliticareembolso,
+            dspoliticacashback=dspoliticacashback,
             dtinicioevento=datetime.fromisoformat(dtinicioevento),
             dtfimevento=datetime.fromisoformat(dtfimevento) if dtfimevento else None,
             nmlocalevento=nmlocalevento,
@@ -341,6 +356,9 @@ def atualizar_evento(
     loja_id: int | None = Form(None),
     nmtituloevento: str | None = Form(None),
     dsdescevento: str | None = Form(None),
+    dspoliticacancelamento: str | None = Form(None),
+    dspoliticareembolso: str | None = Form(None),
+    dspoliticacashback: str | None = Form(None),
     dtinicioevento: str | None = Form(None),
     dtfimevento: str | None = Form(None),
     nmlocalevento: str | None = Form(None),
@@ -371,6 +389,15 @@ def atualizar_evento(
 
         if dsdescevento is not None:
             evento.dsdescevento = dsdescevento
+
+        if dspoliticacancelamento is not None:
+            evento.dspoliticacancelamento = dspoliticacancelamento
+
+        if dspoliticareembolso is not None:
+            evento.dspoliticareembolso = dspoliticareembolso
+
+        if dspoliticacashback is not None:
+            evento.dspoliticacashback = dspoliticacashback
 
         if dtinicioevento is not None:
             evento.dtinicioevento = datetime.fromisoformat(dtinicioevento)
@@ -403,6 +430,9 @@ def atualizar_evento(
                 "loja_id": evento.loja_id,
                 "nmtituloevento": evento.nmtituloevento,
                 "dsdescevento": evento.dsdescevento,
+                "dspoliticacancelamento": evento.dspoliticacancelamento,
+                "dspoliticareembolso": evento.dspoliticareembolso,
+                "dspoliticacashback": evento.dspoliticacashback,
                 "dtinicioevento": evento.dtinicioevento,
                 "dtfimevento": evento.dtfimevento,
                 "nmlocalevento": evento.nmlocalevento,

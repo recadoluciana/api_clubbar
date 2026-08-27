@@ -1,35 +1,51 @@
+-- Remove integralmente o schema Clubbar do banco atualmente selecionado.
+-- Confirme o ambiente e o nome do banco antes de executar.
 SET FOREIGN_KEY_CHECKS = 0;
 
+DROP TABLE IF EXISTS cashback_saldo;
+DROP TABLE IF EXISTS cashback_movimento;
+DROP TABLE IF EXISTS cashback_config;
 DROP TABLE IF EXISTS repassefinanceiro;
 DROP TABLE IF EXISTS lojacontabancaria;
+DROP TABLE IF EXISTS checkout_asaas_pagador;
+DROP TABLE IF EXISTS checkout_asaas_item;
 DROP TABLE IF EXISTS checkout_asaas;
-DROP TABLE IF EXISTS eventolote;
-DROP TABLE IF EXISTS evento;
-
 DROP TABLE IF EXISTS pagvenda;
+DROP TABLE IF EXISTS reserva_ingresso_participante;
+DROP TABLE IF EXISTS reserva_ingresso;
 DROP TABLE IF EXISTS itvenda;
 DROP TABLE IF EXISTS venda;
-
 DROP TABLE IF EXISTS itcarrinho;
 DROP TABLE IF EXISTS carrinho;
-
+DROP TABLE IF EXISTS eventoatracao;
+DROP TABLE IF EXISTS eventolote;
+DROP TABLE IF EXISTS eventodescricao;
+DROP TABLE IF EXISTS evento;
+DROP TABLE IF EXISTS atracaodescricao;
+DROP TABLE IF EXISTS atracao;
 DROP TABLE IF EXISTS produto;
 DROP TABLE IF EXISTS categoria;
-
+DROP TABLE IF EXISTS usuariosenha;
 DROP TABLE IF EXISTS usuario;
 DROP TABLE IF EXISTS clisenha;
 DROP TABLE IF EXISTS clienteasaas;
 DROP TABLE IF EXISTS lojaasaas;
 DROP TABLE IF EXISTS cliente;
-
+DROP TABLE IF EXISTS titularfinanceiro;
 DROP TABLE IF EXISTS lojahorario;
+DROP TABLE IF EXISTS lojapoliticaingresso;
+DROP TABLE IF EXISTS lojaconteudo;
+DROP TABLE IF EXISTS leadacesso;
+DROP TABLE IF EXISTS leadmaterial;
+DROP TABLE IF EXISTS leadagendamento;
+DROP TABLE IF EXISTS leadmensagem;
 DROP TABLE IF EXISTS loja;
 DROP TABLE IF EXISTS organizacao;
 DROP TABLE IF EXISTS leadparceiro;
-
 DROP TABLE IF EXISTS bairro;
 DROP TABLE IF EXISTS cidade;
 DROP TABLE IF EXISTS estado;
 DROP TABLE IF EXISTS pais;
+DROP TABLE IF EXISTS operador;
 
 SET FOREIGN_KEY_CHECKS = 1;

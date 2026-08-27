@@ -75,7 +75,7 @@ class AtualizarLoteTest(unittest.TestCase):
         "loja_id": 2,
     }
 
-    def test_preco_do_lote_e_dos_produtos_sao_salvos_em_um_commit(self):
+    def test_preco_do_ingresso_fica_somente_no_lote(self):
         lote = criar_lote()
         produto = Registro()
         produto.lote_id = 5
@@ -90,7 +90,7 @@ class AtualizarLoteTest(unittest.TestCase):
         )
 
         self.assertEqual(75.5, lote.vrprecolote)
-        self.assertEqual(75.5, produto.vrprecoprod)
+        self.assertEqual(Decimal("50.00"), produto.vrprecoprod)
         self.assertEqual(1, banco.commits)
         self.assertEqual(0, banco.rollbacks)
         self.assertEqual(75.5, resposta["lote"]["vrprecolote"])
@@ -114,7 +114,7 @@ class AtualizarLoteTest(unittest.TestCase):
         self.assertEqual(1, banco.commits)
         self.assertEqual(1, banco.rollbacks)
 
-    def test_lote_sem_produto_espelho_ainda_pode_ser_atualizado(self):
+    def test_lote_sem_produto_espelho_pode_ser_atualizado(self):
         lote = criar_lote()
         banco = BancoFalso([lote, []])
 

@@ -4,14 +4,12 @@ from datetime import datetime, date, timedelta
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.venda import Venda
 from app.models.pagvenda import PagVenda
 from app.models.loja import Loja
 from app.models.itvenda import ItVenda
-from app.models.produto import Produto
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 
@@ -111,12 +109,9 @@ def set_venda_como_paga(
 
     if controla_validade and nr_dias > 0:
         data_expira = date.today() + timedelta(days=nr_dias)
-        produtos_ids = select(Produto.produto_id).where(
-            Produto.idtipoproduto == "P"
-        )
         db.query(ItVenda).filter(
             ItVenda.venda_id == venda_id,
-            ItVenda.produto_id.in_(produtos_ids),
+            ItVenda.tipoitem == "PRODUTO",
         ).update(
             {"dtexpiraitvenda": data_expira},
             synchronize_session=False,

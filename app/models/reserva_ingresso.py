@@ -13,7 +13,6 @@ class ReservaIngresso(Base):
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id"), nullable=False)
     evento_id = Column(BigInteger, ForeignKey("evento.evento_id"), nullable=False)
     lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=False)
-    produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False)
     venda_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
     qtreservada = Column(Integer, nullable=False)
     vrunitario = Column(Numeric(10, 2), nullable=False)
@@ -24,4 +23,3 @@ class ReservaIngresso(Base):
     dtexpiracao = Column(DateTime, nullable=False)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
-

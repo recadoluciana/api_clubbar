@@ -123,7 +123,7 @@ def gerar_cashback_venda(db: Session, venda_id: int) -> CashbackMovimento | None
     if not venda or not venda.cliente_id or venda.reserva_ingresso_id is not None: return None
     config = db.query(CashbackConfig).filter(CashbackConfig.loja_id == venda.loja_id, CashbackConfig.sitcashback == "ATIVO").first()
     if not config: return None
-    itens = db.query(ItVenda, Produto).join(Produto, Produto.produto_id == ItVenda.produto_id).filter(ItVenda.venda_id == venda_id, Produto.idtipoproduto == "P", ItVenda.sititvenda == "ATIVO").all()
+    itens = db.query(ItVenda, Produto).join(Produto, Produto.produto_id == ItVenda.produto_id).filter(ItVenda.venda_id == venda_id, ItVenda.tipoitem == "PRODUTO", ItVenda.sititvenda == "ATIVO").all()
     base = sum((dinheiro(item.vrunititvenda) * int(item.qtitvenda or 1) for item, _ in itens), Decimal("0"))
     if base < dinheiro(config.vrmincompra): return None
     valor = sum(((dinheiro(item.vrunititvenda) * int(item.qtitvenda or 1)) * dinheiro(produto.pccashback if produto.pccashback is not None else config.pccashback) / Decimal("100") for item, produto in itens), Decimal("0")).quantize(CENTAVOS)

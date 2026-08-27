@@ -163,13 +163,9 @@ def dashboard_superadmin(
             Venda,
             Venda.venda_id == ItVenda.venda_id,
         )
-        .join(
-            Produto,
-            Produto.produto_id == ItVenda.produto_id,
-        )
         .filter(
             Venda.sitvenda == "PAGA",
-            Produto.idtipoproduto == "P",
+            ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
@@ -193,13 +189,9 @@ def dashboard_superadmin(
             Venda,
             Venda.venda_id == ItVenda.venda_id,
         )
-        .join(
-            Produto,
-            Produto.produto_id == ItVenda.produto_id,
-        )
         .filter(
             Venda.sitvenda == "PAGA",
-            Produto.idtipoproduto == "I",
+            ItVenda.tipoitem == "INGRESSO",
             ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
@@ -222,16 +214,11 @@ def dashboard_superadmin(
             Venda,
             Venda.venda_id == ItVenda.venda_id,
         )
-        .join(
-            Produto,
-            Produto.produto_id == ItVenda.produto_id,
-        )
         .filter(
             Venda.sitvenda == "PAGA",
             Venda.dtcriacao >= hoje_inicio,
             Venda.dtcriacao < hoje_fim,
-            Produto.idtipoproduto == "P",
-            ItVenda.lote_id.is_(None),
+            ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
@@ -254,15 +241,11 @@ def dashboard_superadmin(
             Venda,
             Venda.venda_id == ItVenda.venda_id,
         )
-        .join(
-            Produto,
-            Produto.produto_id == ItVenda.produto_id,
-        )
         .filter(
             Venda.sitvenda == "PAGA",
             Venda.dtcriacao >= hoje_inicio,
             Venda.dtcriacao < hoje_fim,
-            or_(Produto.idtipoproduto == "I", ItVenda.lote_id.isnot(None)),
+            ItVenda.tipoitem == "INGRESSO",
             ItVenda.sititvenda == "ATIVO",
         )
         .scalar()
@@ -458,7 +441,7 @@ def detalhar_vendas_hoje(
     if loja_id is not None:
         filtros.append(Venda.loja_id == loja_id)
 
-    eh_ingresso = or_(Produto.idtipoproduto == "I", ItVenda.lote_id.isnot(None))
+    eh_ingresso = ItVenda.tipoitem == "INGRESSO"
     taxa_produtos = func.coalesce(
         func.sum(case((eh_ingresso, 0), else_=ItVenda.vrtaxaitvenda)), 0
     ).label("taxa_produtos")
@@ -478,7 +461,6 @@ def detalhar_vendas_hoje(
         )
         .select_from(ItVenda)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .join(Organizacao, Organizacao.organizacao_id == Venda.organizacao_id)
         .filter(*filtros, ItVenda.sititvenda == "ATIVO")

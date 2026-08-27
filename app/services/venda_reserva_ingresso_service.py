@@ -38,11 +38,11 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
     lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
     if not lote:
         raise HTTPException(409, "Lote da reserva não encontrado")
-    venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, dsplataforma="ANDROID", sitvenda="PENDENTE", totalvenda=reserva.vrtotal)
+    venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PENDENTE", totalvenda=reserva.vrtotal)
     db.add(venda)
     db.flush()
     for participante in participantes:
-        item = ItVenda(venda_id=venda.venda_id, produto_id=reserva.produto_id, lote_id=reserva.lote_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=reserva.vrtaxa, sititvenda="ATIVO")
+        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=reserva.vrtaxa, sititvenda="ATIVO")
         db.add(item)
         db.flush()
         participante.itvenda_id = item.itvenda_id

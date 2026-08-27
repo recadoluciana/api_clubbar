@@ -6,45 +6,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.eventolote import EventoLote
-from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
-
-
-def obter_ou_criar_produto_ingresso(db: Session, lote: EventoLote) -> Produto:
-    produto = (
-        db.query(Produto)
-        .filter(Produto.lote_id == lote.lote_id, Produto.idtipoproduto == "I")
-        .first()
-    )
-    nome_lote = (lote.nmlote or f"Lote {lote.lote_id}").strip()
-    nome_produto = f"Ingresso lote {lote.lote_id} - {nome_lote}"[:100]
-
-    if not produto:
-        produto = Produto(
-            organizacao_id=lote.organizacao_id,
-            loja_id=lote.loja_id,
-            categoria_id=None,
-            nmproduto=nome_produto,
-            dsproduto="Ingresso de evento",
-            vrprecoprod=lote.vrprecolote or 0,
-            sitproduto="ATIVO",
-            idtipoproduto="I",
-            lote_id=lote.lote_id,
-        )
-        db.add(produto)
-        db.flush()
-        return produto
-
-    produto.organizacao_id = lote.organizacao_id
-    produto.loja_id = lote.loja_id
-    produto.nmproduto = nome_produto
-    produto.vrprecoprod = lote.vrprecolote or 0
-    produto.sitproduto = "ATIVO"
-    return produto
 
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
@@ -82,13 +48,12 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, quantidade: int
     vendida = int(lote.qtvendidalote or 0)
     if lote.qttotallote is not None and vendida + reservada + quantidade > int(lote.qttotallote):
         raise HTTPException(409, "Quantidade de ingressos indisponível neste lote")
-    produto = obter_ou_criar_produto_ingresso(db, lote)
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")
     unitario = Decimal(str(lote.vrprecolote or 0)).quantize(Decimal("0.01"))
     reserva = ReservaIngresso(
         organizacao_id=lote.organizacao_id, loja_id=lote.loja_id, cliente_id=cliente_id,
-        evento_id=lote.evento_id, lote_id=lote.lote_id, produto_id=produto.produto_id,
+        evento_id=lote.evento_id, lote_id=lote.lote_id,
         qtreservada=quantidade, vrunitario=unitario, pctaxa=percentual,
         vrtaxa=(unitario * percentual / Decimal("100")).quantize(Decimal("0.01")),
         vrtotal=(unitario * quantidade * (Decimal("1") + percentual / Decimal("100"))).quantize(Decimal("0.01")),

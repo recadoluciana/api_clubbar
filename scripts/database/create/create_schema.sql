@@ -510,6 +510,39 @@ CREATE TABLE cliente (
 
 CREATE INDEX idx_cliente_asaas       ON cliente(idclienteasaas);
 
+CREATE TABLE titularfinanceiro (
+  titularfinanceiro_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  tipotitular ENUM('PF','PJ') NOT NULL,
+  cpfcnpj VARCHAR(14) NOT NULL,
+  nmrazaosocial VARCHAR(160) NOT NULL,
+  nmfantasia VARCHAR(160) NULL,
+  dtnascimento DATE NULL,
+  email VARCHAR(255) NOT NULL,
+  telefone VARCHAR(25) NOT NULL,
+  cep VARCHAR(9) NOT NULL,
+  endereco VARCHAR(255) NOT NULL,
+  numero VARCHAR(20) NOT NULL,
+  complemento VARCHAR(120) NULL,
+  bairro VARCHAR(120) NOT NULL,
+  cidade_id BIGINT NOT NULL,
+  estado_id BIGINT NOT NULL,
+  vrfaturamentomensal DECIMAL(12,2) NOT NULL DEFAULT 0,
+  asaas_account_id VARCHAR(100) NULL,
+  asaas_wallet_id VARCHAR(100) NULL,
+  asaas_api_key_criptografada TEXT NULL,
+  status_asaas VARCHAR(30) NOT NULL DEFAULT 'NAO_INICIADO',
+  onboarding_url TEXT NULL,
+  dtultimaverificacao DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_titularfinanceiro_organizacao (organizacao_id),
+  CONSTRAINT fk_titularfinanceiro_organizacao FOREIGN KEY (organizacao_id)
+    REFERENCES organizacao(organizacao_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_titularfinanceiro_cidade FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id),
+  CONSTRAINT fk_titularfinanceiro_estado FOREIGN KEY (estado_id) REFERENCES estado(estado_id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE lojaasaas (
   lojaasaas_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
@@ -766,9 +799,11 @@ CREATE TABLE venda (
   venda_id         BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
   loja_id          BIGINT NOT NULL,
-  cliente_id       BIGINT NOT NULL,
+  cliente_id       BIGINT NULL,
   usuario_id       BIGINT NULL,
-  carrinho_id      BIGINT NOT NULL,
+  carrinho_id      BIGINT NULL,
+  reserva_ingresso_id BIGINT NULL,
+  tipovenda        ENUM('PRODUTO','INGRESSO') NOT NULL,
   dsplataforma     ENUM('ANDROID','TOTEM','IOS','WEB','OUTROS') NOT NULL DEFAULT 'OUTROS',
   sitvenda         ENUM('PENDENTE','PAGA','CANCELADA') NOT NULL DEFAULT 'PENDENTE',
   totalvenda       DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -814,7 +849,8 @@ CREATE INDEX idx_venda_usuario_data
 CREATE TABLE itvenda (
   itvenda_id            BIGINT AUTO_INCREMENT PRIMARY KEY,
   venda_id              BIGINT NOT NULL,
-  produto_id            BIGINT NOT NULL,
+  tipoitem              ENUM('PRODUTO','INGRESSO') NOT NULL,
+  produto_id            BIGINT NULL,
   lote_id               BIGINT NULL,
   qtitvenda             INT NOT NULL DEFAULT 1,
   vrunititvenda         DECIMAL(10,2) NOT NULL,
@@ -860,6 +896,13 @@ CREATE TABLE itvenda (
       AND vrtaxaitvenda >= 0
     ),
 
+  CONSTRAINT chk_itvenda_origem
+    CHECK (
+      (tipoitem = 'PRODUTO' AND produto_id IS NOT NULL AND lote_id IS NULL)
+      OR
+      (tipoitem = 'INGRESSO' AND produto_id IS NULL AND lote_id IS NOT NULL)
+    ),
+
   CONSTRAINT uq_itvenda_qrtoken
     UNIQUE (qrtokenitvenda)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -876,7 +919,7 @@ CREATE INDEX idx_itvenda_entrega
 CREATE TABLE reserva_ingresso (
   reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
-  evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, produto_id BIGINT NOT NULL,
+  evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL,
   venda_id BIGINT NULL, qtreservada INT NOT NULL,
   vrunitario DECIMAL(10,2) NOT NULL, pctaxa DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrtaxa DECIMAL(10,2) NOT NULL DEFAULT 0, vrtotal DECIMAL(10,2) NOT NULL,
@@ -888,8 +931,7 @@ CREATE TABLE reserva_ingresso (
   INDEX idx_reserva_cliente (cliente_id, dtcriacao),
   FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
   FOREIGN KEY (loja_id) REFERENCES loja(loja_id), FOREIGN KEY (cliente_id) REFERENCES cliente(cliente_id),
-  FOREIGN KEY (evento_id) REFERENCES evento(evento_id),
-  FOREIGN KEY (produto_id) REFERENCES produto(produto_id), FOREIGN KEY (venda_id) REFERENCES venda(venda_id),
+  FOREIGN KEY (venda_id) REFERENCES venda(venda_id),
   CHECK (qtreservada > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -945,7 +987,6 @@ CREATE TABLE atracao (
   nmatracao           VARCHAR(120) NOT NULL,
   dsestilomusical     VARCHAR(255) NULL,
   urlbanneratracao    VARCHAR(255) NULL,
-  dsatracao           TEXT NULL,
   dtcriacao           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu            DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -960,12 +1001,21 @@ CREATE TABLE atracao (
   )
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE atracaodescricao (
+  atracao_id    BIGINT PRIMARY KEY,
+  dsatracao     TEXT NULL,
+  dtcriacao     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu      DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_atracaodescricao_atracao
+    FOREIGN KEY (atracao_id) REFERENCES atracao(atracao_id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE evento (
   evento_id              BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id         BIGINT NOT NULL,
   loja_id                BIGINT NOT NULL,
   nmtituloevento         VARCHAR(120) NOT NULL,
-  dsdescevento           TEXT NULL,
   dtinicioevento         DATETIME NOT NULL,
   dtfimevento            DATETIME NULL,
   nmlocalevento          VARCHAR(120) NULL,
@@ -985,6 +1035,19 @@ CREATE TABLE evento (
     FOREIGN KEY (organizacao_id, loja_id)
     REFERENCES loja(organizacao_id, loja_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE eventodescricao (
+  evento_id                 BIGINT PRIMARY KEY,
+  dsdescevento              TEXT NULL,
+  dspoliticacancelamento    TEXT NULL,
+  dspoliticareembolso       TEXT NULL,
+  dspoliticacashback        TEXT NULL,
+  dtcriacao                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu                  DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_eventodescricao_evento
+    FOREIGN KEY (evento_id) REFERENCES evento(evento_id)
+    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_evento_loja_status_dt
@@ -1091,14 +1154,18 @@ ALTER TABLE itcarrinho
   ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE itvenda
-  ADD CONSTRAINT fk_itvenda_produto_lote
-  FOREIGN KEY (produto_id, lote_id)
-  REFERENCES produto(produto_id, lote_id)
+  ADD CONSTRAINT fk_itvenda_lote
+  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
   ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_lote
   FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
+  ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE reserva_ingresso
+  ADD CONSTRAINT fk_reserva_evento
+  FOREIGN KEY (evento_id) REFERENCES evento(evento_id)
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
 
@@ -1157,7 +1224,7 @@ CREATE TABLE checkout_asaas (
 CREATE TABLE IF NOT EXISTS checkout_asaas_item (
   checkout_asaas_item_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   checkout_asaas_id BIGINT NOT NULL,
-  produto_id BIGINT NOT NULL,
+  produto_id BIGINT NULL,
   lote_id BIGINT NULL,
   idtipoproduto VARCHAR(1) NOT NULL DEFAULT 'P',
   nmproduto VARCHAR(150) NOT NULL,

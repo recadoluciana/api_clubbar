@@ -6,6 +6,8 @@ from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.loja import Loja
+from app.models.eventolote import EventoLote
+from app.models.evento import Evento
 
 from app.utils.datetime_utils import formatar_data_br
 
@@ -59,19 +61,21 @@ def listar_compras(
 
     # 2) Itens + nome do produto + tipo do produto
     itens_rows = (
-        db.query(ItVenda, Produto.nmproduto, Produto.idtipoproduto)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        db.query(ItVenda, Produto.nmproduto, Evento.nmtituloevento)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(ItVenda.venda_id.in_(venda_ids))
         .all()
     )
 
     itens_por_venda = {}
-    for it, nmproduto, idtipoproduto in itens_rows:
+    for it, nmproduto, nmevento in itens_rows:
         itens_por_venda.setdefault(it.venda_id, []).append({
             "itvenda_id": getattr(it, "itvenda_id", None),
             "produto_id": getattr(it, "produto_id", None),
-            "nmproduto": nmproduto,
-            "idtipoproduto": idtipoproduto,   # ✅ novo
+            "nmproduto": nmproduto or nmevento or "Ingresso",
+            "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
             "qtitvenda": it.qtitvenda,
             "vrunititvenda": float(it.vrunititvenda),
             "identregaitvenda": it.identregaitvenda,

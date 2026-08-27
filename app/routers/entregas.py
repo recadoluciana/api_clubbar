@@ -62,6 +62,20 @@ def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> N
         )
 
 
+def _dados_visuais_ingresso(db: Session, lote_id: int | None) -> tuple[str, str]:
+    if not lote_id:
+        return "Ingresso", ""
+    resultado = (
+        db.query(Evento.nmtituloevento, Evento.urlbannerevento)
+        .join(EventoLote, EventoLote.evento_id == Evento.evento_id)
+        .filter(EventoLote.lote_id == lote_id)
+        .first()
+    )
+    if not resultado:
+        return "Ingresso", ""
+    return resultado.nmtituloevento or "Ingresso", resultado.urlbannerevento or ""
+
+
 @router.get("/pendentes")
 def listar_itens_nao_entregues(
     cliente_id: int = Query(...),
@@ -80,10 +94,10 @@ def listar_itens_nao_entregues(
             ItVenda.itvenda_id,
             ItVenda.venda_id,
             ItVenda.qrtokenitvenda,
-            Produto.produto_id,
-            Produto.nmproduto,
-            Produto.urlfotoproduto,
-            Produto.idtipoproduto,
+            ItVenda.produto_id,
+            func.coalesce(Produto.nmproduto, Evento.nmtituloevento).label("nmproduto"),
+            func.coalesce(Produto.urlfotoproduto, Evento.urlbannerevento).label("urlfotoproduto"),
+            case((ItVenda.tipoitem == "INGRESSO", "I"), else_="P").label("idtipoproduto"),
             Loja.nmloja,
             Loja.urllogoloja,
             Loja.dsinstaloja,
@@ -99,7 +113,7 @@ def listar_itens_nao_entregues(
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
@@ -110,14 +124,14 @@ def listar_itens_nao_entregues(
         .filter(
             or_(
                 (
-                    (Produto.idtipoproduto != "I")
+                    (ItVenda.tipoitem == "PRODUTO")
                     & or_(
                         ItVenda.dtexpiraitvenda.is_(None),
                         ItVenda.dtexpiraitvenda >= hoje,
                     )
                 ),
                 (
-                    (Produto.idtipoproduto == "I")
+                    (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
                     & (func.date(Evento.dtinicioevento) >= hoje)
                 ),
@@ -176,9 +190,8 @@ async def cancelar_ingresso(
         raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
 
     resultado = (
-        db.query(ItVenda, Venda, Produto, EventoLote, Evento, PagVenda)
+        db.query(ItVenda, Venda, EventoLote, Evento, PagVenda)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .join(Evento, Evento.evento_id == EventoLote.evento_id)
         .join(PagVenda, PagVenda.venda_id == Venda.venda_id)
@@ -189,10 +202,10 @@ async def cancelar_ingresso(
     if not resultado:
         raise HTTPException(status_code=404, detail="Ingresso não encontrado.")
 
-    item, venda, produto, lote, evento, pagamento = resultado
+    item, venda, lote, evento, pagamento = resultado
     if str(venda.cliente_id) != str(payload.get("sub")):
         raise HTTPException(status_code=403, detail="Este ingresso pertence a outro cliente.")
-    if (produto.idtipoproduto or "").upper() != "I":
+    if (item.tipoitem or "").upper() != "INGRESSO":
         raise HTTPException(status_code=400, detail="O item informado não é um ingresso.")
     if item.sititvenda == "CANCELADO":
         return {"ok": True, "cancelado": True, "itvenda_id": item.itvenda_id}
@@ -388,11 +401,13 @@ def listar_entregues_por_usuario(
             ItVenda.dtentregaitvenda.label("dtentregaitvenda"),
             ItVenda.userentregaitvenda.label("userentregaitvenda"),
             ItVenda.nmuserentregaitvenda.label("nmuserentregaitvenda"),
-            Produto.produto_id.label("produto_id"),
-            Produto.nmproduto.label("nmproduto"),
+            ItVenda.produto_id.label("produto_id"),
+            func.coalesce(Produto.nmproduto, Evento.nmtituloevento).label("nmproduto"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(
             Venda.organizacao_id == organizacao_id,
             Venda.loja_id == loja_id,
@@ -452,7 +467,7 @@ def get_qt_itens_naoentregues(
                 ).label("valor_total"),
             )
             .join(Venda, Venda.venda_id == ItVenda.venda_id)
-            .join(Produto, Produto.produto_id == ItVenda.produto_id)
+            .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
             .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
             .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
             .filter(
@@ -464,14 +479,14 @@ def get_qt_itens_naoentregues(
             .filter(
                 or_(
                     (
-                        (Produto.idtipoproduto != "I")
+                        (ItVenda.tipoitem == "PRODUTO")
                         & or_(
                             ItVenda.dtexpiraitvenda.is_(None),
                             ItVenda.dtexpiraitvenda >= _hoje_brasil(),
                         )
                     ),
                     (
-                        (Produto.idtipoproduto == "I")
+                        (ItVenda.tipoitem == "INGRESSO")
                         & (Evento.dtinicioevento.isnot(None))
                         & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
                     ),
@@ -520,7 +535,7 @@ def listar_lojas_com_retirada_pendente(
         )
         .join(Venda, Venda.loja_id == Loja.loja_id)
         .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
-        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
@@ -530,14 +545,14 @@ def listar_lojas_com_retirada_pendente(
         .filter(
             or_(
                 (
-                    (Produto.idtipoproduto != "I")
+                    (ItVenda.tipoitem == "PRODUTO")
                     & or_(
                         ItVenda.dtexpiraitvenda.is_(None),
                         ItVenda.dtexpiraitvenda >= _hoje_brasil(),
                     )
                 ),
                 (
-                    (Produto.idtipoproduto == "I")
+                    (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
                     & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
                 ),
@@ -667,9 +682,11 @@ def buscar_item_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    nome_ingresso, imagem_ingresso = _dados_visuais_ingresso(db, item.lote_id)
+
     _validar_cargo_leitura_qr(
         usuario.dscargo,
-        produto.idtipoproduto if produto else None,
+        "I" if item.tipoitem == "INGRESSO" else "P",
     )
 
     if item.sititvenda != "ATIVO":
@@ -696,18 +713,18 @@ def buscar_item_por_token(
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
-        "idtipoproduto": produto.idtipoproduto if produto else "",
+        "idtipoproduto": "I" if item.tipoitem == "INGRESSO" else "P",
         "loja_id": loja.loja_id,
 
         "nmproduto": (
             produto.nmproduto
             if produto
-            else (item.dsobsitvenda or "Ingresso")
+            else nome_ingresso
         ),
         "urlfotoproduto": (
             produto.urlfotoproduto
             if produto
-            else ""
+            else imagem_ingresso
         ),
 
         "nmloja": loja.nmloja or "",
@@ -798,9 +815,11 @@ def entregar_produto_por_token(
 
     item, produto, venda, loja, cliente = resultado
 
+    nome_ingresso, imagem_ingresso = _dados_visuais_ingresso(db, item.lote_id)
+
     _validar_cargo_leitura_qr(
         usuario.dscargo,
-        produto.idtipoproduto if produto else None,
+        "I" if item.tipoitem == "INGRESSO" else "P",
     )
 
     if item.sititvenda != "ATIVO":
@@ -853,18 +872,18 @@ def entregar_produto_por_token(
 
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
-        "idtipoproduto": produto.idtipoproduto if produto else "",
+        "idtipoproduto": "I" if item.tipoitem == "INGRESSO" else "P",
         "loja_id": loja.loja_id,
 
         "nmproduto": (
             produto.nmproduto
             if produto
-            else (item.dsobsitvenda or "Ingresso")
+            else nome_ingresso
         ),
         "urlfotoproduto": (
             produto.urlfotoproduto
             if produto
-            else ""
+            else imagem_ingresso
         ),
         "nmloja": loja.nmloja or "",
         "nmcliente": cliente.nmcliente or "",

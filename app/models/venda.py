@@ -20,7 +20,9 @@ class Venda(Base):
     reserva_ingresso_id = Column(BigInteger, nullable=True, unique=True)
     usuario_id = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
 
-    dsplataforma = Column(Enum("ANDROID", "TOTEM", "IOS", "OUTROS", name="dsplataforma_enum"), nullable=False, server_default="OUTROS")
+    tipovenda = Column(Enum("PRODUTO", "INGRESSO", name="tipovenda_enum"), nullable=False)
+
+    dsplataforma = Column(Enum("ANDROID", "TOTEM", "IOS", "WEB", "OUTROS", name="dsplataforma_enum"), nullable=False, server_default="OUTROS")
     sitvenda = Column(Enum("PENDENTE", "PAGA", "CANCELADA", name="sitvenda_enum"), nullable=False, server_default="PENDENTE")
 
     totalvenda = Column(Numeric(10, 2), nullable=False, server_default="0")

@@ -10,6 +10,9 @@ class EventoOutBR(BaseModel):
 
     nmtituloevento: str
     dsdescevento: Optional[str] = None
+    dspoliticacancelamento: Optional[str] = None
+    dspoliticareembolso: Optional[str] = None
+    dspoliticacashback: Optional[str] = None
 
     dtinicioevento: datetime
     dtfimevento: datetime | None = None

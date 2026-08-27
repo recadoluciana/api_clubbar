@@ -14,8 +14,9 @@ class ItVenda(Base):
 
     itvenda_id = Column(BigInteger, primary_key=True, autoincrement=True)
 
-    venda_id = Column(BigInteger, ForeignKey("venda.venda_id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
-    produto_id = Column(BigInteger, ForeignKey("produto.produto_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
+    venda_id = Column(BigInteger, ForeignKey("venda.venda_id", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=False)
+    tipoitem = Column(Enum("PRODUTO", "INGRESSO", name="tipoitemvenda_enum"), nullable=False)
+    produto_id = Column(BigInteger, ForeignKey("produto.produto_id", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=True)
 
     qtitvenda = Column(Integer, nullable=False, server_default="1")
     vrunititvenda = Column(Numeric(10, 2), nullable=False)
@@ -27,7 +28,7 @@ class ItVenda(Base):
     nmuserentregaitvenda = Column(String(100), nullable=True)
 
     dsobsitvenda = Column(String(255), nullable=True)
-    qrtokenitvenda = Column(String(120), nullable=True)
+    qrtokenitvenda = Column(String(120), nullable=False, unique=True)
 
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
 
@@ -37,7 +38,7 @@ class ItVenda(Base):
     cpfparticipante = Column(String(11), nullable=True)
     lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=True)
 
-    pctaxaitvenda = Column(Numeric(10, 2), default=0)
+    pctaxaitvenda = Column(Numeric(5, 2), default=0)
     vrtaxaitvenda = Column(Numeric(10, 2), default=0)
     sititvenda = Column(
         Enum("ATIVO", "CANCELAMENTO_SOLICITADO", "CANCELADO", name="sititvenda_enum"),
@@ -47,3 +48,4 @@ class ItVenda(Base):
     dtcancelamento = Column(DateTime, nullable=True)
     vrreembolso = Column(Numeric(10, 2), nullable=True)
     idreembolso = Column(String(120), nullable=True)
+    dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
