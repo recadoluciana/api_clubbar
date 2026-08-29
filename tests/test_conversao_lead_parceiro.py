@@ -1,8 +1,10 @@
+import inspect
 import unittest
 
 from app.routers.leadparceiro import (
     CATEGORIAS_PADRAO,
     _senha_inicial_superadmin,
+    converter_lead_em_parceiro,
 )
 
 
@@ -24,6 +26,16 @@ class ConversaoLeadParceiroTest(unittest.TestCase):
         self.assertEqual("Cervejas", CATEGORIAS_PADRAO[0])
         self.assertEqual("Outros", CATEGORIAS_PADRAO[-1])
         self.assertEqual(7, len(set(CATEGORIAS_PADRAO)))
+
+    def test_convite_e_enviado_somente_depois_do_commit(self):
+        fonte = inspect.getsource(converter_lead_em_parceiro)
+
+        self.assertLess(
+            fonte.index("db.commit()"),
+            fonte.index("enviar_convite_parceiro("),
+        )
+        self.assertNotIn("acesso_portal", fonte)
+        self.assertNotIn("import traceback", fonte)
 
 
 if __name__ == "__main__":

@@ -41,7 +41,6 @@ from app.models.usuario import Usuario
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
 from app.services.email_service import enviar_convite_parceiro
-from app.services.email_service import enviar_acesso_portal_lead
 
 
 CATEGORIAS_PADRAO = (
@@ -442,12 +441,6 @@ def _senha_inicial_superadmin(documento: str, nome_responsavel: str) -> str:
             detail="Documento e nome do responsavel devem possuir ao menos 6 caracteres.",
         )
 
-        db.add(LeadMensagem(
-            leadparceiro_id=lead.leadparceiro_id,
-            origem='CLUBBAR',
-            mensagem='Ola! Recebemos seu interesse. Use este portal para conversar com nossa equipe e acompanhar os proximos passos.',
-            lida='N',
-        ))
     return f"{numeros[:6]}{nome[:6]}"
     
 @router.post(
@@ -587,46 +580,15 @@ def converter_lead_em_parceiro(
 
         lead.status = "CONVERTIDO"
 
-        db.commit()
-
-        db.refresh(nova_organizacao)
-        db.refresh(nova_loja)
-        db.refresh(lead)
-
-        try:
-            enviar_acesso_portal_lead(
-                lead.email,
-                lead.nmresponsavel,
-                acesso_portal,
-            )
-        except Exception:
-            traceback.print_exc()
-
-        convite_enviado = True
-        try:
-            enviar_convite_parceiro(
-                destinatario=email_responsavel,
-                nome_responsavel=lead.nmresponsavel,
-                nome_organizacao=nova_organizacao.nmorganizacao,
-                senha_inicial=senha_inicial,
-            )
-        except Exception:
-            convite_enviado = False
-            traceback.print_exc()
-
-        return {
+        resultado = {
             "ok": True,
-            "mensagem": (
-                "Lead convertido em parceiro com sucesso."
-            ),
+            "mensagem": "Lead convertido em parceiro com sucesso.",
             "leadparceiro_id": lead.leadparceiro_id,
-            "status_lead": lead.status,
+            "status_lead": "CONVERTIDO",
             "tipo": lead.tipo,
             "tipovenda": lead.tipovenda,
             "organizacao": {
-                "organizacao_id": (
-                    nova_organizacao.organizacao_id
-                ),
+                "organizacao_id": nova_organizacao.organizacao_id,
                 "nome": nova_organizacao.nmorganizacao,
             },
             "loja": {
@@ -638,10 +600,12 @@ def converter_lead_em_parceiro(
                 "nome": superadmin.nmusuario,
                 "email": superadmin.emailuser,
                 "senha_inicial": senha_inicial,
-                "convite_enviado": convite_enviado,
+                "convite_enviado": False,
             },
             "categorias": [categoria.nmcategoria for categoria in categorias],
         }
+
+        db.commit()
 
     except HTTPException:
         db.rollback()
@@ -662,10 +626,100 @@ def converter_lead_em_parceiro(
     except Exception as erro:
         db.rollback()
 
-        import traceback
         traceback.print_exc()
 
         raise HTTPException(
             status_code=500,
             detail=f"Erro ao converter lead: {str(erro)}",
         ) from erro
+
+    # O convite é uma operação externa e só é enviado depois que toda a
+    # conversão foi confirmada no banco. Uma indisponibilidade do provedor de
+    # e-mail não transforma uma conversão concluída em erro HTTP 500.
+    try:
+        enviar_convite_parceiro(
+            destinatario=email_responsavel,
+            nome_responsavel=lead.nmresponsavel,
+            nome_organizacao=resultado["organizacao"]["nome"],
+            senha_inicial=senha_inicial,
+        )
+        resultado["superadmin"]["convite_enviado"] = True
+    except Exception:
+        traceback.print_exc()
+
+    return resultado
+
+
+@router.post("/{leadparceiro_id}/reenviar-convite-parceiro")
+def reenviar_convite_parceiro_convertido(
+    leadparceiro_id: int,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    lead = (
+        db.query(LeadParceiro)
+        .filter(LeadParceiro.leadparceiro_id == leadparceiro_id)
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    if lead.status != "CONVERTIDO":
+        raise HTTPException(
+            status_code=409,
+            detail="Somente um lead convertido pode receber um novo convite.",
+        )
+
+    organizacao = (
+        db.query(Organizacao)
+        .filter(Organizacao.leadparceiro_id == leadparceiro_id)
+        .first()
+    )
+    if not organizacao:
+        raise HTTPException(
+            status_code=409,
+            detail="A organização criada para este lead não foi encontrada.",
+        )
+
+    superadmin = (
+        db.query(Usuario)
+        .filter(
+            Usuario.organizacao_id == organizacao.organizacao_id,
+            Usuario.dscargo == "SUPERADMIN",
+        )
+        .first()
+    )
+    if not superadmin:
+        raise HTTPException(
+            status_code=409,
+            detail="O usuário administrador do parceiro não foi encontrado.",
+        )
+
+    senha_inicial = secrets.token_urlsafe(9)
+    try:
+        superadmin.senhahashuser = hash_senha(senha_inicial)
+        db.commit()
+    except Exception as erro:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Não foi possível gerar uma nova senha para o parceiro.",
+        ) from erro
+
+    convite_enviado = True
+    try:
+        enviar_convite_parceiro(
+            destinatario=superadmin.emailuser,
+            nome_responsavel=lead.nmresponsavel,
+            nome_organizacao=organizacao.nmorganizacao,
+            senha_inicial=senha_inicial,
+        )
+    except Exception:
+        convite_enviado = False
+        traceback.print_exc()
+
+    return {
+        "ok": True,
+        "convite_enviado": convite_enviado,
+        "email": superadmin.emailuser,
+        "senha_inicial": senha_inicial,
+    }
