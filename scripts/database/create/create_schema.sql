@@ -97,21 +97,9 @@ CREATE TABLE bairro (
 CREATE TABLE leadparceiro (
   leadparceiro_id   BIGINT AUTO_INCREMENT PRIMARY KEY,
   nmresponsavel     VARCHAR(120) NOT NULL,
-  nmestabelecimento VARCHAR(160) NOT NULL,
-
-  tipo              VARCHAR(30) NOT NULL,
-
-  tipovenda         ENUM(
-    'PRODUTOS',
-    'INGRESSOS',
-    'AMBOS'
-  ) NOT NULL DEFAULT 'AMBOS',
-
+  nmorganizacao     VARCHAR(160) NULL,
   telefone          VARCHAR(30) NOT NULL,
   email             VARCHAR(160) NOT NULL,
-  estado_id         BIGINT NOT NULL,
-  cidade_id         BIGINT NOT NULL,
-  mensagem          TEXT NULL,
 
   status            ENUM(
     'NOVO',
@@ -122,43 +110,10 @@ CREATE TABLE leadparceiro (
     'RECUSOU_PARCERIA'
   ) NOT NULL DEFAULT 'NOVO',
 
-  decisao ENUM(
-    'PENDENTE',
-    'ANALISANDO',
-    'ACEITOU',
-    'RECUSOU'
-  ) NOT NULL DEFAULT 'PENDENTE',
-
   dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_leadparceiro_estado
-    FOREIGN KEY (estado_id)
-    REFERENCES estado(estado_id)
-    ON DELETE RESTRICT
-    ON UPDATE RESTRICT,
-
-  CONSTRAINT fk_leadparceiro_cidade
-    FOREIGN KEY (cidade_id)
-    REFERENCES cidade(cidade_id)
-    ON DELETE RESTRICT
-    ON UPDATE RESTRICT,
-
-  CONSTRAINT chk_leadparceiro_tipo
-    CHECK (
-      tipo IN (
-        'BAR',
-        'CASA_NOTURNA',
-        'PRODUTOR_EVENTOS',
-        'CASA_EVENTOS'
-      )
-    ),
-
   INDEX idx_leadparceiro_status (status),
-  INDEX idx_leadparceiro_tipo (tipo),
-  INDEX idx_leadparceiro_tipovenda (tipovenda),
-  INDEX idx_leadparceiro_estado (estado_id),
-  INDEX idx_leadparceiro_cidade (cidade_id),
   INDEX idx_leadparceiro_email (email),
   INDEX idx_leadparceiro_dtcriacao (dtcriacao)
 )
@@ -173,6 +128,8 @@ CREATE TABLE leadestabelecimento (
   tipo VARCHAR(30) NOT NULL,
   tipovenda ENUM('PRODUTOS','INGRESSOS','AMBOS') NOT NULL DEFAULT 'AMBOS',
   cpfcnpj VARCHAR(14) NULL,
+  telefone VARCHAR(30) NULL,
+  email VARCHAR(160) NULL,
   estado_id BIGINT NOT NULL,
   cidade_id BIGINT NOT NULL,
   cep VARCHAR(9) NULL,

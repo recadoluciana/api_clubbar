@@ -1,7 +1,7 @@
 #portalparceiro.py
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class PortalMensagemCreate(BaseModel):
@@ -22,6 +22,13 @@ class PortalEstabelecimentoCreate(BaseModel):
     tipo: Literal["BAR", "CASA_NOTURNA", "PRODUTOR_EVENTOS", "CASA_EVENTOS"]
     tipovenda: Literal["PRODUTOS", "INGRESSOS", "AMBOS"] = "AMBOS"
     cpfcnpj: str | None = Field(default=None, max_length=18)
+    telefone: str | None = Field(default=None, max_length=30)
+    email: EmailStr | None = None
     estado_id: int = Field(gt=0)
     cidade_id: int = Field(gt=0)
+    cep: str | None = Field(default=None, max_length=9)
+    endereco: str | None = Field(default=None, max_length=255)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=120)
+    bairro: str | None = Field(default=None, max_length=120)
     mensagem: str | None = Field(default=None, max_length=1000)

@@ -32,6 +32,8 @@ class LeadEstabelecimento(Base):
         server_default="AMBOS",
     )
     cpfcnpj = Column(String(14), nullable=True)
+    telefone = Column(String(30), nullable=True)
+    email = Column(String(160), nullable=True)
     estado_id = Column(BigInteger, ForeignKey("estado.estado_id"), nullable=False)
     cidade_id = Column(BigInteger, ForeignKey("cidade.cidade_id"), nullable=False)
     cep = Column(String(9), nullable=True)

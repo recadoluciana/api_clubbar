@@ -41,6 +41,7 @@ class ConverterLeadParceiroIn(BaseModel):
     email_responsavel: EmailStr
     taxa_produtos: float = Field(default=5, ge=0, le=100)
     taxa_ingressos: float = Field(default=5, ge=0, le=100)
+    titularfinanceiro_id: int | None = Field(default=None, gt=0)
 
 
 class LeadEstabelecimentoCreate(BaseModel):
@@ -48,9 +49,29 @@ class LeadEstabelecimentoCreate(BaseModel):
     tipo: TipoParceiro
     tipovenda: TipoVendaLead = "AMBOS"
     cpfcnpj: str | None = Field(default=None, max_length=18)
+    telefone: str | None = Field(default=None, min_length=10, max_length=30)
+    email: EmailStr | None = None
     estado_id: int = Field(gt=0)
     cidade_id: int = Field(gt=0)
+    cep: str | None = Field(default=None, max_length=9)
+    endereco: str | None = Field(default=None, max_length=255)
+    numero: str | None = Field(default=None, max_length=20)
+    complemento: str | None = Field(default=None, max_length=120)
+    bairro: str | None = Field(default=None, max_length=120)
     mensagem: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("cpfcnpj", "telefone", "cep")
+    @classmethod
+    def somente_numeros_opcional(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        numeros = "".join(caractere for caractere in valor if caractere.isdigit())
+        return numeros or None
+
+    @field_validator("email")
+    @classmethod
+    def normalizar_email_estabelecimento(cls, valor: EmailStr | None) -> str | None:
+        return str(valor).strip().lower() if valor is not None else None
 
 
 class LeadEstabelecimentoOut(BaseModel):
@@ -60,8 +81,15 @@ class LeadEstabelecimentoOut(BaseModel):
     tipo: TipoParceiro
     tipovenda: TipoVendaLead
     cpfcnpj: str | None = None
+    telefone: str | None = None
+    email: str | None = None
     estado_id: int
     cidade_id: int
+    cep: str | None = None
+    endereco: str | None = None
+    numero: str | None = None
+    complemento: str | None = None
+    bairro: str | None = None
     mensagem: str | None = None
     status: StatusLeadParceiroSchema
     decisao: Literal["PENDENTE", "ANALISANDO", "ACEITOU", "RECUSOU"]
@@ -81,15 +109,7 @@ class LeadParceiroCreate(BaseModel):
         max_length=120,
     )
 
-    nmestabelecimento: str = Field(
-        ...,
-        min_length=2,
-        max_length=160,
-    )
-
-    tipo: TipoParceiro
-
-    tipovenda: TipoVendaLead
+    nmorganizacao: str | None = Field(default=None, max_length=160)
 
     telefone: str = Field(
         ...,
@@ -99,24 +119,10 @@ class LeadParceiroCreate(BaseModel):
 
     email: EmailStr
 
-    estado_id: int = Field(
-        ...,
-        gt=0,
-    )
-
-    cidade_id: int = Field(
-        ...,
-        gt=0,
-    )
-
-    mensagem: str | None = Field(
-        default=None,
-        max_length=1000,
-    )
+    estabelecimentos: list[LeadEstabelecimentoCreate] = Field(min_length=1, max_length=20)
 
     @field_validator(
         "nmresponsavel",
-        "nmestabelecimento",
     )
     @classmethod
     def validar_textos_obrigatorios(
@@ -159,18 +165,12 @@ class LeadParceiroCreate(BaseModel):
     ) -> str:
         return str(valor).strip().lower()
 
-    @field_validator("mensagem")
+    @field_validator("nmorganizacao")
     @classmethod
-    def normalizar_mensagem(
-        cls,
-        valor: str | None,
-    ) -> str | None:
+    def normalizar_organizacao(cls, valor: str | None) -> str | None:
         if valor is None:
             return None
-
-        texto = valor.strip()
-
-        return texto or None
+        return valor.strip() or None
 
 
 class LeadParceiroUpdate(BaseModel):
@@ -250,6 +250,7 @@ class LeadParceiroOut(BaseModel):
     leadparceiro_id: int
 
     nmresponsavel: str
+    nmorganizacao: str | None = None
     nmestabelecimento: str
 
     tipo: TipoParceiro

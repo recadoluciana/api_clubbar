@@ -16,6 +16,7 @@ from app.models.leadagendamento import LeadAgendamento
 from app.models.leadmaterial import LeadMaterial
 from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.services.email_service import enviar_acesso_portal_lead
 from app.services.portal_acesso_service import criar_acesso_portal
 
@@ -66,8 +67,11 @@ def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session 
     db.commit()
     agendamentos = db.query(LeadAgendamento).filter(LeadAgendamento.leadparceiro_id == lead_id).order_by(LeadAgendamento.dtagendamento.desc()).all()
     materiais = db.query(LeadMaterial).filter(LeadMaterial.leadparceiro_id == lead_id).order_by(LeadMaterial.dtcriacao.desc()).all()
+    primeiro_estabelecimento = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead_id
+    ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
     return {
-        'decisao': lead.decisao,
+        'decisao': primeiro_estabelecimento.decisao if primeiro_estabelecimento else 'PENDENTE',
         'mensagens': [{'leadmensagem_id': x.leadmensagem_id, 'origem': x.origem, 'mensagem': x.mensagem, 'lida': x.lida, 'dtcriacao': x.dtcriacao} for x in mensagens],
         'agendamentos': [{'leadagendamento_id': x.leadagendamento_id, 'tipo': x.tipo, 'dtagendamento': x.dtagendamento, 'observacao': x.observacao, 'status': x.status} for x in agendamentos],
         'materiais': [{'leadmaterial_id': x.leadmaterial_id, 'titulo': x.titulo, 'descricao': x.descricao, 'tipo': x.tipo, 'urlarquivo': x.urlarquivo, 'dtcriacao': x.dtcriacao} for x in materiais],

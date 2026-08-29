@@ -2,16 +2,7 @@
 
 import enum
 
-from sqlalchemy import (
-    BigInteger,
-    Column,
-    DateTime,
-    Enum,
-    ForeignKey,
-    String,
-    Text,
-    text,
-)
+from sqlalchemy import BigInteger, Column, DateTime, Enum, String, text
 
 from app.database import Base
 
@@ -40,38 +31,7 @@ class LeadParceiro(Base):
         nullable=False,
     )
 
-    nmestabelecimento = Column(
-        String(160),
-        nullable=False,
-    )
-
-    tipo = Column(
-        String(30),
-        nullable=False,
-    )
-
-    tipovenda = Column(
-        Enum(
-            "PRODUTOS",
-            "INGRESSOS",
-            "AMBOS",
-            name="enum_leadparceiro_tipovenda",
-        ),
-        nullable=False,
-        server_default="AMBOS",
-    )
-    
-    decisao = Column(
-        Enum(
-            "PENDENTE",
-            "ANALISANDO",
-            "ACEITOU",
-            "RECUSOU",
-            name="enum_leadparceiro_decisao",
-        ),
-        nullable=False,
-        server_default="PENDENTE",
-    )
+    nmorganizacao = Column(String(160), nullable=True)
     
     telefone = Column(
         String(30),
@@ -82,33 +42,6 @@ class LeadParceiro(Base):
         String(160),
         nullable=False,
         index=True,
-    )
-
-    estado_id = Column(
-        BigInteger,
-        ForeignKey(
-            "estado.estado_id",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    cidade_id = Column(
-        BigInteger,
-        ForeignKey(
-            "cidade.cidade_id",
-            ondelete="RESTRICT",
-            onupdate="RESTRICT",
-        ),
-        nullable=False,
-        index=True,
-    )
-
-    mensagem = Column(
-        Text,
-        nullable=True,
     )
 
     status = Column(
@@ -134,6 +67,6 @@ class LeadParceiro(Base):
         return (
             f"<LeadParceiro "
             f"id={self.leadparceiro_id} "
-            f"estabelecimento={self.nmestabelecimento} "
+            f"responsavel={self.nmresponsavel} "
             f"status={self.status}>"
         )

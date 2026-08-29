@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.schemas.portalparceiro import PortalDecisaoUpdate
 
 
@@ -20,7 +20,7 @@ class PortalDecisaoSchemaTest(unittest.TestCase):
     def test_modelo_e_schema_inicial_possuem_analisando(self):
         self.assertIn(
             "ANALISANDO",
-            set(LeadParceiro.__table__.c.decisao.type.enums),
+            set(LeadEstabelecimento.__table__.c.decisao.type.enums),
         )
         schema = (
             Path(__file__).resolve().parents[1]

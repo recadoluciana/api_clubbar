@@ -14,9 +14,27 @@ class LeadEstabelecimentosSchemaTest(unittest.TestCase):
         colunas = LeadEstabelecimento.__table__.c
         self.assertIn("leadparceiro_id", colunas)
         self.assertIn("decisao", colunas)
+        self.assertIn("telefone", colunas)
+        self.assertIn("email", colunas)
         self.assertIn("status", colunas)
         self.assertIn("vrtaxaprod", colunas)
         self.assertIn("vrtaxaing", colunas)
+
+    def test_lead_guarda_somente_dados_gerais(self):
+        from app.models.leadparceiro import LeadParceiro
+
+        colunas = LeadParceiro.__table__.c
+        self.assertIn("nmorganizacao", colunas)
+        for campo in (
+            "nmestabelecimento",
+            "tipo",
+            "tipovenda",
+            "decisao",
+            "estado_id",
+            "cidade_id",
+            "mensagem",
+        ):
+            self.assertNotIn(campo, colunas)
 
     def test_loja_guarda_origem_e_titular_financeiro(self):
         colunas = Loja.__table__.c

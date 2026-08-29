@@ -47,11 +47,19 @@ def cadastrar_estabelecimento(
         tipo=dados.tipo,
         tipovenda=dados.tipovenda,
         cpfcnpj=documento,
+        telefone=dados.telefone or lead.telefone,
+        email=str(dados.email).lower() if dados.email else lead.email,
         estado_id=dados.estado_id,
         cidade_id=dados.cidade_id,
+        cep=dados.cep,
+        endereco=dados.endereco,
+        numero=dados.numero,
+        complemento=dados.complemento,
+        bairro=dados.bairro,
         mensagem=(dados.mensagem or "").strip() or None,
     )
     db.add(item)
+    lead.status = "NEGOCIANDO"
     db.commit()
     db.refresh(item)
     return {
@@ -128,11 +136,12 @@ def obter_resumo(
     return {
         "leadparceiro_id": lead.leadparceiro_id,
         "nmresponsavel": lead.nmresponsavel,
-        "nmestabelecimento": lead.nmestabelecimento,
-        "tipo": lead.tipo,
-        "tipovenda": lead.tipovenda,
+        "nmorganizacao": lead.nmorganizacao,
+        "nmestabelecimento": estabelecimentos[0].nmestabelecimento if estabelecimentos else "",
+        "tipo": estabelecimentos[0].tipo if estabelecimentos else "BAR",
+        "tipovenda": estabelecimentos[0].tipovenda if estabelecimentos else "AMBOS",
         "status": lead.status,
-        "decisao": lead.decisao,
+        "decisao": estabelecimentos[0].decisao if estabelecimentos else "PENDENTE",
         "mensagens_nao_lidas": int(mensagens_nao_lidas),
         "agendamentos_pendentes": int(agendamentos_pendentes),
         "materiais": int(materiais),
@@ -368,17 +377,20 @@ def registrar_decisao(
     elif dados.decisao == 'ANALISANDO':
         estabelecimento.status = 'NEGOCIANDO'
 
-    # Compatibilidade temporária com as telas que ainda exibem o primeiro
-    # estabelecimento diretamente no lead.
-    primeiro = (
-        db.query(LeadEstabelecimento)
-        .filter(LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id)
-        .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
-        .first()
-    )
-    if primeiro and primeiro.leadestabelecimento_id == estabelecimento.leadestabelecimento_id:
-        lead.decisao = estabelecimento.decisao
-        lead.status = estabelecimento.status
+    pendentes = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+        LeadEstabelecimento.status.notin_(("CONVERTIDO", "RECUSOU_PARCERIA")),
+    ).count()
+    convertidos = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+        LeadEstabelecimento.status == "CONVERTIDO",
+    ).count()
+    if pendentes:
+        lead.status = "NEGOCIANDO"
+    elif convertidos:
+        lead.status = "CONVERTIDO"
+    else:
+        lead.status = "RECUSOU_PARCERIA"
     db.commit()
 
     return {

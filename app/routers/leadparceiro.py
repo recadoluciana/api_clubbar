@@ -41,6 +41,8 @@ from app.models.leadparceiro import LeadParceiro
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
+from app.models.titularfinanceiro import TitularFinanceiro
+from app.models.contratolead import ContratoLead
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
 from app.services.email_service import enviar_convite_parceiro
@@ -71,8 +73,9 @@ def _dias_espera(dtcriacao: datetime) -> int:
 
 def _serializar_lead(
     lead: LeadParceiro,
-    estado: Estado,
-    cidade: Cidade,
+    estabelecimento: LeadEstabelecimento | None = None,
+    estado: Estado | None = None,
+    cidade: Cidade | None = None,
     ultima_origem_mensagem: str | None = None,
 ) -> dict:
     status_lead = (
@@ -84,17 +87,20 @@ def _serializar_lead(
     return {
         "leadparceiro_id": lead.leadparceiro_id,
         "nmresponsavel": lead.nmresponsavel,
-        "nmestabelecimento": lead.nmestabelecimento,
-        "tipo": lead.tipo,
-        "tipovenda": lead.tipovenda,
+        "nmorganizacao": lead.nmorganizacao,
+        # Campos-resumo do primeiro estabelecimento mantidos na resposta para
+        # compatibilidade com as telas existentes; não ficam mais duplicados no lead.
+        "nmestabelecimento": estabelecimento.nmestabelecimento if estabelecimento else "",
+        "tipo": estabelecimento.tipo if estabelecimento else "BAR",
+        "tipovenda": estabelecimento.tipovenda if estabelecimento else "AMBOS",
         "telefone": lead.telefone,
         "email": lead.email,
-        "estado_id": lead.estado_id,
-        "cidade_id": lead.cidade_id,
-        "nmestado": estado.nmestado,
-        "sgestado": estado.sgestado,
-        "nmcidade": cidade.nmcidade,
-        "mensagem": lead.mensagem,
+        "estado_id": estabelecimento.estado_id if estabelecimento else 0,
+        "cidade_id": estabelecimento.cidade_id if estabelecimento else 0,
+        "nmestado": estado.nmestado if estado else "",
+        "sgestado": estado.sgestado if estado else "",
+        "nmcidade": cidade.nmcidade if cidade else "",
+        "mensagem": estabelecimento.mensagem if estabelecimento else None,
         "status": status_lead,
         "dtcriacao": lead.dtcriacao,
         "dtultatu": lead.dtultatu,
@@ -114,8 +120,15 @@ def _serializar_estabelecimento(item: LeadEstabelecimento) -> dict:
         "tipo": item.tipo,
         "tipovenda": item.tipovenda,
         "cpfcnpj": item.cpfcnpj,
+        "telefone": item.telefone,
+        "email": item.email,
         "estado_id": item.estado_id,
         "cidade_id": item.cidade_id,
+        "cep": item.cep,
+        "endereco": item.endereco,
+        "numero": item.numero,
+        "complemento": item.complemento,
+        "bairro": item.bairro,
         "mensagem": item.mensagem,
         "status": item.status.value if hasattr(item.status, "value") else item.status,
         "decisao": item.decisao,
@@ -141,28 +154,19 @@ def _buscar_lead_com_localidade(
     db: Session,
     leadparceiro_id: int,
 ):
-    return (
-        db.query(
-            LeadParceiro,
-            Estado,
-            Cidade,
-        )
-        .join(
-            Estado,
-            Estado.estado_id
-            == LeadParceiro.estado_id,
-        )
-        .join(
-            Cidade,
-            Cidade.cidade_id
-            == LeadParceiro.cidade_id,
-        )
-        .filter(
-            LeadParceiro.leadparceiro_id
-            == leadparceiro_id,
-        )
-        .first()
-    )
+    lead = db.query(LeadParceiro).filter(
+        LeadParceiro.leadparceiro_id == leadparceiro_id
+    ).first()
+    if not lead:
+        return None
+    estabelecimento = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == leadparceiro_id
+    ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
+    if not estabelecimento:
+        return lead, None, None, None
+    estado = db.query(Estado).filter(Estado.estado_id == estabelecimento.estado_id).first()
+    cidade = db.query(Cidade).filter(Cidade.cidade_id == estabelecimento.cidade_id).first()
+    return lead, estabelecimento, estado, cidade
 
 @router.post(
     "/interesse",
@@ -173,53 +177,22 @@ def criar_interesse_parceiro(
     payload: LeadParceiroCreate,
     db: Session = Depends(get_db),
 ):
-    estado = (
-        db.query(Estado)
-        .filter(
-            Estado.estado_id == payload.estado_id,
-        )
-        .first()
-    )
-
-    if not estado:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Estado não encontrado.",
-        )
-
-    cidade = (
-        db.query(Cidade)
-        .filter(
-            Cidade.cidade_id == payload.cidade_id,
-        )
-        .first()
-    )
-
-    if not cidade:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cidade não encontrada.",
-        )
-
-    if cidade.estado_id != payload.estado_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "A cidade informada não pertence "
-                "ao estado selecionado."
-            ),
-        )
+    localidades: list[tuple[Estado, Cidade]] = []
+    for item in payload.estabelecimentos:
+        estado = db.query(Estado).filter(Estado.estado_id == item.estado_id).first()
+        cidade = db.query(Cidade).filter(Cidade.cidade_id == item.cidade_id).first()
+        if not estado or not cidade or cidade.estado_id != item.estado_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cidade e estado inválidos para {item.nmestabelecimento}.",
+            )
+        localidades.append((estado, cidade))
 
     lead = LeadParceiro(
         nmresponsavel=payload.nmresponsavel,
-        nmestabelecimento=payload.nmestabelecimento,
-        tipo=payload.tipo,
-        tipovenda=payload.tipovenda,
+        nmorganizacao=payload.nmorganizacao,
         telefone=payload.telefone,
         email=payload.email,
-        estado_id=payload.estado_id,
-        cidade_id=payload.cidade_id,
-        mensagem=payload.mensagem,
     )
 
     try:
@@ -228,16 +201,18 @@ def criar_interesse_parceiro(
         # Gera o leadparceiro_id sem finalizar a transação.
         db.flush()
 
-        estabelecimento = LeadEstabelecimento(
-            leadparceiro_id=lead.leadparceiro_id,
-            nmestabelecimento=payload.nmestabelecimento,
-            tipo=payload.tipo,
-            tipovenda=payload.tipovenda,
-            estado_id=payload.estado_id,
-            cidade_id=payload.cidade_id,
-            mensagem=payload.mensagem,
-        )
-        db.add(estabelecimento)
+        estabelecimentos = [
+            LeadEstabelecimento(
+                leadparceiro_id=lead.leadparceiro_id,
+                **{
+                    **item.model_dump(),
+                    "telefone": item.telefone or lead.telefone,
+                    "email": item.email or lead.email,
+                },
+            )
+            for item in payload.estabelecimentos
+        ]
+        db.add_all(estabelecimentos)
         db.flush()
 
         acesso_portal = criar_acesso_portal(
@@ -250,13 +225,14 @@ def criar_interesse_parceiro(
 
         resposta = _serializar_lead(
             lead,
-            estado,
-            cidade,
+            estabelecimentos[0],
+            localidades[0][0],
+            localidades[0][1],
         )
 
         resposta["acesso_portal"] = acesso_portal
         resposta["estabelecimentos"] = [
-            _serializar_estabelecimento(estabelecimento)
+            _serializar_estabelecimento(item) for item in estabelecimentos
         ]
 
         return resposta
@@ -303,19 +279,7 @@ def listar_interesses_parceiros(
     resultados = (
         db.query(
             LeadParceiro,
-            Estado,
-            Cidade,
             ultima_origem_mensagem.label("ultima_origem_mensagem"),
-        )
-        .join(
-            Estado,
-            Estado.estado_id
-            == LeadParceiro.estado_id,
-        )
-        .join(
-            Cidade,
-            Cidade.cidade_id
-            == LeadParceiro.cidade_id,
         )
         .order_by(
             prioridade_status.asc(),
@@ -325,11 +289,15 @@ def listar_interesses_parceiros(
     )
 
     resposta = []
-    for lead, estado, cidade, origem in resultados:
-        item = _serializar_lead(lead, estado, cidade, origem)
-        item["estabelecimentos"] = _carregar_estabelecimentos(
-            db, lead.leadparceiro_id
-        )
+    for lead, origem in resultados:
+        estabelecimentos = _carregar_estabelecimentos(db, lead.leadparceiro_id)
+        primeiro_modelo = db.query(LeadEstabelecimento).filter(
+            LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id
+        ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
+        estado = db.query(Estado).filter(Estado.estado_id == primeiro_modelo.estado_id).first() if primeiro_modelo else None
+        cidade = db.query(Cidade).filter(Cidade.cidade_id == primeiro_modelo.cidade_id).first() if primeiro_modelo else None
+        item = _serializar_lead(lead, primeiro_modelo, estado, cidade, origem)
+        item["estabelecimentos"] = estabelecimentos
         resposta.append(item)
     return resposta
 
@@ -354,10 +322,11 @@ def buscar_interesse_parceiro(
             detail="Lead não encontrado.",
         )
 
-    lead, estado, cidade = resultado
+    lead, estabelecimento, estado, cidade = resultado
 
     resposta = _serializar_lead(
         lead,
+        estabelecimento,
         estado,
         cidade,
     )
@@ -396,6 +365,7 @@ def adicionar_estabelecimento(
         **payload.model_dump(),
     )
     db.add(item)
+    lead.status = "NEGOCIANDO"
     db.commit()
     db.refresh(item)
     return _serializar_estabelecimento(item)
@@ -431,11 +401,14 @@ def atualizar_interesse_parceiro(
             payload.nmresponsavel
         )
 
-    if payload.tipo is not None:
-        lead.tipo = payload.tipo
+    primeiro_estabelecimento = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == leadparceiro_id
+    ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
+    if payload.tipo is not None and primeiro_estabelecimento:
+        primeiro_estabelecimento.tipo = payload.tipo
 
-    if payload.tipovenda is not None:
-        lead.tipovenda = payload.tipovenda
+    if payload.tipovenda is not None and primeiro_estabelecimento:
+        primeiro_estabelecimento.tipovenda = payload.tipovenda
 
     if payload.telefone is not None:
         lead.telefone = payload.telefone
@@ -460,10 +433,11 @@ def atualizar_interesse_parceiro(
             detail="Lead não encontrado após atualização.",
         )
 
-    lead_atualizado, estado, cidade = resultado
+    lead_atualizado, estabelecimento, estado, cidade = resultado
 
     return _serializar_lead(
         lead_atualizado,
+        estabelecimento,
         estado,
         cidade,
     )
@@ -621,18 +595,34 @@ def converter_lead_em_parceiro(
         else:
             nova_organizacao = organizacao_existente
 
+        titular_financeiro = None
+        if dados.titularfinanceiro_id is not None:
+            titular_financeiro = db.query(TitularFinanceiro).filter(
+                TitularFinanceiro.titularfinanceiro_id == dados.titularfinanceiro_id,
+                TitularFinanceiro.organizacao_id == nova_organizacao.organizacao_id,
+            ).first()
+            if not titular_financeiro:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Titular financeiro não pertence à organização deste lead.",
+                )
+
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,
             leadestabelecimento_id=estabelecimento.leadestabelecimento_id,
+            titularfinanceiro_id=(
+                titular_financeiro.titularfinanceiro_id
+                if titular_financeiro else None
+            ),
             nmloja=dados.nome_loja.strip(),
-            endloja=None,
-            nrceploja=None,
-            nrendeloja=None,
-            dsbairroloja=None,
+            endloja=estabelecimento.endereco,
+            nrceploja=estabelecimento.cep,
+            nrendeloja=estabelecimento.numero,
+            dsbairroloja=estabelecimento.bairro,
             dsrefeloja=None,
             sitloja="ATIVA",
             aberto24x7="N",
-            nrtelloja=lead.telefone.strip(),
+            nrtelloja=(estabelecimento.telefone or lead.telefone).strip(),
             nrdiavalidade=90,
             idvalidadeprod="S",
             estado_id=estabelecimento.estado_id,
@@ -688,6 +678,13 @@ def converter_lead_em_parceiro(
 
         estabelecimento.status = "CONVERTIDO"
         estabelecimento.dtconversao = datetime.now()
+        if titular_financeiro:
+            contrato = db.query(ContratoLead).filter(
+                ContratoLead.leadestabelecimento_id
+                == estabelecimento.leadestabelecimento_id
+            ).order_by(ContratoLead.contratolead_id.desc()).first()
+            if contrato:
+                contrato.titularfinanceiro_id = titular_financeiro.titularfinanceiro_id
         restantes = (
             db.query(LeadEstabelecimento)
             .filter(
