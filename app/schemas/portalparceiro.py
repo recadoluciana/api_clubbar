@@ -13,4 +13,4 @@ class PortalAgendamentoResposta(BaseModel):
 
 
 class PortalDecisaoUpdate(BaseModel):
-    decisao: Literal["PENDENTE", "ACEITOU", "RECUSOU"]
+    decisao: Literal["ANALISANDO", "ACEITOU", "RECUSOU"]

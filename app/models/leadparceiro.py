@@ -64,6 +64,7 @@ class LeadParceiro(Base):
     decisao = Column(
         Enum(
             "PENDENTE",
+            "ANALISANDO",
             "ACEITOU",
             "RECUSOU",
             name="enum_leadparceiro_decisao",

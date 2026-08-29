@@ -243,7 +243,7 @@ def registrar_decisao(
         lead.status = 'APROVADO_CADASTRO'
     elif dados.decisao == 'RECUSOU':
         lead.status = 'PERDIDO'
-    else:
+    elif dados.decisao == 'ANALISANDO':
         lead.status = 'NEGOCIANDO'
     db.commit()
 

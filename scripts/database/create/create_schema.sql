@@ -124,6 +124,7 @@ CREATE TABLE leadparceiro (
 
   decisao ENUM(
     'PENDENTE',
+    'ANALISANDO',
     'ACEITOU',
     'RECUSOU'
   ) NOT NULL DEFAULT 'PENDENTE',
