@@ -71,6 +71,7 @@ def _serializar_lead(
     lead: LeadParceiro,
     estado: Estado,
     cidade: Cidade,
+    ultima_origem_mensagem: str | None = None,
 ) -> dict:
     status_lead = (
         lead.status.value
@@ -98,6 +99,7 @@ def _serializar_lead(
         "dias_espera": _dias_espera(
             lead.dtcriacao,
         ),
+        "aguardando_resposta": ultima_origem_mensagem == "LEAD",
     }
 
 
@@ -227,6 +229,18 @@ def listar_interesses_parceiros(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
+    ultima_origem_mensagem = (
+        db.query(LeadMensagem.origem)
+        .filter(LeadMensagem.leadparceiro_id == LeadParceiro.leadparceiro_id)
+        .order_by(
+            LeadMensagem.dtcriacao.desc(),
+            LeadMensagem.leadmensagem_id.desc(),
+        )
+        .limit(1)
+        .correlate(LeadParceiro)
+        .scalar_subquery()
+    )
+
     prioridade_status = case(
         (LeadParceiro.status == "NOVO", 1),
         (LeadParceiro.status == "CONTATADO", 2),
@@ -242,6 +256,7 @@ def listar_interesses_parceiros(
             LeadParceiro,
             Estado,
             Cidade,
+            ultima_origem_mensagem.label("ultima_origem_mensagem"),
         )
         .join(
             Estado,
@@ -265,8 +280,9 @@ def listar_interesses_parceiros(
             lead,
             estado,
             cidade,
+            origem,
         )
-        for lead, estado, cidade in resultados
+        for lead, estado, cidade, origem in resultados
     ]
 
 

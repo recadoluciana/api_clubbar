@@ -241,6 +241,7 @@ class LeadParceiroOut(BaseModel):
     dtultatu: datetime | None = None
 
     dias_espera: int
+    aguardando_resposta: bool = False
 
     class Config:
         from_attributes = True
