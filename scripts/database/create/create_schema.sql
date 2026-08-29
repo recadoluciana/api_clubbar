@@ -117,6 +117,7 @@ CREATE TABLE leadparceiro (
     'NOVO',
     'CONTATADO',
     'NEGOCIANDO',
+    'APROVADO_CADASTRO',
     'CONVERTIDO',
     'PERDIDO'
   ) NOT NULL DEFAULT 'NOVO',
@@ -341,8 +342,8 @@ CREATE TABLE loja (
   organizacao_id BIGINT NOT NULL,
   nmloja         VARCHAR(120) NOT NULL,
   endloja        VARCHAR(255) NULL,
-  nrceploja      VARCHAR(9) NOT NULL,
-  nrendeloja     VARCHAR(20) NOT NULL,
+  nrceploja      VARCHAR(9) NULL,
+  nrendeloja     VARCHAR(20) NULL,
   dsrefeloja     VARCHAR(255) NULL,
   dsinstaloja    VARCHAR(255) NULL,
   dsbairroloja   VARCHAR(120) NULL,
@@ -353,8 +354,12 @@ CREATE TABLE loja (
   qtcpdloja      INT NULL,
   nrdiavalidade  BIGINT NOT NULL DEFAULT 90,
   idvalidadeprod CHAR(1) NOT NULL DEFAULT 'S',
-  estado_id      BIGINT NOT NULL,
-  cidade_id      BIGINT NOT NULL,
+  estado_id      BIGINT NULL,
+  cidade_id      BIGINT NULL,
+  tipoloja       VARCHAR(30) NULL,
+  atendimentofisico CHAR(1) NOT NULL DEFAULT 'S',
+  vendaprodutos  CHAR(1) NOT NULL DEFAULT 'S',
+  vendaingressos CHAR(1) NOT NULL DEFAULT 'S',
   urllogoloja    VARCHAR(255) NULL,
   urlfachadaloja VARCHAR(255) NULL,
   vrtaxaprod     DECIMAL(10,2) NOT NULL DEFAULT 5,
@@ -388,6 +393,14 @@ ALTER TABLE loja
   ADD CONSTRAINT chk_idvalidadeprod CHECK (idvalidadeprod IN ('S', 'N'));
 ALTER TABLE loja
   ADD CONSTRAINT chk_loja_capacidade CHECK (qtcpdloja IS NULL OR qtcpdloja > 0);
+
+ALTER TABLE loja
+  ADD CONSTRAINT chk_loja_atendimento_fisico
+    CHECK (atendimentofisico IN ('S', 'N')),
+  ADD CONSTRAINT chk_loja_venda_produtos
+    CHECK (vendaprodutos IN ('S', 'N')),
+  ADD CONSTRAINT chk_loja_venda_ingressos
+    CHECK (vendaingressos IN ('S', 'N'));
 
 CREATE TABLE lojaconteudo (
   lojaconteudo_id BIGINT AUTO_INCREMENT PRIMARY KEY, loja_id BIGINT NOT NULL,

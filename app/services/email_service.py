@@ -58,12 +58,12 @@ def enviar_convite_parceiro(
 
 def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
     site = os.getenv('PUBLIC_SITE_URL', 'https://clubbar.com.br').rstrip('/')
-    link = f'{site}/portal-parceiro.html#acesso={token}'
+    link = f'{site}/portal-lead.html#acesso={token}'
     conteudo = f'''
-    <p>Ola, <b>{nome}</b>.</p>
-    <p>Use o botao abaixo para acompanhar sua proposta, conversar com a equipe Clubbar e responder agendamentos.</p>
+    <p>Olá, <b>{nome}</b>.</p>
+    <p>Use o botão abaixo para acompanhar sua proposta, conversar com a equipe Clubbar e responder agendamentos.</p>
     <p><a href='{link}' style='display:inline-block;padding:14px 22px;background:#ffc107;color:#000;text-decoration:none;border-radius:10px;font-weight:bold'>Acessar meu atendimento</a></p>
-    <p>Este link e pessoal e tem validade de 30 dias.</p>
+    <p>Este link é pessoal e tem validade de 30 dias.</p>
     '''
     _enviar_email(
         destinatario,

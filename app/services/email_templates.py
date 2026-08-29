@@ -1,3 +1,6 @@
+import os
+
+
 def template_email_clubbar(
     *,
     titulo: str,
@@ -6,6 +9,11 @@ def template_email_clubbar(
     botao_texto: str | None = None,
     botao_link: str | None = None,
 ):
+    site_publico = os.getenv("PUBLIC_SITE_URL", "https://clubbar.com.br").rstrip("/")
+    logo_url = os.getenv(
+        "EMAIL_LOGO_URL",
+        f"{site_publico}/assets/images/logo.png",
+    )
     bloco_botao = ""
 
     if botao_texto and botao_link:
@@ -54,7 +62,7 @@ def template_email_clubbar(
           <tr>
             <td align="center" style="background:#000;padding:30px;">
               <img
-                src="https://api.clubbar.com.br/static/logo_copa.png"
+                src="{logo_url}"
                 height="70"
                 alt="Clubbar"
               >
@@ -88,7 +96,7 @@ def template_email_clubbar(
                   line-height:20px;
                 ">
               <b>Clubbar</b><br>
-              Compras inteligentes para bares, restaurantes e eventos.<br><br>
+              Venda digital para bares, casas noturnas e eventos.<br><br>
               📧 suporte@clubbar.com.br
             </td>
           </tr>
