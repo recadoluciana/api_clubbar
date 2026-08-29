@@ -149,7 +149,8 @@ CREATE TABLE leadparceiro (
       tipo IN (
         'BAR',
         'CASA_NOTURNA',
-        'PRODUTOR_EVENTOS'
+        'PRODUTOR_EVENTOS',
+        'CASA_EVENTOS'
       )
     ),
 
@@ -164,6 +165,44 @@ CREATE TABLE leadparceiro (
 ENGINE = InnoDB
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE leadestabelecimento (
+  leadestabelecimento_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+  nmestabelecimento VARCHAR(160) NOT NULL,
+  tipo VARCHAR(30) NOT NULL,
+  tipovenda ENUM('PRODUTOS','INGRESSOS','AMBOS') NOT NULL DEFAULT 'AMBOS',
+  cpfcnpj VARCHAR(14) NULL,
+  estado_id BIGINT NOT NULL,
+  cidade_id BIGINT NOT NULL,
+  cep VARCHAR(9) NULL,
+  endereco VARCHAR(255) NULL,
+  numero VARCHAR(20) NULL,
+  complemento VARCHAR(120) NULL,
+  bairro VARCHAR(120) NULL,
+  mensagem TEXT NULL,
+  status ENUM(
+    'NOVO','CONTATADO','NEGOCIANDO','ACEITOU_PARCERIA',
+    'CONVERTIDO','RECUSOU_PARCERIA'
+  ) NOT NULL DEFAULT 'NOVO',
+  decisao ENUM('PENDENTE','ANALISANDO','ACEITOU','RECUSOU') NOT NULL DEFAULT 'PENDENTE',
+  vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  dtaceite DATETIME NULL,
+  dtconversao DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_leadestabelecimento_lead FOREIGN KEY (leadparceiro_id)
+    REFERENCES leadparceiro(leadparceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_leadestabelecimento_estado FOREIGN KEY (estado_id) REFERENCES estado(estado_id),
+  CONSTRAINT fk_leadestabelecimento_cidade FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id),
+  CONSTRAINT chk_leadestabelecimento_tipo CHECK (
+    tipo IN ('BAR','CASA_NOTURNA','PRODUTOR_EVENTOS','CASA_EVENTOS')
+  ),
+  INDEX idx_leadestabelecimento_lead (leadparceiro_id),
+  INDEX idx_leadestabelecimento_status (status),
+  INDEX idx_leadestabelecimento_documento (cpfcnpj)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE leadmensagem (
   leadmensagem_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -340,6 +379,8 @@ COLLATE = utf8mb4_unicode_ci;
 CREATE TABLE loja (
   loja_id        BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
+  leadestabelecimento_id BIGINT NULL,
+  titularfinanceiro_id BIGINT NULL,
   nmloja         VARCHAR(120) NOT NULL,
   endloja        VARCHAR(255) NULL,
   nrceploja      VARCHAR(9) NULL,
@@ -378,7 +419,13 @@ CREATE TABLE loja (
 
   CONSTRAINT fk_loja_estado
     FOREIGN KEY (estado_id) REFERENCES estado(estado_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_loja_leadestabelecimento
+    FOREIGN KEY (leadestabelecimento_id) REFERENCES leadestabelecimento(leadestabelecimento_id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  UNIQUE KEY uk_loja_leadestabelecimento (leadestabelecimento_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_loja_org ON loja(organizacao_id);
@@ -549,11 +596,47 @@ CREATE TABLE titularfinanceiro (
   dtultimaverificacao DATETIME NULL,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_titularfinanceiro_organizacao (organizacao_id),
+  INDEX idx_titularfinanceiro_organizacao (organizacao_id),
   CONSTRAINT fk_titularfinanceiro_organizacao FOREIGN KEY (organizacao_id)
     REFERENCES organizacao(organizacao_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_titularfinanceiro_cidade FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id),
   CONSTRAINT fk_titularfinanceiro_estado FOREIGN KEY (estado_id) REFERENCES estado(estado_id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE loja
+  ADD CONSTRAINT fk_loja_titularfinanceiro
+    FOREIGN KEY (titularfinanceiro_id) REFERENCES titularfinanceiro(titularfinanceiro_id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+CREATE INDEX idx_loja_titularfinanceiro ON loja(titularfinanceiro_id);
+
+CREATE TABLE contratolead (
+  contratolead_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadestabelecimento_id BIGINT NOT NULL,
+  titularfinanceiro_id BIGINT NULL,
+  versao VARCHAR(30) NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
+  vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  urlcontrato TEXT NULL,
+  hashdocumento CHAR(64) NULL,
+  nmsignatario VARCHAR(160) NULL,
+  cpfcnpjsignatario VARCHAR(14) NULL,
+  ipaceite VARCHAR(45) NULL,
+  dtaceite DATETIME NULL,
+  dtinicio DATETIME NULL,
+  dtfim DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_contratolead_estabelecimento FOREIGN KEY (leadestabelecimento_id)
+    REFERENCES leadestabelecimento(leadestabelecimento_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_contratolead_titular FOREIGN KEY (titularfinanceiro_id)
+    REFERENCES titularfinanceiro(titularfinanceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT chk_contratolead_status CHECK (
+    status IN ('RASCUNHO','ENVIADO','ACEITO','RECUSADO','CANCELADO','EXPIRADO')
+  ),
+  INDEX idx_contratolead_estabelecimento (leadestabelecimento_id),
+  INDEX idx_contratolead_status (status)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE lojaasaas (

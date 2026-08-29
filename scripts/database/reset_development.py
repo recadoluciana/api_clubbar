@@ -94,8 +94,16 @@ def main() -> None:
                 "ORDER BY column_name"
             )
             columns = cursor.fetchall()
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() AND table_name IN "
+                "('leadestabelecimento', 'contratolead', 'titularfinanceiro') "
+                "ORDER BY table_name"
+            )
+            onboarding_tables = [item[0] for item in cursor.fetchall()]
             print(f"Tabelas criadas: {table_count}")
             print(f"Contrato itvenda: {columns}")
+            print(f"Tabelas de onboarding: {onboarding_tables}")
     except Exception:
         connection.rollback()
         raise

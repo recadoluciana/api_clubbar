@@ -1,4 +1,6 @@
 #portalparceiro.py
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -8,10 +10,14 @@ from app.models.leadagendamento import LeadAgendamento
 from app.models.leadmaterial import LeadMaterial
 from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
+from app.models.cidade import Cidade
+from app.models.contratolead import ContratoLead
 from app.schemas.portalparceiro import (
     PortalAgendamentoResposta,
     PortalDecisaoUpdate,
     PortalMensagemCreate,
+    PortalEstabelecimentoCreate,
 )
 from app.services.portal_acesso_service import obter_lead_portal
 
@@ -20,6 +26,40 @@ router = APIRouter(
     prefix="/portal-parceiro",
     tags=["Portal do parceiro"],
 )
+
+
+@router.post("/estabelecimentos", status_code=status.HTTP_201_CREATED)
+def cadastrar_estabelecimento(
+    dados: PortalEstabelecimentoCreate,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    cidade = db.query(Cidade).filter(Cidade.cidade_id == dados.cidade_id).first()
+    if not cidade or cidade.estado_id != dados.estado_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Cidade e estado informados são incompatíveis.",
+        )
+    documento = "".join(c for c in (dados.cpfcnpj or "") if c.isdigit()) or None
+    item = LeadEstabelecimento(
+        leadparceiro_id=lead.leadparceiro_id,
+        nmestabelecimento=dados.nmestabelecimento.strip(),
+        tipo=dados.tipo,
+        tipovenda=dados.tipovenda,
+        cpfcnpj=documento,
+        estado_id=dados.estado_id,
+        cidade_id=dados.cidade_id,
+        mensagem=(dados.mensagem or "").strip() or None,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return {
+        "leadestabelecimento_id": item.leadestabelecimento_id,
+        "nmestabelecimento": item.nmestabelecimento,
+        "status": item.status,
+        "decisao": item.decisao,
+    }
 
 
 @router.get("/resumo")
@@ -55,6 +95,36 @@ def obter_resumo(
         or 0
     )
 
+    estabelecimentos = (
+        db.query(LeadEstabelecimento)
+        .filter(LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id)
+        .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
+        .all()
+    )
+    contratos_por_estabelecimento: dict[int, list[dict]] = {}
+    ids_estabelecimentos = [item.leadestabelecimento_id for item in estabelecimentos]
+    if ids_estabelecimentos:
+        contratos = (
+            db.query(ContratoLead)
+            .filter(ContratoLead.leadestabelecimento_id.in_(ids_estabelecimentos))
+            .order_by(ContratoLead.contratolead_id.desc())
+            .all()
+        )
+        for contrato in contratos:
+            contratos_por_estabelecimento.setdefault(
+                contrato.leadestabelecimento_id, []
+            ).append(
+                {
+                    "contratolead_id": contrato.contratolead_id,
+                    "versao": contrato.versao,
+                    "status": contrato.status,
+                    "urlcontrato": contrato.urlcontrato,
+                    "vrtaxaprod": float(contrato.vrtaxaprod),
+                    "vrtaxaing": float(contrato.vrtaxaing),
+                    "dtaceite": contrato.dtaceite,
+                }
+            )
+
     return {
         "leadparceiro_id": lead.leadparceiro_id,
         "nmresponsavel": lead.nmresponsavel,
@@ -66,6 +136,22 @@ def obter_resumo(
         "mensagens_nao_lidas": int(mensagens_nao_lidas),
         "agendamentos_pendentes": int(agendamentos_pendentes),
         "materiais": int(materiais),
+        "estabelecimentos": [
+            {
+                "leadestabelecimento_id": item.leadestabelecimento_id,
+                "nmestabelecimento": item.nmestabelecimento,
+                "tipo": item.tipo,
+                "tipovenda": item.tipovenda,
+                "status": item.status.value if hasattr(item.status, "value") else item.status,
+                "decisao": item.decisao,
+                "vrtaxaprod": float(item.vrtaxaprod),
+                "vrtaxaing": float(item.vrtaxaing),
+                "contratos": contratos_por_estabelecimento.get(
+                    item.leadestabelecimento_id, []
+                ),
+            }
+            for item in estabelecimentos
+        ],
     }
 
 
@@ -232,23 +318,72 @@ def registrar_decisao(
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
-    if lead.status == "CONVERTIDO":
+    consulta = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id
+    )
+    if dados.leadestabelecimento_id is not None:
+        consulta = consulta.filter(
+            LeadEstabelecimento.leadestabelecimento_id
+            == dados.leadestabelecimento_id
+        )
+    estabelecimento = consulta.order_by(
+        LeadEstabelecimento.leadestabelecimento_id.asc()
+    ).first()
+    if estabelecimento is None:
+        raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    status_atual = (
+        estabelecimento.status.value
+        if hasattr(estabelecimento.status, "value")
+        else estabelecimento.status
+    )
+    if status_atual == "CONVERTIDO":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A parceria já foi convertida e não pode ser alterada.",
         )
 
-    lead.decisao = dados.decisao
+    if dados.decisao == "ACEITOU":
+        contrato = (
+            db.query(ContratoLead)
+            .filter(
+                ContratoLead.leadestabelecimento_id
+                == estabelecimento.leadestabelecimento_id
+            )
+            .order_by(ContratoLead.contratolead_id.desc())
+            .first()
+        )
+        if not contrato or contrato.status != "ACEITO":
+            raise HTTPException(
+                status_code=409,
+                detail="Leia e aceite o contrato deste estabelecimento antes de aceitar a parceria.",
+            )
+
+    estabelecimento.decisao = dados.decisao
     if dados.decisao == 'ACEITOU':
-        lead.status = 'ACEITOU_PARCERIA'
+        estabelecimento.status = 'ACEITOU_PARCERIA'
+        estabelecimento.dtaceite = datetime.now()
     elif dados.decisao == 'RECUSOU':
-        lead.status = 'RECUSOU_PARCERIA'
+        estabelecimento.status = 'RECUSOU_PARCERIA'
     elif dados.decisao == 'ANALISANDO':
-        lead.status = 'NEGOCIANDO'
+        estabelecimento.status = 'NEGOCIANDO'
+
+    # Compatibilidade temporária com as telas que ainda exibem o primeiro
+    # estabelecimento diretamente no lead.
+    primeiro = (
+        db.query(LeadEstabelecimento)
+        .filter(LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id)
+        .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
+        .first()
+    )
+    if primeiro and primeiro.leadestabelecimento_id == estabelecimento.leadestabelecimento_id:
+        lead.decisao = estabelecimento.decisao
+        lead.status = estabelecimento.status
     db.commit()
 
     return {
         "ok": True,
-        "decisao": lead.decisao,
+        "leadestabelecimento_id": estabelecimento.leadestabelecimento_id,
+        "decisao": estabelecimento.decisao,
         "mensagem": "Decisão registrada com sucesso.",
     }

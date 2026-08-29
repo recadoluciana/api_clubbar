@@ -8,7 +8,7 @@ class TitularFinanceiro(Base):
     __tablename__ = "titularfinanceiro"
 
     titularfinanceiro_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, unique=True)
+    organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
     tipotitular = Column(String(2), nullable=False)
     cpfcnpj = Column(String(14), nullable=False)
     nmrazaosocial = Column(String(160), nullable=False)

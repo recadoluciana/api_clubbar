@@ -7,6 +7,19 @@ class Loja(Base):
 
     loja_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
+    leadestabelecimento_id = Column(
+        BigInteger,
+        ForeignKey("leadestabelecimento.leadestabelecimento_id"),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    titularfinanceiro_id = Column(
+        BigInteger,
+        ForeignKey("titularfinanceiro.titularfinanceiro_id"),
+        nullable=True,
+        index=True,
+    )
 
     nmloja = Column(String(120), nullable=False)
     endloja = Column(String(255))

@@ -20,12 +20,15 @@ from app.models.cidade import Cidade
 from app.models.categoria import Categoria
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.schemas.leadparceiro import (
     LeadParceiroCreate,
     LeadParceiroOut,
     LeadParceiroCadastroOut,
     LeadParceiroUpdate,
     ConverterLeadParceiroIn,
+    LeadEstabelecimentoCreate,
+    LeadEstabelecimentoOut,
 )
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -99,7 +102,39 @@ def _serializar_lead(
             lead.dtcriacao,
         ),
         "aguardando_resposta": ultima_origem_mensagem == "LEAD",
+        "estabelecimentos": [],
     }
+
+
+def _serializar_estabelecimento(item: LeadEstabelecimento) -> dict:
+    return {
+        "leadestabelecimento_id": item.leadestabelecimento_id,
+        "leadparceiro_id": item.leadparceiro_id,
+        "nmestabelecimento": item.nmestabelecimento,
+        "tipo": item.tipo,
+        "tipovenda": item.tipovenda,
+        "cpfcnpj": item.cpfcnpj,
+        "estado_id": item.estado_id,
+        "cidade_id": item.cidade_id,
+        "mensagem": item.mensagem,
+        "status": item.status.value if hasattr(item.status, "value") else item.status,
+        "decisao": item.decisao,
+        "vrtaxaprod": float(item.vrtaxaprod),
+        "vrtaxaing": float(item.vrtaxaing),
+        "dtcriacao": item.dtcriacao,
+        "dtaceite": item.dtaceite,
+        "dtconversao": item.dtconversao,
+    }
+
+
+def _carregar_estabelecimentos(db: Session, leadparceiro_id: int) -> list[dict]:
+    itens = (
+        db.query(LeadEstabelecimento)
+        .filter(LeadEstabelecimento.leadparceiro_id == leadparceiro_id)
+        .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
+        .all()
+    )
+    return [_serializar_estabelecimento(item) for item in itens]
 
 
 def _buscar_lead_com_localidade(
@@ -193,6 +228,18 @@ def criar_interesse_parceiro(
         # Gera o leadparceiro_id sem finalizar a transação.
         db.flush()
 
+        estabelecimento = LeadEstabelecimento(
+            leadparceiro_id=lead.leadparceiro_id,
+            nmestabelecimento=payload.nmestabelecimento,
+            tipo=payload.tipo,
+            tipovenda=payload.tipovenda,
+            estado_id=payload.estado_id,
+            cidade_id=payload.cidade_id,
+            mensagem=payload.mensagem,
+        )
+        db.add(estabelecimento)
+        db.flush()
+
         acesso_portal = criar_acesso_portal(
             db=db,
             leadparceiro_id=lead.leadparceiro_id,
@@ -208,6 +255,9 @@ def criar_interesse_parceiro(
         )
 
         resposta["acesso_portal"] = acesso_portal
+        resposta["estabelecimentos"] = [
+            _serializar_estabelecimento(estabelecimento)
+        ]
 
         return resposta
 
@@ -274,15 +324,14 @@ def listar_interesses_parceiros(
         .all()
     )
 
-    return [
-        _serializar_lead(
-            lead,
-            estado,
-            cidade,
-            origem,
+    resposta = []
+    for lead, estado, cidade, origem in resultados:
+        item = _serializar_lead(lead, estado, cidade, origem)
+        item["estabelecimentos"] = _carregar_estabelecimentos(
+            db, lead.leadparceiro_id
         )
-        for lead, estado, cidade, origem in resultados
-    ]
+        resposta.append(item)
+    return resposta
 
 
 @router.get(
@@ -307,11 +356,49 @@ def buscar_interesse_parceiro(
 
     lead, estado, cidade = resultado
 
-    return _serializar_lead(
+    resposta = _serializar_lead(
         lead,
         estado,
         cidade,
     )
+    resposta["estabelecimentos"] = _carregar_estabelecimentos(
+        db, lead.leadparceiro_id
+    )
+    return resposta
+
+
+@router.post(
+    "/{leadparceiro_id}/estabelecimentos",
+    response_model=LeadEstabelecimentoOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def adicionar_estabelecimento(
+    leadparceiro_id: int,
+    payload: LeadEstabelecimentoCreate,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    lead = (
+        db.query(LeadParceiro)
+        .filter(LeadParceiro.leadparceiro_id == leadparceiro_id)
+        .first()
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead não encontrado.")
+    cidade = db.query(Cidade).filter(Cidade.cidade_id == payload.cidade_id).first()
+    if not cidade or cidade.estado_id != payload.estado_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Cidade e estado informados são incompatíveis.",
+        )
+    item = LeadEstabelecimento(
+        leadparceiro_id=leadparceiro_id,
+        **payload.model_dump(),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serializar_estabelecimento(item)
 
 
 @router.put(
@@ -468,66 +555,75 @@ def converter_lead_em_parceiro(
             detail="Lead parceiro não encontrado.",
         )
 
-    if lead.status == "CONVERTIDO":
+    consulta_estabelecimento = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == leadparceiro_id
+    )
+    if dados.leadestabelecimento_id is not None:
+        consulta_estabelecimento = consulta_estabelecimento.filter(
+            LeadEstabelecimento.leadestabelecimento_id
+            == dados.leadestabelecimento_id
+        )
+    estabelecimento = consulta_estabelecimento.order_by(
+        LeadEstabelecimento.leadestabelecimento_id.asc()
+    ).first()
+    if not estabelecimento:
+        raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    status_estabelecimento = (
+        estabelecimento.status.value
+        if hasattr(estabelecimento.status, "value")
+        else estabelecimento.status
+    )
+    if status_estabelecimento == "CONVERTIDO":
+        raise HTTPException(status_code=409, detail="Este estabelecimento já foi convertido.")
+    if status_estabelecimento == "RECUSOU_PARCERIA":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Este lead já foi convertido em parceiro.",
-        )
-
-    if lead.status == "RECUSOU_PARCERIA":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Um lead que recusou a parceria não pode "
-                "ser convertido."
-            ),
-        )
-
-    if (
-        lead.status == "CONVERTIDO"
-        and dados.status is not None
-        and dados.status != "CONVERTIDO"
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "O status de um lead convertido "
-                "não pode ser alterado."
-            ),
+            detail="Um estabelecimento que recusou a parceria não pode ser convertido.",
         )
 
     email_responsavel = str(dados.email_responsavel).strip().lower()
-    if db.query(Usuario).filter(Usuario.emailuser == email_responsavel).first():
+    organizacao_existente = (
+        db.query(Organizacao)
+        .filter(Organizacao.leadparceiro_id == leadparceiro_id)
+        .first()
+    )
+    usuario_existente = (
+        db.query(Usuario).filter(Usuario.emailuser == email_responsavel).first()
+    )
+    if usuario_existente and not organizacao_existente:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Já existe um usuário cadastrado com este e-mail.",
         )
 
-    if lead.status != "ACEITOU_PARCERIA":
+    if status_estabelecimento != "ACEITOU_PARCERIA":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="O lead precisa ter aceitado a parceria antes da conversão.",
+            detail="O estabelecimento precisa ter aceitado a parceria antes da conversão.",
         )
     senha_inicial = secrets.token_urlsafe(9)
+    primeira_conversao = organizacao_existente is None
 
     try:
-        nova_organizacao = Organizacao(
-            nmorganizacao=dados.nome_organizacao.strip(),
-            emailorganizacao=email_responsavel,
-            telorganizacao=lead.telefone.strip(),
-            sitorganizacao="ATIVA",
-            leadparceiro_id=lead.leadparceiro_id,
-            nmresponsavelprincipal=lead.nmresponsavel.strip(),
-            tipooperacao=dados.tipo_loja,
-        )
-
-        db.add(nova_organizacao)
-
-        # Obtém o organizacao_id sem finalizar a transação.
-        db.flush()
+        if primeira_conversao:
+            nova_organizacao = Organizacao(
+                nmorganizacao=dados.nome_organizacao.strip(),
+                emailorganizacao=email_responsavel,
+                telorganizacao=lead.telefone.strip(),
+                sitorganizacao="ATIVA",
+                leadparceiro_id=lead.leadparceiro_id,
+                nmresponsavelprincipal=lead.nmresponsavel.strip(),
+                tipooperacao=dados.tipo_loja,
+            )
+            db.add(nova_organizacao)
+            db.flush()
+        else:
+            nova_organizacao = organizacao_existente
 
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,
+            leadestabelecimento_id=estabelecimento.leadestabelecimento_id,
             nmloja=dados.nome_loja.strip(),
             endloja=None,
             nrceploja=None,
@@ -539,14 +635,14 @@ def converter_lead_em_parceiro(
             nrtelloja=lead.telefone.strip(),
             nrdiavalidade=90,
             idvalidadeprod="S",
-            estado_id=lead.estado_id,
-            cidade_id=lead.cidade_id,
+            estado_id=estabelecimento.estado_id,
+            cidade_id=estabelecimento.cidade_id,
             vrtaxaprod=dados.taxa_produtos,
             vrtaxaing=dados.taxa_ingressos,
             tipoloja=dados.tipo_loja,
             atendimentofisico="N" if dados.tipo_loja == "PRODUTOR_EVENTOS" else "S",
-            vendaprodutos="S" if lead.tipovenda in {"PRODUTOS", "AMBOS"} else "N",
-            vendaingressos="S" if lead.tipovenda in {"INGRESSOS", "AMBOS"} else "N",
+            vendaprodutos="S" if estabelecimento.tipovenda in {"PRODUTOS", "AMBOS"} else "N",
+            vendaingressos="S" if estabelecimento.tipovenda in {"INGRESSOS", "AMBOS"} else "N",
         )
 
         db.add(nova_loja)
@@ -566,27 +662,53 @@ def converter_lead_em_parceiro(
         ]
         db.add_all(categorias)
 
-        superadmin = Usuario(
-            organizacao_id=nova_organizacao.organizacao_id,
-            loja_id=None,
-            nmusuario=f"SUPERADMIN {nova_organizacao.nmorganizacao}",
-            emailuser=email_responsavel,
-            senhahashuser=hash_senha(senha_inicial),
-            dscargo="SUPERADMIN",
-            situsuario="ATIVO",
-        )
-        db.add(superadmin)
-        db.flush()
+        if primeira_conversao:
+            superadmin = Usuario(
+                organizacao_id=nova_organizacao.organizacao_id,
+                loja_id=None,
+                nmusuario=f"SUPERADMIN {nova_organizacao.nmorganizacao}",
+                emailuser=email_responsavel,
+                senhahashuser=hash_senha(senha_inicial),
+                dscargo="SUPERADMIN",
+                situsuario="ATIVO",
+            )
+            db.add(superadmin)
+            db.flush()
+        else:
+            superadmin = (
+                db.query(Usuario)
+                .filter(
+                    Usuario.organizacao_id == nova_organizacao.organizacao_id,
+                    Usuario.dscargo == "SUPERADMIN",
+                )
+                .first()
+            )
+            if not superadmin:
+                raise HTTPException(status_code=409, detail="SUPERADMIN da organização não encontrado.")
 
-        lead.status = "CONVERTIDO"
+        estabelecimento.status = "CONVERTIDO"
+        estabelecimento.dtconversao = datetime.now()
+        restantes = (
+            db.query(LeadEstabelecimento)
+            .filter(
+                LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
+                LeadEstabelecimento.leadestabelecimento_id
+                != estabelecimento.leadestabelecimento_id,
+                LeadEstabelecimento.status != "CONVERTIDO",
+            )
+            .count()
+        )
+        lead.status = "CONVERTIDO" if restantes == 0 else "NEGOCIANDO"
 
         resultado = {
             "ok": True,
             "mensagem": "Lead convertido em parceiro com sucesso.",
             "leadparceiro_id": lead.leadparceiro_id,
-            "status_lead": "CONVERTIDO",
-            "tipo": lead.tipo,
-            "tipovenda": lead.tipovenda,
+            "leadestabelecimento_id": estabelecimento.leadestabelecimento_id,
+            "status_lead": lead.status,
+            "status_estabelecimento": "CONVERTIDO",
+            "tipo": estabelecimento.tipo,
+            "tipovenda": estabelecimento.tipovenda,
             "organizacao": {
                 "organizacao_id": nova_organizacao.organizacao_id,
                 "nome": nova_organizacao.nmorganizacao,
@@ -599,7 +721,7 @@ def converter_lead_em_parceiro(
                 "usuario_id": superadmin.usuario_id,
                 "nome": superadmin.nmusuario,
                 "email": superadmin.emailuser,
-                "senha_inicial": senha_inicial,
+                "senha_inicial": senha_inicial if primeira_conversao else None,
                 "convite_enviado": False,
             },
             "categorias": [categoria.nmcategoria for categoria in categorias],
@@ -636,16 +758,17 @@ def converter_lead_em_parceiro(
     # O convite é uma operação externa e só é enviado depois que toda a
     # conversão foi confirmada no banco. Uma indisponibilidade do provedor de
     # e-mail não transforma uma conversão concluída em erro HTTP 500.
-    try:
-        enviar_convite_parceiro(
-            destinatario=email_responsavel,
-            nome_responsavel=lead.nmresponsavel,
-            nome_organizacao=resultado["organizacao"]["nome"],
-            senha_inicial=senha_inicial,
-        )
-        resultado["superadmin"]["convite_enviado"] = True
-    except Exception:
-        traceback.print_exc()
+    if primeira_conversao:
+        try:
+            enviar_convite_parceiro(
+                destinatario=email_responsavel,
+                nome_responsavel=lead.nmresponsavel,
+                nome_organizacao=resultado["organizacao"]["nome"],
+                senha_inicial=senha_inicial,
+            )
+            resultado["superadmin"]["convite_enviado"] = True
+        except Exception:
+            traceback.print_exc()
 
     return resultado
 

@@ -34,12 +34,45 @@ StatusLeadParceiroSchema = Literal[
 
 
 class ConverterLeadParceiroIn(BaseModel):
+    leadestabelecimento_id: int | None = Field(default=None, gt=0)
     nome_organizacao: str = Field(min_length=2, max_length=120)
     nome_loja: str = Field(min_length=2, max_length=120)
     tipo_loja: TipoParceiro
     email_responsavel: EmailStr
     taxa_produtos: float = Field(default=5, ge=0, le=100)
     taxa_ingressos: float = Field(default=5, ge=0, le=100)
+
+
+class LeadEstabelecimentoCreate(BaseModel):
+    nmestabelecimento: str = Field(min_length=2, max_length=160)
+    tipo: TipoParceiro
+    tipovenda: TipoVendaLead = "AMBOS"
+    cpfcnpj: str | None = Field(default=None, max_length=18)
+    estado_id: int = Field(gt=0)
+    cidade_id: int = Field(gt=0)
+    mensagem: str | None = Field(default=None, max_length=1000)
+
+
+class LeadEstabelecimentoOut(BaseModel):
+    leadestabelecimento_id: int
+    leadparceiro_id: int
+    nmestabelecimento: str
+    tipo: TipoParceiro
+    tipovenda: TipoVendaLead
+    cpfcnpj: str | None = None
+    estado_id: int
+    cidade_id: int
+    mensagem: str | None = None
+    status: StatusLeadParceiroSchema
+    decisao: Literal["PENDENTE", "ANALISANDO", "ACEITOU", "RECUSOU"]
+    vrtaxaprod: float
+    vrtaxaing: float
+    dtcriacao: datetime
+    dtaceite: datetime | None = None
+    dtconversao: datetime | None = None
+
+    class Config:
+        from_attributes = True
 
 class LeadParceiroCreate(BaseModel):
     nmresponsavel: str = Field(
@@ -242,6 +275,7 @@ class LeadParceiroOut(BaseModel):
 
     dias_espera: int
     aguardando_resposta: bool = False
+    estabelecimentos: list[LeadEstabelecimentoOut] = Field(default_factory=list)
 
     class Config:
         from_attributes = True

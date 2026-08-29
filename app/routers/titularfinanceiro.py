@@ -80,6 +80,67 @@ def consultar(organizacao_id: int, db: Session = Depends(get_db), payload: dict 
     return _out(titular) if titular else None
 
 
+@router.get("/organizacao/{organizacao_id}/todos")
+def listar_titulares(
+    organizacao_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    return [
+        _out(item)
+        for item in db.query(TitularFinanceiro)
+        .filter(TitularFinanceiro.organizacao_id == organizacao_id)
+        .order_by(TitularFinanceiro.titularfinanceiro_id.asc())
+        .all()
+    ]
+
+
+@router.post("/organizacao/{organizacao_id}", status_code=201)
+def criar_titular(
+    organizacao_id: int,
+    dados: TitularFinanceiroIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    if dados.organizacao_id != organizacao_id:
+        raise HTTPException(status_code=422, detail="Organização divergente")
+    if dados.tipotitular == "PF" and dados.dtnascimento is None:
+        raise HTTPException(status_code=422, detail="Data de nascimento é obrigatória para PF")
+    titular = TitularFinanceiro(**dados.model_dump())
+    db.add(titular)
+    db.commit()
+    db.refresh(titular)
+    return _out(titular)
+
+
+@router.patch(
+    "/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/loja/{loja_id}"
+)
+def vincular_titular_a_loja(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    loja_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+        TitularFinanceiro.organizacao_id == organizacao_id,
+    ).first()
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+    ).first()
+    if not titular or not loja:
+        raise HTTPException(status_code=404, detail="Titular ou loja não encontrado")
+    loja.titularfinanceiro_id = titularfinanceiro_id
+    db.commit()
+    return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": titularfinanceiro_id}
+
+
 @router.put("/organizacao/{organizacao_id}")
 def salvar(organizacao_id: int, dados: TitularFinanceiroIn, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
     _validar_escopo(payload, organizacao_id)
@@ -148,7 +209,13 @@ async def ativar_recebimentos(organizacao_id: int, db: Session = Depends(get_db)
     titular.status_asaas = "EM_ONBOARDING"
     titular.dtultimaverificacao = datetime.now()
     ambiente = "production" if APP_ENV in {"production", "prod"} else "sandbox"
-    for loja in db.query(Loja).filter(Loja.organizacao_id == organizacao_id).all():
+    lojas = db.query(Loja).filter(
+        Loja.organizacao_id == organizacao_id,
+        (Loja.titularfinanceiro_id.is_(None))
+        | (Loja.titularfinanceiro_id == titular.titularfinanceiro_id),
+    ).all()
+    for loja in lojas:
+        loja.titularfinanceiro_id = titular.titularfinanceiro_id
         config = db.query(LojaAsaas).filter(LojaAsaas.loja_id == loja.loja_id, LojaAsaas.ambiente == ambiente).first()
         if config is None:
             token = secrets.token_urlsafe(32)
@@ -185,7 +252,15 @@ async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), pa
     titular.onboarding_url = urls[0] if urls else titular.onboarding_url
     titular.dtultimaverificacao = datetime.now()
     ambiente = "production" if APP_ENV in {"production", "prod"} else "sandbox"
-    for config in db.query(LojaAsaas).filter(LojaAsaas.organizacao_id == organizacao_id, LojaAsaas.ambiente == ambiente).all():
+    lojas_titular = db.query(Loja.loja_id).filter(
+        Loja.organizacao_id == organizacao_id,
+        Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
+    )
+    for config in db.query(LojaAsaas).filter(
+        LojaAsaas.organizacao_id == organizacao_id,
+        LojaAsaas.loja_id.in_(lojas_titular),
+        LojaAsaas.ambiente == ambiente,
+    ).all():
         config.statusintegracao = "ATIVA" if titular.status_asaas == "APROVADO" else "PENDENTE"
     db.commit()
     db.refresh(titular)

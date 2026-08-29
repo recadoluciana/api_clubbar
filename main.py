@@ -45,6 +45,7 @@ from app.routers import reservas_ingressos
 from app.routers import cashback
 from app.routers import titularfinanceiro
 from app.routers import leadatendimento
+from app.routers import contratolead
 
 
 app = FastAPI(title="clubbar API")
@@ -161,6 +162,8 @@ app.include_router(cashback.router)
 app.include_router(titularfinanceiro.router)
 app.include_router(leadatendimento.router)
 app.include_router(leadatendimento.public_router)
+app.include_router(contratolead.router)
+app.include_router(contratolead.portal_router)
 
 @app.get("/health")
 def health():

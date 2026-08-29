@@ -8,6 +8,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+PROJECT_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_DIR))
+
 from dotenv import load_dotenv
 from sqlalchemy import text
 
