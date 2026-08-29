@@ -27,9 +27,9 @@ StatusLeadParceiroSchema = Literal[
     "NOVO",
     "CONTATADO",
     "NEGOCIANDO",
-    "APROVADO_CADASTRO",
+    "ACEITOU_PARCERIA",
     "CONVERTIDO",
-    "PERDIDO",
+    "RECUSOU_PARCERIA",
 ]
 
 

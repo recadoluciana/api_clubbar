@@ -1,0 +1,29 @@
+ALTER TABLE leadparceiro
+  MODIFY status ENUM(
+    'NOVO',
+    'CONTATADO',
+    'NEGOCIANDO',
+    'APROVADO_CADASTRO',
+    'ACEITOU_PARCERIA',
+    'CONVERTIDO',
+    'PERDIDO',
+    'RECUSOU_PARCERIA'
+  ) NOT NULL DEFAULT 'NOVO';
+
+UPDATE leadparceiro
+SET status = 'ACEITOU_PARCERIA'
+WHERE status = 'APROVADO_CADASTRO';
+
+UPDATE leadparceiro
+SET status = 'RECUSOU_PARCERIA'
+WHERE status = 'PERDIDO';
+
+ALTER TABLE leadparceiro
+  MODIFY status ENUM(
+    'NOVO',
+    'CONTATADO',
+    'NEGOCIANDO',
+    'ACEITOU_PARCERIA',
+    'CONVERTIDO',
+    'RECUSOU_PARCERIA'
+  ) NOT NULL DEFAULT 'NOVO';

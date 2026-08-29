@@ -231,8 +231,9 @@ def listar_interesses_parceiros(
         (LeadParceiro.status == "NOVO", 1),
         (LeadParceiro.status == "CONTATADO", 2),
         (LeadParceiro.status == "NEGOCIANDO", 3),
-        (LeadParceiro.status == "CONVERTIDO", 4),
-        (LeadParceiro.status == "PERDIDO", 5),
+        (LeadParceiro.status == "ACEITOU_PARCERIA", 4),
+        (LeadParceiro.status == "CONVERTIDO", 5),
+        (LeadParceiro.status == "RECUSOU_PARCERIA", 6),
         else_=6,
     )
 
@@ -464,11 +465,11 @@ def converter_lead_em_parceiro(
             detail="Este lead já foi convertido em parceiro.",
         )
 
-    if lead.status == "PERDIDO":
+    if lead.status == "RECUSOU_PARCERIA":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Um lead marcado como perdido não pode "
+                "Um lead que recusou a parceria não pode "
                 "ser convertido."
             ),
         )
@@ -493,10 +494,10 @@ def converter_lead_em_parceiro(
             detail="Já existe um usuário cadastrado com este e-mail.",
         )
 
-    if lead.status != "APROVADO_CADASTRO":
+    if lead.status != "ACEITOU_PARCERIA":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="O lead precisa estar aprovado para cadastro antes da conversão.",
+            detail="O lead precisa ter aceitado a parceria antes da conversão.",
         )
     senha_inicial = secrets.token_urlsafe(9)
 

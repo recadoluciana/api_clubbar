@@ -240,9 +240,9 @@ def registrar_decisao(
 
     lead.decisao = dados.decisao
     if dados.decisao == 'ACEITOU':
-        lead.status = 'APROVADO_CADASTRO'
+        lead.status = 'ACEITOU_PARCERIA'
     elif dados.decisao == 'RECUSOU':
-        lead.status = 'PERDIDO'
+        lead.status = 'RECUSOU_PARCERIA'
     elif dados.decisao == 'ANALISANDO':
         lead.status = 'NEGOCIANDO'
     db.commit()

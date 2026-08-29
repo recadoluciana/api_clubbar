@@ -117,9 +117,9 @@ CREATE TABLE leadparceiro (
     'NOVO',
     'CONTATADO',
     'NEGOCIANDO',
-    'APROVADO_CADASTRO',
+    'ACEITOU_PARCERIA',
     'CONVERTIDO',
-    'PERDIDO'
+    'RECUSOU_PARCERIA'
   ) NOT NULL DEFAULT 'NOVO',
 
   decisao ENUM(
