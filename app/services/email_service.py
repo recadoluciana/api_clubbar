@@ -57,7 +57,13 @@ def enviar_convite_parceiro(
 
 
 def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
-    site = os.getenv('PUBLIC_SITE_URL', 'https://clubbar.com.br').rstrip('/')
+    ambiente = os.getenv('APP_ENV', 'development').strip().lower()
+    site_padrao = (
+        'https://clubbarsite-desenvolvimento.up.railway.app'
+        if ambiente in {'dev', 'development'}
+        else 'https://clubbar.com.br'
+    )
+    site = os.getenv('PUBLIC_SITE_URL', site_padrao).rstrip('/')
     link = f'{site}/portal-lead.html#acesso={token}'
     conteudo = f'''
     <p>Olá, <b>{nome}</b>.</p>

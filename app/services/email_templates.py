@@ -9,7 +9,13 @@ def template_email_clubbar(
     botao_texto: str | None = None,
     botao_link: str | None = None,
 ):
-    site_publico = os.getenv("PUBLIC_SITE_URL", "https://clubbar.com.br").rstrip("/")
+    ambiente = os.getenv("APP_ENV", "development").strip().lower()
+    site_padrao = (
+        "https://clubbarsite-desenvolvimento.up.railway.app"
+        if ambiente in {"dev", "development"}
+        else "https://clubbar.com.br"
+    )
+    site_publico = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
     logo_url = os.getenv(
         "EMAIL_LOGO_URL",
         f"{site_publico}/assets/images/logo.png",

@@ -65,7 +65,6 @@ class LeadParceiro(Base):
         Enum(
             "PENDENTE",
             "ACEITOU",
-            "DUVIDAS",
             "RECUSOU",
             name="enum_leadparceiro_decisao",
         ),
