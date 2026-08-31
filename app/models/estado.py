@@ -22,6 +22,8 @@ class Estado(Base):
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
+    pais = relationship("Pais", back_populates="estados")
+
     __table_args__ = (
         UniqueConstraint("pais_id", "sgestado", name="uk_estado_pais_sigla"),
         UniqueConstraint("pais_id", "estado_id", name="uk_estado_pais_estadoid"),  # p/ FK composta da cidade

@@ -10,6 +10,8 @@ from sqlalchemy import text
 import app.models as app_models
 from app.core.config import APP_ENV, UPLOAD_DIR
 from app.database import engine
+from app.middleware.auditoria import AuditoriaMiddleware
+from app.services.auditoria_service import registrar_eventos_auditoria
 
 from app.routers import cidades
 from app.routers import localidades
@@ -49,6 +51,9 @@ from app.routers import contratolead
 
 
 app = FastAPI(title="clubbar API")
+
+registrar_eventos_auditoria()
+app.add_middleware(AuditoriaMiddleware)
 
 logger = logging.getLogger(__name__)
 

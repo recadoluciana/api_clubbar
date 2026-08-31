@@ -1,10 +1,14 @@
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 
-load_dotenv(Path(__file__).resolve().parents[3] / ".env", override=False)
+PROJECT_DIR = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_DIR))
+
+load_dotenv(PROJECT_DIR / ".env", override=False)
 
 from app.core.security import hash_senha
 from app.database import SessionLocal

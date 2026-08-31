@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS atracaodescricao;
 DROP TABLE IF EXISTS atracao;
 DROP TABLE IF EXISTS produto;
 DROP TABLE IF EXISTS categoria;
+DROP TABLE IF EXISTS auditoria;
 DROP TABLE IF EXISTS usuariosenha;
 DROP TABLE IF EXISTS usuario;
 DROP TABLE IF EXISTS clisenha;

@@ -16,4 +16,3 @@ class Pais(Base):
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
     estados = relationship("Estado", back_populates="pais", cascade="all, delete-orphan")
-    cidades = relationship("Cidade", back_populates="pais", cascade="all, delete-orphan")
