@@ -2,6 +2,7 @@ from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, func, U
 from sqlalchemy.orm import relationship
 
 from app.database import Base  # ajuste se necessário
+from app.models.pais import Pais  # noqa: F401 - registra o modelo no mapper
 
 
 class Estado(Base):
