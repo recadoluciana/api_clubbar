@@ -2,6 +2,9 @@ import unittest
 from pathlib import Path
 
 from app.models.leadestabelecimento import LeadEstabelecimento
+from app.models.leadagendamento import LeadAgendamento
+from app.models.leadmaterial import LeadMaterial
+from app.models.leadmensagem import LeadMensagem
 from app.models.loja import Loja
 from app.models.titularfinanceiro import TitularFinanceiro
 
@@ -19,6 +22,15 @@ class LeadEstabelecimentosSchemaTest(unittest.TestCase):
         self.assertIn("status", colunas)
         self.assertIn("vrtaxaprod", colunas)
         self.assertIn("vrtaxaing", colunas)
+        self.assertIn("nmresponsavel", colunas)
+        self.assertIn("telefone_responsavel", colunas)
+        self.assertIn("email_responsavel", colunas)
+
+    def test_atendimento_pertence_ao_estabelecimento(self):
+        for modelo in (LeadMensagem, LeadAgendamento, LeadMaterial):
+            coluna = modelo.__table__.c.leadestabelecimento_id
+            self.assertFalse(coluna.nullable)
+            self.assertIsNotNone(next(iter(coluna.foreign_keys), None))
 
     def test_lead_guarda_somente_dados_gerais(self):
         from app.models.leadparceiro import LeadParceiro

@@ -19,6 +19,12 @@ class LeadAgendamento(Base):
         nullable=False,
         index=True,
     )
+    leadestabelecimento_id = Column(
+        BigInteger,
+        ForeignKey("leadestabelecimento.leadestabelecimento_id"),
+        nullable=False,
+        index=True,
+    )
     tipo = Column(
         Enum(
             "DEMONSTRACAO",

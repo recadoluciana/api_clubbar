@@ -15,6 +15,12 @@ class LeadMaterial(Base):
         nullable=False,
         index=True,
     )
+    leadestabelecimento_id = Column(
+        BigInteger,
+        ForeignKey("leadestabelecimento.leadestabelecimento_id"),
+        nullable=False,
+        index=True,
+    )
     titulo = Column(String(160), nullable=False)
     descricao = Column(String(500), nullable=True)
     tipo = Column(

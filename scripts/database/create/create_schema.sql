@@ -115,6 +115,9 @@ CREATE TABLE leadestabelecimento (
   leadestabelecimento_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadparceiro_id BIGINT NOT NULL,
   nmestabelecimento VARCHAR(160) NOT NULL,
+  nmresponsavel VARCHAR(120) NULL,
+  telefone_responsavel VARCHAR(30) NULL,
+  email_responsavel VARCHAR(160) NULL,
   tipo VARCHAR(30) NOT NULL,
   tipovenda ENUM('PRODUTOS','INGRESSOS','AMBOS') NOT NULL DEFAULT 'AMBOS',
   cpfcnpj VARCHAR(14) NULL,
@@ -153,6 +156,7 @@ CREATE TABLE leadestabelecimento (
 CREATE TABLE leadmensagem (
   leadmensagem_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadparceiro_id BIGINT NOT NULL,
+  leadestabelecimento_id BIGINT NOT NULL,
   origem ENUM('CLUBBAR', 'LEAD') NOT NULL,
   mensagem TEXT NOT NULL,
   lida CHAR(1) NOT NULL DEFAULT 'N',
@@ -163,6 +167,8 @@ CREATE TABLE leadmensagem (
     REFERENCES leadparceiro(leadparceiro_id)
     ON DELETE RESTRICT
     ON UPDATE RESTRICT,
+  CONSTRAINT fk_leadmensagem_estabelecimento FOREIGN KEY (leadestabelecimento_id)
+    REFERENCES leadestabelecimento(leadestabelecimento_id),
 
   CONSTRAINT chk_leadmensagem_lida
     CHECK (lida IN ('S', 'N')),
@@ -170,7 +176,8 @@ CREATE TABLE leadmensagem (
   INDEX idx_leadmensagem_lead_data (
     leadparceiro_id,
     dtcriacao
-  )
+  ),
+  INDEX idx_leadmensagem_estabelecimento (leadestabelecimento_id)
 ) ENGINE=InnoDB
 DEFAULT CHARACTER SET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
@@ -178,6 +185,7 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE leadagendamento (
   leadagendamento_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadparceiro_id BIGINT NOT NULL,
+  leadestabelecimento_id BIGINT NOT NULL,
 
   tipo ENUM(
     'DEMONSTRACAO',
@@ -205,11 +213,14 @@ CREATE TABLE leadagendamento (
     REFERENCES leadparceiro(leadparceiro_id)
     ON DELETE RESTRICT
     ON UPDATE RESTRICT,
+  CONSTRAINT fk_leadagendamento_estabelecimento FOREIGN KEY (leadestabelecimento_id)
+    REFERENCES leadestabelecimento(leadestabelecimento_id),
 
   INDEX idx_leadagendamento_lead_data (
     leadparceiro_id,
     dtagendamento
-  )
+  ),
+  INDEX idx_leadagendamento_estabelecimento (leadestabelecimento_id)
 ) ENGINE=InnoDB
 DEFAULT CHARACTER SET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
@@ -217,6 +228,7 @@ COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE leadmaterial (
   leadmaterial_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadparceiro_id BIGINT NOT NULL,
+  leadestabelecimento_id BIGINT NOT NULL,
 
   titulo VARCHAR(160) NOT NULL,
   descricao VARCHAR(500) NULL,
@@ -236,11 +248,14 @@ CREATE TABLE leadmaterial (
     REFERENCES leadparceiro(leadparceiro_id)
     ON DELETE RESTRICT
     ON UPDATE RESTRICT,
+  CONSTRAINT fk_leadmaterial_estabelecimento FOREIGN KEY (leadestabelecimento_id)
+    REFERENCES leadestabelecimento(leadestabelecimento_id),
 
   INDEX idx_leadmaterial_lead (
     leadparceiro_id,
     dtcriacao
-  )
+  ),
+  INDEX idx_leadmaterial_estabelecimento (leadestabelecimento_id)
 ) ENGINE=InnoDB
 DEFAULT CHARACTER SET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;

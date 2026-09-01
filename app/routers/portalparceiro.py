@@ -199,6 +199,9 @@ def obter_resumo(
             {
                 "leadestabelecimento_id": item.leadestabelecimento_id,
                 "nmestabelecimento": item.nmestabelecimento,
+                "nmresponsavel": item.nmresponsavel or lead.nmresponsavel,
+                "telefone_responsavel": item.telefone_responsavel or lead.telefone,
+                "email_responsavel": item.email_responsavel or lead.email,
                 "tipo": item.tipo,
                 "tipovenda": item.tipovenda,
                 "status": item.status.value if hasattr(item.status, "value") else item.status,
@@ -215,12 +218,16 @@ def obter_resumo(
 
 @router.get("/mensagens")
 def listar_mensagens(
+    leadestabelecimento_id: int,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
     mensagens = (
         db.query(LeadMensagem)
-        .filter(LeadMensagem.leadparceiro_id == lead.leadparceiro_id)
+        .filter(
+            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            LeadMensagem.leadestabelecimento_id == leadestabelecimento_id,
+        )
         .order_by(
             LeadMensagem.dtcriacao.asc(),
             LeadMensagem.leadmensagem_id.asc(),
@@ -252,11 +259,19 @@ def listar_mensagens(
 @router.post("/mensagens", status_code=status.HTTP_201_CREATED)
 def enviar_mensagem(
     dados: PortalMensagemCreate,
+    leadestabelecimento_id: int,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
+    estabelecimento = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id,
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+    ).first()
+    if not estabelecimento:
+        raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
     mensagem = LeadMensagem(
         leadparceiro_id=lead.leadparceiro_id,
+        leadestabelecimento_id=leadestabelecimento_id,
         origem="LEAD",
         mensagem=dados.mensagem.strip(),
         lida="N",
@@ -277,12 +292,16 @@ def enviar_mensagem(
 
 @router.get("/agendamentos")
 def listar_agendamentos(
+    leadestabelecimento_id: int,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
     itens = (
         db.query(LeadAgendamento)
-        .filter(LeadAgendamento.leadparceiro_id == lead.leadparceiro_id)
+        .filter(
+            LeadAgendamento.leadparceiro_id == lead.leadparceiro_id,
+            LeadAgendamento.leadestabelecimento_id == leadestabelecimento_id,
+        )
         .order_by(
             LeadAgendamento.dtagendamento.desc(),
             LeadAgendamento.leadagendamento_id.desc(),
@@ -344,12 +363,16 @@ def responder_agendamento(
 
 @router.get("/materiais")
 def listar_materiais(
+    leadestabelecimento_id: int,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
     itens = (
         db.query(LeadMaterial)
-        .filter(LeadMaterial.leadparceiro_id == lead.leadparceiro_id)
+        .filter(
+            LeadMaterial.leadparceiro_id == lead.leadparceiro_id,
+            LeadMaterial.leadestabelecimento_id == leadestabelecimento_id,
+        )
         .order_by(
             LeadMaterial.dtcriacao.desc(),
             LeadMaterial.leadmaterial_id.desc(),

@@ -15,6 +15,12 @@ class LeadMensagem(Base):
         nullable=False,
         index=True,
     )
+    leadestabelecimento_id = Column(
+        BigInteger,
+        ForeignKey("leadestabelecimento.leadestabelecimento_id"),
+        nullable=False,
+        index=True,
+    )
     origem = Column(
         Enum("CLUBBAR", "LEAD", name="enum_leadmensagem_origem"),
         nullable=False,

@@ -25,6 +25,9 @@ class LeadEstabelecimento(Base):
         index=True,
     )
     nmestabelecimento = Column(String(160), nullable=False)
+    nmresponsavel = Column(String(120), nullable=True)
+    telefone_responsavel = Column(String(30), nullable=True)
+    email_responsavel = Column(String(160), nullable=True)
     tipo = Column(String(30), nullable=False)
     tipovenda = Column(
         Enum("PRODUTOS", "INGRESSOS", "AMBOS", name="enum_leadestabelecimento_tipovenda"),

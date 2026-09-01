@@ -50,24 +50,34 @@ def _lead(db: Session, lead_id: int) -> LeadParceiro:
     return item
 
 
+def _estabelecimento(
+    db: Session, lead_id: int, leadestabelecimento_id: int
+) -> LeadEstabelecimento:
+    item = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id,
+        LeadEstabelecimento.leadparceiro_id == lead_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail='Estabelecimento nao encontrado')
+    return item
+
+
 @router.get('/{lead_id}')
-def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+def consultar(lead_id: int, leadestabelecimento_id: int, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     lead = _lead(db, lead_id)
-    mensagens = db.query(LeadMensagem).filter(LeadMensagem.leadparceiro_id == lead_id).order_by(LeadMensagem.dtcriacao).all()
+    estabelecimento = _estabelecimento(db, lead_id, leadestabelecimento_id)
+    mensagens = db.query(LeadMensagem).filter(LeadMensagem.leadestabelecimento_id == leadestabelecimento_id).order_by(LeadMensagem.dtcriacao).all()
     for item in mensagens:
         if item.origem == 'LEAD' and item.lida == 'N':
             item.lida = 'S'
     db.commit()
-    agendamentos = db.query(LeadAgendamento).filter(LeadAgendamento.leadparceiro_id == lead_id).order_by(LeadAgendamento.dtagendamento.desc()).all()
-    materiais = db.query(LeadMaterial).filter(LeadMaterial.leadparceiro_id == lead_id).order_by(LeadMaterial.dtcriacao.desc()).all()
-    primeiro_estabelecimento = db.query(LeadEstabelecimento).filter(
-        LeadEstabelecimento.leadparceiro_id == lead_id
-    ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
+    agendamentos = db.query(LeadAgendamento).filter(LeadAgendamento.leadestabelecimento_id == leadestabelecimento_id).order_by(LeadAgendamento.dtagendamento.desc()).all()
+    materiais = db.query(LeadMaterial).filter(LeadMaterial.leadestabelecimento_id == leadestabelecimento_id).order_by(LeadMaterial.dtcriacao.desc()).all()
     return {
         'status': (
-            primeiro_estabelecimento.status.value
-            if primeiro_estabelecimento and hasattr(primeiro_estabelecimento.status, 'value')
-            else primeiro_estabelecimento.status if primeiro_estabelecimento else 'NOVO'
+            estabelecimento.status.value
+            if hasattr(estabelecimento.status, 'value')
+            else estabelecimento.status
         ),
         'mensagens': [{'leadmensagem_id': x.leadmensagem_id, 'origem': x.origem, 'mensagem': x.mensagem, 'lida': x.lida, 'dtcriacao': x.dtcriacao} for x in mensagens],
         'agendamentos': [{'leadagendamento_id': x.leadagendamento_id, 'tipo': x.tipo, 'dtagendamento': x.dtagendamento, 'observacao': x.observacao, 'status': x.status} for x in agendamentos],
@@ -76,32 +86,31 @@ def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session 
 
 
 @router.post('/{lead_id}/mensagens', status_code=201)
-def enviar_mensagem(lead_id: int, dados: MensagemIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+def enviar_mensagem(lead_id: int, leadestabelecimento_id: int, dados: MensagemIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     _lead(db, lead_id)
-    db.query(LeadEstabelecimento).filter(
-        LeadEstabelecimento.leadparceiro_id == lead_id,
-        LeadEstabelecimento.status == 'NOVO',
-    ).update({'status': 'CONTATADO'}, synchronize_session=False)
-    item = LeadMensagem(leadparceiro_id=lead_id, origem='CLUBBAR', mensagem=dados.mensagem.strip(), lida='N')
+    estabelecimento = _estabelecimento(db, lead_id, leadestabelecimento_id)
+    if estabelecimento.status == 'NOVO':
+        estabelecimento.status = 'CONTATADO'
+    item = LeadMensagem(leadparceiro_id=lead_id, leadestabelecimento_id=leadestabelecimento_id, origem='CLUBBAR', mensagem=dados.mensagem.strip(), lida='N')
     db.add(item)
     db.commit()
     return {'ok': True}
 @router.post('/{lead_id}/agendamentos', status_code=201)
-def criar_agendamento(lead_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+def criar_agendamento(lead_id: int, leadestabelecimento_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     _lead(db, lead_id)
-    db.query(LeadEstabelecimento).filter(
-        LeadEstabelecimento.leadparceiro_id == lead_id,
-        LeadEstabelecimento.status.in_(('NOVO', 'CONTATADO')),
-    ).update({'status': 'NEGOCIANDO'}, synchronize_session=False)
-    item = LeadAgendamento(leadparceiro_id=lead_id, **dados.model_dump())
+    estabelecimento = _estabelecimento(db, lead_id, leadestabelecimento_id)
+    if estabelecimento.status in ('NOVO', 'CONTATADO'):
+        estabelecimento.status = 'NEGOCIANDO'
+    item = LeadAgendamento(leadparceiro_id=lead_id, leadestabelecimento_id=leadestabelecimento_id, **dados.model_dump())
     db.add(item)
     db.commit()
     return {'ok': True}
 
 
 @router.patch('/{lead_id}/agendamentos/{item_id}')
-def alterar_agendamento(lead_id: int, item_id: int, dados: StatusAgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    item = db.query(LeadAgendamento).filter(LeadAgendamento.leadparceiro_id == lead_id, LeadAgendamento.leadagendamento_id == item_id).first()
+def alterar_agendamento(lead_id: int, item_id: int, leadestabelecimento_id: int, dados: StatusAgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+    _estabelecimento(db, lead_id, leadestabelecimento_id)
+    item = db.query(LeadAgendamento).filter(LeadAgendamento.leadestabelecimento_id == leadestabelecimento_id, LeadAgendamento.leadagendamento_id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Agendamento nao encontrado')
     item.status = dados.status
@@ -110,9 +119,10 @@ def alterar_agendamento(lead_id: int, item_id: int, dados: StatusAgendamentoIn, 
 
 
 @router.post('/{lead_id}/materiais', status_code=201)
-def criar_material(lead_id: int, dados: MaterialIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+def criar_material(lead_id: int, leadestabelecimento_id: int, dados: MaterialIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     _lead(db, lead_id)
-    item = LeadMaterial(leadparceiro_id=lead_id, **dados.model_dump())
+    _estabelecimento(db, lead_id, leadestabelecimento_id)
+    item = LeadMaterial(leadparceiro_id=lead_id, leadestabelecimento_id=leadestabelecimento_id, **dados.model_dump())
     db.add(item)
     db.commit()
     return {'ok': True}
@@ -121,6 +131,7 @@ def criar_material(lead_id: int, dados: MaterialIn, _: dict = Depends(get_operad
 @router.post('/{lead_id}/materiais-upload', status_code=201)
 def upload_material(
     lead_id: int,
+    leadestabelecimento_id: int,
     titulo: str = Form(...),
     descricao: str | None = Form(None),
     tipo: Literal['APRESENTACAO', 'PROPOSTA', 'CONTRATO', 'VIDEO', 'OUTRO'] = Form('OUTRO'),
@@ -129,6 +140,7 @@ def upload_material(
     db: Session = Depends(get_db),
 ):
     _lead(db, lead_id)
+    _estabelecimento(db, lead_id, leadestabelecimento_id)
     extensao = Path(arquivo.filename or '').suffix.lower()
     permitidas = {'.pdf', '.png', '.jpg', '.jpeg', '.webp', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'}
     if extensao not in permitidas:
@@ -143,6 +155,7 @@ def upload_material(
             raise HTTPException(status_code=413, detail='O arquivo deve ter no maximo 20 MB.')
         item = LeadMaterial(
             leadparceiro_id=lead_id,
+            leadestabelecimento_id=leadestabelecimento_id,
             titulo=titulo.strip(),
             descricao=descricao.strip() if descricao else None,
             tipo=tipo,
@@ -161,8 +174,9 @@ def upload_material(
 
 
 @router.delete('/{lead_id}/materiais/{item_id}')
-def excluir_material(lead_id: int, item_id: int, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    item = db.query(LeadMaterial).filter(LeadMaterial.leadparceiro_id == lead_id, LeadMaterial.leadmaterial_id == item_id).first()
+def excluir_material(lead_id: int, item_id: int, leadestabelecimento_id: int, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
+    _estabelecimento(db, lead_id, leadestabelecimento_id)
+    item = db.query(LeadMaterial).filter(LeadMaterial.leadestabelecimento_id == leadestabelecimento_id, LeadMaterial.leadmaterial_id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail='Material nao encontrado')
     db.delete(item)
