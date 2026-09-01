@@ -8,6 +8,11 @@ class PortalMensagemCreate(BaseModel):
     mensagem: str = Field(min_length=1, max_length=3000)
 
 
+class PortalLoginLead(BaseModel):
+    email: EmailStr
+    telefone: str = Field(min_length=10, max_length=30)
+
+
 class PortalAgendamentoResposta(BaseModel):
     status: Literal["CONFIRMADO", "RECUSADO"]
 

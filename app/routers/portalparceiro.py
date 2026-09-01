@@ -18,14 +18,38 @@ from app.schemas.portalparceiro import (
     PortalDecisaoUpdate,
     PortalMensagemCreate,
     PortalEstabelecimentoCreate,
+    PortalLoginLead,
 )
-from app.services.portal_acesso_service import obter_lead_portal
+from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
 
 
 router = APIRouter(
     prefix="/portal-parceiro",
     tags=["Portal do parceiro"],
 )
+
+
+@router.post("/entrar")
+def entrar_portal(dados: PortalLoginLead, db: Session = Depends(get_db)):
+    telefone = "".join(caractere for caractere in dados.telefone if caractere.isdigit())
+    lead = (
+        db.query(LeadParceiro)
+        .filter(LeadParceiro.email == str(dados.email).strip().lower())
+        .order_by(LeadParceiro.leadparceiro_id.desc())
+        .first()
+    )
+    telefone_cadastrado = (
+        "".join(caractere for caractere in (lead.telefone if lead else "") if caractere.isdigit())
+    )
+    if lead is None or telefone != telefone_cadastrado:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="E-mail ou telefone não conferem com o cadastro.",
+        )
+
+    token = criar_acesso_portal(db, leadparceiro_id=lead.leadparceiro_id)
+    db.commit()
+    return {"acesso": token}
 
 
 @router.post("/estabelecimentos", status_code=status.HTTP_201_CREATED)

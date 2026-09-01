@@ -166,7 +166,6 @@ app.include_router(reservas_ingressos.router)
 app.include_router(cashback.router)
 app.include_router(titularfinanceiro.router)
 app.include_router(leadatendimento.router)
-app.include_router(leadatendimento.public_router)
 app.include_router(contratolead.router)
 app.include_router(contratolead.portal_router)
 

@@ -5,8 +5,8 @@ from pathlib import Path
 from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from pydantic import BaseModel, EmailStr, Field
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado
@@ -17,12 +17,9 @@ from app.models.leadmaterial import LeadMaterial
 from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
-from app.services.email_service import enviar_acesso_portal_lead
-from app.services.portal_acesso_service import criar_acesso_portal
 
 
 router = APIRouter(prefix='/lead-atendimento', tags=['Atendimento de leads'])
-public_router = APIRouter(prefix='/portal-parceiro', tags=['Portal do parceiro'])
 
 
 class MensagemIn(BaseModel):
@@ -44,10 +41,6 @@ class MaterialIn(BaseModel):
     descricao: str | None = Field(default=None, max_length=500)
     tipo: Literal['APRESENTACAO', 'PROPOSTA', 'CONTRATO', 'VIDEO', 'OUTRO']
     urlarquivo: str = Field(min_length=5, max_length=500)
-
-
-class SolicitarAcessoIn(BaseModel):
-    email: EmailStr
 
 
 def _lead(db: Session, lead_id: int) -> LeadParceiro:
@@ -87,8 +80,6 @@ def enviar_mensagem(lead_id: int, dados: MensagemIn, _: dict = Depends(get_opera
     db.add(item)
     db.commit()
     return {'ok': True}
-
-
 @router.post('/{lead_id}/agendamentos', status_code=201)
 def criar_agendamento(lead_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     lead = _lead(db, lead_id)
@@ -169,23 +160,3 @@ def excluir_material(lead_id: int, item_id: int, _: dict = Depends(get_operador_
     db.delete(item)
     db.commit()
     return {'ok': True}
-
-
-def _enviar_novo_acesso(db: Session, lead: LeadParceiro) -> None:
-    token = criar_acesso_portal(db, leadparceiro_id=lead.leadparceiro_id)
-    enviar_acesso_portal_lead(lead.email, lead.nmresponsavel, token)
-    db.commit()
-
-
-@router.post('/{lead_id}/reenviar-acesso')
-def reenviar_acesso(lead_id: int, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    _enviar_novo_acesso(db, _lead(db, lead_id))
-    return {'ok': True, 'mensagem': 'Novo acesso enviado por e-mail'}
-
-
-@public_router.post('/solicitar-acesso', status_code=status.HTTP_202_ACCEPTED)
-def solicitar_acesso(dados: SolicitarAcessoIn, db: Session = Depends(get_db)):
-    lead = db.query(LeadParceiro).filter(LeadParceiro.email == dados.email.lower()).order_by(LeadParceiro.leadparceiro_id.desc()).first()
-    if lead and lead.status != 'CONVERTIDO':
-        _enviar_novo_acesso(db, lead)
-    return {'mensagem': 'Se o e-mail estiver cadastrado, enviaremos um novo link de acesso.'}
