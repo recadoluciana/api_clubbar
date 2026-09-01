@@ -27,6 +27,7 @@ from app.schemas.leadparceiro import (
     LeadParceiroUpdate,
     ConverterLeadParceiroIn,
     LeadEstabelecimentoCreate,
+    LeadEstabelecimentoUpdate,
     LeadEstabelecimentoOut,
 )
 
@@ -372,6 +373,43 @@ def adicionar_estabelecimento(
         **payload.model_dump(),
     )
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serializar_estabelecimento(item)
+
+
+@router.put(
+    "/{leadparceiro_id}/estabelecimentos/{leadestabelecimento_id}",
+    response_model=LeadEstabelecimentoOut,
+)
+def atualizar_estabelecimento(
+    leadparceiro_id: int,
+    leadestabelecimento_id: int,
+    payload: LeadEstabelecimentoUpdate,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    item = (
+        db.query(LeadEstabelecimento)
+        .filter(
+            LeadEstabelecimento.leadestabelecimento_id
+            == leadestabelecimento_id,
+            LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    cidade = db.query(Cidade).filter(Cidade.cidade_id == payload.cidade_id).first()
+    if not cidade or cidade.estado_id != payload.estado_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Cidade e estado informados são incompatíveis.",
+        )
+
+    for campo, valor in payload.model_dump().items():
+        setattr(item, campo, valor)
     db.commit()
     db.refresh(item)
     return _serializar_estabelecimento(item)

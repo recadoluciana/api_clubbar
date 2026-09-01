@@ -74,6 +74,10 @@ class LeadEstabelecimentoCreate(BaseModel):
         return str(valor).strip().lower() if valor is not None else None
 
 
+class LeadEstabelecimentoUpdate(LeadEstabelecimentoCreate):
+    pass
+
+
 class LeadEstabelecimentoOut(BaseModel):
     leadestabelecimento_id: int
     leadparceiro_id: int
