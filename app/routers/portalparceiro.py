@@ -118,6 +118,16 @@ def obter_resumo(
         or 0
     )
 
+    mensagens_enviadas = (
+        db.query(func.count(LeadMensagem.leadmensagem_id))
+        .filter(
+            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            LeadMensagem.origem == "LEAD",
+        )
+        .scalar()
+        or 0
+    )
+
     agendamentos_pendentes = (
         db.query(func.count(LeadAgendamento.leadagendamento_id))
         .filter(
@@ -181,6 +191,7 @@ def obter_resumo(
         "tipovenda": estabelecimentos[0].tipovenda if estabelecimentos else "AMBOS",
         "mensagens_nao_lidas": int(mensagens_nao_lidas),
         "mensagens_recebidas": int(mensagens_recebidas),
+        "mensagens_enviadas": int(mensagens_enviadas),
         "agendamentos_pendentes": int(agendamentos_pendentes),
         "agendamentos": int(agendamentos),
         "materiais": int(materiais),

@@ -63,6 +63,20 @@ def dashboard_superadmin(
         or 0
     )
 
+    total_leads = db.query(func.count(LeadParceiro.leadparceiro_id)).scalar() or 0
+
+    total_lead_estabelecimentos = (
+        db.query(func.count(LeadEstabelecimento.leadestabelecimento_id)).scalar()
+        or 0
+    )
+
+    lead_estabelecimentos_novos = (
+        db.query(func.count(LeadEstabelecimento.leadestabelecimento_id))
+        .filter(LeadEstabelecimento.status == "NOVO")
+        .scalar()
+        or 0
+    )
+
     # =========================================================
     # PARCEIROS ATIVOS
     # Toda organização ativa é contabilizada como parceiro
@@ -260,7 +274,10 @@ def dashboard_superadmin(
 
     return {
         # Leads
+        "total_leads": int(total_leads),
         "leads_novos": int(leads_novos),
+        "total_lead_estabelecimentos": int(total_lead_estabelecimentos),
+        "lead_estabelecimentos_novos": int(lead_estabelecimentos_novos),
 
         # Parceiros
         "organizacoes": int(parceiros_ativos),
