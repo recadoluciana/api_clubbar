@@ -1,35 +1,18 @@
 import unittest
-from pathlib import Path
 
 from pydantic import ValidationError
 
-from app.models.leadestabelecimento import LeadEstabelecimento
-from app.schemas.portalparceiro import PortalDecisaoUpdate
+from app.schemas.portalparceiro import PortalStatusUpdate
 
 
-class PortalDecisaoSchemaTest(unittest.TestCase):
-    def test_permite_marcar_decisao_como_analisando(self):
-        dados = PortalDecisaoUpdate(decisao="ANALISANDO")
+class PortalStatusSchemaTest(unittest.TestCase):
+    def test_permite_status_de_decisao(self):
+        for status in ("NEGOCIANDO", "ACEITOU_PARCERIA", "RECUSOU_PARCERIA"):
+            self.assertEqual(status, PortalStatusUpdate(status=status).status)
 
-        self.assertEqual(dados.decisao, "ANALISANDO")
-
-    def test_nao_permite_retornar_decisao_para_pendente(self):
+    def test_portal_nao_pode_converter_diretamente(self):
         with self.assertRaises(ValidationError):
-            PortalDecisaoUpdate(decisao="PENDENTE")
-
-    def test_modelo_e_schema_inicial_possuem_analisando(self):
-        self.assertIn(
-            "ANALISANDO",
-            set(LeadEstabelecimento.__table__.c.decisao.type.enums),
-        )
-        schema = (
-            Path(__file__).resolve().parents[1]
-            / "scripts"
-            / "database"
-            / "create"
-            / "create_schema.sql"
-        ).read_text(encoding="utf-8")
-        self.assertIn("'ANALISANDO'", schema)
+            PortalStatusUpdate(status="CONVERTIDO")
 
 
 if __name__ == "__main__":

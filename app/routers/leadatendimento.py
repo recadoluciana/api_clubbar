@@ -64,7 +64,11 @@ def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session 
         LeadEstabelecimento.leadparceiro_id == lead_id
     ).order_by(LeadEstabelecimento.leadestabelecimento_id.asc()).first()
     return {
-        'decisao': primeiro_estabelecimento.decisao if primeiro_estabelecimento else 'PENDENTE',
+        'status': (
+            primeiro_estabelecimento.status.value
+            if primeiro_estabelecimento and hasattr(primeiro_estabelecimento.status, 'value')
+            else primeiro_estabelecimento.status if primeiro_estabelecimento else 'NOVO'
+        ),
         'mensagens': [{'leadmensagem_id': x.leadmensagem_id, 'origem': x.origem, 'mensagem': x.mensagem, 'lida': x.lida, 'dtcriacao': x.dtcriacao} for x in mensagens],
         'agendamentos': [{'leadagendamento_id': x.leadagendamento_id, 'tipo': x.tipo, 'dtagendamento': x.dtagendamento, 'observacao': x.observacao, 'status': x.status} for x in agendamentos],
         'materiais': [{'leadmaterial_id': x.leadmaterial_id, 'titulo': x.titulo, 'descricao': x.descricao, 'tipo': x.tipo, 'urlarquivo': x.urlarquivo, 'dtcriacao': x.dtcriacao} for x in materiais],
@@ -73,18 +77,22 @@ def consultar(lead_id: int, _: dict = Depends(get_operador_logado), db: Session 
 
 @router.post('/{lead_id}/mensagens', status_code=201)
 def enviar_mensagem(lead_id: int, dados: MensagemIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    lead = _lead(db, lead_id)
-    if lead.status == 'NOVO':
-        lead.status = 'CONTATADO'
+    _lead(db, lead_id)
+    db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead_id,
+        LeadEstabelecimento.status == 'NOVO',
+    ).update({'status': 'CONTATADO'}, synchronize_session=False)
     item = LeadMensagem(leadparceiro_id=lead_id, origem='CLUBBAR', mensagem=dados.mensagem.strip(), lida='N')
     db.add(item)
     db.commit()
     return {'ok': True}
 @router.post('/{lead_id}/agendamentos', status_code=201)
 def criar_agendamento(lead_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    lead = _lead(db, lead_id)
-    if lead.status in {'NOVO', 'CONTATADO'}:
-        lead.status = 'NEGOCIANDO'
+    _lead(db, lead_id)
+    db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadparceiro_id == lead_id,
+        LeadEstabelecimento.status.in_(('NOVO', 'CONTATADO')),
+    ).update({'status': 'NEGOCIANDO'}, synchronize_session=False)
     item = LeadAgendamento(leadparceiro_id=lead_id, **dados.model_dump())
     db.add(item)
     db.commit()

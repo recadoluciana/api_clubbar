@@ -10,7 +10,6 @@ from fastapi import (
     HTTPException,
     status,
 )
-from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -71,6 +70,25 @@ def _dias_espera(dtcriacao: datetime) -> int:
     return max(diferenca.days, 0)
 
 
+def _status_agregado(estabelecimentos) -> str:
+    status_itens = {
+        (item.get("status") if isinstance(item, dict) else item.status.value
+         if hasattr(item.status, "value") else item.status)
+        for item in estabelecimentos
+    }
+    for status_item in (
+        "ACEITOU_PARCERIA",
+        "NEGOCIANDO",
+        "CONTATADO",
+        "NOVO",
+    ):
+        if status_item in status_itens:
+            return status_item
+    if "CONVERTIDO" in status_itens:
+        return "CONVERTIDO"
+    return "RECUSOU_PARCERIA" if status_itens else "NOVO"
+
+
 def _serializar_lead(
     lead: LeadParceiro,
     estabelecimento: LeadEstabelecimento | None = None,
@@ -78,12 +96,6 @@ def _serializar_lead(
     cidade: Cidade | None = None,
     ultima_origem_mensagem: str | None = None,
 ) -> dict:
-    status_lead = (
-        lead.status.value
-        if hasattr(lead.status, "value")
-        else str(lead.status)
-    )
-
     return {
         "leadparceiro_id": lead.leadparceiro_id,
         "nmresponsavel": lead.nmresponsavel,
@@ -101,7 +113,7 @@ def _serializar_lead(
         "sgestado": estado.sgestado if estado else "",
         "nmcidade": cidade.nmcidade if cidade else "",
         "mensagem": estabelecimento.mensagem if estabelecimento else None,
-        "status": status_lead,
+        "status": "NOVO",
         "dtcriacao": lead.dtcriacao,
         "dtultatu": lead.dtultatu,
         "dias_espera": _dias_espera(
@@ -131,7 +143,6 @@ def _serializar_estabelecimento(item: LeadEstabelecimento) -> dict:
         "bairro": item.bairro,
         "mensagem": item.mensagem,
         "status": item.status.value if hasattr(item.status, "value") else item.status,
-        "decisao": item.decisao,
         "vrtaxaprod": float(item.vrtaxaprod),
         "vrtaxaing": float(item.vrtaxaing),
         "dtcriacao": item.dtcriacao,
@@ -234,6 +245,7 @@ def criar_interesse_parceiro(
         resposta["estabelecimentos"] = [
             _serializar_estabelecimento(item) for item in estabelecimentos
         ]
+        resposta["status"] = _status_agregado(estabelecimentos)
 
         return resposta
 
@@ -266,23 +278,12 @@ def listar_interesses_parceiros(
         .scalar_subquery()
     )
 
-    prioridade_status = case(
-        (LeadParceiro.status == "NOVO", 1),
-        (LeadParceiro.status == "CONTATADO", 2),
-        (LeadParceiro.status == "NEGOCIANDO", 3),
-        (LeadParceiro.status == "ACEITOU_PARCERIA", 4),
-        (LeadParceiro.status == "CONVERTIDO", 5),
-        (LeadParceiro.status == "RECUSOU_PARCERIA", 6),
-        else_=6,
-    )
-
     resultados = (
         db.query(
             LeadParceiro,
             ultima_origem_mensagem.label("ultima_origem_mensagem"),
         )
         .order_by(
-            prioridade_status.asc(),
             LeadParceiro.dtcriacao.asc(),
         )
         .all()
@@ -298,8 +299,13 @@ def listar_interesses_parceiros(
         cidade = db.query(Cidade).filter(Cidade.cidade_id == primeiro_modelo.cidade_id).first() if primeiro_modelo else None
         item = _serializar_lead(lead, primeiro_modelo, estado, cidade, origem)
         item["estabelecimentos"] = estabelecimentos
+        item["status"] = _status_agregado(estabelecimentos)
         resposta.append(item)
-    return resposta
+    prioridade = {
+        "NOVO": 1, "CONTATADO": 2, "NEGOCIANDO": 3,
+        "ACEITOU_PARCERIA": 4, "CONVERTIDO": 5, "RECUSOU_PARCERIA": 6,
+    }
+    return sorted(resposta, key=lambda item: prioridade[item["status"]])
 
 
 @router.get(
@@ -333,6 +339,7 @@ def buscar_interesse_parceiro(
     resposta["estabelecimentos"] = _carregar_estabelecimentos(
         db, lead.leadparceiro_id
     )
+    resposta["status"] = _status_agregado(resposta["estabelecimentos"])
     return resposta
 
 
@@ -365,7 +372,6 @@ def adicionar_estabelecimento(
         **payload.model_dump(),
     )
     db.add(item)
-    lead.status = "NEGOCIANDO"
     db.commit()
     db.refresh(item)
     return _serializar_estabelecimento(item)
@@ -416,9 +422,6 @@ def atualizar_interesse_parceiro(
     if payload.email is not None:
         lead.email = payload.email
 
-    if payload.status is not None:
-        lead.status = payload.status
-
     db.commit()
     db.refresh(lead)
 
@@ -435,12 +438,16 @@ def atualizar_interesse_parceiro(
 
     lead_atualizado, estabelecimento, estado, cidade = resultado
 
-    return _serializar_lead(
+    resposta = _serializar_lead(
         lead_atualizado,
         estabelecimento,
         estado,
         cidade,
     )
+    estabelecimentos = _carregar_estabelecimentos(db, leadparceiro_id)
+    resposta["estabelecimentos"] = estabelecimentos
+    resposta["status"] = _status_agregado(estabelecimentos)
+    return resposta
 
 def _somente_numeros(valor: str) -> str:
     return re.sub(r"\D", "", valor or "")
@@ -691,18 +698,22 @@ def converter_lead_em_parceiro(
                 LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
                 LeadEstabelecimento.leadestabelecimento_id
                 != estabelecimento.leadestabelecimento_id,
-                LeadEstabelecimento.status != "CONVERTIDO",
+                LeadEstabelecimento.status.notin_(
+                    ("CONVERTIDO", "RECUSOU_PARCERIA")
+                ),
             )
             .count()
         )
-        lead.status = "CONVERTIDO" if restantes == 0 else "NEGOCIANDO"
-
         resultado = {
             "ok": True,
             "mensagem": "Lead convertido em parceiro com sucesso.",
             "leadparceiro_id": lead.leadparceiro_id,
             "leadestabelecimento_id": estabelecimento.leadestabelecimento_id,
-            "status_lead": lead.status,
+            "status_lead": _status_agregado(
+                db.query(LeadEstabelecimento).filter(
+                    LeadEstabelecimento.leadparceiro_id == leadparceiro_id
+                ).all()
+            ),
             "status_estabelecimento": "CONVERTIDO",
             "tipo": estabelecimento.tipo,
             "tipovenda": estabelecimento.tipovenda,
@@ -783,12 +794,6 @@ def reenviar_convite_parceiro_convertido(
     )
     if not lead:
         raise HTTPException(status_code=404, detail="Lead não encontrado.")
-    if lead.status != "CONVERTIDO":
-        raise HTTPException(
-            status_code=409,
-            detail="Somente um lead convertido pode receber um novo convite.",
-        )
-
     organizacao = (
         db.query(Organizacao)
         .filter(Organizacao.leadparceiro_id == leadparceiro_id)

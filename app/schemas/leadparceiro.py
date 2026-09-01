@@ -23,20 +23,12 @@ TipoVendaLead = Literal[
     "AMBOS",
 ]
 
-StatusLeadParceiroSchema = Literal[
+StatusLeadEstabelecimentoSchema = Literal[
     "NOVO",
     "CONTATADO",
     "NEGOCIANDO",
     "ACEITOU_PARCERIA",
     "CONVERTIDO",
-    "RECUSOU_PARCERIA",
-]
-
-StatusLeadParceiroEditavelSchema = Literal[
-    "NOVO",
-    "CONTATADO",
-    "NEGOCIANDO",
-    "ACEITOU_PARCERIA",
     "RECUSOU_PARCERIA",
 ]
 
@@ -99,8 +91,7 @@ class LeadEstabelecimentoOut(BaseModel):
     complemento: str | None = None
     bairro: str | None = None
     mensagem: str | None = None
-    status: StatusLeadParceiroSchema
-    decisao: Literal["PENDENTE", "ANALISANDO", "ACEITOU", "RECUSOU"]
+    status: StatusLeadEstabelecimentoSchema
     vrtaxaprod: float
     vrtaxaing: float
     dtcriacao: datetime
@@ -200,10 +191,6 @@ class LeadParceiroUpdate(BaseModel):
 
     email: EmailStr | None = None
 
-    # CONVERTIDO e um resultado do onboarding, nao uma edicao de status.
-    # Ele so pode ser atribuido pela rota transacional converter-em-parceiro.
-    status: StatusLeadParceiroEditavelSchema | None = None
-
     @field_validator("nmresponsavel")
     @classmethod
     def normalizar_responsavel(
@@ -279,7 +266,8 @@ class LeadParceiroOut(BaseModel):
 
     mensagem: str | None = None
 
-    status: StatusLeadParceiroSchema
+    # Resumo calculado a partir dos estabelecimentos; nao e armazenado no lead.
+    status: StatusLeadEstabelecimentoSchema
 
     dtcriacao: datetime
     dtultatu: datetime | None = None

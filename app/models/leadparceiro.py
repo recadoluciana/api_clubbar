@@ -1,19 +1,8 @@
 # app/models/leadparceiro.py
 
-import enum
-
-from sqlalchemy import BigInteger, Column, DateTime, Enum, String, text
+from sqlalchemy import BigInteger, Column, DateTime, String, text
 
 from app.database import Base
-
-
-class StatusLeadParceiro(str, enum.Enum):
-    NOVO = "NOVO"
-    CONTATADO = "CONTATADO"
-    NEGOCIANDO = "NEGOCIANDO"
-    ACEITOU_PARCERIA = "ACEITOU_PARCERIA"
-    CONVERTIDO = "CONVERTIDO"
-    RECUSOU_PARCERIA = "RECUSOU_PARCERIA"
 
 
 class LeadParceiro(Base):
@@ -44,13 +33,6 @@ class LeadParceiro(Base):
         index=True,
     )
 
-    status = Column(
-        Enum(StatusLeadParceiro),
-        nullable=False,
-        server_default=text("'NOVO'"),
-        index=True,
-    )
-
     dtcriacao = Column(
         DateTime,
         nullable=False,
@@ -67,6 +49,5 @@ class LeadParceiro(Base):
         return (
             f"<LeadParceiro "
             f"id={self.leadparceiro_id} "
-            f"responsavel={self.nmresponsavel} "
-            f"status={self.status}>"
+            f"responsavel={self.nmresponsavel}>"
         )

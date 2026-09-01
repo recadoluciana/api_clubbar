@@ -101,19 +101,9 @@ CREATE TABLE leadparceiro (
   telefone          VARCHAR(30) NOT NULL,
   email             VARCHAR(160) NOT NULL,
 
-  status            ENUM(
-    'NOVO',
-    'CONTATADO',
-    'NEGOCIANDO',
-    'ACEITOU_PARCERIA',
-    'CONVERTIDO',
-    'RECUSOU_PARCERIA'
-  ) NOT NULL DEFAULT 'NOVO',
-
   dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  INDEX idx_leadparceiro_status (status),
   INDEX idx_leadparceiro_email (email),
   INDEX idx_leadparceiro_dtcriacao (dtcriacao)
 )
@@ -142,7 +132,6 @@ CREATE TABLE leadestabelecimento (
     'NOVO','CONTATADO','NEGOCIANDO','ACEITOU_PARCERIA',
     'CONVERTIDO','RECUSOU_PARCERIA'
   ) NOT NULL DEFAULT 'NOVO',
-  decisao ENUM('PENDENTE','ANALISANDO','ACEITOU','RECUSOU') NOT NULL DEFAULT 'PENDENTE',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
   dtaceite DATETIME NULL,

@@ -17,9 +17,9 @@ class PortalAgendamentoResposta(BaseModel):
     status: Literal["CONFIRMADO", "RECUSADO"]
 
 
-class PortalDecisaoUpdate(BaseModel):
+class PortalStatusUpdate(BaseModel):
     leadestabelecimento_id: int | None = Field(default=None, gt=0)
-    decisao: Literal["ANALISANDO", "ACEITOU", "RECUSOU"]
+    status: Literal["NEGOCIANDO", "ACEITOU_PARCERIA", "RECUSOU_PARCERIA"]
 
 
 class PortalEstabelecimentoCreate(BaseModel):

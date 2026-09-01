@@ -10,6 +10,7 @@ from app.core.security import get_operador_logado
 
 from app.models.itvenda import ItVenda
 from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
@@ -54,9 +55,9 @@ def dashboard_superadmin(
     # =========================================================
 
     leads_novos = (
-        db.query(func.count(LeadParceiro.leadparceiro_id))
+        db.query(func.count(func.distinct(LeadEstabelecimento.leadparceiro_id)))
         .filter(
-            LeadParceiro.status == "NOVO",
+            LeadEstabelecimento.status == "NOVO",
         )
         .scalar()
         or 0

@@ -13,7 +13,7 @@ class LeadEstabelecimentosSchemaTest(unittest.TestCase):
     def test_negociacao_pertence_ao_estabelecimento(self):
         colunas = LeadEstabelecimento.__table__.c
         self.assertIn("leadparceiro_id", colunas)
-        self.assertIn("decisao", colunas)
+        self.assertNotIn("decisao", colunas)
         self.assertIn("telefone", colunas)
         self.assertIn("email", colunas)
         self.assertIn("status", colunas)
@@ -33,6 +33,7 @@ class LeadEstabelecimentosSchemaTest(unittest.TestCase):
             "estado_id",
             "cidade_id",
             "mensagem",
+            "status",
         ):
             self.assertNotIn(campo, colunas)
 

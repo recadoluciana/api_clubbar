@@ -15,7 +15,7 @@ from app.models.cidade import Cidade
 from app.models.contratolead import ContratoLead
 from app.schemas.portalparceiro import (
     PortalAgendamentoResposta,
-    PortalDecisaoUpdate,
+    PortalStatusUpdate,
     PortalMensagemCreate,
     PortalEstabelecimentoCreate,
     PortalLoginLead,
@@ -83,14 +83,12 @@ def cadastrar_estabelecimento(
         mensagem=(dados.mensagem or "").strip() or None,
     )
     db.add(item)
-    lead.status = "NEGOCIANDO"
     db.commit()
     db.refresh(item)
     return {
         "leadestabelecimento_id": item.leadestabelecimento_id,
         "nmestabelecimento": item.nmestabelecimento,
         "status": item.status,
-        "decisao": item.decisao,
     }
 
 
@@ -181,8 +179,6 @@ def obter_resumo(
         "nmestabelecimento": estabelecimentos[0].nmestabelecimento if estabelecimentos else "",
         "tipo": estabelecimentos[0].tipo if estabelecimentos else "BAR",
         "tipovenda": estabelecimentos[0].tipovenda if estabelecimentos else "AMBOS",
-        "status": lead.status,
-        "decisao": estabelecimentos[0].decisao if estabelecimentos else "PENDENTE",
         "mensagens_nao_lidas": int(mensagens_nao_lidas),
         "mensagens_recebidas": int(mensagens_recebidas),
         "agendamentos_pendentes": int(agendamentos_pendentes),
@@ -195,7 +191,6 @@ def obter_resumo(
                 "tipo": item.tipo,
                 "tipovenda": item.tipovenda,
                 "status": item.status.value if hasattr(item.status, "value") else item.status,
-                "decisao": item.decisao,
                 "vrtaxaprod": float(item.vrtaxaprod),
                 "vrtaxaing": float(item.vrtaxaing),
                 "contratos": contratos_por_estabelecimento.get(
@@ -364,9 +359,9 @@ def listar_materiais(
     ]
 
 
-@router.patch("/decisao")
-def registrar_decisao(
-    dados: PortalDecisaoUpdate,
+@router.patch("/status")
+def registrar_status(
+    dados: PortalStatusUpdate,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
@@ -395,7 +390,7 @@ def registrar_decisao(
             detail="A parceria já foi convertida e não pode ser alterada.",
         )
 
-    if dados.decisao == "ACEITOU":
+    if dados.status == "ACEITOU_PARCERIA":
         contrato = (
             db.query(ContratoLead)
             .filter(
@@ -411,34 +406,14 @@ def registrar_decisao(
                 detail="Leia e aceite o contrato deste estabelecimento antes de aceitar a parceria.",
             )
 
-    estabelecimento.decisao = dados.decisao
-    if dados.decisao == 'ACEITOU':
-        estabelecimento.status = 'ACEITOU_PARCERIA'
+    estabelecimento.status = dados.status
+    if dados.status == 'ACEITOU_PARCERIA':
         estabelecimento.dtaceite = datetime.now()
-    elif dados.decisao == 'RECUSOU':
-        estabelecimento.status = 'RECUSOU_PARCERIA'
-    elif dados.decisao == 'ANALISANDO':
-        estabelecimento.status = 'NEGOCIANDO'
-
-    pendentes = db.query(LeadEstabelecimento).filter(
-        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
-        LeadEstabelecimento.status.notin_(("CONVERTIDO", "RECUSOU_PARCERIA")),
-    ).count()
-    convertidos = db.query(LeadEstabelecimento).filter(
-        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
-        LeadEstabelecimento.status == "CONVERTIDO",
-    ).count()
-    if pendentes:
-        lead.status = "NEGOCIANDO"
-    elif convertidos:
-        lead.status = "CONVERTIDO"
-    else:
-        lead.status = "RECUSOU_PARCERIA"
     db.commit()
 
     return {
         "ok": True,
         "leadestabelecimento_id": estabelecimento.leadestabelecimento_id,
-        "decisao": estabelecimento.decisao,
-        "mensagem": "Decisão registrada com sucesso.",
+        "status": estabelecimento.status,
+        "mensagem": "Status registrado com sucesso.",
     }

@@ -43,11 +43,6 @@ class LeadEstabelecimento(Base):
     bairro = Column(String(120), nullable=True)
     mensagem = Column(Text, nullable=True)
     status = Column(Enum(StatusLeadEstabelecimento), nullable=False, server_default=text("'NOVO'"), index=True)
-    decisao = Column(
-        Enum("PENDENTE", "ANALISANDO", "ACEITOU", "RECUSOU", name="enum_leadestabelecimento_decisao"),
-        nullable=False,
-        server_default="PENDENTE",
-    )
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="5")
     dtaceite = Column(DateTime, nullable=True)
