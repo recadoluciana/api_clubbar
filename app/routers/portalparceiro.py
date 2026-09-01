@@ -86,12 +86,29 @@ def obter_resumo(
         or 0
     )
 
+    mensagens_recebidas = (
+        db.query(func.count(LeadMensagem.leadmensagem_id))
+        .filter(
+            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            LeadMensagem.origem == "CLUBBAR",
+        )
+        .scalar()
+        or 0
+    )
+
     agendamentos_pendentes = (
         db.query(func.count(LeadAgendamento.leadagendamento_id))
         .filter(
             LeadAgendamento.leadparceiro_id == lead.leadparceiro_id,
             LeadAgendamento.status == "PENDENTE",
         )
+        .scalar()
+        or 0
+    )
+
+    agendamentos = (
+        db.query(func.count(LeadAgendamento.leadagendamento_id))
+        .filter(LeadAgendamento.leadparceiro_id == lead.leadparceiro_id)
         .scalar()
         or 0
     )
@@ -143,7 +160,9 @@ def obter_resumo(
         "status": lead.status,
         "decisao": estabelecimentos[0].decisao if estabelecimentos else "PENDENTE",
         "mensagens_nao_lidas": int(mensagens_nao_lidas),
+        "mensagens_recebidas": int(mensagens_recebidas),
         "agendamentos_pendentes": int(agendamentos_pendentes),
+        "agendamentos": int(agendamentos),
         "materiais": int(materiais),
         "estabelecimentos": [
             {
