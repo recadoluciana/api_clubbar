@@ -32,6 +32,14 @@ StatusLeadParceiroSchema = Literal[
     "RECUSOU_PARCERIA",
 ]
 
+StatusLeadParceiroEditavelSchema = Literal[
+    "NOVO",
+    "CONTATADO",
+    "NEGOCIANDO",
+    "ACEITOU_PARCERIA",
+    "RECUSOU_PARCERIA",
+]
+
 
 class ConverterLeadParceiroIn(BaseModel):
     leadestabelecimento_id: int | None = Field(default=None, gt=0)
@@ -192,7 +200,9 @@ class LeadParceiroUpdate(BaseModel):
 
     email: EmailStr | None = None
 
-    status: StatusLeadParceiroSchema | None = None
+    # CONVERTIDO e um resultado do onboarding, nao uma edicao de status.
+    # Ele so pode ser atribuido pela rota transacional converter-em-parceiro.
+    status: StatusLeadParceiroEditavelSchema | None = None
 
     @field_validator("nmresponsavel")
     @classmethod
