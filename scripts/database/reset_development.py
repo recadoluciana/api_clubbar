@@ -97,7 +97,7 @@ def main() -> None:
             cursor.execute(
                 "SELECT table_name FROM information_schema.tables "
                 "WHERE table_schema = DATABASE() AND table_name IN "
-                "('leadestabelecimento', 'contratolead', 'titularfinanceiro') "
+                "('leadestabelecimento', 'leadestabelecimentocontrato', 'titularfinanceiro') "
                 "ORDER BY table_name"
             )
             onboarding_tables = [item[0] for item in cursor.fetchall()]

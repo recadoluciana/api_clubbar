@@ -42,7 +42,7 @@ from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 from app.models.titularfinanceiro import TitularFinanceiro
-from app.models.contratolead import ContratoLead
+from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
 from app.services.email_service import enviar_convite_parceiro
@@ -730,10 +730,10 @@ def converter_lead_em_parceiro(
         estabelecimento.status = "CONVERTIDO"
         estabelecimento.dtconversao = datetime.now()
         if titular_financeiro:
-            contrato = db.query(ContratoLead).filter(
-                ContratoLead.leadestabelecimento_id
+            contrato = db.query(LeadEstabelecimentoContrato).filter(
+                LeadEstabelecimentoContrato.leadestabelecimento_id
                 == estabelecimento.leadestabelecimento_id
-            ).order_by(ContratoLead.contratolead_id.desc()).first()
+            ).order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc()).first()
             if contrato:
                 contrato.titularfinanceiro_id = titular_financeiro.titularfinanceiro_id
         restantes = (

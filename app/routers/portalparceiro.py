@@ -12,7 +12,7 @@ from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
-from app.models.contratolead import ContratoLead
+from app.models.contratolead import LeadEstabelecimentoContrato
 from app.schemas.portalparceiro import (
     PortalAgendamentoResposta,
     PortalStatusUpdate,
@@ -162,9 +162,9 @@ def obter_resumo(
     ids_estabelecimentos = [item.leadestabelecimento_id for item in estabelecimentos]
     if ids_estabelecimentos:
         contratos = (
-            db.query(ContratoLead)
-            .filter(ContratoLead.leadestabelecimento_id.in_(ids_estabelecimentos))
-            .order_by(ContratoLead.contratolead_id.desc())
+            db.query(LeadEstabelecimentoContrato)
+            .filter(LeadEstabelecimentoContrato.leadestabelecimento_id.in_(ids_estabelecimentos))
+            .order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc())
             .all()
         )
         for contrato in contratos:
@@ -172,10 +172,10 @@ def obter_resumo(
                 contrato.leadestabelecimento_id, []
             ).append(
                 {
-                    "contratolead_id": contrato.contratolead_id,
+                    "leadestabelecimentocontrato_id": contrato.leadestabelecimentocontrato_id,
                     "versao": contrato.versao,
                     "status": contrato.status,
-                    "urlcontrato": contrato.urlcontrato,
+                    "conteudocontrato": contrato.conteudocontrato,
                     "vrtaxaprod": float(contrato.vrtaxaprod),
                     "vrtaxaing": float(contrato.vrtaxaing),
                     "dtaceite": contrato.dtaceite,
@@ -426,12 +426,12 @@ def registrar_status(
 
     if dados.status == "ACEITOU_PARCERIA":
         contrato = (
-            db.query(ContratoLead)
+            db.query(LeadEstabelecimentoContrato)
             .filter(
-                ContratoLead.leadestabelecimento_id
+                LeadEstabelecimentoContrato.leadestabelecimento_id
                 == estabelecimento.leadestabelecimento_id
             )
-            .order_by(ContratoLead.contratolead_id.desc())
+            .order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc())
             .first()
         )
         if not contrato or contrato.status != "ACEITO":

@@ -62,7 +62,9 @@ class LeadEstabelecimentosSchemaTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("CREATE TABLE leadestabelecimento", schema)
-        self.assertIn("CREATE TABLE contratolead", schema)
+        self.assertIn("CREATE TABLE leadestabelecimentocontrato", schema)
+        self.assertIn("conteudocontrato TEXT NOT NULL", schema)
+        self.assertNotIn("urlcontrato", schema)
         self.assertNotIn("uq_titularfinanceiro_organizacao", schema)
 
 

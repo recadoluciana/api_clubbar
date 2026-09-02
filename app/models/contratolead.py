@@ -3,10 +3,10 @@ from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric, String
 from app.database import Base
 
 
-class ContratoLead(Base):
-    __tablename__ = "contratolead"
+class LeadEstabelecimentoContrato(Base):
+    __tablename__ = "leadestabelecimentocontrato"
 
-    contratolead_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    leadestabelecimentocontrato_id = Column(BigInteger, primary_key=True, autoincrement=True)
     leadestabelecimento_id = Column(
         BigInteger,
         ForeignKey("leadestabelecimento.leadestabelecimento_id", ondelete="RESTRICT", onupdate="RESTRICT"),
@@ -22,12 +22,13 @@ class ContratoLead(Base):
     status = Column(String(20), nullable=False, server_default="RASCUNHO")
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="5")
-    urlcontrato = Column(Text, nullable=True)
+    conteudocontrato = Column(Text, nullable=False)
     hashdocumento = Column(String(64), nullable=True)
     nmsignatario = Column(String(160), nullable=True)
     cpfcnpjsignatario = Column(String(14), nullable=True)
     ipaceite = Column(String(45), nullable=True)
     dtaceite = Column(DateTime, nullable=True)
+    dtdisponibilizacao = Column(DateTime, nullable=True)
     dtinicio = Column(DateTime, nullable=True)
     dtfim = Column(DateTime, nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))

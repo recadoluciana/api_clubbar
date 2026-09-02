@@ -571,33 +571,34 @@ ALTER TABLE loja
 
 CREATE INDEX idx_loja_titularfinanceiro ON loja(titularfinanceiro_id);
 
-CREATE TABLE contratolead (
-  contratolead_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE leadestabelecimentocontrato (
+  leadestabelecimentocontrato_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadestabelecimento_id BIGINT NOT NULL,
   titularfinanceiro_id BIGINT NULL,
   versao VARCHAR(30) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
-  urlcontrato TEXT NULL,
+  conteudocontrato TEXT NOT NULL,
   hashdocumento CHAR(64) NULL,
   nmsignatario VARCHAR(160) NULL,
   cpfcnpjsignatario VARCHAR(14) NULL,
   ipaceite VARCHAR(45) NULL,
   dtaceite DATETIME NULL,
+  dtdisponibilizacao DATETIME NULL,
   dtinicio DATETIME NULL,
   dtfim DATETIME NULL,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_contratolead_estabelecimento FOREIGN KEY (leadestabelecimento_id)
+  CONSTRAINT fk_leadestabelecimentocontrato_estabelecimento FOREIGN KEY (leadestabelecimento_id)
     REFERENCES leadestabelecimento(leadestabelecimento_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_contratolead_titular FOREIGN KEY (titularfinanceiro_id)
+  CONSTRAINT fk_leadestabelecimentocontrato_titular FOREIGN KEY (titularfinanceiro_id)
     REFERENCES titularfinanceiro(titularfinanceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT chk_contratolead_status CHECK (
+  CONSTRAINT chk_leadestabelecimentocontrato_status CHECK (
     status IN ('RASCUNHO','ENVIADO','ACEITO','RECUSADO','CANCELADO','EXPIRADO')
   ),
-  INDEX idx_contratolead_estabelecimento (leadestabelecimento_id),
-  INDEX idx_contratolead_status (status)
+  INDEX idx_leadestabelecimentocontrato_estabelecimento (leadestabelecimento_id),
+  INDEX idx_leadestabelecimentocontrato_status (status)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE lojaasaas (
