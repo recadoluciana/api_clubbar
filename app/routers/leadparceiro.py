@@ -457,6 +457,9 @@ def atualizar_interesse_parceiro(
     if payload.tipovenda is not None and primeiro_estabelecimento:
         primeiro_estabelecimento.tipovenda = payload.tipovenda
 
+    if payload.mensagem is not None and primeiro_estabelecimento:
+        primeiro_estabelecimento.mensagem = payload.mensagem.strip() or None
+
     if payload.telefone is not None:
         lead.telefone = payload.telefone
 

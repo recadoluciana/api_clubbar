@@ -200,6 +200,7 @@ class LeadParceiroUpdate(BaseModel):
     )
 
     email: EmailStr | None = None
+    mensagem: str | None = Field(default=None, max_length=1000)
 
     @field_validator("nmresponsavel")
     @classmethod
