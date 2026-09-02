@@ -138,13 +138,43 @@ def cadastrar_estabelecimento(
 
 @router.get("/resumo")
 def obter_resumo(
+    leadestabelecimento_id: int | None = None,
     lead: LeadParceiro = Depends(obter_lead_portal),
     db: Session = Depends(get_db),
 ):
+    if leadestabelecimento_id is not None:
+        estabelecimento_valido = (
+            db.query(LeadEstabelecimento.leadestabelecimento_id)
+            .filter(
+                LeadEstabelecimento.leadestabelecimento_id
+                == leadestabelecimento_id,
+                LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+            )
+            .first()
+        )
+        if estabelecimento_valido is None:
+            raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    filtro_mensagem = [LeadMensagem.leadparceiro_id == lead.leadparceiro_id]
+    filtro_agendamento = [
+        LeadAgendamento.leadparceiro_id == lead.leadparceiro_id
+    ]
+    filtro_material = [LeadMaterial.leadparceiro_id == lead.leadparceiro_id]
+    if leadestabelecimento_id is not None:
+        filtro_mensagem.append(
+            LeadMensagem.leadestabelecimento_id == leadestabelecimento_id
+        )
+        filtro_agendamento.append(
+            LeadAgendamento.leadestabelecimento_id == leadestabelecimento_id
+        )
+        filtro_material.append(
+            LeadMaterial.leadestabelecimento_id == leadestabelecimento_id
+        )
+
     mensagens_nao_lidas = (
         db.query(func.count(LeadMensagem.leadmensagem_id))
         .filter(
-            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            *filtro_mensagem,
             LeadMensagem.origem == "CLUBBAR",
             LeadMensagem.lida == "N",
         )
@@ -155,7 +185,7 @@ def obter_resumo(
     mensagens_recebidas = (
         db.query(func.count(LeadMensagem.leadmensagem_id))
         .filter(
-            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            *filtro_mensagem,
             LeadMensagem.origem == "CLUBBAR",
         )
         .scalar()
@@ -165,7 +195,7 @@ def obter_resumo(
     mensagens_enviadas = (
         db.query(func.count(LeadMensagem.leadmensagem_id))
         .filter(
-            LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+            *filtro_mensagem,
             LeadMensagem.origem == "LEAD",
         )
         .scalar()
@@ -175,7 +205,7 @@ def obter_resumo(
     agendamentos_pendentes = (
         db.query(func.count(LeadAgendamento.leadagendamento_id))
         .filter(
-            LeadAgendamento.leadparceiro_id == lead.leadparceiro_id,
+            *filtro_agendamento,
             LeadAgendamento.status == "PENDENTE",
         )
         .scalar()
@@ -184,14 +214,14 @@ def obter_resumo(
 
     agendamentos = (
         db.query(func.count(LeadAgendamento.leadagendamento_id))
-        .filter(LeadAgendamento.leadparceiro_id == lead.leadparceiro_id)
+        .filter(*filtro_agendamento)
         .scalar()
         or 0
     )
 
     materiais = (
         db.query(func.count(LeadMaterial.leadmaterial_id))
-        .filter(LeadMaterial.leadparceiro_id == lead.leadparceiro_id)
+        .filter(*filtro_material)
         .scalar()
         or 0
     )
