@@ -1,4 +1,5 @@
 import os
+from html import escape
 import httpx
 from fastapi import HTTPException
 from app.services.email_templates import template_email_clubbar
@@ -77,6 +78,29 @@ def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
         template_email_clubbar(
             titulo='Seu atendimento Clubbar',
             subtitulo='Acompanhe a conversa com nossa equipe.',
+            conteudo_html=conteudo,
+        ),
+    )
+
+
+def enviar_dados_portal_lead(destinatario: str, leads: list[dict[str, str]]) -> None:
+    itens = "".join(
+        f"<li style='margin-bottom:12px'><b>{escape(item['nome'])}</b><br>"
+        f"E-mail: {escape(destinatario)}<br>Telefone: {escape(item['telefone'])}</li>"
+        for item in leads
+    )
+    conteudo = f"""
+    <p>Estes são os dados de acesso encontrados para o seu e-mail:</p>
+    <ul>{itens}</ul>
+    <p>Na tela “Acompanhar meu atendimento”, informe o e-mail e o telefone correspondentes ao lead que deseja acessar.</p>
+    <p>Se você não solicitou estes dados, ignore esta mensagem.</p>
+    """
+    _enviar_email(
+        destinatario,
+        "Seus dados de acesso ao atendimento Clubbar",
+        template_email_clubbar(
+            titulo="Dados do seu atendimento",
+            subtitulo="Acesse o lead correto no Portal Clubbar.",
             conteudo_html=conteudo,
         ),
     )

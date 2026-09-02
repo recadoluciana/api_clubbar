@@ -1,12 +1,15 @@
 # app/models/leadparceiro.py
 
-from sqlalchemy import BigInteger, Column, DateTime, String, text
+from sqlalchemy import BigInteger, Column, DateTime, String, UniqueConstraint, text
 
 from app.database import Base
 
 
 class LeadParceiro(Base):
     __tablename__ = "leadparceiro"
+    __table_args__ = (
+        UniqueConstraint("email", "telefone", name="uq_leadparceiro_email_telefone"),
+    )
 
     leadparceiro_id = Column(
         BigInteger,

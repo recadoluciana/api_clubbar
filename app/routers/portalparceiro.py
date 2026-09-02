@@ -19,8 +19,10 @@ from app.schemas.portalparceiro import (
     PortalMensagemCreate,
     PortalEstabelecimentoCreate,
     PortalLoginLead,
+    PortalRecuperarDados,
 )
 from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
+from app.services.email_service import enviar_dados_portal_lead
 
 
 router = APIRouter(
@@ -29,19 +31,37 @@ router = APIRouter(
 )
 
 
+def _somente_digitos(valor: str | None) -> str:
+    return "".join(caractere for caractere in (valor or "") if caractere.isdigit())
+
+
+def _selecionar_lead_login(
+    candidatos: list[LeadParceiro], telefone: str
+) -> LeadParceiro | None:
+    telefone_normalizado = _somente_digitos(telefone)
+    return next(
+        (
+            candidato
+            for candidato in candidatos
+            if _somente_digitos(candidato.telefone) == telefone_normalizado
+        ),
+        None,
+    )
+
+
 @router.post("/entrar")
 def entrar_portal(dados: PortalLoginLead, db: Session = Depends(get_db)):
-    telefone = "".join(caractere for caractere in dados.telefone if caractere.isdigit())
-    lead = (
+    candidatos = (
         db.query(LeadParceiro)
-        .filter(LeadParceiro.email == str(dados.email).strip().lower())
+        .filter(
+            func.lower(func.trim(LeadParceiro.email))
+            == str(dados.email).strip().lower()
+        )
         .order_by(LeadParceiro.leadparceiro_id.desc())
-        .first()
+        .all()
     )
-    telefone_cadastrado = (
-        "".join(caractere for caractere in (lead.telefone if lead else "") if caractere.isdigit())
-    )
-    if lead is None or telefone != telefone_cadastrado:
+    lead = _selecionar_lead_login(candidatos, dados.telefone)
+    if lead is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou telefone não conferem com o cadastro.",
@@ -50,6 +70,30 @@ def entrar_portal(dados: PortalLoginLead, db: Session = Depends(get_db)):
     token = criar_acesso_portal(db, leadparceiro_id=lead.leadparceiro_id)
     db.commit()
     return {"acesso": token}
+
+
+@router.post("/recuperar-dados")
+def recuperar_dados_portal(
+    dados: PortalRecuperarDados, db: Session = Depends(get_db)
+):
+    email = str(dados.email).strip().lower()
+    leads = (
+        db.query(LeadParceiro)
+        .filter(func.lower(func.trim(LeadParceiro.email)) == email)
+        .order_by(LeadParceiro.leadparceiro_id.desc())
+        .all()
+    )
+    if leads:
+        enviar_dados_portal_lead(
+            email,
+            [
+                {"nome": lead.nmresponsavel, "telefone": lead.telefone}
+                for lead in leads
+            ],
+        )
+    return {
+        "mensagem": "Se o e-mail estiver cadastrado, os dados serão enviados em instantes."
+    }
 
 
 @router.post("/estabelecimentos", status_code=status.HTTP_201_CREATED)

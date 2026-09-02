@@ -34,6 +34,7 @@ from app.schemas.leadparceiro import (
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -192,6 +193,25 @@ def criar_interesse_parceiro(
     payload: LeadParceiroCreate,
     db: Session = Depends(get_db),
 ):
+    email_normalizado = str(payload.email).strip().lower()
+    telefone_normalizado = "".join(
+        caractere for caractere in payload.telefone if caractere.isdigit()
+    )
+    existente = (
+        db.query(LeadParceiro)
+        .filter(
+            func.lower(func.trim(LeadParceiro.email)) == email_normalizado,
+            func.regexp_replace(LeadParceiro.telefone, "[^0-9]", "")
+            == telefone_normalizado,
+        )
+        .first()
+    )
+    if existente:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um lead cadastrado com este e-mail e telefone.",
+        )
+
     localidades: list[tuple[Estado, Cidade]] = []
     for item in payload.estabelecimentos:
         estado = db.query(Estado).filter(Estado.estado_id == item.estado_id).first()
@@ -206,8 +226,8 @@ def criar_interesse_parceiro(
     lead = LeadParceiro(
         nmresponsavel=payload.nmresponsavel,
         nmorganizacao=payload.nmorganizacao,
-        telefone=payload.telefone,
-        email=payload.email,
+        telefone=telefone_normalizado,
+        email=email_normalizado,
     )
 
     try:
@@ -867,6 +887,15 @@ def reenviar_convite_parceiro_convertido(
     try:
         superadmin.senhahashuser = hash_senha(senha_inicial)
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError as erro:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um lead cadastrado com este e-mail e telefone.",
+        ) from erro
     except Exception as erro:
         db.rollback()
         raise HTTPException(

@@ -13,6 +13,10 @@ class PortalLoginLead(BaseModel):
     telefone: str = Field(min_length=10, max_length=30)
 
 
+class PortalRecuperarDados(BaseModel):
+    email: EmailStr
+
+
 class PortalAgendamentoResposta(BaseModel):
     status: Literal["CONFIRMADO", "RECUSADO"]
 
