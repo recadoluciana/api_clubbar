@@ -297,7 +297,6 @@ CREATE TABLE organizacao (
     -- Contato administrativo
     emailorganizacao VARCHAR(255) NOT NULL,
     telorganizacao VARCHAR(25) NOT NULL,
-    tipooperacao VARCHAR(30) NULL,
     -- Controle
     sitorganizacao VARCHAR(15) NOT NULL DEFAULT 'ATIVA',
     leadparceiro_id BIGINT NULL,

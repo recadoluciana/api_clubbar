@@ -12,7 +12,6 @@ class Organizacao(Base):
     nmresponsavelprincipal = Column(String(120), nullable=True)
     emailorganizacao = Column(String(255), nullable=False)
     telorganizacao = Column(String(25), nullable=False)
-    tipooperacao = Column(String(30), nullable=True)
     sitorganizacao = Column(
         String(15), nullable=False, server_default=text('ATIVA'), index=True
     )

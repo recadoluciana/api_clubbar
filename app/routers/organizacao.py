@@ -27,7 +27,6 @@ def _out(organizacao: Organizacao, db: Session) -> dict:
         'nmresponsavelprincipal': organizacao.nmresponsavelprincipal,
         'emailorganizacao': organizacao.emailorganizacao,
         'telorganizacao': organizacao.telorganizacao,
-        'tipooperacao': organizacao.tipooperacao,
         'leadparceiro_id': organizacao.leadparceiro_id,
         'nmleadorigem': nome_lead_origem,
         'sitorganizacao': organizacao.sitorganizacao,

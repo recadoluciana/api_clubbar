@@ -712,7 +712,6 @@ def converter_lead_em_parceiro(
                 sitorganizacao="ATIVA",
                 leadparceiro_id=lead.leadparceiro_id,
                 nmresponsavelprincipal=lead.nmresponsavel.strip(),
-                tipooperacao=dados.tipo_loja,
             )
             db.add(nova_organizacao)
             db.flush()
