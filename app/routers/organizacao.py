@@ -7,6 +7,7 @@ from app.core.permissoes_loja import validar_edicao_organizacao
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.organizacao import Organizacao
+from app.models.leadparceiro import LeadParceiro
 from app.models.usuario import Usuario
 from app.schemas.organizacao import OrganizacaoCreate, OrganizacaoUpdate
 
@@ -14,7 +15,12 @@ from app.schemas.organizacao import OrganizacaoCreate, OrganizacaoUpdate
 router = APIRouter(tags=['Organizacoes'])
 
 
-def _out(organizacao: Organizacao) -> dict:
+def _out(organizacao: Organizacao, db: Session) -> dict:
+    nome_lead_origem = None
+    if organizacao.leadparceiro_id:
+        nome_lead_origem = db.query(LeadParceiro.nmresponsavel).filter(
+            LeadParceiro.leadparceiro_id == organizacao.leadparceiro_id
+        ).scalar()
     return {
         'organizacao_id': organizacao.organizacao_id,
         'nmorganizacao': organizacao.nmorganizacao,
@@ -23,6 +29,7 @@ def _out(organizacao: Organizacao) -> dict:
         'telorganizacao': organizacao.telorganizacao,
         'tipooperacao': organizacao.tipooperacao,
         'leadparceiro_id': organizacao.leadparceiro_id,
+        'nmleadorigem': nome_lead_origem,
         'sitorganizacao': organizacao.sitorganizacao,
         'dtcriacao': organizacao.dtcriacao,
         'dtultatu': organizacao.dtultatu,
@@ -39,7 +46,7 @@ def listar_organizacao_do_usuario(usuario_id: int, db: Session = Depends(get_db)
     )
     if not organizacao:
         raise HTTPException(status_code=404, detail='Organizacao nao encontrada para este usuario')
-    return _out(organizacao)
+    return _out(organizacao, db)
 
 
 @router.put('/organizacoes/usuario/{usuario_id}')
@@ -65,7 +72,7 @@ def atualizar_organizacao_do_usuario(
     try:
         db.commit()
         db.refresh(organizacao)
-        return {'mensagem': 'Organizacao atualizada com sucesso', **_out(organizacao)}
+        return {'mensagem': 'Organizacao atualizada com sucesso', **_out(organizacao, db)}
     except Exception as erro:
         db.rollback()
         traceback.print_exc()
@@ -84,7 +91,7 @@ def cadastrar_organizacao(dados: OrganizacaoCreate, db: Session = Depends(get_db
         db.add(nova)
         db.commit()
         db.refresh(nova)
-        return {'mensagem': 'Organizacao cadastrada com sucesso', **_out(nova)}
+        return {'mensagem': 'Organizacao cadastrada com sucesso', **_out(nova, db)}
     except Exception as erro:
         db.rollback()
         traceback.print_exc()

@@ -37,6 +37,7 @@ class OrganizacaoOut(BaseModel):
     telorganizacao: str
     tipooperacao: str | None = None
     leadparceiro_id: int | None = None
+    nmleadorigem: str | None = None
     sitorganizacao: SituacaoOrganizacao
     dtcriacao: datetime
     dtultatu: datetime | None = None
