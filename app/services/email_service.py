@@ -106,6 +106,82 @@ def enviar_dados_portal_lead(destinatario: str, leads: list[dict[str, str]]) -> 
     )
 
 
+def enviar_confirmacao_cadastro_lead(
+    destinatario: str,
+    lead: dict,
+    estabelecimentos: list[dict],
+) -> None:
+    nomes_tipo = {
+        "BAR": "Bar",
+        "CASA_NOTURNA": "Casa noturna",
+        "PRODUTOR_EVENTOS": "Produtor de eventos",
+        "CASA_EVENTOS": "Casa de eventos",
+    }
+    nomes_venda = {
+        "PRODUTOS": "Somente produtos",
+        "INGRESSOS": "Somente ingressos",
+        "AMBOS": "Produtos e ingressos",
+    }
+
+    cards = []
+    for indice, item in enumerate(estabelecimentos, start=1):
+        endereco = ", ".join(
+            parte
+            for parte in [
+                item.get("endereco"),
+                item.get("numero"),
+                item.get("bairro"),
+                item.get("complemento"),
+            ]
+            if parte
+        )
+        localidade = " - ".join(
+            parte for parte in [item.get("cidade"), item.get("estado")] if parte
+        )
+        linhas = [
+            ("Nome", item.get("nmestabelecimento")),
+            ("Tipo", nomes_tipo.get(item.get("tipo"), item.get("tipo"))),
+            ("O que deseja vender", nomes_venda.get(item.get("tipovenda"), item.get("tipovenda"))),
+            ("Responsável", item.get("nmresponsavel")),
+            ("Telefone do responsável", item.get("telefone_responsavel")),
+            ("E-mail do responsável", item.get("email_responsavel")),
+            ("CPF/CNPJ", item.get("cpfcnpj")),
+            ("CEP", item.get("cep")),
+            ("Endereço", endereco or None),
+            ("Cidade/Estado", localidade or None),
+        ]
+        detalhes = "".join(
+            f"<b>{escape(rotulo)}:</b> {escape(str(valor))}<br>"
+            for rotulo, valor in linhas
+            if valor
+        )
+        cards.append(
+            f"<div style='margin:16px 0;padding:16px;border:1px solid #ddd;border-radius:12px'>"
+            f"<h3 style='margin-top:0'>Estabelecimento {indice}</h3>{detalhes}</div>"
+        )
+
+    organizacao = lead.get("nmorganizacao") or "Não informada"
+    conteudo = f"""
+    <p>Olá, <b>{escape(str(lead.get('nmresponsavel') or ''))}</b>.</p>
+    <p>Seu interesse no Clubbar foi cadastrado com sucesso. Confira os dados enviados:</p>
+    <div style='margin:16px 0;padding:16px;background:#f6f6f6;border-radius:12px'>
+      <b>Responsável:</b> {escape(str(lead.get('nmresponsavel') or ''))}<br>
+      <b>Organização:</b> {escape(str(organizacao))}<br>
+      <b>E-mail:</b> {escape(str(lead.get('email') or ''))}<br>
+      <b>Telefone:</b> {escape(str(lead.get('telefone') or ''))}
+    </div>
+    {''.join(cards)}
+    <p>A equipe Clubbar entrará em contato para dar continuidade ao atendimento.</p>
+    """
+    _enviar_email(
+        destinatario,
+        "Confirmação do seu cadastro no Clubbar",
+        template_email_clubbar(
+            titulo="Cadastro recebido",
+            subtitulo="Confira os dados enviados para a equipe Clubbar.",
+            conteudo_html=conteudo,
+        ),
+    )
 def enviar_email_codigo(destinatario: str, codigo: str):
     if not BREVO_API_KEY:
         raise HTTPException(

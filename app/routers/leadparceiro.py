@@ -46,7 +46,10 @@ from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
-from app.services.email_service import enviar_convite_parceiro
+from app.services.email_service import (
+    enviar_confirmacao_cadastro_lead,
+    enviar_convite_parceiro,
+)
 
 
 CATEGORIAS_PADRAO = (
@@ -197,19 +200,46 @@ def criar_interesse_parceiro(
     telefone_normalizado = "".join(
         caractere for caractere in payload.telefone if caractere.isdigit()
     )
-    existente = (
+    conflitos: list[str] = []
+    if payload.nmorganizacao:
+        organizacao_existente = (
+            db.query(LeadParceiro.leadparceiro_id)
+            .filter(
+                func.lower(func.trim(LeadParceiro.nmorganizacao))
+                == payload.nmorganizacao.strip().lower()
+            )
+            .first()
+        )
+        if organizacao_existente:
+            conflitos.append(
+                f'A organização "{payload.nmorganizacao}" já está cadastrada.'
+            )
+
+    email_existente = (
         db.query(LeadParceiro)
         .filter(
-            func.lower(func.trim(LeadParceiro.email)) == email_normalizado,
-            func.regexp_replace(LeadParceiro.telefone, "[^0-9]", "")
-            == telefone_normalizado,
+            func.lower(func.trim(LeadParceiro.email)) == email_normalizado
         )
         .first()
     )
-    if existente:
+    if email_existente:
+        conflitos.append(f'O e-mail "{email_normalizado}" já está cadastrado.')
+
+    telefone_existente = (
+        db.query(LeadParceiro.leadparceiro_id)
+        .filter(
+            func.regexp_replace(LeadParceiro.telefone, "[^0-9]", "")
+            == telefone_normalizado
+        )
+        .first()
+    )
+    if telefone_existente:
+        conflitos.append(f'O telefone "{telefone_normalizado}" já está cadastrado.')
+
+    if conflitos:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um lead cadastrado com este e-mail e telefone.",
+            detail=" ".join(conflitos),
         )
 
     localidades: list[tuple[Estado, Cidade]] = []
@@ -270,6 +300,29 @@ def criar_interesse_parceiro(
             _serializar_estabelecimento(item) for item in estabelecimentos
         ]
         resposta["status"] = _status_agregado(estabelecimentos)
+
+        try:
+            enviar_confirmacao_cadastro_lead(
+                destinatario=lead.email,
+                lead={
+                    "nmresponsavel": lead.nmresponsavel,
+                    "nmorganizacao": lead.nmorganizacao,
+                    "email": lead.email,
+                    "telefone": lead.telefone,
+                },
+                estabelecimentos=[
+                    {
+                        **_serializar_estabelecimento(item),
+                        "cidade": cidade.nmcidade,
+                        "estado": estado.sgestado,
+                    }
+                    for item, (estado, cidade) in zip(
+                        estabelecimentos, localidades
+                    )
+                ],
+            )
+        except Exception:
+            traceback.print_exc()
 
         return resposta
 

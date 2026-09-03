@@ -3,7 +3,10 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.services.email_service import enviar_email_codigo
+from app.services.email_service import (
+    enviar_confirmacao_cadastro_lead,
+    enviar_email_codigo,
+)
 
 
 class RespostaBrevoFalsa:
@@ -13,6 +16,35 @@ class RespostaBrevoFalsa:
 
 
 class EmailServiceTest(unittest.TestCase):
+    @patch('app.services.email_service._enviar_email')
+    def test_confirmacao_cadastro_inclui_lead_e_estabelecimentos(self, enviar):
+        enviar_confirmacao_cadastro_lead(
+            'bia@example.com',
+            {
+                'nmresponsavel': 'Bia Binatto',
+                'nmorganizacao': 'Grupo Bia',
+                'email': 'bia@example.com',
+                'telefone': '35999999999',
+            },
+            [
+                {
+                    'nmestabelecimento': 'Bia Bar',
+                    'tipo': 'BAR',
+                    'tipovenda': 'AMBOS',
+                    'cidade': 'Alfenas',
+                    'estado': 'MG',
+                }
+            ],
+        )
+
+        destinatario, assunto, html = enviar.call_args.args
+        self.assertEqual('bia@example.com', destinatario)
+        self.assertIn('Confirmação', assunto)
+        self.assertIn('Bia Binatto', html)
+        self.assertIn('Grupo Bia', html)
+        self.assertIn('Bia Bar', html)
+        self.assertIn('Alfenas - MG', html)
+
     def test_ip_nao_autorizado_retorna_indisponibilidade_sem_expor_brevo(self):
         resposta = RespostaBrevoFalsa(
             401,

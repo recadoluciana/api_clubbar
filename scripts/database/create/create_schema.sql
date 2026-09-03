@@ -104,7 +104,9 @@ CREATE TABLE leadparceiro (
   dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT uq_leadparceiro_email_telefone UNIQUE (email, telefone),
+  CONSTRAINT uq_leadparceiro_nmorganizacao UNIQUE (nmorganizacao),
+  CONSTRAINT uq_leadparceiro_email UNIQUE (email),
+  CONSTRAINT uq_leadparceiro_telefone UNIQUE (telefone),
   INDEX idx_leadparceiro_email (email),
   INDEX idx_leadparceiro_dtcriacao (dtcriacao)
 )

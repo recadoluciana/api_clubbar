@@ -297,6 +297,22 @@ def main() -> None:
 
                 db.commit()
 
+                cidades_existentes = db.execute(
+                    text(
+                        "SELECT COUNT(*) FROM cidade "
+                        "WHERE estado_id = :estado_id"
+                    ),
+                    {"estado_id": estado_id},
+                ).scalar_one()
+                if cidades_existentes:
+                    total_estados += 1
+                    total_cidades += int(cidades_existentes)
+                    print(
+                        f"      [{uf_sigla}] {uf_nome}: "
+                        f"{cidades_existentes} municípios já carregados"
+                    )
+                    continue
+
                 url_municipios = (
                     IBGE_MUNICIPIOS_UF_URL.format(
                         uf_id=uf_ibgeest,

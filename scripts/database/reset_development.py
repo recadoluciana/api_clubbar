@@ -1,4 +1,4 @@
-"""Apaga e recria exclusivamente o banco configurado como desenvolvimento."""
+"""Apaga e recria um banco após confirmação explícita do ambiente e do nome."""
 
 from __future__ import annotations
 
@@ -51,20 +51,29 @@ def main() -> None:
         required=True,
         help="Nome exato do banco que será apagado e recriado",
     )
+    parser.add_argument(
+        "--allow-production",
+        action="store_true",
+        help="Autoriza explicitamente a recriação do banco de produção",
+    )
     args = parser.parse_args()
 
     config = _connection_config()
     database = str(config["database"])
-    if APP_ENV not in {"dev", "development"}:
+    is_production = APP_ENV in {"prod", "production"}
+    if APP_ENV not in {"dev", "development", "prod", "production"}:
         raise RuntimeError(f"Reset bloqueado para APP_ENV={APP_ENV!r}")
+    if is_production and not args.allow_production:
+        raise RuntimeError("Reset de produção exige --allow-production")
     if args.confirm_database != database:
         raise RuntimeError(
             "Confirmação não corresponde ao banco configurado: "
             f"esperado {database!r}"
         )
-    if "dev" not in database.lower():
+    expected_marker = "prod" if is_production else "dev"
+    if expected_marker not in database.lower():
         raise RuntimeError(
-            f"Reset bloqueado: o banco {database!r} não está identificado como desenvolvimento"
+            f"Reset bloqueado: o banco {database!r} não corresponde ao ambiente {APP_ENV!r}"
         )
 
     connection = pymysql.connect(**config)
@@ -77,7 +86,7 @@ def main() -> None:
                     f"Banco ativo inesperado: {active_database!r}; esperado {database!r}"
                 )
 
-            print(f"Recriando banco de desenvolvimento: {database}")
+            print(f"Recriando banco: {database}")
             _execute_script(cursor, DROP_SQL)
             _execute_script(cursor, CREATE_SQL)
             connection.commit()

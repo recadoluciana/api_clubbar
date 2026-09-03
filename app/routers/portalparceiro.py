@@ -57,7 +57,10 @@ def entrar_portal(dados: PortalLoginLead, db: Session = Depends(get_db)):
             func.lower(func.trim(LeadParceiro.email))
             == str(dados.email).strip().lower()
         )
-        .order_by(LeadParceiro.leadparceiro_id.desc())
+        # Cadastros novos não permitem e-mail ou telefone repetidos. Para
+        # duplicidades legadas, preserva o primeiro cadastro, que concentra o
+        # histórico original de estabelecimentos, mensagens e contratos.
+        .order_by(LeadParceiro.leadparceiro_id.asc())
         .all()
     )
     lead = _selecionar_lead_login(candidatos, dados.telefone)
@@ -112,6 +115,13 @@ def cadastrar_estabelecimento(
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,
         nmestabelecimento=dados.nmestabelecimento.strip(),
+        nmresponsavel=(dados.nmresponsavel or "").strip() or None,
+        telefone_responsavel=dados.telefone_responsavel,
+        email_responsavel=(
+            str(dados.email_responsavel).lower()
+            if dados.email_responsavel
+            else None
+        ),
         tipo=dados.tipo,
         tipovenda=dados.tipovenda,
         cpfcnpj=documento,
@@ -260,6 +270,8 @@ def obter_resumo(
         "leadparceiro_id": lead.leadparceiro_id,
         "nmresponsavel": lead.nmresponsavel,
         "nmorganizacao": lead.nmorganizacao,
+        "email": lead.email,
+        "telefone": lead.telefone,
         "nmestabelecimento": estabelecimentos[0].nmestabelecimento if estabelecimentos else "",
         "tipo": estabelecimentos[0].tipo if estabelecimentos else "BAR",
         "tipovenda": estabelecimentos[0].tipovenda if estabelecimentos else "AMBOS",

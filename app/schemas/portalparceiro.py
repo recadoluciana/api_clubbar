@@ -28,6 +28,9 @@ class PortalStatusUpdate(BaseModel):
 
 class PortalEstabelecimentoCreate(BaseModel):
     nmestabelecimento: str = Field(min_length=2, max_length=160)
+    nmresponsavel: str | None = Field(default=None, max_length=120)
+    telefone_responsavel: str | None = Field(default=None, max_length=30)
+    email_responsavel: EmailStr | None = None
     tipo: Literal["BAR", "CASA_NOTURNA", "PRODUTOR_EVENTOS", "CASA_EVENTOS"]
     tipovenda: Literal["PRODUTOS", "INGRESSOS", "AMBOS"] = "AMBOS"
     cpfcnpj: str | None = Field(default=None, max_length=18)
