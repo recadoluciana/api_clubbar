@@ -16,6 +16,8 @@ router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
 
 @router.post("/evento-rapido", status_code=201)
 def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    if dados.dtinicioatracao.date() < datetime.now().date():
+        raise HTTPException(422, "Não é permitido criar eventos em datas passadas.")
     try:
         org=int(payload["organizacao_id"])
     except (KeyError,TypeError,ValueError):

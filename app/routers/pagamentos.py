@@ -42,6 +42,7 @@ from app.services.asaas_service import (
 )
 from app.services.repasse_service import criar_repasse_da_venda
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -385,6 +386,8 @@ async def pagar_asaas(
     db: Session = Depends(get_db),
 ):
     try:
+        validar_publicacao_loja(db, payload.loja_id)
+
         carrinho = get_carrinho(
             db,
             payload.cliente_id,

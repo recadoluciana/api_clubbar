@@ -305,6 +305,13 @@ def criar_evento(
     usuario: dict = Depends(get_usuario_logado),
 ):
     try:
+        inicio_evento = datetime.fromisoformat(dtinicioevento)
+        if inicio_evento.date() < datetime.now().date():
+            raise HTTPException(
+                status_code=422,
+                detail="Não é permitido criar eventos em datas passadas.",
+            )
+
         loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
@@ -322,7 +329,7 @@ def criar_evento(
             dspoliticacancelamento=dspoliticacancelamento,
             dspoliticareembolso=dspoliticareembolso,
             dspoliticacashback=dspoliticacashback,
-            dtinicioevento=datetime.fromisoformat(dtinicioevento),
+            dtinicioevento=inicio_evento,
             dtfimevento=datetime.fromisoformat(dtfimevento) if dtfimevento else None,
             nmlocalevento=nmlocalevento,
             dsendlocevento=dsendlocevento,

@@ -17,7 +17,6 @@ from app.models.organizacao import Organizacao
 from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.core.permissoes_loja import validar_mutacao_loja
 
 router = APIRouter(tags=["Produtos"])
@@ -231,8 +230,6 @@ def atualizar_produto(
             produto.vrprecoprod = vrprecoprod
 
         if sitproduto is not None:
-            if sitproduto.upper() == 'ATIVO':
-                validar_publicacao_loja(db, produto.loja_id)
             produto.sitproduto = sitproduto
 
         if tipodesconto is not None:
@@ -290,14 +287,22 @@ def atualizar_produto(
 
 # >>>>> lista todos os produtos da loja do tipo P (produto)
 @router.get("/lojas/{loja_id}/produtos")
-def listar_produtos_por_loja(loja_id: int, db: Session = Depends(get_db)):
-    rows = (
+def listar_produtos_por_loja(
+    loja_id: int,
+    incluir_inativos: bool = False,
+    db: Session = Depends(get_db),
+):
+    query = (
         db.query(Produto, Categoria.nmcategoria)
         .outerjoin(Categoria, Categoria.categoria_id == Produto.categoria_id)
-        .filter(Produto.loja_id == loja_id, Produto.sitproduto == "ATIVO")
+        .filter(Produto.loja_id == loja_id)
         .filter(Produto.idtipoproduto == "P")
-        .all()
     )
+
+    if not incluir_inativos:
+        query = query.filter(Produto.sitproduto == "ATIVO")
+
+    rows = query.order_by(Produto.nmproduto.asc()).all()
 
     saida = []
 
@@ -352,8 +357,6 @@ async def criar_produto(
     usuario: dict = Depends(get_usuario_logado),
 ):
     validar_mutacao_loja(usuario, organizacao_id, loja_id)
-    if sitproduto.upper() == 'ATIVO':
-        validar_publicacao_loja(db, loja_id)
     nmproduto = nmproduto.strip()
 
     if not nmproduto:
