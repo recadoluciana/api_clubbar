@@ -37,6 +37,12 @@ class ConversaoLeadParceiroTest(unittest.TestCase):
         self.assertNotIn("acesso_portal", fonte)
         self.assertNotIn("import traceback", fonte)
 
+    def test_usuario_criado_com_nome_do_responsavel_pelo_lead(self):
+        fonte = inspect.getsource(converter_lead_em_parceiro)
+
+        self.assertIn("nmusuario=lead.nmresponsavel.strip()", fonte)
+        self.assertNotIn('nmusuario=f"SUPERADMIN', fonte)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -780,7 +780,7 @@ def converter_lead_em_parceiro(
             superadmin = Usuario(
                 organizacao_id=nova_organizacao.organizacao_id,
                 loja_id=None,
-                nmusuario=f"SUPERADMIN {nova_organizacao.nmorganizacao}",
+                nmusuario=lead.nmresponsavel.strip(),
                 emailuser=email_responsavel,
                 senhahashuser=hash_senha(senha_inicial),
                 dscargo="SUPERADMIN",
