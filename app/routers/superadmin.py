@@ -77,6 +77,28 @@ def dashboard_superadmin(
         or 0
     )
 
+    status_estabelecimentos = {
+        status: 0
+        for status in (
+            "NOVO",
+            "CONTATADO",
+            "NEGOCIANDO",
+            "ACEITOU_PARCERIA",
+            "CONVERTIDO",
+            "RECUSOU_PARCERIA",
+        )
+    }
+    for status, quantidade in (
+        db.query(
+            LeadEstabelecimento.status,
+            func.count(LeadEstabelecimento.leadestabelecimento_id),
+        )
+        .group_by(LeadEstabelecimento.status)
+        .all()
+    ):
+        chave_status = status.value if hasattr(status, "value") else str(status)
+        status_estabelecimentos[chave_status] = int(quantidade)
+
     # =========================================================
     # PARCEIROS ATIVOS
     # Toda organização ativa é contabilizada como parceiro
@@ -278,6 +300,7 @@ def dashboard_superadmin(
         "leads_novos": int(leads_novos),
         "total_lead_estabelecimentos": int(total_lead_estabelecimentos),
         "lead_estabelecimentos_novos": int(lead_estabelecimentos_novos),
+        "lead_estabelecimentos_por_status": status_estabelecimentos,
 
         # Parceiros
         "organizacoes": int(parceiros_ativos),
