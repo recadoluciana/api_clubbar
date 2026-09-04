@@ -59,6 +59,7 @@ CATEGORIAS_PADRAO = (
     "Bebidas sem álcool",
     "Porções",
     "Lanches",
+    "Combo",
     "Outros",
 )
 

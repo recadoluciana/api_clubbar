@@ -31,7 +31,7 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
     if not atracao: raise HTTPException(404,"Atração não encontrada.")
     evento=Evento(
         organizacao_id=org,loja_id=loja.loja_id,
-        nmtituloevento=f"{loja.nmloja} - {atracao.nmatracao}"[:120],
+        nmtituloevento=dados.nmtituloevento,
         dsdescevento=atracao.dsatracao,
         dtinicioevento=dados.dtinicioatracao,dtfimevento=None,
         nmlocalevento=None,dsendlocevento=None,

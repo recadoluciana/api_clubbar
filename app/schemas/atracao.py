@@ -19,6 +19,7 @@ class EventoAtracaoUpdate(BaseModel):
 
 class EventoRapidoAgendaIn(BaseModel):
     loja_id: int
+    nmtituloevento: str = Field(min_length=1, max_length=120)
     atracao_id: int
     dtinicioatracao: datetime
     dtfimatracao: datetime
@@ -26,6 +27,9 @@ class EventoRapidoAgendaIn(BaseModel):
 
     @model_validator(mode="after")
     def validar_periodo(self):
+        self.nmtituloevento = self.nmtituloevento.strip()
+        if not self.nmtituloevento:
+            raise ValueError("Informe o nome do evento.")
         if self.dtfimatracao <= self.dtinicioatracao:
             raise ValueError("O fim da atração deve ser posterior ao início.")
         return self

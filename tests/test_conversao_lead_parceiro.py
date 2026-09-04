@@ -21,11 +21,12 @@ class ConversaoLeadParceiroTest(unittest.TestCase):
             _senha_inicial_superadmin("98.765.432/0001-10", "Ana Maria"),
         )
 
-    def test_onboarding_possui_sete_categorias_ordenadas(self):
-        self.assertEqual(7, len(CATEGORIAS_PADRAO))
+    def test_onboarding_possui_oito_categorias_ordenadas(self):
+        self.assertEqual(8, len(CATEGORIAS_PADRAO))
         self.assertEqual("Cervejas", CATEGORIAS_PADRAO[0])
+        self.assertIn("Combo", CATEGORIAS_PADRAO)
         self.assertEqual("Outros", CATEGORIAS_PADRAO[-1])
-        self.assertEqual(7, len(set(CATEGORIAS_PADRAO)))
+        self.assertEqual(8, len(set(CATEGORIAS_PADRAO)))
 
     def test_convite_e_enviado_somente_depois_do_commit(self):
         fonte = inspect.getsource(converter_lead_em_parceiro)
