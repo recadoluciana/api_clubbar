@@ -206,7 +206,7 @@ def get_evento_por_id(
     db: Session = Depends(get_db),
 ):
     evento = (
-        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Loja.nrendloja, Cidade.nmcidade, Estado.sgestado)
+        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Loja.nrendeloja, Cidade.nmcidade, Estado.sgestado)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Estado, Estado.estado_id == Cidade.estado_id)
