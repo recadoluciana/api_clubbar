@@ -21,7 +21,6 @@ DROP TABLE IF EXISTS eventoatracao;
 DROP TABLE IF EXISTS eventolote;
 DROP TABLE IF EXISTS eventodescricao;
 DROP TABLE IF EXISTS evento;
-DROP TABLE IF EXISTS atracaodescricao;
 DROP TABLE IF EXISTS atracao;
 DROP TABLE IF EXISTS produto;
 DROP TABLE IF EXISTS categoria;

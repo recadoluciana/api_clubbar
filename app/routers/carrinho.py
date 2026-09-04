@@ -154,27 +154,31 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         db.add(carr)
         db.flush()
 
-    # 3) cria item (produto_id NOT NULL garantido)
-    item = ItCarrinho(
-        carrinho_id=int(carr.carrinho_id),
-        produto_id=produto_id_final,
-        qtitcarrinho=int(payload.qt),
-        dsobsitcar=(payload.obs or None),
-        lote_id=lote_id_final,  # ✅ NUNCA "" (string)
-        # NOVOS CAMPOS
-        nmparticipante=payload.nmparticipante,
-        cpfparticipante=payload.cpfparticipante,        
-    )
+    # 3) cada unidade ocupa uma linha. A API de consulta agrupa visualmente
+    # produtos iguais que possuem a mesma observação.
+    itens = [
+        ItCarrinho(
+            carrinho_id=int(carr.carrinho_id),
+            produto_id=produto_id_final,
+            qtitcarrinho=1,
+            dsobsitcar=(payload.obs or "").strip() or None,
+            lote_id=lote_id_final,
+            nmparticipante=payload.nmparticipante,
+            cpfparticipante=payload.cpfparticipante,
+        )
+        for _ in range(int(payload.qt))
+    ]
 
-    db.add(item)
+    db.add_all(itens)
     db.commit()
+    item = itens[-1]
     db.refresh(item)
 
     return AddItemOut(
         carrinho_id=int(carr.carrinho_id),
         itcarrinho_id=int(item.itcarrinho_id),
         produto_id=int(item.produto_id),
-        qt=int(item.qtitcarrinho),
+        qt=int(payload.qt),
         obs=item.dsobsitcar,
         nmparticipante=item.nmparticipante,
         cpfparticipante=item.cpfparticipante,        

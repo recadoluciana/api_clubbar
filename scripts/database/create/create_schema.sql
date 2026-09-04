@@ -1121,6 +1121,7 @@ CREATE TABLE atracao (
   organizacao_id      BIGINT NOT NULL,
   nmatracao           VARCHAR(120) NOT NULL,
   dsestilomusical     VARCHAR(255) NULL,
+  dsatracao           TEXT NULL,
   urlbanneratracao    VARCHAR(255) NULL,
   dtcriacao           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu            DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -1134,16 +1135,6 @@ CREATE TABLE atracao (
     organizacao_id,
     nmatracao
   )
-) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
-
-CREATE TABLE atracaodescricao (
-  atracao_id    BIGINT PRIMARY KEY,
-  dsatracao     TEXT NULL,
-  dtcriacao     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu      DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_atracaodescricao_atracao
-    FOREIGN KEY (atracao_id) REFERENCES atracao(atracao_id)
-    ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE evento (

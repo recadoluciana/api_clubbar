@@ -99,6 +99,37 @@ async def buscar_customer_asaas(customer_id: str, api_key: str):
 
     return data
 
+
+async def atualizar_cliente_por_customer_asaas(
+    db: Session,
+    *,
+    cliente_id: int,
+    customer_id: str,
+    api_key: str,
+):
+    """Traz para o perfil os dados informados pelo cliente no checkout."""
+    cliente = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cliente or not customer_id:
+        return
+
+    customer = await buscar_customer_asaas(customer_id, api_key)
+
+    cliente.idclienteasaas = customer.get("id") or cliente.idclienteasaas
+    cliente.nrtelcliente = (
+        customer.get("mobilePhone")
+        or customer.get("phone")
+        or cliente.nrtelcliente
+    )
+    cliente.nrcpfcliente = customer.get("cpfCnpj") or cliente.nrcpfcliente
+    cliente.endcliente = customer.get("address") or cliente.endcliente
+    cliente.nrendcliente = customer.get("addressNumber") or cliente.nrendcliente
+    cliente.complcliente = customer.get("complement") or cliente.complcliente
+    cliente.bairrocliente = customer.get("province") or cliente.bairrocliente
+    cliente.cepcliente = customer.get("postalCode") or cliente.cepcliente
+    cliente.cidadecliente = customer.get("city") or cliente.cidadecliente
+    cliente.ufcliente = customer.get("state") or cliente.ufcliente
+    db.commit()
+
 async def obter_ou_criar_customer_asaas(
     db: Session,
     *,

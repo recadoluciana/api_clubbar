@@ -12,7 +12,7 @@ class AddItemIn(BaseModel):
     produto_id: Optional[int] = None
     lote_id: Optional[int] = None
 
-    qt: int = Field(ge=1, default=1)
+    qt: int = Field(ge=1, le=999, default=1)
     obs: Optional[str] = None
 
     nmparticipante: str | None = None

@@ -36,6 +36,7 @@ from app.services.asaas_service import (
     buscar_pagamento_confirmado_por_checkout,
     buscar_pagamento_confirmado_por_qrcode_pix,
     buscar_pagamento_confirmado_por_referencia,
+    atualizar_cliente_por_customer_asaas,
     criar_qrcode_pix_estatico_asaas,
     cancelar_checkout_asaas,
     excluir_qrcode_pix_estatico_asaas,
@@ -686,6 +687,23 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
             checkout.status = "PAID"
             checkout.payment_id = str(pagamento.get("id") or "") or None
             db.commit()
+            if (
+                str(pagamento.get("billingType") or "").upper()
+                in {"CREDIT_CARD", "DEBIT_CARD"}
+                and pagamento.get("customer")
+                and checkout.cliente_id
+            ):
+                try:
+                    await atualizar_cliente_por_customer_asaas(
+                        db,
+                        cliente_id=checkout.cliente_id,
+                        customer_id=str(pagamento["customer"]),
+                        api_key=ASAAS_API_KEY,
+                    )
+                except Exception as exc:
+                    # O pagamento e a venda permanecem válidos mesmo se a
+                    # atualização complementar do perfil falhar.
+                    print("[ASAAS] Erro ao atualizar endereco do cliente:", repr(exc))
             status_atual = "PAID"
     pago = status_atual in {"PAID", "RECEIVED", "CONFIRMED"}
     return {

@@ -1,7 +1,6 @@
 import unittest
 
 from app.models.atracao import Atracao
-from app.models.atracaodescricao import AtracaoDescricao
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao  # registra os relacionamentos
 from app.models.eventodescricao import EventoDescricao
@@ -29,9 +28,7 @@ class ModeloDescricoesTest(unittest.TestCase):
         self.assertEqual(evento.dspoliticacashback, "Cashback")
 
     def test_texto_da_atracao_fica_na_tabela_um_para_um(self):
-        self.assertNotIn("dsatracao", Atracao.__table__.c)
-        self.assertIn("dsatracao", AtracaoDescricao.__table__.c)
-        self.assertTrue(AtracaoDescricao.__table__.c.atracao_id.primary_key)
+        self.assertIn("dsatracao", Atracao.__table__.c)
         self.assertEqual(Atracao(dsatracao="Banda").dsatracao, "Banda")
 
 

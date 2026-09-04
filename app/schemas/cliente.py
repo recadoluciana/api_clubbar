@@ -6,6 +6,14 @@ class ClientePerfilUpdate(BaseModel):
     nmcliente: str = Field(min_length=3, max_length=120)
     nrtelcliente: Optional[str] = Field(default=None, max_length=15)
     nrcpfcliente: Optional[str] = Field(default=None, max_length=15)
+    endcliente: Optional[str] = Field(default=None, max_length=150)
+    nrendcliente: Optional[str] = Field(default=None, max_length=20)
+    complcliente: Optional[str] = Field(default=None, max_length=80)
+    bairrocliente: Optional[str] = Field(default=None, max_length=80)
+    cepcliente: Optional[str] = Field(default=None, max_length=10)
+    cidadecliente: Optional[str] = Field(default=None, max_length=100)
+    ufcliente: Optional[str] = Field(default=None, max_length=2)
+    idcidadeibge: Optional[int] = None
 
 class AlterarSenhaClienteRequest(BaseModel):
     senha_atual: str = Field(min_length=1)

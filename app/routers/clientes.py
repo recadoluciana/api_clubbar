@@ -80,6 +80,14 @@ def perfil_cliente(
         "emailcliente": cli.emailcliente,
         "nrtelcliente": cli.nrtelcliente,
         "nrcpfcliente": cli.nrcpfcliente,
+        "endcliente": cli.endcliente,
+        "nrendcliente": cli.nrendcliente,
+        "complcliente": cli.complcliente,
+        "bairrocliente": cli.bairrocliente,
+        "cepcliente": cli.cepcliente,
+        "cidadecliente": cli.cidadecliente,
+        "ufcliente": cli.ufcliente,
+        "idcidadeibge": cli.idcidadeibge,
     }
 
 
@@ -104,9 +112,13 @@ def atualizar_perfil_cliente(
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
-    if payload.nrcpfcliente:
+    cpf = ''.join(filter(str.isdigit, payload.nrcpfcliente or '')) or None
+    telefone = ''.join(filter(str.isdigit, payload.nrtelcliente or '')) or None
+    cep = ''.join(filter(str.isdigit, payload.cepcliente or '')) or None
+
+    if cpf:
         outro = db.query(Cliente).filter(
-            Cliente.nrcpfcliente == payload.nrcpfcliente,
+            Cliente.nrcpfcliente == cpf,
             Cliente.cliente_id != cliente_id
         ).first()
 
@@ -117,8 +129,16 @@ def atualizar_perfil_cliente(
             )
 
     cli.nmcliente = payload.nmcliente.strip()
-    cli.nrtelcliente = payload.nrtelcliente.strip() if payload.nrtelcliente else None
-    cli.nrcpfcliente = payload.nrcpfcliente.strip() if payload.nrcpfcliente else None
+    cli.nrtelcliente = telefone
+    cli.nrcpfcliente = cpf
+    cli.endcliente = payload.endcliente.strip() if payload.endcliente else None
+    cli.nrendcliente = payload.nrendcliente.strip() if payload.nrendcliente else None
+    cli.complcliente = payload.complcliente.strip() if payload.complcliente else None
+    cli.bairrocliente = payload.bairrocliente.strip() if payload.bairrocliente else None
+    cli.cepcliente = cep
+    cli.cidadecliente = payload.cidadecliente.strip() if payload.cidadecliente else None
+    cli.ufcliente = payload.ufcliente.strip().upper() if payload.ufcliente else None
+    cli.idcidadeibge = payload.idcidadeibge
 
     db.commit()
 
@@ -129,4 +149,12 @@ def atualizar_perfil_cliente(
         "emailcliente": cli.emailcliente,
         "nrtelcliente": cli.nrtelcliente,
         "nrcpfcliente": cli.nrcpfcliente,
+        "endcliente": cli.endcliente,
+        "nrendcliente": cli.nrendcliente,
+        "complcliente": cli.complcliente,
+        "bairrocliente": cli.bairrocliente,
+        "cepcliente": cli.cepcliente,
+        "cidadecliente": cli.cidadecliente,
+        "ufcliente": cli.ufcliente,
+        "idcidadeibge": cli.idcidadeibge,
     }

@@ -206,7 +206,7 @@ def get_evento_por_id(
     db: Session = Depends(get_db),
 ):
     evento = (
-        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Cidade.nmcidade, Estado.sgestado)
+        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Loja.nrendloja, Cidade.nmcidade, Estado.sgestado)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Estado, Estado.estado_id == Cidade.estado_id)
@@ -219,7 +219,7 @@ def get_evento_por_id(
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-    evento_obj, nmloja, dsbairroloja, endloja, nmcidade, sgestado = evento
+    evento_obj, nmloja, dsbairroloja, endloja, nrendloja, nmcidade, sgestado = evento
 
     lotes = (
         db.query(EventoLote)
@@ -238,6 +238,7 @@ def get_evento_por_id(
     base_url = str(request.base_url).rstrip("/")
 
     endereco_evento = evento_obj.dsendlocevento or endloja
+    numero_endereco_evento = None if evento_obj.dsendlocevento else nrendloja
     local_evento    = evento_obj.nmlocalevento or nmloja
 
     return {
@@ -249,6 +250,7 @@ def get_evento_por_id(
         "dtfimevento": getattr(evento_obj, "dtfimevento", None),
         "nmlocalevento": local_evento,
         "dsendlocevento": endereco_evento,
+        "nrendlocevento": numero_endereco_evento,
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
         "dspoliticacancelamento": evento_obj.dspoliticacancelamento,
         "dspoliticareembolso": evento_obj.dspoliticareembolso,
