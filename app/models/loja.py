@@ -36,7 +36,6 @@ class Loja(Base):
     nrdiavalidade = Column(BigInteger,nullable=False, default=90)
     idvalidadeprod = Column(CHAR(1), nullable=False, default="S")
 
-    dshorarioloja = Column(String(255))
     aberto24x7 = Column(CHAR(1), nullable=False, default="N")
     nrtelloja = Column(String(25))
     qtcpdloja = Column(Integer, nullable=True)

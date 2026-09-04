@@ -15,7 +15,6 @@ class LojaCreate(BaseModel):
     vendaingressos: Literal[S, N] = S
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
-    dshorarioloja: Optional[str] = None
     aberto24x7: Literal["S", "N"] = "N"
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
@@ -38,7 +37,6 @@ class LojaUpdate(BaseModel):
     nrendeloja: Optional[str] = Field(default=None, min_length=1, max_length=20)
     dsbairroloja: Optional[str] = None
     nrtelloja: Optional[str] = None
-    dshorarioloja: Optional[str] = None
     aberto24x7: Optional[Literal["S", "N"]] = None
     dsestiloloja: Optional[str] = None
     nrdiavalidade: Optional[int] = None
