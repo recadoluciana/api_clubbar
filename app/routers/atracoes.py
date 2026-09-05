@@ -12,12 +12,25 @@ from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
 from app.schemas.atracao import EventoAtracaoIn, EventoAtracaoUpdate
+from app.schemas.estilomusical import EstiloMusicalIn
 
 router = APIRouter(tags=["Atrações"])
 
 def _org(payload):
     try: return int(payload["organizacao_id"])
     except (KeyError, TypeError, ValueError): raise HTTPException(403, "Organização não identificada no login.")
+
+def _validar_gestao_estilos(payload):
+    cargo = str(payload.get("dscargo") or "").strip().upper()
+    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN"}:
+        raise HTTPException(403, "Somente administradores podem gerenciar estilos musicais.")
+
+def _estilo_item(e):
+    return {
+        "estilomusical_id": e.estilomusical_id,
+        "nmestilomusical": e.nmestilomusical,
+        "sitestilomusical": e.sitestilomusical,
+    }
 
 def _banner(arquivo):
     if not arquivo or not arquivo.filename: return None
@@ -64,6 +77,45 @@ def listar_estilos_musicais(db:Session=Depends(get_db)):
     itens=db.query(EstiloMusical).filter(EstiloMusical.sitestilomusical=="ATIVO").order_by(EstiloMusical.nmestilomusical).all()
     return [{"estilomusical_id":e.estilomusical_id,"nmestilomusical":e.nmestilomusical} for e in itens]
 
+@router.get("/estilos-musicais/gerenciar")
+def gerenciar_estilos_musicais(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload)
+    itens=db.query(EstiloMusical).order_by(EstiloMusical.nmestilomusical).all()
+    return [_estilo_item(e) for e in itens]
+
+@router.post("/estilos-musicais", status_code=201)
+def criar_estilo_musical(dados:EstiloMusicalIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload)
+    existente=db.query(EstiloMusical).filter(EstiloMusical.nmestilomusical==dados.nmestilomusical).first()
+    if existente: raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    estilo=EstiloMusical(nmestilomusical=dados.nmestilomusical,sitestilomusical=dados.sitestilomusical)
+    db.add(estilo)
+    try: db.commit()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    db.refresh(estilo); return _estilo_item(estilo)
+
+@router.put("/estilos-musicais/{estilo_id}")
+def atualizar_estilo_musical(estilo_id:int,dados:EstiloMusicalIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload)
+    estilo=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id==estilo_id).first()
+    if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
+    duplicado=db.query(EstiloMusical).filter(EstiloMusical.nmestilomusical==dados.nmestilomusical,EstiloMusical.estilomusical_id!=estilo_id).first()
+    if duplicado: raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    estilo.nmestilomusical=dados.nmestilomusical; estilo.sitestilomusical=dados.sitestilomusical
+    try: db.commit()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    db.refresh(estilo); return _estilo_item(estilo)
+
+@router.delete("/estilos-musicais/{estilo_id}", status_code=204)
+def excluir_estilo_musical(estilo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload)
+    estilo=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id==estilo_id).first()
+    if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
+    if estilo.atracoes: raise HTTPException(409,"O estilo está vinculado a atrações. Inative-o em vez de excluir.")
+    db.delete(estilo); db.commit()
+
 @router.post("/atracoes", status_code=201)
 def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload,_org(payload))
@@ -96,6 +148,20 @@ def _evento(db,evento_id,org):
     if not e: raise HTTPException(404,"Evento não encontrado.")
     return e
 
+def _validar_horario_programacao(db, evento_id, inicio, fim, ignorar_id=None):
+    conflito = db.query(EventoAtracao).filter(
+        EventoAtracao.evento_id == evento_id,
+        EventoAtracao.dtinicioatracao < fim,
+        EventoAtracao.dtfimatracao > inicio,
+    )
+    if ignorar_id is not None:
+        conflito = conflito.filter(EventoAtracao.eventoatracao_id != ignorar_id)
+    if conflito.first():
+        raise HTTPException(
+            409,
+            "Já existe uma atração programada nesse horário. Escolha outro período.",
+        )
+
 @router.get("/eventos/{evento_id}/atracoes")
 def listar_programacao(evento_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _evento(db,evento_id,_org(payload))
@@ -106,6 +172,7 @@ def listar_programacao(evento_id:int,payload=Depends(get_usuario_logado),db:Sess
 def adicionar(evento_id:int,dados:EventoAtracaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload); evento=_evento(db,evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
     if not db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
+    _validar_horario_programacao(db,evento_id,dados.dtinicioatracao,dados.dtfimatracao)
     p=EventoAtracao(evento_id=evento_id,**dados.model_dump()); db.add(p); db.commit()
     p=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).filter(EventoAtracao.eventoatracao_id==p.eventoatracao_id).first(); return _prog(p)
 
@@ -118,6 +185,7 @@ def editar_programacao(programacao_id:int,dados:EventoAtracaoUpdate,payload=Depe
     if "atracao_id" in vals and not db.query(Atracao).filter(Atracao.atracao_id==vals["atracao_id"],Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     inicio=vals.get("dtinicioatracao",p.dtinicioatracao); fim=vals.get("dtfimatracao",p.dtfimatracao)
     if fim<=inicio: raise HTTPException(422,"O fim da atração deve ser posterior ao início.")
+    _validar_horario_programacao(db,p.evento_id,inicio,fim,p.eventoatracao_id)
     for k,v in vals.items(): setattr(p,k,v)
     db.commit(); db.refresh(p); return _prog(p)
 

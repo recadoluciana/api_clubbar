@@ -682,6 +682,8 @@ CREATE TABLE usuario (
 
 CREATE TABLE auditoria (
   auditoria_id BIGINT NOT NULL AUTO_INCREMENT,
+  organizacao_id BIGINT NULL,
+  loja_id BIGINT NULL,
   tabela VARCHAR(100) NOT NULL,
   registro_id VARCHAR(255) NOT NULL,
   acao VARCHAR(15) NOT NULL,
@@ -698,12 +700,18 @@ CREATE TABLE auditoria (
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (auditoria_id),
   INDEX idx_auditoria_registro (tabela, registro_id, dtcriacao),
+  INDEX idx_auditoria_organizacao (organizacao_id, dtcriacao),
+  INDEX idx_auditoria_loja (loja_id, dtcriacao),
   INDEX idx_auditoria_usuario (usuario_id, dtcriacao),
   INDEX idx_auditoria_operador (operador_id, dtcriacao),
   CONSTRAINT fk_auditoria_usuario FOREIGN KEY (usuario_id)
     REFERENCES usuario(usuario_id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT fk_auditoria_operador FOREIGN KEY (operador_id)
     REFERENCES operador(operador_id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_auditoria_organizacao FOREIGN KEY (organizacao_id)
+    REFERENCES organizacao(organizacao_id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_auditoria_loja FOREIGN KEY (loja_id)
+    REFERENCES loja(loja_id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT chk_auditoria_acao
     CHECK (acao IN ('INCLUSAO', 'ALTERACAO', 'EXCLUSAO')),
   CONSTRAINT chk_auditoria_ator_tipo
@@ -1169,6 +1177,8 @@ CREATE TABLE evento (
   nmlocalevento          VARCHAR(120) NULL,
   dsendlocevento         VARCHAR(200) NULL,
   urlbannerevento        VARCHAR(255) NULL,
+  urlmapaingressos       VARCHAR(255) NULL,
+  dsmapaingressos        VARCHAR(255) NULL,
   statusevento           ENUM('RASCUNHO','ATIVO','ENCERRADO','CANCELADO') NOT NULL DEFAULT 'RASCUNHO',
   dtcriacao              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu               DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -1235,11 +1245,33 @@ CREATE TABLE eventoatracao (
   )
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE eventosetor (
+  eventosetor_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  loja_id BIGINT NOT NULL,
+  evento_id BIGINT NOT NULL,
+  nmsetor VARCHAR(100) NOT NULL,
+  dssetor VARCHAR(255) NULL,
+  qtcapacidade INT NOT NULL,
+  nrordem INT NOT NULL DEFAULT 1,
+  sitsetor VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_eventosetor_nome (evento_id, nmsetor),
+  INDEX idx_eventosetor_evento (evento_id, sitsetor, nrordem),
+  FOREIGN KEY (evento_id) REFERENCES evento(evento_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CHECK (qtcapacidade > 0), CHECK (nrordem > 0)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE eventolote (
   lote_id          BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
   loja_id          BIGINT NOT NULL,
   evento_id        BIGINT NOT NULL,
+  eventosetor_id   BIGINT NULL,
+  nrlote           INT NOT NULL DEFAULT 1,
+  tipoingresso     VARCHAR(15) NOT NULL DEFAULT 'UNICO',
   nmlote           VARCHAR(80) NOT NULL,
   vrprecolote      DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   qttotallote      INT NULL,
@@ -1265,6 +1297,9 @@ CREATE TABLE eventolote (
     FOREIGN KEY (organizacao_id, loja_id, evento_id)
     REFERENCES evento(organizacao_id, loja_id, evento_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_eventolote_setor
+    FOREIGN KEY (eventosetor_id) REFERENCES eventosetor(eventosetor_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
 
   CONSTRAINT chk_lote_quantidades
     CHECK (

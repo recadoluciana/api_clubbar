@@ -27,6 +27,13 @@ class EventoLote(Base):
         ForeignKey("evento.evento_id", ondelete="RESTRICT", onupdate="CASCADE"),
         nullable=False,
     )
+    eventosetor_id = Column(
+        BigInteger,
+        ForeignKey("eventosetor.eventosetor_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=True,
+    )
+    nrlote = Column(Integer, nullable=False, server_default="1")
+    tipoingresso = Column(String(15), nullable=False, server_default="UNICO")
 
     nmlote = Column(String(80), nullable=False)
 
@@ -58,6 +65,11 @@ class EventoLote(Base):
     )
 
     evento = relationship("Evento")
+    setor = relationship("EventoSetor")
+
+    @property
+    def nmsetor(self):
+        return self.setor.nmsetor if self.setor else None
 
     def __repr__(self) -> str:
         return (
@@ -67,3 +79,5 @@ class EventoLote(Base):
             f"preco={self.vrprecolote} "
             f"status={self.statuslote}>"
         )
+
+from app.models.eventosetor import EventoSetor  # noqa: E402,F401

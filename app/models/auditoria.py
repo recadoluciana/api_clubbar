@@ -16,6 +16,16 @@ class Auditoria(Base):
     __tablename__ = "auditoria"
 
     auditoria_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organizacao_id = Column(
+        BigInteger,
+        ForeignKey("organizacao.organizacao_id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    loja_id = Column(
+        BigInteger,
+        ForeignKey("loja.loja_id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
     tabela = Column(String(100), nullable=False)
     registro_id = Column(String(255), nullable=False)
     acao = Column(String(15), nullable=False)
@@ -43,6 +53,8 @@ class Auditoria(Base):
 
     __table_args__ = (
         Index("idx_auditoria_registro", "tabela", "registro_id", "dtcriacao"),
+        Index("idx_auditoria_organizacao", "organizacao_id", "dtcriacao"),
+        Index("idx_auditoria_loja", "loja_id", "dtcriacao"),
         Index("idx_auditoria_usuario", "usuario_id", "dtcriacao"),
         Index("idx_auditoria_operador", "operador_id", "dtcriacao"),
     )

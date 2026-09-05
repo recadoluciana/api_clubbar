@@ -21,6 +21,8 @@ class AtorAuditoria:
     email: str | None = None
     usuario_id: int | None = None
     operador_id: int | None = None
+    organizacao_id: int | None = None
+    loja_id: int | None = None
     metodo_http: str | None = None
     rota: str | None = None
 
@@ -111,7 +113,11 @@ def _alteracoes(objeto: Any) -> tuple[dict[str, Any], dict[str, Any]]:
 
 def _criar_evento(objeto: Any, acao: str, anteriores=None, novos=None) -> Auditoria:
     ator = _ator_atual.get()
+    organizacao_id = getattr(objeto, "organizacao_id", None) or ator.organizacao_id
+    loja_id = getattr(objeto, "loja_id", None) or ator.loja_id
     return Auditoria(
+        organizacao_id=organizacao_id,
+        loja_id=loja_id,
         tabela=inspect(objeto).mapper.local_table.name,
         registro_id=_identificador(objeto),
         acao=acao,

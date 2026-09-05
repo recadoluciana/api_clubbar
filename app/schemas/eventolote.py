@@ -9,6 +9,10 @@ class EventoLoteOut(BaseModel):
     loja_id: int
     evento_id: int
     nmlote: str
+    eventosetor_id: Optional[int] = None
+    nmsetor: Optional[str] = None
+    nrlote: int = 1
+    tipoingresso: str = "UNICO"
     vrprecolote: float
 
     qttotallote: Optional[int] = None
@@ -30,6 +34,9 @@ class EventoLoteCreate(BaseModel):
     organizacao_id: int
     loja_id: int
     nmlote: str = Field(..., min_length=1, max_length=80)
+    eventosetor_id: Optional[int] = None
+    nrlote: int = Field(default=1, ge=1)
+    tipoingresso: Literal["UNICO", "INTEIRA", "MEIA", "SOCIAL", "CORTESIA", "OUTRO"] = "UNICO"
     vrprecolote: float
     qttotallote: Optional[int] = None
     qtvendidalote: Optional[int] = None
@@ -43,6 +50,9 @@ class EventoLoteUpdate(BaseModel):
     loja_id: Optional[int] = None
     evento_id: Optional[int] = None
     nmlote: Optional[str] = Field(None, min_length=1, max_length=80)
+    eventosetor_id: Optional[int] = None
+    nrlote: Optional[int] = Field(None, ge=1)
+    tipoingresso: Optional[Literal["UNICO", "INTEIRA", "MEIA", "SOCIAL", "CORTESIA", "OUTRO"]] = None
     vrprecolote: Optional[float] = None
     qttotallote: Optional[int] = None
     qtvendidalote: Optional[int] = None

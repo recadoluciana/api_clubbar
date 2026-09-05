@@ -67,6 +67,7 @@ def _resolver_ator(request) -> AtorAuditoria:
                     return AtorAuditoria(
                         tipo="USUARIO", ator_id=str(identificador),
                         usuario_id=identificador, nome=item.nmusuario,
+                        organizacao_id=item.organizacao_id, loja_id=item.loja_id,
                         email=item.emailuser, metodo_http=metodo, rota=rota,
                     )
 

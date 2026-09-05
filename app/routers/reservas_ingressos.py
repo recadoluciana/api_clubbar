@@ -12,7 +12,7 @@ from app.models.cliente import Cliente
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_qrcode_pix_estatico_asaas, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia
-from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
+from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
 from app.utils.datetime_utils import iso_utc
 
@@ -72,8 +72,11 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         db.add(ReservaIngressoParticipante(reserva_ingresso_id=reserva_id, ordem=ordem, nmparticipante=participante.nome.strip(), cpfparticipante=participante.cpf))
     reserva.sitreserva = "AGUARDANDO_PAGAMENTO"
     reserva.dtexpiracao = datetime.now() + timedelta(minutes=5)
+    resultado_gratuito = None
+    if float(reserva.vrtotal or 0) == 0:
+        resultado_gratuito = finalizar_reserva_gratuita(db, reserva_id=reserva_id)
     db.commit()
-    return _saida(reserva)
+    return {**_saida(reserva), **(resultado_gratuito or {})}
 
 
 @router.delete("/{reserva_id}")

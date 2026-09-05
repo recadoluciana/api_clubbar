@@ -22,6 +22,8 @@ class Evento(Base):
     nmlocalevento = Column(String(120), nullable=True)
     dsendlocevento = Column(String(200), nullable=True)
     urlbannerevento = Column(String(255), nullable=True)
+    urlmapaingressos = Column(String(255), nullable=True)
+    dsmapaingressos = Column(String(255), nullable=True)
 
     statusevento = Column(
         Enum("RASCUNHO", "ATIVO", "ENCERRADO", "CANCELADO", name="evento_statusevento"),
