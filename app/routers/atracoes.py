@@ -1,4 +1,4 @@
-import os, shutil, uuid
+import json, os, shutil, uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -7,6 +7,7 @@ from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.database import get_db
 from app.models.atracao import Atracao
+from app.models.estilomusical import EstiloMusical
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
@@ -27,7 +28,29 @@ def _banner(arquivo):
     return f"/uploads/atracoes/{nome}"
 
 def _item(a):
-    return {"atracao_id":a.atracao_id,"organizacao_id":a.organizacao_id,"nmatracao":a.nmatracao,"dsestilomusical":a.dsestilomusical,"urlbanneratracao":a.urlbanneratracao,"dsatracao":a.dsatracao}
+    estilos = [
+        {
+            "estilomusical_id": estilo.estilomusical_id,
+            "nmestilomusical": estilo.nmestilomusical,
+        }
+        for estilo in a.estilos
+    ]
+    return {"atracao_id":a.atracao_id,"organizacao_id":a.organizacao_id,"nmatracao":a.nmatracao,"dsestilomusical":", ".join(e["nmestilomusical"] for e in estilos) or a.dsestilomusical,"estilos":estilos,"urlbanneratracao":a.urlbanneratracao,"dsatracao":a.dsatracao}
+
+def _ids_estilos(valor):
+    if not valor:return []
+    try: dados=json.loads(valor)
+    except json.JSONDecodeError: dados=valor.split(",")
+    if not isinstance(dados,list):raise HTTPException(422,"Formato dos estilos musicais inválido.")
+    try:return list(dict.fromkeys(int(item) for item in dados))
+    except (TypeError,ValueError):raise HTTPException(422,"Selecione estilos musicais válidos.")
+
+def _aplicar_estilos(db,a,valor):
+    ids=_ids_estilos(valor)
+    estilos=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id.in_(ids),EstiloMusical.sitestilomusical=="ATIVO").all() if ids else []
+    if len(estilos)!=len(ids):raise HTTPException(422,"Um ou mais estilos musicais não foram encontrados.")
+    a.estilos=estilos
+    a.dsestilomusical=", ".join(sorted(e.nmestilomusical for e in estilos)) or None
 
 def _prog(p):
     return {"eventoatracao_id":p.eventoatracao_id,"evento_id":p.evento_id,"atracao_id":p.atracao_id,"dtinicioatracao":p.dtinicioatracao,"dtfimatracao":p.dtfimatracao,"atracao":_item(p.atracao)}
@@ -36,21 +59,27 @@ def _prog(p):
 def listar(payload=Depends(get_usuario_logado), db:Session=Depends(get_db)):
     return [_item(a) for a in db.query(Atracao).filter(Atracao.organizacao_id==_org(payload)).order_by(Atracao.nmatracao).all()]
 
+@router.get("/estilos-musicais")
+def listar_estilos_musicais(db:Session=Depends(get_db)):
+    itens=db.query(EstiloMusical).filter(EstiloMusical.sitestilomusical=="ATIVO").order_by(EstiloMusical.nmestilomusical).all()
+    return [{"estilomusical_id":e.estilomusical_id,"nmestilomusical":e.nmestilomusical} for e in itens]
+
 @router.post("/atracoes", status_code=201)
-def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload,_org(payload))
     nome=nmatracao.strip()
     if not nome: raise HTTPException(422,"Informe o nome da atração.")
     a=Atracao(organizacao_id=_org(payload),nmatracao=nome,dsestilomusical=(dsestilomusical or "").strip() or None,dsatracao=(dsatracao or "").strip() or None,urlbanneratracao=_banner(urlbanneratracao))
-    db.add(a); db.commit(); db.refresh(a); return _item(a)
+    db.add(a);db.flush();_aplicar_estilos(db,a,estilos_ids);db.commit();db.refresh(a);return _item(a)
 
 @router.put("/atracoes/{atracao_id}")
-def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload,_org(payload))
     a=db.query(Atracao).filter(Atracao.atracao_id==atracao_id,Atracao.organizacao_id==_org(payload)).first()
     if not a: raise HTTPException(404,"Atração não encontrada.")
     if not nmatracao.strip(): raise HTTPException(422,"Informe o nome da atração.")
-    a.nmatracao=nmatracao.strip(); a.dsestilomusical=(dsestilomusical or "").strip() or None; a.dsatracao=(dsatracao or "").strip() or None
+    a.nmatracao=nmatracao.strip();a.dsestilomusical=(dsestilomusical or "").strip() or None;a.dsatracao=(dsatracao or "").strip() or None
+    _aplicar_estilos(db,a,estilos_ids)
     if urlbanneratracao and urlbanneratracao.filename: a.urlbanneratracao=_banner(urlbanneratracao)
     db.commit(); db.refresh(a); return _item(a)
 

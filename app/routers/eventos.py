@@ -267,6 +267,13 @@ def get_evento_por_id(
                 "atracao_id": atracao.atracao_id,
                 "nmatracao": atracao.nmatracao,
                 "dsestilomusical": atracao.dsestilomusical,
+                "estilos": [
+                    {
+                        "estilomusical_id": estilo.estilomusical_id,
+                        "nmestilomusical": estilo.nmestilomusical,
+                    }
+                    for estilo in atracao.estilos
+                ],
                 "dsatracao": atracao.dsatracao,
                 "urlbanneratracao": atracao.urlbanneratracao,
                 "dtinicioatracao": programacao.dtinicioatracao,
