@@ -3,6 +3,10 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from dotenv import load_dotenv
+
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+load_dotenv(PROJECT_DIR / ".env", override=False)
 
 
 def main() -> None:

@@ -39,6 +39,7 @@ DROP TABLE IF EXISTS clienteasaas;
 DROP TABLE IF EXISTS lojaasaas;
 DROP TABLE IF EXISTS cliente;
 DROP TABLE IF EXISTS leadestabelecimentocontrato;
+DROP TABLE IF EXISTS contratopadrao;
 DROP TABLE IF EXISTS contratolead;
 DROP TABLE IF EXISTS titularfinanceiro;
 DROP TABLE IF EXISTS lojahorario;

@@ -572,10 +572,27 @@ ALTER TABLE loja
 
 CREATE INDEX idx_loja_titularfinanceiro ON loja(titularfinanceiro_id);
 
+CREATE TABLE contratopadrao (
+  contratopadrao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  versao VARCHAR(30) NOT NULL,
+  titulo VARCHAR(160) NOT NULL,
+  conteudomodelo LONGTEXT NOT NULL,
+  vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  sitcontrato VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  operador_id BIGINT NULL,
+  dtvigencia DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_contratopadrao_versao (versao),
+  INDEX idx_contratopadrao_situacao (sitcontrato),
+  CONSTRAINT ck_contratopadrao_situacao CHECK (sitcontrato IN ('ATIVO','INATIVO'))
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE leadestabelecimentocontrato (
   leadestabelecimentocontrato_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadestabelecimento_id BIGINT NOT NULL,
   titularfinanceiro_id BIGINT NULL,
+  contratopadrao_id BIGINT NULL,
   versao VARCHAR(30) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
@@ -595,10 +612,13 @@ CREATE TABLE leadestabelecimentocontrato (
     REFERENCES leadestabelecimento(leadestabelecimento_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_leadestabelecimentocontrato_titular FOREIGN KEY (titularfinanceiro_id)
     REFERENCES titularfinanceiro(titularfinanceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_leadestabelecimentocontrato_padrao FOREIGN KEY (contratopadrao_id)
+    REFERENCES contratopadrao(contratopadrao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT chk_leadestabelecimentocontrato_status CHECK (
     status IN ('RASCUNHO','ENVIADO','ACEITO','RECUSADO','CANCELADO','EXPIRADO')
   ),
   INDEX idx_leadestabelecimentocontrato_estabelecimento (leadestabelecimento_id),
+  INDEX idx_leadestabelecimentocontrato_padrao (contratopadrao_id),
   INDEX idx_leadestabelecimentocontrato_status (status)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
