@@ -63,6 +63,12 @@ def listar_atracoes_modelo(modelo_id:int,payload=Depends(get_usuario_logado),db:
     itens=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem,EventoModeloAtracao.nrminutoinicio).all()
     return [_atracao_item(x) for x in itens]
 
+@router.get("/{modelo_id}/atracoes-disponiveis")
+def listar_atracoes_disponiveis(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    modelo=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
+    itens=db.query(Atracao).filter(Atracao.organizacao_id==modelo.organizacao_id).order_by(Atracao.nmatracao).all()
+    return [{"atracao_id":a.atracao_id,"organizacao_id":a.organizacao_id,"nmatracao":a.nmatracao,"dsestilomusical":a.dsestilomusical,"urlbanneratracao":a.urlbanneratracao,"dsatracao":a.dsatracao,"estilos":[]} for a in itens]
+
 @router.post("/{modelo_id}/atracoes",status_code=201)
 def adicionar_atracao_modelo(modelo_id:int,dados:EventoModeloAtracaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     modelo=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
