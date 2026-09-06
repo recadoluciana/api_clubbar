@@ -1,7 +1,10 @@
 from datetime import datetime
+from html import escape
+from io import BytesIO
 from hashlib import sha256
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,6 +19,11 @@ from app.models.leadparceiro import LeadParceiro
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
 from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao, saida_cobranca
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 
 
 router = APIRouter(prefix="/lead-estabelecimento-contratos", tags=["Contratos de estabelecimentos de leads"])
@@ -30,6 +38,50 @@ class LeadEstabelecimentoContratoCreate(BaseModel):
 
 class IsencaoImplantacaoIn(BaseModel):
     justificativa: str = Field(min_length=10, max_length=500)
+
+
+@portal_router.get("/contratos/{leadestabelecimentocontrato_id}/pdf")
+def contrato_pdf_portal(
+    leadestabelecimentocontrato_id: int,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    contrato = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
+        LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == leadestabelecimentocontrato_id,
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+    ).first()
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+    arquivo = BytesIO()
+    estilos = getSampleStyleSheet()
+    titulo = ParagraphStyle(
+        "TituloClubbar", parent=estilos["Title"], alignment=TA_CENTER,
+        fontName="Helvetica-Bold", fontSize=16, leading=20, spaceAfter=10,
+    )
+    corpo = ParagraphStyle(
+        "CorpoContrato", parent=estilos["BodyText"],
+        fontName="Helvetica", fontSize=9.5, leading=14, spaceAfter=7,
+    )
+    documento = SimpleDocTemplate(
+        arquivo, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm,
+        topMargin=18 * mm, bottomMargin=18 * mm,
+        title=f"Contrato Clubbar - {contrato.versao}",
+    )
+    historia = [
+        Paragraph("CLUBBAR — CONTRATO DE PARCERIA", titulo),
+        Paragraph(f"Versão {escape(contrato.versao)}", estilos["Normal"]),
+        Spacer(1, 5 * mm),
+    ]
+    for bloco in (contrato.conteudocontrato or "").split("\n"):
+        texto = escape(bloco.strip())
+        historia.append(Paragraph(texto or "&nbsp;", corpo))
+    documento.build(historia)
+    arquivo.seek(0)
+    nome = f"contrato-clubbar-{leadestabelecimentocontrato_id}.pdf"
+    return StreamingResponse(
+        arquivo, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )
 
 
 def _out(item: LeadEstabelecimentoContrato) -> dict:

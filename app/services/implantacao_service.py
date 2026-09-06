@@ -103,19 +103,20 @@ async def reconciliar_cobranca_implantacao(
 ) -> CobrancaImplantacao:
     if cobranca.status in {"PAGA", "ISENTA", "CANCELADA"}:
         return cobranca
-    if cobranca.dtvencimento and cobranca.dtvencimento <= datetime.now():
-        cobranca.status = "VENCIDA"
-        db.commit()
-        return cobranca
     pagamento = await buscar_pagamento_confirmado_por_checkout(
         cobranca.asaas_checkout_id, ASAAS_API_KEY
     ) if cobranca.asaas_checkout_id else None
     if not pagamento:
+        if cobranca.dtvencimento and cobranca.dtvencimento <= datetime.now():
+            cobranca.status = "VENCIDA"
+            db.commit()
         return cobranca
     referencia = str(pagamento.get("externalReference") or "")
+    checkout_pagamento = str(pagamento.get("checkoutSession") or "")
     valor = Decimal(str(pagamento.get("value") or 0)).quantize(Decimal("0.01"))
     esperado = Decimal(str(cobranca.valor)).quantize(Decimal("0.01"))
-    if referencia != cobranca.external_reference or valor != esperado:
+    referencia_divergente = bool(referencia) and referencia != cobranca.external_reference
+    if checkout_pagamento != cobranca.asaas_checkout_id or referencia_divergente or valor != esperado:
         raise HTTPException(409, "Cobrança de implantação divergente no Asaas")
     cobranca.status = "PAGA"
     cobranca.asaas_payment_id = str(pagamento.get("id") or "") or None

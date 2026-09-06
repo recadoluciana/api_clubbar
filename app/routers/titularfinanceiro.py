@@ -216,6 +216,10 @@ async def extrato_asaas(
         "startDate": inicio.isoformat(), "finishDate": fim.isoformat(),
         "offset": max(offset, 0), "limit": limite, "order": "desc",
     })
+    cobrancas = await _asaas("GET", "/payments", api_key, params={
+        "dateCreated[ge]": inicio.isoformat(), "dateCreated[le]": fim.isoformat(),
+        "offset": 0, "limit": 100,
+    })
     itens = []
     for item in extrato.get("data", []):
         itens.append({
@@ -228,6 +232,18 @@ async def extrato_asaas(
             "pagamento_id": item.get("paymentId"),
             "transferencia_id": item.get("transferId"),
         })
+    recebimentos_pendentes = []
+    for item in cobrancas.get("data", []):
+        if str(item.get("status") or "").upper() != "CONFIRMED":
+            continue
+        recebimentos_pendentes.append({
+            "id": item.get("id"),
+            "data": item.get("paymentDate") or item.get("confirmedDate") or item.get("dateCreated"),
+            "tipo": item.get("billingType"), "status": item.get("status"),
+            "descricao": item.get("description") or "Venda Clubbar",
+            "valor_bruto": item.get("value"), "valor_liquido": item.get("netValue"),
+            "data_prevista_credito": item.get("estimatedCreditDate") or item.get("creditDate"),
+        })
     return {
         "saldo": float(saldo.get("balance") or 0),
         "data_inicio": inicio,
@@ -235,6 +251,8 @@ async def extrato_asaas(
         "total": extrato.get("totalCount", len(itens)),
         "possui_mais": bool(extrato.get("hasMore")),
         "transacoes": itens,
+        "total_pendente": float(sum(Decimal(str(item.get("valor_liquido") or 0)) for item in recebimentos_pendentes)),
+        "recebimentos_pendentes": recebimentos_pendentes,
     }
 
 
