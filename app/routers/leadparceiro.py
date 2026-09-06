@@ -47,7 +47,6 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
-from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao
 from app.services.email_service import (
     enviar_confirmacao_cadastro_lead,
     enviar_convite_parceiro,
@@ -713,14 +712,6 @@ async def converter_lead_em_parceiro(
         CobrancaImplantacao.leadestabelecimentocontrato_id
         == contrato_aceito.leadestabelecimentocontrato_id
     ).first()
-    if not cobranca_implantacao:
-        cobranca_implantacao = await criar_cobranca_implantacao(db, contrato_aceito)
-    cobranca_implantacao = await reconciliar_cobranca_implantacao(db, cobranca_implantacao)
-    if cobranca_implantacao.status not in {"PAGA", "ISENTA"}:
-        raise HTTPException(
-            409,
-            "A taxa de implantação precisa estar paga ou isenta antes da conversão.",
-        )
     senha_inicial = secrets.token_urlsafe(9)
     primeira_conversao = organizacao_existente is None
 
@@ -822,7 +813,8 @@ async def converter_lead_em_parceiro(
 
         estabelecimento.status = "CONVERTIDO"
         estabelecimento.dtconversao = datetime.now()
-        cobranca_implantacao.organizacao_id = nova_organizacao.organizacao_id
+        if cobranca_implantacao:
+            cobranca_implantacao.organizacao_id = nova_organizacao.organizacao_id
         if titular_financeiro:
             contrato = db.query(LeadEstabelecimentoContrato).filter(
                 LeadEstabelecimentoContrato.leadestabelecimento_id

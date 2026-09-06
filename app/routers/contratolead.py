@@ -296,10 +296,7 @@ async def aceitar_contrato(
         item.dtaceite = datetime.now()
         db.commit()
         db.refresh(item)
-    cobranca = await criar_cobranca_implantacao(db, item)
-    retorno = _out(item)
-    retorno["cobranca_implantacao"] = saida_cobranca(cobranca)
-    return retorno
+    return _out(item)
 
 
 @portal_router.get("/contratos/{leadestabelecimentocontrato_id}/implantacao")

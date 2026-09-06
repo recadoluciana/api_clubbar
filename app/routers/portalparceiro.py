@@ -560,16 +560,6 @@ def registrar_status(
                 status_code=409,
                 detail="Leia e aceite o contrato deste estabelecimento antes de aceitar a parceria.",
             )
-        cobranca = db.query(CobrancaImplantacao).filter(
-            CobrancaImplantacao.leadestabelecimentocontrato_id
-            == contrato.leadestabelecimentocontrato_id
-        ).first()
-        if not cobranca or cobranca.status not in {"PAGA", "ISENTA"}:
-            raise HTTPException(
-                status_code=409,
-                detail="Conclua o pagamento da taxa de implantação antes de confirmar a parceria.",
-            )
-
     estabelecimento.status = dados.status
     if dados.status == 'ACEITOU_PARCERIA':
         estabelecimento.dtaceite = datetime.now()
