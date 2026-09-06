@@ -52,7 +52,9 @@ async def criar_cobranca_implantacao(
     body = {
         "billingTypes": ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED"],
-        "minutesToExpire": 1440,
+        # O checkout hospedado do Asaas aceita expiração em minutos dentro
+        # da janela curta do checkout. Se expirar, o Portal gera outro.
+        "minutesToExpire": 60,
         "externalReference": referencia,
         "callback": {"successUrl": retorno, "cancelUrl": retorno, "expiredUrl": retorno},
         "items": [{
@@ -90,7 +92,7 @@ async def criar_cobranca_implantacao(
     existente.asaas_checkout_id = str(data["id"])
     existente.asaas_checkout_url = str(data["link"])
     existente.external_reference = referencia
-    existente.dtvencimento = datetime.now() + timedelta(days=1)
+    existente.dtvencimento = datetime.now() + timedelta(minutes=60)
     db.commit()
     db.refresh(existente)
     return existente
