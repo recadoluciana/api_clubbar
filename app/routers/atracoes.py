@@ -3,16 +3,17 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from app.core.config import UPLOAD_ATRACOES
-from app.core.security import get_usuario_logado
+from app.core.security import get_operador_logado, get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.database import get_db
 from app.models.atracao import Atracao
 from app.models.estilomusical import EstiloMusical
+from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
 from app.schemas.atracao import EventoAtracaoIn, EventoAtracaoUpdate
-from app.schemas.estilomusical import EstiloMusicalIn
+from app.schemas.estilomusical import EstiloMusicalIn, EstilosMusicaisImportacaoIn
 
 router = APIRouter(tags=["Atrações"])
 
@@ -22,14 +23,17 @@ def _org(payload):
 
 def _validar_gestao_estilos(payload):
     cargo = str(payload.get("dscargo") or "").strip().upper()
-    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN"}:
-        raise HTTPException(403, "Somente administradores podem gerenciar estilos musicais.")
+    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "GERENTE"}:
+        raise HTTPException(403, "Somente administradores e gerentes podem gerenciar estilos musicais.")
 
 def _estilo_item(e):
     return {
-        "estilomusical_id": e.estilomusical_id,
+        "estilomusical_id": e.organizacaoestilomusical_id,
+        "organizacaoestilomusical_id": e.organizacaoestilomusical_id,
+        "estilomusical_padrao_id": e.estilomusical_id,
         "nmestilomusical": e.nmestilomusical,
         "sitestilomusical": e.sitestilomusical,
+        "origem": "CATALOGO" if e.estilomusical_id else "PERSONALIZADO",
     }
 
 def _banner(arquivo):
@@ -43,7 +47,7 @@ def _banner(arquivo):
 def _item(a):
     estilos = [
         {
-            "estilomusical_id": estilo.estilomusical_id,
+            "estilomusical_id": estilo.organizacaoestilomusical_id,
             "nmestilomusical": estilo.nmestilomusical,
         }
         for estilo in a.estilos
@@ -60,7 +64,7 @@ def _ids_estilos(valor):
 
 def _aplicar_estilos(db,a,valor):
     ids=_ids_estilos(valor)
-    estilos=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id.in_(ids),EstiloMusical.sitestilomusical=="ATIVO").all() if ids else []
+    estilos=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacaoestilomusical_id.in_(ids),OrganizacaoEstiloMusical.organizacao_id==a.organizacao_id,OrganizacaoEstiloMusical.sitestilomusical=="ATIVO").all() if ids else []
     if len(estilos)!=len(ids):raise HTTPException(422,"Um ou mais estilos musicais não foram encontrados.")
     a.estilos=estilos
     a.dsestilomusical=", ".join(sorted(e.nmestilomusical for e in estilos)) or None
@@ -73,22 +77,29 @@ def listar(payload=Depends(get_usuario_logado), db:Session=Depends(get_db)):
     return [_item(a) for a in db.query(Atracao).filter(Atracao.organizacao_id==_org(payload)).order_by(Atracao.nmatracao).all()]
 
 @router.get("/estilos-musicais")
-def listar_estilos_musicais(db:Session=Depends(get_db)):
+def listar_estilos_musicais(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    itens=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==_org(payload),OrganizacaoEstiloMusical.sitestilomusical=="ATIVO").order_by(OrganizacaoEstiloMusical.nmestilomusical).all()
+    return [_estilo_item(e) for e in itens]
+
+@router.get("/estilos-musicais/catalogo")
+def listar_catalogo_estilos(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload)
     itens=db.query(EstiloMusical).filter(EstiloMusical.sitestilomusical=="ATIVO").order_by(EstiloMusical.nmestilomusical).all()
-    return [{"estilomusical_id":e.estilomusical_id,"nmestilomusical":e.nmestilomusical} for e in itens]
+    return [{"estilomusical_id":e.estilomusical_id,"nmestilomusical":e.nmestilomusical,"sitestilomusical":e.sitestilomusical} for e in itens]
 
 @router.get("/estilos-musicais/gerenciar")
 def gerenciar_estilos_musicais(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _validar_gestao_estilos(payload)
-    itens=db.query(EstiloMusical).order_by(EstiloMusical.nmestilomusical).all()
+    itens=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==_org(payload)).order_by(OrganizacaoEstiloMusical.nmestilomusical).all()
     return [_estilo_item(e) for e in itens]
 
 @router.post("/estilos-musicais", status_code=201)
 def criar_estilo_musical(dados:EstiloMusicalIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _validar_gestao_estilos(payload)
-    existente=db.query(EstiloMusical).filter(EstiloMusical.nmestilomusical==dados.nmestilomusical).first()
+    org=_org(payload)
+    existente=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==org,OrganizacaoEstiloMusical.nmestilomusical==dados.nmestilomusical).first()
     if existente: raise HTTPException(409,"Já existe um estilo musical com esse nome.")
-    estilo=EstiloMusical(nmestilomusical=dados.nmestilomusical,sitestilomusical=dados.sitestilomusical)
+    estilo=OrganizacaoEstiloMusical(organizacao_id=org,nmestilomusical=dados.nmestilomusical,sitestilomusical=dados.sitestilomusical)
     db.add(estilo)
     try: db.commit()
     except IntegrityError:
@@ -98,9 +109,10 @@ def criar_estilo_musical(dados:EstiloMusicalIn,payload=Depends(get_usuario_logad
 @router.put("/estilos-musicais/{estilo_id}")
 def atualizar_estilo_musical(estilo_id:int,dados:EstiloMusicalIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _validar_gestao_estilos(payload)
-    estilo=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id==estilo_id).first()
+    org=_org(payload)
+    estilo=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacaoestilomusical_id==estilo_id,OrganizacaoEstiloMusical.organizacao_id==org).first()
     if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
-    duplicado=db.query(EstiloMusical).filter(EstiloMusical.nmestilomusical==dados.nmestilomusical,EstiloMusical.estilomusical_id!=estilo_id).first()
+    duplicado=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==org,OrganizacaoEstiloMusical.nmestilomusical==dados.nmestilomusical,OrganizacaoEstiloMusical.organizacaoestilomusical_id!=estilo_id).first()
     if duplicado: raise HTTPException(409,"Já existe um estilo musical com esse nome.")
     estilo.nmestilomusical=dados.nmestilomusical; estilo.sitestilomusical=dados.sitestilomusical
     try: db.commit()
@@ -111,9 +123,52 @@ def atualizar_estilo_musical(estilo_id:int,dados:EstiloMusicalIn,payload=Depends
 @router.delete("/estilos-musicais/{estilo_id}", status_code=204)
 def excluir_estilo_musical(estilo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _validar_gestao_estilos(payload)
-    estilo=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id==estilo_id).first()
+    estilo=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacaoestilomusical_id==estilo_id,OrganizacaoEstiloMusical.organizacao_id==_org(payload)).first()
     if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
     if estilo.atracoes: raise HTTPException(409,"O estilo está vinculado a atrações. Inative-o em vez de excluir.")
+    db.delete(estilo); db.commit()
+
+@router.post("/estilos-musicais/importar")
+def importar_estilos_musicais(dados:EstilosMusicaisImportacaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    _validar_gestao_estilos(payload); org=_org(payload)
+    ids=list(dict.fromkeys(dados.estilos_ids))
+    catalogo=db.query(EstiloMusical).filter(EstiloMusical.estilomusical_id.in_(ids),EstiloMusical.sitestilomusical=="ATIVO").all()
+    if len(catalogo)!=len(ids): raise HTTPException(422,"Um ou mais estilos do catálogo não foram encontrados.")
+    existentes={e.estilomusical_id for e in db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==org,OrganizacaoEstiloMusical.estilomusical_id.in_(ids)).all()}
+    for estilo in catalogo:
+        if estilo.estilomusical_id not in existentes:
+            db.add(OrganizacaoEstiloMusical(organizacao_id=org,estilomusical_id=estilo.estilomusical_id,nmestilomusical=estilo.nmestilomusical,sitestilomusical="ATIVO"))
+    try: db.commit()
+    except IntegrityError:
+        db.rollback(); raise HTTPException(409,"Um dos estilos já existe na organização.")
+    return {"importados":len(ids)-len(existentes)}
+
+# Catálogo mestre: administrado exclusivamente pelo Clubbar Admin.
+@router.get("/admin/estilos-musicais")
+def admin_listar_estilos(_=Depends(get_operador_logado),db:Session=Depends(get_db)):
+    return [{"estilomusical_id":e.estilomusical_id,"nmestilomusical":e.nmestilomusical,"sitestilomusical":e.sitestilomusical} for e in db.query(EstiloMusical).order_by(EstiloMusical.nmestilomusical).all()]
+
+@router.post("/admin/estilos-musicais",status_code=201)
+def admin_criar_estilo(dados:EstiloMusicalIn,_=Depends(get_operador_logado),db:Session=Depends(get_db)):
+    estilo=EstiloMusical(nmestilomusical=dados.nmestilomusical,sitestilomusical=dados.sitestilomusical); db.add(estilo)
+    try: db.commit()
+    except IntegrityError: db.rollback(); raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    db.refresh(estilo); return {"estilomusical_id":estilo.estilomusical_id,"nmestilomusical":estilo.nmestilomusical,"sitestilomusical":estilo.sitestilomusical}
+
+@router.put("/admin/estilos-musicais/{estilo_id}")
+def admin_atualizar_estilo(estilo_id:int,dados:EstiloMusicalIn,_=Depends(get_operador_logado),db:Session=Depends(get_db)):
+    estilo=db.get(EstiloMusical,estilo_id)
+    if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
+    estilo.nmestilomusical=dados.nmestilomusical; estilo.sitestilomusical=dados.sitestilomusical
+    try: db.commit()
+    except IntegrityError: db.rollback(); raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    return {"estilomusical_id":estilo.estilomusical_id,"nmestilomusical":estilo.nmestilomusical,"sitestilomusical":estilo.sitestilomusical}
+
+@router.delete("/admin/estilos-musicais/{estilo_id}",status_code=204)
+def admin_excluir_estilo(estilo_id:int,_=Depends(get_operador_logado),db:Session=Depends(get_db)):
+    estilo=db.get(EstiloMusical,estilo_id)
+    if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
+    if estilo.estilos_organizacoes: raise HTTPException(409,"O estilo já foi adotado por organizações. Inative-o em vez de excluir.")
     db.delete(estilo); db.commit()
 
 @router.post("/atracoes", status_code=201)

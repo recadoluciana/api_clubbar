@@ -20,3 +20,7 @@ class EstiloMusicalIn(BaseModel):
         if situacao not in {"ATIVO", "INATIVO"}:
             raise ValueError("A situação deve ser ATIVO ou INATIVO.")
         return situacao
+
+
+class EstilosMusicaisImportacaoIn(BaseModel):
+    estilos_ids: list[int] = Field(min_length=1)

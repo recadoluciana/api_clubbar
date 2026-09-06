@@ -3,7 +3,6 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
-from app.models.atracaoestilomusical import atracao_estilo_musical
 
 
 class EstiloMusical(Base):
@@ -15,8 +14,4 @@ class EstiloMusical(Base):
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.now())
 
-    atracoes = relationship(
-        "Atracao",
-        secondary=atracao_estilo_musical,
-        back_populates="estilos",
-    )
+    estilos_organizacoes = relationship("OrganizacaoEstiloMusical", back_populates="estilo_padrao")

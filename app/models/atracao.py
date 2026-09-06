@@ -16,11 +16,11 @@ class Atracao(Base):
     dtultatu = Column(DateTime, onupdate=func.now())
     eventos = relationship("EventoAtracao", back_populates="atracao")
     estilos = relationship(
-        "EstiloMusical",
+        "OrganizacaoEstiloMusical",
         secondary=atracao_estilo_musical,
         back_populates="atracoes",
-        order_by="EstiloMusical.nmestilomusical",
+        order_by="OrganizacaoEstiloMusical.nmestilomusical",
     )
 
 
-from app.models.estilomusical import EstiloMusical  # noqa: E402,F401
+from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical  # noqa: E402,F401

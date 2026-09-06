@@ -52,17 +52,41 @@ def main() -> None:
         db.execute(
             text(
                 """
-                INSERT IGNORE INTO atracaoestilomusical (
-                    atracao_id,
-                    estilomusical_id
+                INSERT IGNORE INTO organizacaoestilomusical (
+                    organizacao_id,
+                    estilomusical_id,
+                    nmestilomusical,
+                    sitestilomusical
                 )
-                SELECT
-                    a.atracao_id,
-                    e.estilomusical_id
+                SELECT DISTINCT
+                    a.organizacao_id,
+                    e.estilomusical_id,
+                    e.nmestilomusical,
+                    'ATIVO'
                 FROM atracao AS a
                 INNER JOIN estilomusical AS e
                     ON FIND_IN_SET(
                         LOWER(e.nmestilomusical),
+                        LOWER(REPLACE(COALESCE(a.dsestilomusical, ''), ', ', ','))
+                    ) > 0
+                """
+            )
+        )
+        db.execute(
+            text(
+                """
+                INSERT IGNORE INTO atracaoorganizacaoestilomusical (
+                    atracao_id,
+                    organizacaoestilomusical_id
+                )
+                SELECT
+                    a.atracao_id,
+                    oe.organizacaoestilomusical_id
+                FROM atracao AS a
+                INNER JOIN organizacaoestilomusical AS oe
+                    ON oe.organizacao_id = a.organizacao_id
+                    AND FIND_IN_SET(
+                        LOWER(oe.nmestilomusical),
                         LOWER(REPLACE(COALESCE(a.dsestilomusical, ''), ', ', ','))
                     ) > 0
                 """

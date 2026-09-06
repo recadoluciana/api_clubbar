@@ -5,7 +5,7 @@ from app.database import Base
 
 
 atracao_estilo_musical = Table(
-    "atracaoestilomusical",
+    "atracaoorganizacaoestilomusical",
     Base.metadata,
     Column(
         "atracao_id",
@@ -14,11 +14,11 @@ atracao_estilo_musical = Table(
         primary_key=True,
     ),
     Column(
-        "estilomusical_id",
+        "organizacaoestilomusical_id",
         BigInteger,
         ForeignKey(
-            "estilomusical.estilomusical_id",
-            ondelete="RESTRICT",
+            "organizacaoestilomusical.organizacaoestilomusical_id",
+            ondelete="CASCADE",
             onupdate="CASCADE",
         ),
         primary_key=True,

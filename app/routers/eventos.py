@@ -269,7 +269,7 @@ def get_evento_por_id(
                 "dsestilomusical": atracao.dsestilomusical,
                 "estilos": [
                     {
-                        "estilomusical_id": estilo.estilomusical_id,
+                        "estilomusical_id": estilo.organizacaoestilomusical_id,
                         "nmestilomusical": estilo.nmestilomusical,
                     }
                     for estilo in atracao.estilos
