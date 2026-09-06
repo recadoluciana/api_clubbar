@@ -598,6 +598,7 @@ CREATE TABLE leadestabelecimentocontrato (
   status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   conteudocontrato TEXT NOT NULL,
   hashdocumento CHAR(64) NULL,
   nmsignatario VARCHAR(160) NULL,

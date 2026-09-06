@@ -16,9 +16,9 @@ from app.models.operador import Operador
 
 
 def main() -> None:
-    email = os.environ["CLUBBAR_ADMIN_EMAIL"].lower().strip()
+    email = os.getenv("CLUBBAR_ADMIN_EMAIL", "suporte@clubbar.com.br").lower().strip()
     senha = os.environ["CLUBBAR_ADMIN_PASSWORD"]
-    nome = os.getenv("CLUBBAR_ADMIN_NAME", "Administrador Clubbar").strip()
+    nome = os.getenv("CLUBBAR_ADMIN_NAME", "Suporte Clubbar").strip()
     with SessionLocal() as db:
         operador = db.query(Operador).filter(Operador.emailoperador == email).first()
         if operador is None:
