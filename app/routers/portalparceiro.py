@@ -13,6 +13,8 @@ from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
 from app.models.contratolead import LeadEstabelecimentoContrato
+from app.models.cobrancaimplantacao import CobrancaImplantacao
+from app.services.implantacao_service import saida_cobranca
 from app.schemas.portalparceiro import (
     PortalAgendamentoResposta,
     PortalStatusUpdate,
@@ -243,6 +245,7 @@ def obter_resumo(
         .all()
     )
     contratos_por_estabelecimento: dict[int, list[dict]] = {}
+    cobrancas_por_contrato: dict[int, dict] = {}
     ids_estabelecimentos = [item.leadestabelecimento_id for item in estabelecimentos]
     if ids_estabelecimentos:
         contratos = (
@@ -252,6 +255,12 @@ def obter_resumo(
             .all()
         )
         for contrato in contratos:
+            cobranca = db.query(CobrancaImplantacao).filter(
+                CobrancaImplantacao.leadestabelecimentocontrato_id
+                == contrato.leadestabelecimentocontrato_id
+            ).first()
+            if cobranca:
+                cobrancas_por_contrato[contrato.leadestabelecimentocontrato_id] = saida_cobranca(cobranca)
             contratos_por_estabelecimento.setdefault(
                 contrato.leadestabelecimento_id, []
             ).append(
@@ -262,7 +271,11 @@ def obter_resumo(
                     "conteudocontrato": contrato.conteudocontrato,
                     "vrtaxaprod": float(contrato.vrtaxaprod),
                     "vrtaxaing": float(contrato.vrtaxaing),
+                    "vrimplantacao": float(contrato.vrimplantacao),
                     "dtaceite": contrato.dtaceite,
+                    "cobranca_implantacao": cobrancas_por_contrato.get(
+                        contrato.leadestabelecimentocontrato_id
+                    ),
                 }
             )
 
@@ -524,6 +537,15 @@ def registrar_status(
             raise HTTPException(
                 status_code=409,
                 detail="Leia e aceite o contrato deste estabelecimento antes de aceitar a parceria.",
+            )
+        cobranca = db.query(CobrancaImplantacao).filter(
+            CobrancaImplantacao.leadestabelecimentocontrato_id
+            == contrato.leadestabelecimentocontrato_id
+        ).first()
+        if not cobranca or cobranca.status not in {"PAGA", "ISENTA"}:
+            raise HTTPException(
+                status_code=409,
+                detail="Conclua o pagamento da taxa de implantação antes de confirmar a parceria.",
             )
 
     estabelecimento.status = dados.status

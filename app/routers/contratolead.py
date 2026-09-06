@@ -13,7 +13,9 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.contratopadrao import ContratoPadrao
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.leadparceiro import LeadParceiro
+from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
+from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao, saida_cobranca
 
 
 router = APIRouter(prefix="/lead-estabelecimento-contratos", tags=["Contratos de estabelecimentos de leads"])
@@ -26,6 +28,10 @@ class LeadEstabelecimentoContratoCreate(BaseModel):
     vrtaxaing: float = Field(default=5, ge=0, le=100)
 
 
+class IsencaoImplantacaoIn(BaseModel):
+    justificativa: str = Field(min_length=10, max_length=500)
+
+
 def _out(item: LeadEstabelecimentoContrato) -> dict:
     return {
         "leadestabelecimentocontrato_id": item.leadestabelecimentocontrato_id,
@@ -35,6 +41,7 @@ def _out(item: LeadEstabelecimentoContrato) -> dict:
         "status": item.status,
         "vrtaxaprod": float(item.vrtaxaprod),
         "vrtaxaing": float(item.vrtaxaing),
+        "vrimplantacao": float(item.vrimplantacao),
         "conteudocontrato": item.conteudocontrato,
         "hashdocumento": item.hashdocumento,
         "nmsignatario": item.nmsignatario,
@@ -169,6 +176,7 @@ def criar_contrato(
         versao=modelo.versao,
         vrtaxaprod=dados.vrtaxaprod,
         vrtaxaing=dados.vrtaxaing,
+        vrimplantacao=modelo.vrimplantacao,
         conteudocontrato=conteudo,
         hashdocumento=sha256(conteudo.encode("utf-8")).hexdigest(),
         dtdisponibilizacao=datetime.now(),
@@ -182,7 +190,7 @@ def criar_contrato(
 
 
 @portal_router.patch("/contratos/{leadestabelecimentocontrato_id}/aceitar")
-def aceitar_contrato(
+async def aceitar_contrato(
     leadestabelecimentocontrato_id: int,
     request: Request,
     lead: LeadParceiro = Depends(obter_lead_portal),
@@ -204,12 +212,73 @@ def aceitar_contrato(
     )
     if not item:
         raise HTTPException(status_code=404, detail="Contrato não encontrado.")
-    if item.status == "ACEITO":
-        return _out(item)
-    item.status = "ACEITO"
-    item.nmsignatario = lead.nmresponsavel
-    item.ipaceite = request.client.host if request.client else None
-    item.dtaceite = datetime.now()
+    if item.status != "ACEITO":
+        item.status = "ACEITO"
+        item.nmsignatario = lead.nmresponsavel
+        item.ipaceite = request.client.host if request.client else None
+        item.dtaceite = datetime.now()
+        db.commit()
+        db.refresh(item)
+    cobranca = await criar_cobranca_implantacao(db, item)
+    retorno = _out(item)
+    retorno["cobranca_implantacao"] = saida_cobranca(cobranca)
+    return retorno
+
+
+@portal_router.get("/contratos/{leadestabelecimentocontrato_id}/implantacao")
+async def consultar_implantacao_portal(
+    leadestabelecimentocontrato_id: int,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    contrato = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
+        LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == leadestabelecimentocontrato_id,
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+    ).first()
+    if not contrato or contrato.status != "ACEITO":
+        raise HTTPException(404, "Contrato aceito não encontrado")
+    cobranca = db.query(CobrancaImplantacao).filter(
+        CobrancaImplantacao.leadestabelecimentocontrato_id == leadestabelecimentocontrato_id
+    ).first()
+    if not cobranca or cobranca.status == "VENCIDA":
+        cobranca = await criar_cobranca_implantacao(db, contrato)
+    cobranca = await reconciliar_cobranca_implantacao(db, cobranca)
+    return saida_cobranca(cobranca)
+
+
+@router.get("/estabelecimento/{leadestabelecimento_id}/implantacao")
+async def consultar_implantacao_admin(
+    leadestabelecimento_id: int,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    cobranca = db.query(CobrancaImplantacao).filter(
+        CobrancaImplantacao.leadestabelecimento_id == leadestabelecimento_id
+    ).order_by(CobrancaImplantacao.cobrancaimplantacao_id.desc()).first()
+    if not cobranca:
+        raise HTTPException(404, "Cobrança de implantação ainda não gerada")
+    cobranca = await reconciliar_cobranca_implantacao(db, cobranca)
+    return saida_cobranca(cobranca)
+
+
+@router.patch("/implantacao/{cobrancaimplantacao_id}/isentar")
+def isentar_implantacao(
+    cobrancaimplantacao_id: int,
+    dados: IsencaoImplantacaoIn,
+    operador: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    cobranca = db.query(CobrancaImplantacao).filter(
+        CobrancaImplantacao.cobrancaimplantacao_id == cobrancaimplantacao_id
+    ).with_for_update().first()
+    if not cobranca:
+        raise HTTPException(404, "Cobrança de implantação não encontrada")
+    if cobranca.status == "PAGA":
+        raise HTTPException(409, "Uma implantação paga não pode ser isentada")
+    cobranca.status = "ISENTA"
+    cobranca.justificativaisencao = dados.justificativa.strip()
+    cobranca.operadorisencao_id = int(operador.get("sub") or 0) or None
+    cobranca.dtisencao = datetime.now()
     db.commit()
-    db.refresh(item)
-    return _out(item)
+    db.refresh(cobranca)
+    return saida_cobranca(cobranca)

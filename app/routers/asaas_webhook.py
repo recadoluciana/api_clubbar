@@ -19,6 +19,8 @@ from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.models.checkout_asaas_pagador import CheckoutAsaasPagador
 from app.models.cliente import Cliente
+from app.models.cobrancaimplantacao import CobrancaImplantacao
+from app.services.implantacao_service import reconciliar_cobranca_implantacao
 from app.services.asaas_service import buscar_customer_asaas
 from app.services.repasse_service import criar_repasse_da_venda
 from app.core.config import (
@@ -137,6 +139,36 @@ async def asaas_webhook(
         body = await request.json()
     except Exception:
         body = {}
+
+    payment_implantacao = body.get("payment") or body.get("checkout") or {}
+    checkout_implantacao = (
+        payment_implantacao.get("checkoutSession")
+        or body.get("checkoutId")
+        or body.get("checkoutSession")
+    )
+    referencia_implantacao = str(
+        payment_implantacao.get("externalReference")
+        or body.get("externalReference")
+        or ""
+    ).strip()
+    cobranca_implantacao = None
+    if checkout_implantacao:
+        cobranca_implantacao = db.query(CobrancaImplantacao).filter(
+            CobrancaImplantacao.asaas_checkout_id == str(checkout_implantacao)
+        ).first()
+    if not cobranca_implantacao and referencia_implantacao.startswith("IMPLANTACAO-"):
+        cobranca_implantacao = db.query(CobrancaImplantacao).filter(
+            CobrancaImplantacao.external_reference == referencia_implantacao
+        ).first()
+    if cobranca_implantacao:
+        cobranca_implantacao = await reconciliar_cobranca_implantacao(
+            db, cobranca_implantacao
+        )
+        return {
+            "ok": True,
+            "tipo": "IMPLANTACAO",
+            "status": cobranca_implantacao.status,
+        }
 
     print('[ASAAS WEBHOOK][NAO PROCESSADO]', body.get('event'))
     return {

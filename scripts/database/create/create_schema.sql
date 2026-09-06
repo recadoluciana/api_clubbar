@@ -140,6 +140,7 @@ CREATE TABLE leadestabelecimento (
   ) NOT NULL DEFAULT 'NOVO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   dtaceite DATETIME NULL,
   dtconversao DATETIME NULL,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -620,6 +621,38 @@ CREATE TABLE leadestabelecimentocontrato (
   INDEX idx_leadestabelecimentocontrato_estabelecimento (leadestabelecimento_id),
   INDEX idx_leadestabelecimentocontrato_padrao (contratopadrao_id),
   INDEX idx_leadestabelecimentocontrato_status (status)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cobrancaimplantacao (
+  cobrancaimplantacao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadestabelecimentocontrato_id BIGINT NOT NULL,
+  leadestabelecimento_id BIGINT NOT NULL,
+  organizacao_id BIGINT NULL,
+  valor DECIMAL(10,2) NOT NULL,
+  status VARCHAR(15) NOT NULL DEFAULT 'PENDENTE',
+  asaas_checkout_id VARCHAR(100) NULL,
+  asaas_payment_id VARCHAR(100) NULL,
+  asaas_checkout_url TEXT NULL,
+  billing_type VARCHAR(30) NULL,
+  external_reference VARCHAR(100) NOT NULL,
+  justificativaisencao VARCHAR(500) NULL,
+  operadorisencao_id BIGINT NULL,
+  dtvencimento DATETIME NULL,
+  dtpagamento DATETIME NULL,
+  dtisencao DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cobrancaimplantacao_contrato (leadestabelecimentocontrato_id),
+  UNIQUE KEY uk_cobrancaimplantacao_checkout (asaas_checkout_id),
+  UNIQUE KEY uk_cobrancaimplantacao_payment (asaas_payment_id),
+  UNIQUE KEY uk_cobrancaimplantacao_referencia (external_reference),
+  INDEX idx_cobrancaimplantacao_estabelecimento (leadestabelecimento_id),
+  INDEX idx_cobrancaimplantacao_organizacao (organizacao_id),
+  INDEX idx_cobrancaimplantacao_status (status),
+  CONSTRAINT fk_cobrancaimplantacao_contrato FOREIGN KEY (leadestabelecimentocontrato_id) REFERENCES leadestabelecimentocontrato(leadestabelecimentocontrato_id),
+  CONSTRAINT fk_cobrancaimplantacao_estabelecimento FOREIGN KEY (leadestabelecimento_id) REFERENCES leadestabelecimento(leadestabelecimento_id),
+  CONSTRAINT fk_cobrancaimplantacao_organizacao FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
+  CONSTRAINT ck_cobrancaimplantacao_status CHECK (status IN ('PENDENTE','PAGA','VENCIDA','CANCELADA','ISENTA'))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE lojaasaas (

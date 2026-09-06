@@ -27,6 +27,7 @@ class LeadEstabelecimentoContrato(Base):
     status = Column(String(20), nullable=False, server_default="RASCUNHO")
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="5")
+    vrimplantacao = Column(Numeric(10, 2), nullable=False, server_default="0")
     conteudocontrato = Column(Text, nullable=False)
     hashdocumento = Column(String(64), nullable=True)
     nmsignatario = Column(String(160), nullable=True)

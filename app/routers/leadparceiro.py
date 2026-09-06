@@ -44,8 +44,10 @@ from app.models.organizacao import Organizacao
 from app.models.usuario import Usuario
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.contratolead import LeadEstabelecimentoContrato
+from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.models.leadmensagem import LeadMensagem
 from app.services.portal_acesso_service import criar_acesso_portal
+from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao
 from app.services.email_service import (
     enviar_confirmacao_cadastro_lead,
     enviar_convite_parceiro,
@@ -633,7 +635,7 @@ def _senha_inicial_superadmin(documento: str, nome_responsavel: str) -> str:
     "/{leadparceiro_id}/converter-em-parceiro",
     status_code=status.HTTP_201_CREATED,
 )
-def converter_lead_em_parceiro(
+async def converter_lead_em_parceiro(
     leadparceiro_id: int,
     dados: ConverterLeadParceiroIn,
     _: dict = Depends(get_operador_logado),
@@ -700,6 +702,24 @@ def converter_lead_em_parceiro(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="O estabelecimento precisa ter aceitado a parceria antes da conversão.",
+        )
+    contrato_aceito = db.query(LeadEstabelecimentoContrato).filter(
+        LeadEstabelecimentoContrato.leadestabelecimento_id == estabelecimento.leadestabelecimento_id,
+        LeadEstabelecimentoContrato.status == "ACEITO",
+    ).order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc()).first()
+    if not contrato_aceito:
+        raise HTTPException(409, "Contrato aceito não encontrado")
+    cobranca_implantacao = db.query(CobrancaImplantacao).filter(
+        CobrancaImplantacao.leadestabelecimentocontrato_id
+        == contrato_aceito.leadestabelecimentocontrato_id
+    ).first()
+    if not cobranca_implantacao:
+        cobranca_implantacao = await criar_cobranca_implantacao(db, contrato_aceito)
+    cobranca_implantacao = await reconciliar_cobranca_implantacao(db, cobranca_implantacao)
+    if cobranca_implantacao.status not in {"PAGA", "ISENTA"}:
+        raise HTTPException(
+            409,
+            "A taxa de implantação precisa estar paga ou isenta antes da conversão.",
         )
     senha_inicial = secrets.token_urlsafe(9)
     primeira_conversao = organizacao_existente is None
@@ -802,6 +822,7 @@ def converter_lead_em_parceiro(
 
         estabelecimento.status = "CONVERTIDO"
         estabelecimento.dtconversao = datetime.now()
+        cobranca_implantacao.organizacao_id = nova_organizacao.organizacao_id
         if titular_financeiro:
             contrato = db.query(LeadEstabelecimentoContrato).filter(
                 LeadEstabelecimentoContrato.leadestabelecimento_id

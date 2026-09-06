@@ -57,6 +57,8 @@ PUBLIC_PARTNER_BASE_URL = (
     or ""
 ).strip().rstrip("/")
 
+PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").strip().rstrip("/")
+
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
