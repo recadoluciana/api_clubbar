@@ -17,6 +17,7 @@ from app.core.security import get_operador_logado
 from app.core.security import hash_senha
 from app.models.cidade import Cidade
 from app.models.categoria import Categoria
+from app.models.cardapio import CategoriaPadrao
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
@@ -716,6 +717,7 @@ async def converter_lead_em_parceiro(
     primeira_conversao = organizacao_existente is None
 
     try:
+        categorias = []
         if primeira_conversao:
             nova_organizacao = Organizacao(
                 nmorganizacao=dados.nome_organizacao.strip(),
@@ -750,18 +752,18 @@ async def converter_lead_em_parceiro(
                 if titular_financeiro else None
             ),
             nmloja=dados.nome_loja.strip(),
-            endloja=estabelecimento.endereco,
-            nrceploja=estabelecimento.cep,
-            nrendeloja=estabelecimento.numero,
-            dsbairroloja=estabelecimento.bairro,
+            endloja=contrato_aceito.enderecocontratante or estabelecimento.endereco,
+            nrceploja=contrato_aceito.cepcontratante or estabelecimento.cep,
+            nrendeloja=contrato_aceito.numerocontratante or estabelecimento.numero,
+            dsbairroloja=contrato_aceito.bairrocontratante or estabelecimento.bairro,
             dsrefeloja=None,
             sitloja="ATIVA",
             aberto24x7="N",
             nrtelloja=(estabelecimento.telefone or lead.telefone).strip(),
             nrdiavalidade=90,
             idvalidadeprod="S",
-            estado_id=estabelecimento.estado_id,
-            cidade_id=estabelecimento.cidade_id,
+            estado_id=contrato_aceito.estado_id_contratante or estabelecimento.estado_id,
+            cidade_id=contrato_aceito.cidade_id_contratante or estabelecimento.cidade_id,
             vrtaxaprod=dados.taxa_produtos,
             vrtaxaing=dados.taxa_ingressos,
             tipoloja=dados.tipo_loja,
@@ -775,17 +777,26 @@ async def converter_lead_em_parceiro(
         # Obtém o loja_id antes do commit.
         db.flush()
 
-        categorias = [
-            Categoria(
-                organizacao_id=nova_organizacao.organizacao_id,
-                loja_id=nova_loja.loja_id,
-                nmcategoria=nome_categoria,
-                sitcategoria="ATIVA",
-                idordcategoria=ordem,
-            )
-            for ordem, nome_categoria in enumerate(CATEGORIAS_PADRAO, start=1)
-        ]
-        db.add_all(categorias)
+        if primeira_conversao:
+            categorias_padrao = db.query(CategoriaPadrao).filter(
+                CategoriaPadrao.nmcategoria.in_(CATEGORIAS_PADRAO),
+                CategoriaPadrao.sitcategoria == "ATIVA",
+            ).all()
+            padrao_por_nome = {item.nmcategoria: item for item in categorias_padrao}
+            categorias = []
+            for ordem, nome_categoria in enumerate(CATEGORIAS_PADRAO, start=1):
+                padrao = padrao_por_nome.get(nome_categoria)
+                categorias.append(
+                    Categoria(
+                        organizacao_id=nova_organizacao.organizacao_id,
+                        categoriapadrao_id=(padrao.categoriapadrao_id if padrao else None),
+                        nmcategoria=nome_categoria,
+                        dsicone=(padrao.dsicone if padrao else "more_horiz"),
+                        sitcategoria="ATIVA",
+                        idordcategoria=(padrao.idordcategoria if padrao else ordem),
+                    )
+                )
+            db.add_all(categorias)
 
         if primeira_conversao:
             superadmin = Usuario(

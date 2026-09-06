@@ -35,6 +35,8 @@ class LeadEstabelecimentoContratoCreate(BaseModel):
     versao: str | None = Field(default=None, max_length=30)
     vrtaxaprod: float = Field(default=5, ge=0, le=100)
     vrtaxaing: float = Field(default=5, ge=0, le=100)
+    cpfcnpj: str = Field(min_length=11, max_length=18)
+    nmrazaosocial: str = Field(min_length=2, max_length=160)
 
 
 class IsencaoImplantacaoIn(BaseModel):
@@ -95,6 +97,16 @@ def _out(item: LeadEstabelecimentoContrato) -> dict:
         "vrtaxaprod": float(item.vrtaxaprod),
         "vrtaxaing": float(item.vrtaxaing),
         "vrimplantacao": float(item.vrimplantacao),
+        "tipopessoa": item.tipopessoa,
+        "cpfcnpjcontratante": item.cpfcnpjcontratante,
+        "nmrazaosocial": item.nmrazaosocial,
+        "cepcontratante": item.cepcontratante,
+        "enderecocontratante": item.enderecocontratante,
+        "numerocontratante": item.numerocontratante,
+        "complementocontratante": item.complementocontratante,
+        "bairrocontratante": item.bairrocontratante,
+        "estado_id_contratante": item.estado_id_contratante,
+        "cidade_id_contratante": item.cidade_id_contratante,
         "conteudocontrato": item.conteudocontrato,
         "hashdocumento": item.hashdocumento,
         "nmsignatario": item.nmsignatario,
@@ -119,6 +131,8 @@ def _gerar_conteudo(
     taxa_produtos: float,
     taxa_ingressos: float,
     modelo: ContratoPadrao,
+    nome_contratante: str,
+    cpfcnpj_contratante: str,
 ) -> str:
     complemento = f", {_valor(estabelecimento.complemento)}" if estabelecimento.complemento else ""
     endereco = (
@@ -131,8 +145,8 @@ def _gerar_conteudo(
     email = _valor(estabelecimento.email_responsavel, estabelecimento.email or lead.email)
     valores = {
         "{{VERSAO}}": modelo.versao,
-        "{{NOME_ESTABELECIMENTO}}": _valor(estabelecimento.nmestabelecimento),
-        "{{CPF_CNPJ}}": _valor(estabelecimento.cpfcnpj),
+        "{{NOME_ESTABELECIMENTO}}": nome_contratante,
+        "{{CPF_CNPJ}}": cpfcnpj_contratante,
         "{{RESPONSAVEL}}": responsavel,
         "{{TELEFONE}}": telefone,
         "{{EMAIL}}": email,
@@ -153,12 +167,18 @@ def _contexto_contrato(
     db: Session,
     leadestabelecimento_id: int,
     dados: LeadEstabelecimentoContratoCreate,
-) -> tuple[LeadEstabelecimento, ContratoPadrao, str]:
+) -> tuple[LeadEstabelecimento, ContratoPadrao, str, str, str]:
     estabelecimento = db.query(LeadEstabelecimento).filter(
         LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id
     ).first()
     if not estabelecimento:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+    cpfcnpj = "".join(caractere for caractere in dados.cpfcnpj if caractere.isdigit())
+    if len(cpfcnpj) not in (11, 14):
+        raise HTTPException(422, "Informe um CPF ou CNPJ válido para o contrato")
+    razao_social = dados.nmrazaosocial.strip()
+    if len(cpfcnpj) == 14 and not razao_social:
+        raise HTTPException(422, "A razão social é obrigatória para contrato com CNPJ")
     lead = db.query(LeadParceiro).filter(
         LeadParceiro.leadparceiro_id == estabelecimento.leadparceiro_id
     ).first()
@@ -178,7 +198,9 @@ def _contexto_contrato(
         dados.vrtaxaprod,
         dados.vrtaxaing,
         modelo,
-    )
+        razao_social,
+        cpfcnpj,
+    ), cpfcnpj, razao_social
 
 
 @router.get("/estabelecimento/{leadestabelecimento_id}")
@@ -205,7 +227,7 @@ def previsualizar_contrato(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    _, _, conteudo = _contexto_contrato(db, leadestabelecimento_id, dados)
+    _, _, conteudo, _, _ = _contexto_contrato(db, leadestabelecimento_id, dados)
     return {"conteudocontrato": conteudo}
 
 
@@ -219,7 +241,7 @@ def criar_contrato(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    estabelecimento, modelo, conteudo = _contexto_contrato(
+    estabelecimento, modelo, conteudo, cpfcnpj, razao_social = _contexto_contrato(
         db, leadestabelecimento_id, dados
     )
     contrato_aceito = db.query(LeadEstabelecimentoContrato).filter(
@@ -245,6 +267,16 @@ def criar_contrato(
         vrtaxaprod=dados.vrtaxaprod,
         vrtaxaing=dados.vrtaxaing,
         vrimplantacao=modelo.vrimplantacao,
+        tipopessoa="PJ" if len(cpfcnpj) == 14 else "PF",
+        cpfcnpjcontratante=cpfcnpj,
+        nmrazaosocial=razao_social,
+        cepcontratante=estabelecimento.cep,
+        enderecocontratante=estabelecimento.endereco,
+        numerocontratante=estabelecimento.numero,
+        complementocontratante=estabelecimento.complemento,
+        bairrocontratante=estabelecimento.bairro,
+        estado_id_contratante=estabelecimento.estado_id,
+        cidade_id_contratante=estabelecimento.cidade_id,
         conteudocontrato=conteudo,
         hashdocumento=sha256(conteudo.encode("utf-8")).hexdigest(),
         dtdisponibilizacao=datetime.now(),
