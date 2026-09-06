@@ -72,6 +72,9 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         db.add(ReservaIngressoParticipante(reserva_ingresso_id=reserva_id, ordem=ordem, nmparticipante=participante.nome.strip(), cpfparticipante=participante.cpf))
     reserva.sitreserva = "AGUARDANDO_PAGAMENTO"
     reserva.dtexpiracao = datetime.now() + timedelta(minutes=5)
+    # A reserva gratuita é finalizada nesta mesma transação. Garanta que os
+    # participantes recém-inseridos já possam ser consultados pelo serviço.
+    db.flush()
     resultado_gratuito = None
     if float(reserva.vrtotal or 0) == 0:
         resultado_gratuito = finalizar_reserva_gratuita(db, reserva_id=reserva_id)

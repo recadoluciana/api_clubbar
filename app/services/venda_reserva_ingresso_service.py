@@ -65,6 +65,9 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
 
 
 def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
+    # Este serviço também pode ser chamado logo após a inclusão dos
+    # participantes, antes do commit da transação externa.
+    db.flush()
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
     if not reserva: raise HTTPException(404, "Reserva não encontrada")
     if reserva.venda_id: return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id, "gratuito": True}
