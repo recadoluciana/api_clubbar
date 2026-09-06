@@ -389,6 +389,28 @@ def enviar_mensagem(
     }
 
 
+@router.delete("/mensagens/{item_id}")
+def excluir_ultima_mensagem_lead(
+    item_id: int,
+    leadestabelecimento_id: int,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    ultima = db.query(LeadMensagem).filter(
+        LeadMensagem.leadparceiro_id == lead.leadparceiro_id,
+        LeadMensagem.leadestabelecimento_id == leadestabelecimento_id,
+        LeadMensagem.origem == "LEAD",
+    ).order_by(LeadMensagem.dtcriacao.desc(), LeadMensagem.leadmensagem_id.desc()).first()
+    if not ultima or ultima.leadmensagem_id != item_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Somente a última mensagem enviada por você pode ser excluída.",
+        )
+    db.delete(ultima)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/agendamentos")
 def listar_agendamentos(
     leadestabelecimento_id: int,

@@ -95,6 +95,29 @@ def enviar_mensagem(lead_id: int, leadestabelecimento_id: int, dados: MensagemIn
     db.add(item)
     db.commit()
     return {'ok': True}
+
+
+@router.delete('/{lead_id}/mensagens/{item_id}')
+def excluir_ultima_mensagem_clubbar(
+    lead_id: int,
+    item_id: int,
+    leadestabelecimento_id: int,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    _estabelecimento(db, lead_id, leadestabelecimento_id)
+    ultima = db.query(LeadMensagem).filter(
+        LeadMensagem.leadparceiro_id == lead_id,
+        LeadMensagem.leadestabelecimento_id == leadestabelecimento_id,
+        LeadMensagem.origem == 'CLUBBAR',
+    ).order_by(LeadMensagem.dtcriacao.desc(), LeadMensagem.leadmensagem_id.desc()).first()
+    if not ultima or ultima.leadmensagem_id != item_id:
+        raise HTTPException(409, 'Somente a última mensagem enviada pelo Clubbar pode ser excluída.')
+    db.delete(ultima)
+    db.commit()
+    return {'ok': True}
+
+
 @router.post('/{lead_id}/agendamentos', status_code=201)
 def criar_agendamento(lead_id: int, leadestabelecimento_id: int, dados: AgendamentoIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     _lead(db, lead_id)
