@@ -189,6 +189,51 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None,
     return data
 
 
+async def _localizar_subconta_existente(documento: str, email: str) -> dict | None:
+    """Localiza com segurança uma subconta da conta-pai antes de criar outra."""
+    por_documento = await _asaas(
+        "GET", "/accounts", ASAAS_API_KEY, params={"cpfCnpj": documento, "limit": 100}
+    )
+    encontradas = list(por_documento.get("data") or [])
+    if not encontradas and email:
+        por_email = await _asaas(
+            "GET", "/accounts", ASAAS_API_KEY, params={"email": email, "limit": 100}
+        )
+        encontradas = [
+            item for item in (por_email.get("data") or [])
+            if "".join(c for c in str(item.get("cpfCnpj") or "") if c.isdigit()) == documento
+        ]
+    if len(encontradas) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Há mais de uma subconta Asaas para este CPF/CNPJ. Solicite a vinculação manual pelo Clubbar Admin.",
+        )
+    return encontradas[0] if encontradas else None
+
+
+async def _nova_chave_subconta(account_id: str) -> str:
+    try:
+        resposta = await _asaas(
+            "POST",
+            f"/accounts/{account_id}/accessTokens",
+            ASAAS_API_KEY,
+            {"name": f"Clubbar {datetime.now():%Y-%m-%d %H:%M}"},
+        )
+    except HTTPException as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A subconta já existe no Asaas, mas o Clubbar não conseguiu gerar uma nova chave para vinculá-la. "
+                "Habilite temporariamente o gerenciamento de chaves de subcontas e autorize o IP da API no Asaas. "
+                f"Detalhe do Asaas: {exc.detail}"
+            ),
+        ) from exc
+    chave = resposta.get("access_token") or resposta.get("accessToken") or resposta.get("apiKey")
+    if not chave:
+        raise HTTPException(502, "O Asaas criou a credencial, mas não devolveu sua chave secreta.")
+    return str(chave)
+
+
 @router.get("/organizacao/{organizacao_id}/extrato-asaas")
 async def extrato_asaas(
     organizacao_id: int,
@@ -266,23 +311,33 @@ async def ativar_recebimentos(organizacao_id: int, db: Session = Depends(get_db)
     if titular.asaas_account_id:
         return _out(titular)
     documento = titular.cpfcnpj
-    conta = await _asaas("POST", "/accounts", ASAAS_API_KEY, {
-        "name": titular.nmrazaosocial,
-        "email": titular.email,
-        "cpfCnpj": documento,
-        "birthDate": titular.dtnascimento.isoformat() if titular.dtnascimento else None,
-        "companyType": "LIMITED" if titular.tipotitular == "PJ" else None,
-        "mobilePhone": titular.telefone,
-        "address": titular.endereco,
-        "addressNumber": titular.numero,
-        "complement": titular.complemento,
-        "province": titular.bairro,
-        "postalCode": titular.cep,
-        "incomeValue": float(titular.vrfaturamentomensal),
-    })
-    api_key = conta.get("apiKey")
-    wallet_id = conta.get("walletId")
+    conta = await _localizar_subconta_existente(documento, titular.email)
+    conta_reutilizada = conta is not None
+    if conta_reutilizada and conta.get("id"):
+        vinculada = db.query(TitularFinanceiro).filter(
+            TitularFinanceiro.asaas_account_id == str(conta["id"]),
+            TitularFinanceiro.organizacao_id != organizacao_id,
+        ).first()
+        if vinculada:
+            raise HTTPException(409, "Esta subconta Asaas já está vinculada a outra organização no Clubbar.")
+    if conta is None:
+        conta = await _asaas("POST", "/accounts", ASAAS_API_KEY, {
+            "name": titular.nmrazaosocial,
+            "email": titular.email,
+            "cpfCnpj": documento,
+            "birthDate": titular.dtnascimento.isoformat() if titular.dtnascimento else None,
+            "companyType": "LIMITED" if titular.tipotitular == "PJ" else None,
+            "mobilePhone": titular.telefone,
+            "address": titular.endereco,
+            "addressNumber": titular.numero,
+            "complement": titular.complemento,
+            "province": titular.bairro,
+            "postalCode": titular.cep,
+            "incomeValue": float(titular.vrfaturamentomensal),
+        })
     account_id = conta.get("id")
+    api_key = await _nova_chave_subconta(str(account_id)) if conta_reutilizada and account_id else conta.get("apiKey")
+    wallet_id = conta.get("walletId")
     if not api_key or not wallet_id or not account_id:
         raise HTTPException(status_code=502, detail="Asaas não devolveu as credenciais da subconta")
     criptografada = criptografar_credencial(api_key)
