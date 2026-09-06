@@ -22,7 +22,7 @@ from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
-from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY, ASAAS_CLUBBAR_WALLET_ID
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -37,7 +37,10 @@ from app.services.asaas_service import (
     buscar_pagamento_confirmado_por_qrcode_pix,
     buscar_pagamento_confirmado_por_referencia,
     atualizar_cliente_por_customer_asaas,
-    criar_qrcode_pix_estatico_asaas,
+    criar_cobranca_pix_asaas,
+    obter_ou_criar_customer_asaas_loja,
+    buscar_pagamento_confirmado_por_id,
+    cancelar_pagamento_asaas,
     cancelar_checkout_asaas,
     excluir_qrcode_pix_estatico_asaas,
 )
@@ -82,7 +85,9 @@ async def _cancelar_tentativas_anteriores(
         api_key_tentativa = ASAAS_API_KEY
         if tentativa.asaas_wallet_loja:
             api_key_tentativa, _ = obter_conta_asaas_da_loja(db, tentativa.loja_id)
-        if tentativa.pix_qr_code_id:
+        if tentativa.payment_id:
+            await cancelar_pagamento_asaas(tentativa.payment_id, api_key_tentativa)
+        elif tentativa.pix_qr_code_id:
             await excluir_qrcode_pix_estatico_asaas(
                 tentativa.pix_qr_code_id, api_key_tentativa
             )
@@ -305,8 +310,6 @@ def _salvar_snapshot_checkout(
 @router.post('/pix')
 async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db)):
     try:
-        if not ASAAS_API_KEY or not ASAAS_PIX_ADDRESS_KEY:
-            raise HTTPException(status_code=503, detail='PIX Asaas nao configurado')
         carrinho = get_carrinho(
             db, payload.cliente_id, payload.loja_id, payload.usuario_id
         )
@@ -330,22 +333,31 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
         external_reference = (
             f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
         )
-        qr = await criar_qrcode_pix_estatico_asaas(
-            address_key=ASAAS_PIX_ADDRESS_KEY,
+        api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
+        customer_id = await obter_ou_criar_customer_asaas_loja(
+            db, cliente_id=payload.cliente_id, loja_id=payload.loja_id,
+            api_key=api_key_loja,
+        )
+        cobranca = await criar_cobranca_pix_asaas(
+            customer_id=customer_id,
             valor=valor_cobrado,
             descricao=f'Clubbar carrinho {carrinho_id}',
-            api_key=ASAAS_API_KEY,
             external_reference=external_reference,
-            expiracao_segundos=300,
+            api_key=api_key_loja,
+            splits=montar_split_clubbar(valor_taxa),
+            due_date=agora.date().isoformat(),
         )
-        pix_id = str(qr['id'])
+        pagamento = cobranca['payment']
+        qr = cobranca['qrCode']
+        pix_id = str(pagamento['id'])
         registro = CheckoutAsaas(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
             venda_id=None,
             checkout_id=pix_id,
-            pix_qr_code_id=pix_id,
+            payment_id=pix_id,
+            pix_qr_code_id=None,
             pix_payload=str(qr['payload']),
             pix_encoded_image=str(qr.get('encodedImage') or ''),
             pix_expiration_date=agora + timedelta(minutes=5),
@@ -354,6 +366,8 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             valor=valor_cobrado,
             vrtaxaclubbar=valor_taxa,
             vrcashbackusado=valor_cashback,
+            asaas_wallet_loja=wallet_loja,
+            asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID,
         )
         db.add(registro)
         db.flush()
@@ -362,10 +376,10 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
         return {
             'venda_id': None,
             'pagamento_id': pix_id,
-            'pix_qr_code_id': pix_id,
+            'pix_qr_code_id': None,
             'pix_copia_cola': qr['payload'],
             'encoded_image': qr.get('encodedImage'),
-            'expiration_date': qr.get('expirationDate'),
+            'expiration_date': (agora + timedelta(minutes=5)).isoformat(),
             'valor_total': valor_cobrado,
             'valor_original': valor_total,
             'cashback_utilizado': float(valor_cashback),
@@ -609,7 +623,11 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
         and api_key_checkout
         and getattr(checkout, "checkout_asaas_id", None)
     ):
-        if getattr(checkout, "pix_qr_code_id", None):
+        if getattr(checkout, "payment_id", None):
+            pagamento = await buscar_pagamento_confirmado_por_id(
+                checkout.payment_id, api_key_checkout
+            )
+        elif getattr(checkout, "pix_qr_code_id", None):
             pagamento = await buscar_pagamento_confirmado_por_qrcode_pix(
                 checkout.pix_qr_code_id, api_key_checkout
             )
@@ -701,6 +719,16 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                     # atualização complementar do perfil falhar.
                     print("[ASAAS] Erro ao atualizar endereco do cliente:", repr(exc))
             status_atual = "PAID"
+        elif (
+            checkout.payment_id
+            and checkout.pix_expiration_date
+            and checkout.pix_expiration_date <= datetime.now()
+        ):
+            await cancelar_pagamento_asaas(checkout.payment_id, api_key_checkout)
+            checkout.status = "EXPIRED"
+            cancelar_uso_pendente(db, checkout)
+            db.commit()
+            status_atual = "EXPIRED"
     pago = status_atual in {"PAID", "RECEIVED", "CONFIRMED"}
     return {
         "pagamento_id": checkout.checkout_id,

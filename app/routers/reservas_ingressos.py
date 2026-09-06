@@ -11,9 +11,9 @@ from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva
-from app.services.asaas_service import criar_checkout_asaas, criar_qrcode_pix_estatico_asaas, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia
+from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
-from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY, ASAAS_CLUBBAR_WALLET_ID
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
 from app.utils.datetime_utils import iso_utc
 
@@ -111,8 +111,13 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
-        qr = await criar_qrcode_pix_estatico_asaas(address_key=ASAAS_PIX_ADDRESS_KEY, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", api_key=ASAAS_API_KEY, external_reference=referencia, expiracao_segundos=300)
-        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(qr["id"]), pix_qr_code_id=str(qr["id"]), pix_payload=str(qr["payload"]), pix_encoded_image=str(qr.get("encodedImage") or ""), pix_expiration_date=datetime.now() + timedelta(minutes=5), external_reference=referencia, status="PENDING", valor=reserva.vrtotal, vrtaxaclubbar=reserva.vrtaxa * reserva.qtreservada)
+        api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
+        customer_id = await obter_ou_criar_customer_asaas_loja(db, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, api_key=api_key_loja)
+        taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
+        cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_split_clubbar(taxa_clubbar), due_date=datetime.now().date().isoformat())
+        pagamento, qr = cobranca["payment"], cobranca["qrCode"]
+        payment_id = str(pagamento["id"])
+        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=payment_id, payment_id=payment_id, pix_qr_code_id=None, pix_payload=str(qr["payload"]), pix_encoded_image=str(qr.get("encodedImage") or ""), pix_expiration_date=datetime.now() + timedelta(minutes=5), external_reference=referencia, status="PENDING", valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         reserva.dtexpiracao = datetime.now() + timedelta(minutes=5)
         db.commit()
@@ -153,7 +158,7 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
     api_key_consulta = ASAAS_API_KEY
     if checkout.asaas_wallet_loja:
         api_key_consulta, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
-    pagamento = await (buscar_pagamento_confirmado_por_qrcode_pix(checkout.pix_qr_code_id, api_key_consulta) if checkout.pix_qr_code_id else buscar_pagamento_confirmado_por_checkout(checkout.checkout_id, api_key_consulta))
+    pagamento = await (buscar_pagamento_confirmado_por_id(checkout.payment_id, api_key_consulta) if checkout.payment_id else buscar_pagamento_confirmado_por_qrcode_pix(checkout.pix_qr_code_id, api_key_consulta) if checkout.pix_qr_code_id else buscar_pagamento_confirmado_por_checkout(checkout.checkout_id, api_key_consulta))
     if not pagamento:
         pagamento = await buscar_pagamento_confirmado_por_referencia(checkout.external_reference, api_key_consulta)
     if pagamento:
@@ -161,5 +166,8 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
         db.commit()
         return {**_saida(reserva), **resultado, "status_pagamento": "PAGO"}
     if reserva.dtexpiracao <= datetime.now():
+        if checkout.payment_id:
+            await cancelar_pagamento_asaas(checkout.payment_id, api_key_consulta)
+        checkout.status = "EXPIRED"
         reserva.sitreserva = "EXPIRADA"; db.commit()
     return {**_saida(reserva), "status_pagamento": "PENDENTE"}

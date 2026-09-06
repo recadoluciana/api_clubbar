@@ -209,6 +209,113 @@ async def obter_ou_criar_customer_asaas(
 
     return customer_id
 
+
+async def obter_ou_criar_customer_asaas_loja(
+    db: Session, *, cliente_id: int, loja_id: int, api_key: str,
+) -> str:
+    """Mantem um customer separado em cada subconta Asaas."""
+    cliente = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(404, "Cliente não encontrado")
+    body = {
+        "name": cliente.nmcliente,
+        "cpfCnpj": cliente.nrcpfcliente,
+        "email": cliente.emailcliente,
+        "mobilePhone": cliente.nrtelcliente,
+        "address": cliente.endcliente,
+        "addressNumber": cliente.nrendcliente,
+        "complement": cliente.complcliente,
+        "province": cliente.bairrocliente,
+        "postalCode": cliente.cepcliente,
+        "externalReference": f"CLIENTE-{cliente_id}-LOJA-{loja_id}",
+    }
+    body = {chave: valor for chave, valor in body.items() if valor}
+    vinculo = db.query(ClienteAsaas).filter(
+        ClienteAsaas.cliente_id == cliente_id,
+        ClienteAsaas.loja_id == loja_id,
+    ).first()
+    metodo = "put" if vinculo else "post"
+    caminho = f"/customers/{vinculo.asaas_customer_id}" if vinculo else "/customers"
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await getattr(client, metodo)(
+            f"{ASAAS_BASE_URL}{caminho}", json=body, headers=_headers(api_key)
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, data)
+    customer_id = str(data.get("id") or (vinculo.asaas_customer_id if vinculo else ""))
+    if not customer_id:
+        raise HTTPException(502, "Asaas não retornou o identificador do cliente")
+    if not vinculo:
+        db.add(ClienteAsaas(
+            cliente_id=cliente_id, loja_id=loja_id,
+            asaas_customer_id=customer_id,
+        ))
+        db.flush()
+    return customer_id
+
+
+async def criar_cobranca_pix_asaas(
+    *, customer_id: str, valor: float, descricao: str,
+    external_reference: str, api_key: str, splits: list[dict], due_date: str,
+) -> dict:
+    body = {
+        "customer": customer_id,
+        "billingType": "PIX",
+        "value": round(float(valor), 2),
+        "dueDate": due_date,
+        "description": descricao[:500],
+        "externalReference": external_reference[:100],
+        "split": splits,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/payments", json=body, headers=_headers(api_key)
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, data)
+    payment_id = data.get("id")
+    if not payment_id:
+        raise HTTPException(502, "Asaas não retornou o identificador da cobrança Pix")
+    qr = await buscar_qrcode_pix_asaas(str(payment_id), api_key)
+    return {"payment": data, "qrCode": qr}
+
+
+async def buscar_pagamento_confirmado_por_id(payment_id: str, api_key: str) -> dict | None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f"{ASAAS_BASE_URL}/payments/{payment_id}", headers=_headers(api_key)
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, data)
+    return data if str(data.get("status") or "").upper() in {
+        "RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"
+    } else None
+
+
+async def cancelar_pagamento_asaas(payment_id: str, api_key: str) -> None:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.delete(
+            f"{ASAAS_BASE_URL}/payments/{payment_id}", headers=_headers(api_key)
+        )
+    if response.status_code not in (200, 204, 404):
+        try:
+            data = response.json()
+        except Exception:
+            data = {"raw": response.text}
+        raise HTTPException(response.status_code, data)
+
 async def sincronizar_cliente_com_asaas(
     db: Session,
     *,

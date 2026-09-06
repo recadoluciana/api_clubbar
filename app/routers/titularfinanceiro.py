@@ -160,13 +160,14 @@ def salvar(organizacao_id: int, dados: TitularFinanceiroIn, db: Session = Depend
     return _out(titular)
 
 
-async def _asaas(method: str, path: str, api_key: str, json: dict | None = None):
+async def _asaas(method: str, path: str, api_key: str, json: dict | None = None, params: dict | None = None):
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.request(
             method,
             f"{ASAAS_BASE_URL}{path}",
             headers={"accept": "application/json", "access_token": api_key},
             json=json,
+            params=params,
         )
     data = response.json() if response.content else {}
     if response.status_code >= 400:
@@ -185,6 +186,56 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None)
             detail=detalhe or data.get("message") or "Erro na integração Asaas",
         )
     return data
+
+
+@router.get("/organizacao/{organizacao_id}/extrato-asaas")
+async def extrato_asaas(
+    organizacao_id: int,
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
+    offset: int = 0,
+    limite: int = 50,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.organizacao_id == organizacao_id
+    ).first()
+    if not titular or not titular.asaas_api_key_criptografada:
+        raise HTTPException(422, "Ative os recebimentos no Asaas antes de consultar o extrato")
+    api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
+    hoje = date.today()
+    inicio = data_inicio or date(hoje.year, hoje.month, 1)
+    fim = data_fim or hoje
+    if inicio > fim:
+        raise HTTPException(422, "A data inicial não pode ser posterior à data final")
+    limite = min(max(limite, 1), 100)
+    saldo = await _asaas("GET", "/finance/balance", api_key)
+    extrato = await _asaas("GET", "/financialTransactions", api_key, params={
+        "startDate": inicio.isoformat(), "finishDate": fim.isoformat(),
+        "offset": max(offset, 0), "limit": limite, "order": "desc",
+    })
+    itens = []
+    for item in extrato.get("data", []):
+        itens.append({
+            "id": item.get("id"),
+            "data": item.get("date") or item.get("effectiveDate"),
+            "tipo": item.get("type"),
+            "descricao": item.get("description"),
+            "valor": item.get("value"),
+            "saldo": item.get("balance"),
+            "pagamento_id": item.get("paymentId"),
+            "transferencia_id": item.get("transferId"),
+        })
+    return {
+        "saldo": float(saldo.get("balance") or 0),
+        "data_inicio": inicio,
+        "data_fim": fim,
+        "total": extrato.get("totalCount", len(itens)),
+        "possui_mais": bool(extrato.get("hasMore")),
+        "transacoes": itens,
+    }
 
 
 @router.post("/organizacao/{organizacao_id}/ativar-recebimentos")
