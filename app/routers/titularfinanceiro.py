@@ -170,7 +170,20 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None)
         )
     data = response.json() if response.content else {}
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=data.get("errors") or data.get("message") or "Erro na integração Asaas")
+        erros = data.get("errors")
+        if isinstance(erros, list):
+            descricoes = [
+                str(item.get("description") or item.get("message") or "").strip()
+                for item in erros
+                if isinstance(item, dict)
+            ]
+            detalhe = " ".join(item for item in descricoes if item)
+        else:
+            detalhe = ""
+        raise HTTPException(
+            status_code=502,
+            detail=detalhe or data.get("message") or "Erro na integração Asaas",
+        )
     return data
 
 
@@ -268,3 +281,22 @@ async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), pa
     retorno["situacao"] = situacao
     retorno["documentos"] = documentos.get("data", [])
     return retorno
+
+
+@router.post("/organizacao/{organizacao_id}/aprovar-sandbox")
+async def aprovar_subconta_sandbox(
+    organizacao_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    if APP_ENV in {"production", "prod"}:
+        raise HTTPException(status_code=403, detail="A aprovação simulada existe somente no Sandbox")
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.organizacao_id == organizacao_id
+    ).first()
+    if not titular or not titular.asaas_api_key_criptografada:
+        raise HTTPException(status_code=422, detail="Crie a subconta antes de aprová-la")
+    api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
+    await _asaas("POST", "/sandbox/myAccount/approve", api_key)
+    return await verificar_asaas(organizacao_id, db, payload)
