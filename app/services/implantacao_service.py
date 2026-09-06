@@ -48,7 +48,13 @@ async def criar_cobranca_implantacao(
         raise HTTPException(503, "PUBLIC_SITE_URL não configurada")
 
     referencia = f"IMPLANTACAO-{contrato.leadestabelecimentocontrato_id}-{uuid.uuid4().hex[:12]}"
-    retorno = f"{PUBLIC_SITE_URL}/portal-lead.html"
+    site_url = PUBLIC_SITE_URL.strip().rstrip("/")
+    if not site_url.lower().startswith(("http://", "https://")):
+        site_url = f"https://{site_url}"
+    retorno = (
+        f"{site_url}/aceite-parceria.html"
+        f"?leadestabelecimento_id={contrato.leadestabelecimento_id}"
+    )
     body = {
         "billingTypes": ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED"],
