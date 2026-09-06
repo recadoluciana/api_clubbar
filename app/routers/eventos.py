@@ -14,6 +14,8 @@ from app.database import get_db
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
+from app.models.agendamensal import AgendaMensal
+from app.services.agenda_service import obter_ou_criar_agenda
 from app.models.evento import Evento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
@@ -103,11 +105,13 @@ def listar_eventos_proximos(
     eventos = (
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(AgendaMensal, AgendaMensal.agendamensal_id == Evento.agendamensal_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
+        .filter(AgendaMensal.statusagenda == "PUBLICADA")
         .filter(filtro_evento_atual_ou_proximo(hi))
         .order_by(Evento.dtinicioevento.asc())
         .all()
@@ -142,6 +146,7 @@ def listar_eventos_proximos_global(
             func.coalesce(vendas_por_loja.c.total_vendas, 0).label("total_vendas_loja"),
         )
         .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(AgendaMensal, AgendaMensal.agendamensal_id == Evento.agendamensal_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .outerjoin(vendas_por_loja, vendas_por_loja.c.loja_id == Loja.loja_id)
         .join(
@@ -150,6 +155,7 @@ def listar_eventos_proximos_global(
         )
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
+        .filter(AgendaMensal.statusagenda == "PUBLICADA")
         .filter(filtro_evento_atual_ou_proximo(hi))
     )
 
@@ -337,10 +343,14 @@ def criar_evento(
         status_evento = normalizar_status_evento(statusevento)
 
         banner_url = salvar_banner_evento(urlbannerevento)
+        agenda = obter_ou_criar_agenda(
+            db, loja.organizacao_id, loja_id, inicio_evento
+        )
 
         novo = Evento(
             organizacao_id=organizacao_id,
             loja_id=loja_id,
+            agendamensal_id=agenda.agendamensal_id,
             nmtituloevento=nmtituloevento,
             dsdescevento=dsdescevento,
             dspoliticacancelamento=dspoliticacancelamento,
@@ -440,6 +450,14 @@ def atualizar_evento(
 
         if urlbannerevento is not None and urlbannerevento.filename:
             evento.urlbannerevento = salvar_banner_evento(urlbannerevento)
+
+        agenda = obter_ou_criar_agenda(
+            db,
+            evento.organizacao_id,
+            evento.loja_id,
+            evento.dtinicioevento,
+        )
+        evento.agendamensal_id = agenda.agendamensal_id
 
         db.commit()
         db.refresh(evento)

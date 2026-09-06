@@ -213,6 +213,12 @@ def atualizar_produto(
             produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
 
         if categoria_id is not None:
+            categoria = db.query(Categoria).filter(
+                Categoria.categoria_id == categoria_id,
+                Categoria.organizacao_id == produto.organizacao_id,
+            ).first()
+            if not categoria:
+                raise HTTPException(status_code=404, detail="Categoria não encontrada para esta organização.")
             produto.categoria_id = categoria_id
 
         if nmproduto is not None:
@@ -376,11 +382,12 @@ async def criar_produto(
 
     if categoria_id:
         categoria = db.query(Categoria).filter(
-            Categoria.categoria_id == categoria_id
+            Categoria.categoria_id == categoria_id,
+            Categoria.organizacao_id == organizacao_id,
         ).first()
 
         if not categoria:
-            raise HTTPException(status_code=404, detail="Categoria não encontrada.")
+            raise HTTPException(status_code=404, detail="Categoria não encontrada para esta organização.")
 
     if idtipoproduto == "P":
         lote_id = None

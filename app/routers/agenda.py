@@ -1,5 +1,6 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.security import get_usuario_logado
@@ -10,9 +11,80 @@ from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.eventolote import EventoLote
 from app.models.loja import Loja
+from app.models.agendamensal import AgendaMensal
 from app.schemas.atracao import EventoRapidoAgendaIn
+from app.services.agenda_service import obter_ou_criar_agenda
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 
 router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
+
+
+class PublicacaoAgendaIn(BaseModel):
+    publicar_apos_aprovacao: bool = False
+
+
+def _agenda(db: Session, loja: Loja, ano: int, mes: int) -> AgendaMensal:
+    item = db.query(AgendaMensal).filter(
+        AgendaMensal.loja_id == loja.loja_id,
+        AgendaMensal.ano == ano,
+        AgendaMensal.mes == mes,
+    ).first()
+    if item:
+        return item
+    item = AgendaMensal(organizacao_id=loja.organizacao_id, loja_id=loja.loja_id, ano=ano, mes=mes)
+    db.add(item)
+    db.flush()
+    return item
+
+
+@router.get("/status")
+def consultar_status(loja_id: int, ano: int, mes: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(404, "Loja não encontrada.")
+    validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
+    item = _agenda(db, loja, ano, mes)
+    db.commit()
+    db.refresh(item)
+    return {"agendamensal_id": item.agendamensal_id, "loja_id": loja_id, "ano": ano, "mes": mes, "statusagenda": item.statusagenda, "publicaraposaprovacao": item.publicaraposaprovacao, "dtpublicacao": item.dtpublicacao}
+
+
+@router.post("/publicar")
+def publicar(loja_id: int, ano: int, mes: int, dados: PublicacaoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(404, "Loja não encontrada.")
+    validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
+    item = _agenda(db, loja, ano, mes)
+    if not db.query(Evento).filter(Evento.agendamensal_id == item.agendamensal_id, Evento.statusevento != "CANCELADO").first():
+        raise HTTPException(422, "Cadastre pelo menos um evento antes de publicar a agenda.")
+    try:
+        validar_publicacao_loja(db, loja_id)
+    except HTTPException:
+        if not dados.publicar_apos_aprovacao:
+            raise
+        item.statusagenda = "AGUARDANDO_ASAAS"
+        item.publicaraposaprovacao = "S"
+        db.commit()
+        return {"statusagenda": item.statusagenda, "mensagem": "Agenda será publicada assim que o Asaas aprovar os recebimentos."}
+    item.statusagenda = "PUBLICADA"
+    item.publicaraposaprovacao = "N"
+    item.dtpublicacao = datetime.now()
+    db.commit()
+    return {"statusagenda": item.statusagenda, "mensagem": "Agenda publicada com sucesso."}
+
+
+@router.post("/despublicar")
+def despublicar(loja_id: int, ano: int, mes: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(404, "Loja não encontrada.")
+    validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
+    item = _agenda(db, loja, ano, mes)
+    item.statusagenda = "INATIVA"
+    item.publicaraposaprovacao = "N"
+    db.commit()
+    return {"statusagenda": item.statusagenda, "mensagem": "Agenda retirada da publicação."}
 
 @router.post("/evento-rapido", status_code=201)
 def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
@@ -29,8 +101,10 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
         raise HTTPException(422,"Informe a capacidade total da loja antes de criar eventos.")
     atracao=db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first()
     if not atracao: raise HTTPException(404,"Atração não encontrada.")
+    agenda = obter_ou_criar_agenda(db, org, loja.loja_id, dados.dtinicioatracao)
     evento=Evento(
         organizacao_id=org,loja_id=loja.loja_id,
+        agendamensal_id=agenda.agendamensal_id,
         nmtituloevento=dados.nmtituloevento,
         dsdescevento=atracao.dsatracao,
         dtinicioevento=dados.dtinicioatracao,dtfimevento=None,

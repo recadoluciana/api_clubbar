@@ -16,12 +16,14 @@ router = APIRouter(prefix="/lojas", tags=["Categorias"])
 
 class CategoriaCreate(BaseModel):
     nmcategoria: str
+    dsicone: Optional[str] = "more_horiz"
     sitcategoria: Optional[str] = "ATIVA"
     idordcategoria: Optional[int] = 1
 
 
 class CategoriaUpdate(BaseModel):
     nmcategoria: Optional[str] = None
+    dsicone: Optional[str] = None
     sitcategoria: Optional[str] = None
     idordcategoria: Optional[int] = None
 
@@ -38,11 +40,11 @@ def listar_categorias_por_loja_todas(loja_id: int, db: Session = Depends(get_db)
             Categoria.categoria_id,
             Categoria.nmcategoria,
             Categoria.sitcategoria,
+            Categoria.dsicone,
             Categoria.idordcategoria,
         )
         .filter(
             Categoria.organizacao_id == loja.organizacao_id,
-            Categoria.loja_id == loja_id,
         )
         .order_by(
             Categoria.idordcategoria.asc(),
@@ -56,6 +58,7 @@ def listar_categorias_por_loja_todas(loja_id: int, db: Session = Depends(get_db)
             "categoria_id"   : r.categoria_id,
             "nmcategoria"    : r.nmcategoria,
             "sitcategoria"   : r.sitcategoria,
+            "dsicone"        : r.dsicone,
             "idordcategoria" : r.idordcategoria,
         }
         for r in rows
@@ -73,10 +76,10 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
             Categoria.categoria_id,
             Categoria.nmcategoria,
             Categoria.idordcategoria,
+            Categoria.dsicone,
         )
         .filter(
             Categoria.organizacao_id == loja.organizacao_id,
-            Categoria.loja_id == loja_id,
             Categoria.sitcategoria == "ATIVA",
         )
         .order_by(
@@ -91,6 +94,7 @@ def listar_categorias_por_loja(loja_id: int, db: Session = Depends(get_db)):
             "categoria_id": r.categoria_id,
             "nmcategoria": r.nmcategoria,
             "idordcategoria": r.idordcategoria,
+            "dsicone": r.dsicone,
         }
         for r in rows
     ]
@@ -120,7 +124,6 @@ def criar_categoria_por_loja(
         db.query(Categoria)
         .filter(
             Categoria.organizacao_id == loja.organizacao_id,
-            Categoria.loja_id == loja_id,
             Categoria.nmcategoria == nome,
         )
         .first()
@@ -129,13 +132,13 @@ def criar_categoria_por_loja(
     if categoria_existente:
         raise HTTPException(
             status_code=400,
-            detail="Já existe uma categoria com esse nome nesta loja."
+            detail="Já existe uma categoria com esse nome nesta organização."
         )
 
     nova_categoria = Categoria(
         organizacao_id=loja.organizacao_id,
-        loja_id=loja_id,
         nmcategoria=nome,
+        dsicone=payload.dsicone,
         sitcategoria=payload.sitcategoria,
         idordcategoria=payload.idordcategoria,
     )
@@ -148,8 +151,9 @@ def criar_categoria_por_loja(
         "message": "Categoria criada com sucesso.",
         "categoria_id": nova_categoria.categoria_id,
         "organizacao_id": nova_categoria.organizacao_id,
-        "loja_id": nova_categoria.loja_id,
+        "loja_id": loja_id,
         "nmcategoria": nova_categoria.nmcategoria,
+        "dsicone": nova_categoria.dsicone,
         "sitcategoria": nova_categoria.sitcategoria,
         "idordcategoria": nova_categoria.idordcategoria,
         "dtcriacao": nova_categoria.dtcriacao,
@@ -174,7 +178,6 @@ def atualizar_categoria_por_loja(
         .filter(
             Categoria.categoria_id == categoria_id,
             Categoria.organizacao_id == loja.organizacao_id,
-            Categoria.loja_id == loja_id,
         )
         .first()
     )
@@ -191,7 +194,6 @@ def atualizar_categoria_por_loja(
             db.query(Categoria)
             .filter(
                 Categoria.organizacao_id == loja.organizacao_id,
-                Categoria.loja_id == loja_id,
                 Categoria.nmcategoria == nome,
                 Categoria.categoria_id != categoria_id,
             )
@@ -201,7 +203,7 @@ def atualizar_categoria_por_loja(
         if categoria_existente:
             raise HTTPException(
                 status_code=400,
-                detail="Já existe outra categoria com esse nome nesta loja."
+                detail="Já existe outra categoria com esse nome nesta organização."
             )
 
         categoria.nmcategoria = nome
@@ -210,6 +212,9 @@ def atualizar_categoria_por_loja(
         if payload.sitcategoria not in ["ATIVA", "INATIVA"]:
             raise HTTPException(status_code=400, detail="Situação inválida.")
         categoria.sitcategoria = payload.sitcategoria
+
+    if payload.dsicone is not None:
+        categoria.dsicone = payload.dsicone
 
     if payload.idordcategoria is not None:
         categoria.idordcategoria = payload.idordcategoria
@@ -221,8 +226,9 @@ def atualizar_categoria_por_loja(
         "message": "Categoria atualizada com sucesso.",
         "categoria_id": categoria.categoria_id,
         "organizacao_id": categoria.organizacao_id,
-        "loja_id": categoria.loja_id,
+        "loja_id": loja_id,
         "nmcategoria": categoria.nmcategoria,
+        "dsicone": categoria.dsicone,
         "sitcategoria": categoria.sitcategoria,
         "idordcategoria": categoria.idordcategoria,
         "dtcriacao": categoria.dtcriacao,
@@ -237,19 +243,20 @@ def deletar_categoria_por_loja(
     usuario: dict = Depends(get_usuario_logado),
 ):
 
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
     categoria = db.query(Categoria).filter(
-        Categoria.loja_id == loja_id,
-        Categoria.categoria_id == categoria_id
+        Categoria.organizacao_id == loja.organizacao_id,
+        Categoria.categoria_id == categoria_id,
     ).first()
 
     if not categoria:
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
-    validar_mutacao_loja(usuario, categoria.organizacao_id, loja_id)
+    validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
-    # 🔒 verifica produtos da MESMA LOJA (isso é importante!)
     existe_produto = db.query(Produto).filter(
         Produto.categoria_id == categoria_id,
-        Produto.loja_id == loja_id   # 👈 CORREÇÃO IMPORTANTE
     ).first()
 
     if existe_produto:
@@ -280,7 +287,6 @@ def reativar_categoria_por_loja(
         .filter(
             Categoria.categoria_id == categoria_id,
             Categoria.organizacao_id == loja.organizacao_id,
-            Categoria.loja_id == loja_id,
         )
         .first()
     )
@@ -299,8 +305,9 @@ def reativar_categoria_por_loja(
     return {
         "message": "Categoria reativada com sucesso.",
         "categoria_id": categoria.categoria_id,
-        "loja_id": categoria.loja_id,
+        "loja_id": loja_id,
         "nmcategoria": categoria.nmcategoria,
+        "dsicone": categoria.dsicone,
         "sitcategoria": categoria.sitcategoria,
         "dtultatu": categoria.dtultatu,
     }

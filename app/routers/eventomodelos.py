@@ -11,6 +11,7 @@ from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventomodelo import EventoModelo
 from app.models.eventomodeloatracao import EventoModeloAtracao
+from app.services.agenda_service import obter_ou_criar_agenda
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.loja import Loja
@@ -132,7 +133,8 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
     atracoes_padrao=db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem).all()
     for i in range(dados.repeticoes):
         inicio=_somar_mes(dados.dtinicio,i) if dados.recorrencia=="MENSAL" else dados.dtinicio+timedelta(days=i*(14 if dados.recorrencia=="QUINZENAL" else 7 if dados.recorrencia=="SEMANAL" else 0))
-        evento=Evento(organizacao_id=x.organizacao_id,loja_id=x.loja_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dspoliticareembolso=x.dspoliticareembolso,dspoliticacashback=x.dspoliticacashback,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=x.nmlocalevento,dsendlocevento=x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
+        agenda = obter_ou_criar_agenda(db, x.organizacao_id, x.loja_id, inicio)
+        evento=Evento(organizacao_id=x.organizacao_id,loja_id=x.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dspoliticareembolso=x.dspoliticareembolso,dspoliticacashback=x.dspoliticacashback,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=x.nmlocalevento,dsendlocevento=x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
         db.add(evento);db.flush()
         for padrao in atracoes_padrao:
             inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)

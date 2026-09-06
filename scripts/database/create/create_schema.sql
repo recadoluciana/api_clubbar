@@ -784,75 +784,44 @@ CREATE TABLE usuariosenha (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE cardapio_padrao_categoria (
-  cardapio_padrao_categoria_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL,
+CREATE TABLE categoriapadrao (
+  categoriapadrao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   nmcategoria VARCHAR(120) NOT NULL,
+  dsicone VARCHAR(50) NULL,
   sitcategoria VARCHAR(10) NOT NULL DEFAULT 'ATIVA',
   idordcategoria BIGINT NOT NULL DEFAULT 1,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapio_padrao_categoria_org
-    FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapio_padrao_categoria_nome (organizacao_id, nmcategoria),
-  KEY idx_cardapio_padrao_categoria_org (organizacao_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE cardapio_padrao_produto (
-  cardapio_padrao_produto_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL,
-  cardapio_padrao_categoria_id BIGINT NULL,
-  nmproduto VARCHAR(100) NOT NULL,
-  dsproduto VARCHAR(255) NULL,
-  vrprecoprod DECIMAL(10,2) NOT NULL,
-  sitproduto VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
-  urlfotoproduto VARCHAR(255) NULL,
-  tipodesconto VARCHAR(15) NOT NULL DEFAULT 'NENHUM',
-  vrdesconto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  pccashback DECIMAL(10,2) NULL,
-  dtinidesconto DATETIME NULL,
-  dtfimdesconto DATETIME NULL,
-  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapio_padrao_produto_org
-    FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_cardapio_padrao_produto_categoria
-    FOREIGN KEY (cardapio_padrao_categoria_id)
-    REFERENCES cardapio_padrao_categoria(cardapio_padrao_categoria_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapio_padrao_produto_nome (organizacao_id, nmproduto),
-  KEY idx_cardapio_padrao_produto_org (organizacao_id),
-  KEY idx_cardapio_padrao_produto_categoria (cardapio_padrao_categoria_id),
-  CONSTRAINT chk_cardapio_padrao_produto_preco CHECK (vrprecoprod >= 0),
-  CONSTRAINT chk_cardapio_padrao_produto_cashback
-    CHECK (pccashback IS NULL OR (pccashback >= 0 AND pccashback <= 100))
+  UNIQUE KEY uk_categoriapadrao_nome (nmcategoria),
+  KEY idx_categoriapadrao_situacao_ordem (sitcategoria, idordcategoria)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE categoria (
   categoria_id     BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
-  loja_id          BIGINT NOT NULL,
+  categoriapadrao_id BIGINT NULL,
   nmcategoria      VARCHAR(120) NOT NULL,
+  dsicone          VARCHAR(50) NULL,
   sitcategoria     ENUM('ATIVA','INATIVA') NOT NULL DEFAULT 'ATIVA',
   idordcategoria   BIGINT NOT NULL DEFAULT 1,
   dtcriacao        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu         DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_categoria_loja
-    FOREIGN KEY (organizacao_id, loja_id)
-    REFERENCES loja(organizacao_id, loja_id)
+  CONSTRAINT fk_categoria_organizacao
+    FOREIGN KEY (organizacao_id)
+    REFERENCES organizacao(organizacao_id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_categoria_padrao
+    FOREIGN KEY (categoriapadrao_id)
+    REFERENCES categoriapadrao(categoriapadrao_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX idx_categoria_loja ON categoria(loja_id);
+CREATE INDEX idx_categoria_organizacao ON categoria(organizacao_id);
 
 ALTER TABLE categoria
-  ADD UNIQUE KEY uk_categoria_nome (loja_id, nmcategoria);
-
-ALTER TABLE categoria
-  ADD UNIQUE KEY uk_categoria_composta (organizacao_id, loja_id, categoria_id);
+  ADD UNIQUE KEY uk_categoria_nome (organizacao_id, nmcategoria),
+  ADD UNIQUE KEY uk_categoria_padrao_org (organizacao_id, categoriapadrao_id);
 
 CREATE TABLE produto (
   produto_id       BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -882,9 +851,9 @@ CREATE TABLE produto (
     REFERENCES loja(organizacao_id, loja_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
-  CONSTRAINT fk_produto_categoria_composta
-    FOREIGN KEY (organizacao_id, loja_id, categoria_id)
-    REFERENCES categoria(organizacao_id, loja_id, categoria_id)
+  CONSTRAINT fk_produto_categoria
+    FOREIGN KEY (categoria_id)
+    REFERENCES categoria(categoria_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
   CONSTRAINT chk_produto_preco
@@ -906,6 +875,114 @@ CREATE INDEX idx_produto_categoria
 
 CREATE UNIQUE INDEX uq_produto_lote
   ON produto(organizacao_id, loja_id, lote_id);
+
+CREATE TABLE cardapio (
+  cardapio_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  loja_id BIGINT NOT NULL,
+  nmcardapio VARCHAR(120) NOT NULL,
+  tipocardapio ENUM('PRINCIPAL','ESPECIAL','SAZONAL','EVENTO') NOT NULL DEFAULT 'PRINCIPAL',
+  prioridade INT NOT NULL DEFAULT 0,
+  sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapio_loja FOREIGN KEY (organizacao_id, loja_id)
+    REFERENCES loja(organizacao_id, loja_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY uk_cardapio_loja_nome (loja_id, nmcardapio),
+  KEY idx_cardapio_loja_situacao (loja_id, sitcardapio, prioridade)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioversao (
+  cardapioversao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapio_id BIGINT NOT NULL,
+  nrversao INT NOT NULL,
+  statusversao ENUM('RASCUNHO','AGUARDANDO_ASAAS','PROGRAMADA','PUBLICADA','SUBSTITUIDA','CANCELADA') NOT NULL DEFAULT 'RASCUNHO',
+  publicaraposaprovacao CHAR(1) NOT NULL DEFAULT 'N',
+  dtiniciovigencia DATETIME NULL,
+  dtfimvigencia DATETIME NULL,
+  dtpublicacao DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapioversao_cardapio FOREIGN KEY (cardapio_id)
+    REFERENCES cardapio(cardapio_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  UNIQUE KEY uk_cardapioversao_numero (cardapio_id, nrversao),
+  KEY idx_cardapioversao_status_vigencia (statusversao, dtiniciovigencia, dtfimvigencia),
+  CHECK (publicaraposaprovacao IN ('S','N'))
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioversaocategoria (
+  cardapioversaocategoria_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapioversao_id BIGINT NOT NULL,
+  categoria_id BIGINT NOT NULL,
+  idordcategoria INT NOT NULL DEFAULT 1,
+  CONSTRAINT fk_cardapioversaocategoria_versao FOREIGN KEY (cardapioversao_id)
+    REFERENCES cardapioversao(cardapioversao_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_cardapioversaocategoria_categoria FOREIGN KEY (categoria_id)
+    REFERENCES categoria(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY uk_cardapioversaocategoria (cardapioversao_id, categoria_id),
+  KEY idx_cardapioversaocategoria_ordem (cardapioversao_id, idordcategoria)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioitem (
+  cardapioitem_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapioversao_id BIGINT NOT NULL,
+  cardapioversaocategoria_id BIGINT NOT NULL,
+  produto_id BIGINT NOT NULL,
+  vrpreco DECIMAL(10,2) NOT NULL,
+  sititem ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
+  idorditem INT NOT NULL DEFAULT 1,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapioitem_versao FOREIGN KEY (cardapioversao_id)
+    REFERENCES cardapioversao(cardapioversao_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_cardapioitem_categoria FOREIGN KEY (cardapioversaocategoria_id)
+    REFERENCES cardapioversaocategoria(cardapioversaocategoria_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_cardapioitem_produto FOREIGN KEY (produto_id)
+    REFERENCES produto(produto_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY uk_cardapioitem_produto (cardapioversao_id, produto_id),
+  KEY idx_cardapioitem_categoria_ordem (cardapioversaocategoria_id, idorditem),
+  CHECK (vrpreco >= 0)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioprogramacao (
+  cardapioprogramacao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapio_id BIGINT NOT NULL,
+  diasemana TINYINT NULL,
+  dtinicio DATE NULL,
+  dtfim DATE NULL,
+  hrinicio TIME NULL,
+  hrfim TIME NULL,
+  sitprogramacao ENUM('ATIVA','INATIVA') NOT NULL DEFAULT 'ATIVA',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapioprogramacao_cardapio FOREIGN KEY (cardapio_id)
+    REFERENCES cardapio(cardapio_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  KEY idx_cardapioprogramacao_resolucao (cardapio_id, sitprogramacao, diasemana, dtinicio, dtfim),
+  CHECK (diasemana IS NULL OR diasemana BETWEEN 1 AND 7),
+  CHECK (dtfim IS NULL OR dtinicio IS NULL OR dtfim >= dtinicio)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioreajuste (
+  cardapioreajuste_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapioversao_id BIGINT NOT NULL,
+  categoria_id BIGINT NULL,
+  usuario_id BIGINT NOT NULL,
+  tipoajuste ENUM('PERCENTUAL','VALOR') NOT NULL,
+  operacao ENUM('AUMENTO','REDUCAO') NOT NULL,
+  valorajuste DECIMAL(10,2) NOT NULL,
+  arredondamento TINYINT NOT NULL DEFAULT 2,
+  qtitensalterados INT NOT NULL DEFAULT 0,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapioreajuste_versao FOREIGN KEY (cardapioversao_id)
+    REFERENCES cardapioversao(cardapioversao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_cardapioreajuste_categoria FOREIGN KEY (categoria_id)
+    REFERENCES categoria(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_cardapioreajuste_usuario FOREIGN KEY (usuario_id)
+    REFERENCES usuario(usuario_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  KEY idx_cardapioreajuste_versao_data (cardapioversao_id, dtcriacao),
+  CHECK (valorajuste > 0),
+  CHECK (arredondamento BETWEEN 0 AND 2)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE carrinho (
   carrinho_id      BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -957,6 +1034,8 @@ CREATE TABLE itcarrinho (
   carrinho_id      BIGINT NULL,
   reserva_ingresso_id BIGINT NULL,
   produto_id       BIGINT NOT NULL,
+  cardapioitem_id  BIGINT NULL,
+  vrunitario       DECIMAL(10,2) NOT NULL,
   lote_id          BIGINT NULL,
   qtitcarrinho     INT NOT NULL DEFAULT 1,
   dsobsitcar       VARCHAR(255) NULL,
@@ -974,6 +1053,11 @@ CREATE TABLE itcarrinho (
     FOREIGN KEY (produto_id)
     REFERENCES produto(produto_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_itcarrinho_cardapioitem
+    FOREIGN KEY (cardapioitem_id)
+    REFERENCES cardapioitem(cardapioitem_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
 
   CONSTRAINT chk_itcarrinho_qt
     CHECK (qtitcarrinho = 1)
@@ -1267,10 +1351,30 @@ CREATE TABLE eventomodeloatracao (
   CHECK (nrminutoinicio >= 0), CHECK (nrminutoduracao > 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE agendamensal (
+  agendamensal_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  loja_id BIGINT NOT NULL,
+  ano SMALLINT NOT NULL,
+  mes TINYINT NOT NULL,
+  statusagenda ENUM('RASCUNHO','AGUARDANDO_ASAAS','PUBLICADA','INATIVA') NOT NULL DEFAULT 'RASCUNHO',
+  publicaraposaprovacao CHAR(1) NOT NULL DEFAULT 'N',
+  dtpublicacao DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_agendamensal_loja FOREIGN KEY (organizacao_id, loja_id)
+    REFERENCES loja(organizacao_id, loja_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY uk_agendamensal_loja_mes (loja_id, ano, mes),
+  KEY idx_agendamensal_publicacao (statusagenda, publicaraposaprovacao),
+  CHECK (mes BETWEEN 1 AND 12),
+  CHECK (publicaraposaprovacao IN ('S','N'))
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE evento (
   evento_id              BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id         BIGINT NOT NULL,
   loja_id                BIGINT NOT NULL,
+  agendamensal_id        BIGINT NOT NULL,
   eventomodelo_id        BIGINT NULL,
   nmtituloevento         VARCHAR(120) NOT NULL,
   dtinicioevento         DATETIME NOT NULL,
@@ -1293,7 +1397,17 @@ CREATE TABLE evento (
   CONSTRAINT fk_evento_loja
     FOREIGN KEY (organizacao_id, loja_id)
     REFERENCES loja(organizacao_id, loja_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+
+  CONSTRAINT fk_evento_agenda
+    FOREIGN KEY (agendamensal_id)
+    REFERENCES agendamensal(agendamensal_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+
+  CONSTRAINT fk_evento_modelo
+    FOREIGN KEY (eventomodelo_id)
+    REFERENCES eventomodelo(eventomodelo_id)
+    ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE eventodescricao (
@@ -1401,9 +1515,6 @@ CREATE TABLE eventolote (
   CONSTRAINT fk_eventolote_setor
     FOREIGN KEY (eventosetor_id) REFERENCES eventosetor(eventosetor_id)
     ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT fk_evento_modelo FOREIGN KEY (eventomodelo_id)
-    REFERENCES eventomodelo(eventomodelo_id) ON DELETE RESTRICT ON UPDATE CASCADE,
-
   CONSTRAINT chk_lote_quantidades
     CHECK (
       (qttotallote IS NULL OR qttotallote >= 0)

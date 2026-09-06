@@ -14,7 +14,7 @@ from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.contratopadrao import ContratoPadrao
-from app.models.leadestabelecimento import LeadEstabelecimento
+from app.models.leadestabelecimento import LeadEstabelecimento, StatusLeadEstabelecimento
 from app.models.leadparceiro import LeadParceiro
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
@@ -221,6 +221,21 @@ def criar_contrato(
     estabelecimento, modelo, conteudo = _contexto_contrato(
         db, leadestabelecimento_id, dados
     )
+    contrato_aceito = db.query(LeadEstabelecimentoContrato).filter(
+        LeadEstabelecimentoContrato.leadestabelecimento_id == leadestabelecimento_id,
+        LeadEstabelecimentoContrato.status == "ACEITO",
+    ).first()
+    if estabelecimento.status in (
+        StatusLeadEstabelecimento.ACEITOU_PARCERIA,
+        StatusLeadEstabelecimento.CONVERTIDO,
+    ) or contrato_aceito:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "O contrato deste estabelecimento já foi aceito e não pode ser "
+                "substituído. Uma alteração futura deverá ser feita por aditivo."
+            ),
+        )
     item = LeadEstabelecimentoContrato(
         leadestabelecimento_id=leadestabelecimento_id,
         contratopadrao_id=modelo.contratopadrao_id,

@@ -21,6 +21,7 @@ from app.routers import lojas
 from app.routers import lojahorarios
 from app.routers import produtos
 from app.routers import categoria
+from app.routers import categorias_organizacao
 from app.routers import carrinho
 from app.routers import compras
 from app.routers import pagamentos
@@ -49,7 +50,7 @@ from app.routers import titularfinanceiro
 from app.routers import leadatendimento
 from app.routers import contratolead
 from app.routers import contratopadrao
-from app.routers import cardapio_padrao
+from app.routers import cardapios
 from app.routers import auditoria
 from app.routers import eventosetores
 from app.routers import eventomodelos
@@ -146,6 +147,7 @@ app.include_router(lojas.router)
 app.include_router(lojahorarios.router)
 app.include_router(produtos.router)
 app.include_router(categoria.router)
+app.include_router(categorias_organizacao.router)
 app.include_router(carrinho.router)
 app.include_router(compras.router)
 app.include_router(pagamentos.router)
@@ -176,7 +178,7 @@ app.include_router(leadatendimento.router)
 app.include_router(contratolead.router)
 app.include_router(contratolead.portal_router)
 app.include_router(contratopadrao.router)
-app.include_router(cardapio_padrao.router)
+app.include_router(cardapios.router)
 app.include_router(auditoria.router)
 app.include_router(eventosetores.router)
 app.include_router(acompanhamento_vendas.router)

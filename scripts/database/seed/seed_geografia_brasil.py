@@ -330,18 +330,27 @@ def main() -> None:
                     ),
                 )
 
-                for municipio in municipios:
-                    inserir_ou_atualizar_cidade(
-                        db,
-                        pais_id=pais_id,
-                        estado_id=estado_id,
-                        cdibgecid=int(
-                            municipio["id"],
-                        ),
-                        nome=str(
-                            municipio["nome"],
-                        ).strip(),
-                    )
+                db.execute(
+                    text(
+                        """
+                        INSERT INTO cidade (pais_id, estado_id, cdibgecid, nmcidade)
+                        VALUES (:pais_id, :estado_id, :cdibgecid, :nmcidade)
+                        ON DUPLICATE KEY UPDATE
+                            pais_id = VALUES(pais_id),
+                            estado_id = VALUES(estado_id),
+                            nmcidade = VALUES(nmcidade)
+                        """
+                    ),
+                    [
+                        {
+                            "pais_id": pais_id,
+                            "estado_id": estado_id,
+                            "cdibgecid": int(municipio["id"]),
+                            "nmcidade": str(municipio["nome"]).strip(),
+                        }
+                        for municipio in municipios
+                    ],
+                )
 
                 db.commit()
 

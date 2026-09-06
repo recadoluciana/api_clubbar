@@ -15,6 +15,7 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojaasaas import LojaAsaas
+from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.models.titularfinanceiro import TitularFinanceiro
 
 
@@ -344,11 +345,15 @@ async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), pa
         LojaAsaas.ambiente == ambiente,
     ).all():
         config.statusintegracao = "ATIVA" if titular.status_asaas == "APROVADO" else "PENDENTE"
+    publicacoes = {"agendas_publicadas": 0, "cardapios_publicados": 0}
+    if titular.status_asaas == "APROVADO":
+        publicacoes = publicar_conteudos_aguardando_asaas(db, organizacao_id)
     db.commit()
     db.refresh(titular)
     retorno = _out(titular)
     retorno["situacao"] = situacao
     retorno["documentos"] = documentos.get("data", [])
+    retorno["publicacoes_automaticas"] = publicacoes
     return retorno
 
 

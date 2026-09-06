@@ -12,6 +12,7 @@ from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
 from app.models.evento import Evento
+from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut,AlterarParticipanteIn
 
@@ -122,6 +123,32 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Produto não encontrado ou inativo")
         produto_id_final = int(produto.produto_id)
         lote_id_final = None
+        consulta_item = (
+            db.query(CardapioItem)
+            .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
+            .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+            .filter(
+                CardapioItem.produto_id == produto_id_final,
+                CardapioItem.sititem == "ATIVO",
+                Cardapio.loja_id == payload.loja_id,
+                Cardapio.sitcardapio == "ATIVO",
+                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+            )
+        )
+        if payload.cardapioitem_id:
+            consulta_item = consulta_item.filter(
+                CardapioItem.cardapioitem_id == payload.cardapioitem_id
+            )
+        item_cardapio = consulta_item.order_by(
+            Cardapio.prioridade.desc(), CardapioVersao.nrversao.desc()
+        ).first()
+        if not item_cardapio:
+            raise HTTPException(
+                status_code=409,
+                detail="Este produto não está disponível em um cardápio publicado.",
+            )
+        cardapioitem_id_final = int(item_cardapio.cardapioitem_id)
+        preco_unitario_final = item_cardapio.vrpreco
 
     else:  # "I"
         produto_ingresso = get_or_create_produto_por_lote(
@@ -131,6 +158,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         )
         produto_id_final = int(produto_ingresso.produto_id)
         lote_id_final = int(payload.lote_id)
+        cardapioitem_id_final = None
+        preco_unitario_final = produto_ingresso.vrprecoprod
 
     # 2) carrinho aberto do cliente
     carr = (
@@ -160,6 +189,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         ItCarrinho(
             carrinho_id=int(carr.carrinho_id),
             produto_id=produto_id_final,
+            cardapioitem_id=cardapioitem_id_final,
+            vrunitario=preco_unitario_final,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,
             lote_id=lote_id_final,
@@ -204,7 +235,7 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
     row = (
         db.query(
             func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * Produto.vrprecoprod), 0).label("total"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * ItCarrinho.vrunitario), 0).label("total"),
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
         .filter(ItCarrinho.carrinho_id    == carr.carrinho_id)
@@ -308,7 +339,7 @@ def obter_itens_carrinho(
             ItCarrinho.produto_id,
             Produto.nmproduto,
             Produto.dsproduto,
-            Produto.vrprecoprod,
+            ItCarrinho.vrunitario.label("vrprecoprod"),
             Produto.urlfotoproduto,
             Produto.tipodesconto,
             Produto.vrdesconto,
@@ -478,7 +509,7 @@ def get_itens_carrinho(
             func.sum(ItCarrinho.qtitcarrinho).label("qtitcarrinho"),
 
             Produto.nmproduto.label("nmproduto"),
-            Produto.vrprecoprod.label("vrprecoprod"),
+            ItCarrinho.vrunitario.label("vrprecoprod"),
             Produto.img.label("img"),
         )
         .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
@@ -502,7 +533,7 @@ def get_itens_carrinho(
             obs_norm,
 
             Produto.nmproduto,
-            Produto.vrprecoprod,
+            ItCarrinho.vrunitario,
             Produto.img,
         )
         .order_by(Produto.nmproduto.asc(), obs_norm.asc())

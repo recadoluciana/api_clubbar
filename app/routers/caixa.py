@@ -316,6 +316,7 @@ async def cancelar_pix(
                 db.add(ItCarrinho(
                     carrinho_id=checkout.carrinho_id,
                     produto_id=item.produto_id,
+                    vrunitario=item.vrunitario,
                     lote_id=item.lote_id,
                     qtitcarrinho=1,
                     dsobsitcar=item.dsobsitem,
