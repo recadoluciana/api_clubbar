@@ -53,6 +53,7 @@ from app.routers import cardapio_padrao
 from app.routers import auditoria
 from app.routers import eventosetores
 from app.routers import eventomodelos
+from app.routers import acompanhamento_vendas
 
 
 app = FastAPI(title="clubbar API")
@@ -178,6 +179,7 @@ app.include_router(contratopadrao.router)
 app.include_router(cardapio_padrao.router)
 app.include_router(auditoria.router)
 app.include_router(eventosetores.router)
+app.include_router(acompanhamento_vendas.router)
 
 @app.get("/health")
 def health():
