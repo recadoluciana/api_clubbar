@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, BigInteger, String, DateTime, Enum
+    Column, BigInteger, String, DateTime, Enum, ForeignKey
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -14,6 +14,7 @@ class Evento(Base):
 
     organizacao_id = Column(BigInteger, nullable=False)
     loja_id = Column(BigInteger, nullable=False)
+    eventomodelo_id = Column(BigInteger, ForeignKey("eventomodelo.eventomodelo_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=True, index=True)
 
     nmtituloevento = Column(String(120), nullable=False)
     dtinicioevento = Column(DateTime, nullable=False)

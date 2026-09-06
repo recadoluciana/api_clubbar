@@ -51,6 +51,7 @@ from app.routers import contratolead
 from app.routers import cardapio_padrao
 from app.routers import auditoria
 from app.routers import eventosetores
+from app.routers import eventomodelos
 
 
 app = FastAPI(title="clubbar API")
@@ -148,6 +149,7 @@ app.include_router(compras.router)
 app.include_router(pagamentos.router)
 app.include_router(entregas.router)
 app.include_router(eventos.router)
+app.include_router(eventomodelos.router)
 app.include_router(eventolotes.router)
 app.include_router(usuarios.router)
 app.include_router(clisenha.router)
