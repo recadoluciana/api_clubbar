@@ -15,6 +15,7 @@ from app.models.estado import Estado
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.contratopadrao import ContratoPadrao
 from app.models.leadestabelecimento import LeadEstabelecimento, StatusLeadEstabelecimento
+from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
@@ -251,6 +252,15 @@ def criar_contrato(
     estabelecimento.vrtaxaprod = dados.vrtaxaprod
     estabelecimento.vrtaxaing = dados.vrtaxaing
     db.add(item)
+    db.add(
+        LeadMensagem(
+            leadparceiro_id=estabelecimento.leadparceiro_id,
+            leadestabelecimento_id=leadestabelecimento_id,
+            origem="CLUBBAR",
+            mensagem="Contrato enviado.",
+            lida="N",
+        )
+    )
     db.commit()
     db.refresh(item)
     return _out(item)
