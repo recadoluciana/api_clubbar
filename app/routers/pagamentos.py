@@ -22,7 +22,7 @@ from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
-from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY, ASAAS_CLUBBAR_WALLET_ID
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -44,6 +44,7 @@ from app.services.asaas_service import (
 from app.services.repasse_service import criar_repasse_da_venda
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
+from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -78,12 +79,15 @@ async def _cancelar_tentativas_anteriores(
         .all()
     )
     for tentativa in tentativas:
+        api_key_tentativa = ASAAS_API_KEY
+        if tentativa.asaas_wallet_loja:
+            api_key_tentativa, _ = obter_conta_asaas_da_loja(db, tentativa.loja_id)
         if tentativa.pix_qr_code_id:
             await excluir_qrcode_pix_estatico_asaas(
-                tentativa.pix_qr_code_id, ASAAS_API_KEY
+                tentativa.pix_qr_code_id, api_key_tentativa
             )
         elif tentativa.checkout_id:
-            await cancelar_checkout_asaas(tentativa.checkout_id, ASAAS_API_KEY)
+            await cancelar_checkout_asaas(tentativa.checkout_id, api_key_tentativa)
         tentativa.status = 'CANCELLED'
         cancelar_uso_pendente(db, tentativa)
 
@@ -431,19 +435,7 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado")
 
-        if not ASAAS_API_KEY:
-            raise HTTPException(status_code=503, detail="Conta global Asaas nÃ£o configurada")
-
-        if cliente.cliente_padrao != "S":
-            try:
-                await obter_ou_criar_customer_asaas(
-                    db,
-                    cliente_id=payload.cliente_id,
-                    api_key=ASAAS_API_KEY,
-                )
-            except Exception as e:
-                print("[ASAAS] Erro ao sincronizar customer:", repr(e))
-                raise
+        api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
             itens_recalculados
@@ -460,7 +452,8 @@ async def pagar_asaas(
             descricao=f"Compra Clubbar - Carrinho {carrinho_id}",
             external_reference=external_reference,
             carrinho_id=carrinho_id,
-            api_key=ASAAS_API_KEY,
+            api_key=api_key_loja,
+            splits=montar_split_clubbar(valor_taxa_clubbar),
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
@@ -505,8 +498,8 @@ async def pagar_asaas(
             valor=valor_cobrado,
             vrtaxaclubbar=valor_taxa_clubbar,
             vrcashbackusado=valor_cashback,
-            asaas_wallet_loja=None,
-            asaas_wallet_clubbar=None,
+            asaas_wallet_loja=wallet_loja,
+            asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID,
         )
 
         db.add(novo)
@@ -607,23 +600,26 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     checkout = checkout_consultado
     if not checkout:
         raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
+    api_key_checkout = ASAAS_API_KEY
+    if getattr(checkout, "asaas_wallet_loja", None):
+        api_key_checkout, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
     status_atual = (checkout.status or "PENDENTE").upper()
     if (
         status_atual not in {"PAID", "RECEIVED", "CONFIRMED"}
-        and ASAAS_API_KEY
+        and api_key_checkout
         and getattr(checkout, "checkout_asaas_id", None)
     ):
         if getattr(checkout, "pix_qr_code_id", None):
             pagamento = await buscar_pagamento_confirmado_por_qrcode_pix(
-                checkout.pix_qr_code_id, ASAAS_API_KEY
+                checkout.pix_qr_code_id, api_key_checkout
             )
         else:
             pagamento = await buscar_pagamento_confirmado_por_checkout(
-                checkout.checkout_id, ASAAS_API_KEY
+                checkout.checkout_id, api_key_checkout
             )
             if not pagamento:
                 pagamento = await buscar_pagamento_confirmado_por_referencia(
-                    getattr(checkout, "external_reference", ""), ASAAS_API_KEY
+                    getattr(checkout, "external_reference", ""), api_key_checkout
                 )
         if pagamento:
             from app.services.venda_gateway_service import (
@@ -698,7 +694,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                         db,
                         cliente_id=checkout.cliente_id,
                         customer_id=str(pagamento["customer"]),
-                        api_key=ASAAS_API_KEY,
+                        api_key=api_key_checkout,
                     )
                 except Exception as exc:
                     # O pagamento e a venda permanecem válidos mesmo se a

@@ -13,7 +13,8 @@ from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesRes
 from app.services.reserva_ingresso_service import criar_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_qrcode_pix_estatico_asaas, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
-from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_PIX_ADDRESS_KEY, ASAAS_CLUBBAR_WALLET_ID
+from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
 from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
@@ -125,9 +126,12 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         cliente = db.query(Cliente).filter(Cliente.cliente_id == reserva.cliente_id).first()
+        api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
-        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=ASAAS_API_KEY, items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if float(reserva.vrtotal) >= 100 else 1, nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
-        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=reserva.vrtaxa * reserva.qtreservada)
+        taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
+        permite_parcelamento = float(reserva.vrtotal) >= 100
+        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_split_clubbar(taxa_clubbar, parcelado=permite_parcelamento), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
+        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         reserva.dtexpiracao = datetime.now() + timedelta(minutes=10)
         db.commit()
@@ -146,9 +150,12 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
     checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.reserva_ingresso_id == reserva_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).first()
     if not checkout:
         return {**_saida(reserva), "status_pagamento": "PENDENTE"}
-    pagamento = await (buscar_pagamento_confirmado_por_qrcode_pix(checkout.pix_qr_code_id, ASAAS_API_KEY) if checkout.pix_qr_code_id else buscar_pagamento_confirmado_por_checkout(checkout.checkout_id, ASAAS_API_KEY))
+    api_key_consulta = ASAAS_API_KEY
+    if checkout.asaas_wallet_loja:
+        api_key_consulta, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
+    pagamento = await (buscar_pagamento_confirmado_por_qrcode_pix(checkout.pix_qr_code_id, api_key_consulta) if checkout.pix_qr_code_id else buscar_pagamento_confirmado_por_checkout(checkout.checkout_id, api_key_consulta))
     if not pagamento:
-        pagamento = await buscar_pagamento_confirmado_por_referencia(checkout.external_reference, ASAAS_API_KEY)
+        pagamento = await buscar_pagamento_confirmado_por_referencia(checkout.external_reference, api_key_consulta)
     if pagamento:
         resultado = finalizar_reserva_paga(db, reserva_id=reserva_id, checkout_id=checkout.checkout_asaas_id, pagamento=pagamento)
         db.commit()
