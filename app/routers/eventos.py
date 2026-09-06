@@ -7,6 +7,7 @@ import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -485,13 +486,22 @@ def deletar_evento(
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
 
+        # A exclusão representa apenas esta ocorrência da agenda. O modelo e
+        # as demais datas recorrentes permanecem intactos.
+        for lote in db.query(EventoLote).filter(EventoLote.evento_id == evento_id).all():
+            db.delete(lote)
+        db.flush()
         db.delete(evento)
         db.commit()
 
-        return {"mensagem": "Evento deletado com sucesso"}
+        return {"mensagem": "Evento removido desta data com sucesso"}
 
     except HTTPException:
         raise
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Esta data não pode ser excluída porque já possui reservas, vendas ou ingressos vinculados.")
 
     except Exception as e:
         db.rollback()

@@ -16,3 +16,17 @@ class AgendarEventoModeloIn(BaseModel):
         if self.dtfim is not None and self.dtfim <= self.dtinicio:
             raise ValueError("O fim deve ser posterior ao início.")
         return self
+
+
+class EventoModeloAtracaoIn(BaseModel):
+    atracao_id: int
+    ordem: int = Field(ge=1, le=100)
+    nrminutoinicio: int = Field(ge=0, le=10080)
+    nrminutoduracao: int = Field(gt=0, le=1440)
+
+
+class EventoModeloAtracaoUpdate(BaseModel):
+    atracao_id: int | None = None
+    ordem: int | None = Field(default=None, ge=1, le=100)
+    nrminutoinicio: int | None = Field(default=None, ge=0, le=10080)
+    nrminutoduracao: int | None = Field(default=None, gt=0, le=1440)

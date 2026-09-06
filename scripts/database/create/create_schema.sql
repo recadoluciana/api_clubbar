@@ -1200,6 +1200,20 @@ CREATE TABLE eventomodelo (
   INDEX idx_eventomodelo_org_loja_status (organizacao_id, loja_id, statusevento)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE eventomodeloatracao (
+  eventomodeloatracao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  eventomodelo_id BIGINT NOT NULL,
+  atracao_id BIGINT NOT NULL,
+  ordem INT NOT NULL,
+  nrminutoinicio INT NOT NULL DEFAULT 0,
+  nrminutoduracao INT NOT NULL DEFAULT 120,
+  FOREIGN KEY (eventomodelo_id) REFERENCES eventomodelo(eventomodelo_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (atracao_id) REFERENCES atracao(atracao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  UNIQUE KEY uq_eventomodeloatracao_ordem (eventomodelo_id, ordem),
+  INDEX idx_eventomodeloatracao_atracao (atracao_id),
+  CHECK (nrminutoinicio >= 0), CHECK (nrminutoduracao > 0)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE evento (
   evento_id              BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id         BIGINT NOT NULL,

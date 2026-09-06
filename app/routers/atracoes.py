@@ -11,6 +11,7 @@ from app.models.estilomusical import EstiloMusical
 from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
+from app.models.eventomodeloatracao import EventoModeloAtracao
 from app.models.eventolote import EventoLote
 from app.schemas.atracao import EventoAtracaoIn, EventoAtracaoUpdate
 from app.schemas.estilomusical import EstiloMusicalIn, EstilosMusicaisImportacaoIn
@@ -196,6 +197,7 @@ def excluir(atracao_id:int,payload=Depends(get_usuario_logado),db:Session=Depend
     a=db.query(Atracao).filter(Atracao.atracao_id==atracao_id,Atracao.organizacao_id==_org(payload)).first()
     if not a: raise HTTPException(404,"Atração não encontrada.")
     if db.query(EventoAtracao).filter(EventoAtracao.atracao_id==atracao_id).first(): raise HTTPException(409,"A atração está vinculada a uma agenda e não pode ser excluída.")
+    if db.query(EventoModeloAtracao).filter(EventoModeloAtracao.atracao_id==atracao_id).first(): raise HTTPException(409,"A atração está vinculada a um evento padrão e não pode ser excluída.")
     db.delete(a); db.commit()
 
 def _evento(db,evento_id,org):
@@ -251,18 +253,7 @@ def remover(programacao_id:int,payload=Depends(get_usuario_logado),db:Session=De
     if not p: raise HTTPException(404,"Programação não encontrada.")
     evento = db.query(Evento).filter(Evento.evento_id == p.evento_id, Evento.organizacao_id == org).first()
     validar_mutacao_loja(payload,org,evento.loja_id)
-    total_atracoes = db.query(EventoAtracao).filter(EventoAtracao.evento_id == p.evento_id).count()
     try:
-        if total_atracoes <= 1:
-            # Os lotes restringem a exclusão do evento e precisam ser
-            # removidos explicitamente antes dele.
-            for lote in db.query(EventoLote).filter(EventoLote.evento_id == p.evento_id).all():
-                db.delete(lote)
-            db.flush()
-            db.delete(evento)
-            db.commit()
-            return {"evento_excluido": True, "mensagem": "A última atração, os lotes e o evento foram excluídos."}
-
         db.delete(p)
         db.commit()
         return {"evento_excluido": False, "mensagem": "Atração removida da agenda."}

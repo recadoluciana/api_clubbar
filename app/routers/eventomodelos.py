@@ -2,7 +2,7 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
@@ -10,9 +10,12 @@ from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventomodelo import EventoModelo
+from app.models.eventomodeloatracao import EventoModeloAtracao
+from app.models.eventoatracao import EventoAtracao
+from app.models.atracao import Atracao
 from app.models.loja import Loja
 from app.routers.eventos import salvar_banner_evento
-from app.schemas.eventomodelo import AgendarEventoModeloIn
+from app.schemas.eventomodelo import AgendarEventoModeloIn, EventoModeloAtracaoIn, EventoModeloAtracaoUpdate
 
 router = APIRouter(prefix="/eventos-modelos", tags=["Eventos padrão"])
 
@@ -27,6 +30,63 @@ def _modelo(db,id,org):
     x=db.query(EventoModelo).filter(EventoModelo.eventomodelo_id==id,EventoModelo.organizacao_id==org).first()
     if not x: raise HTTPException(404,"Evento padrão não encontrado.")
     return x
+
+def _atracao_item(x):
+    return {
+        "eventomodeloatracao_id": x.eventomodeloatracao_id,
+        "eventomodelo_id": x.eventomodelo_id,
+        "atracao_id": x.atracao_id,
+        "ordem": x.ordem,
+        "nrminutoinicio": x.nrminutoinicio,
+        "nrminutoduracao": x.nrminutoduracao,
+        "atracao": {"atracao_id": x.atracao.atracao_id, "nmatracao": x.atracao.nmatracao},
+    }
+
+def _validar_atracao_modelo(db, modelo, dados, ignorar_id=None):
+    atracao = db.query(Atracao).filter(Atracao.atracao_id == dados["atracao_id"], Atracao.organizacao_id == modelo.organizacao_id).first()
+    if not atracao:
+        raise HTTPException(404, "Atração não encontrada.")
+    inicio = dados["nrminutoinicio"]
+    fim = inicio + dados["nrminutoduracao"]
+    existentes = db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodelo_id == modelo.eventomodelo_id)
+    if ignorar_id is not None:
+        existentes = existentes.filter(EventoModeloAtracao.eventomodeloatracao_id != ignorar_id)
+    for item in existentes.all():
+        if inicio < item.nrminutoinicio + item.nrminutoduracao and fim > item.nrminutoinicio:
+            raise HTTPException(409, "Já existe uma atração padrão nesse horário.")
+    if existentes.filter(EventoModeloAtracao.ordem == dados["ordem"]).first():
+        raise HTTPException(409, "Já existe uma atração com esta ordem.")
+
+@router.get("/{modelo_id}/atracoes")
+def listar_atracoes_modelo(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    modelo=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
+    itens=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem,EventoModeloAtracao.nrminutoinicio).all()
+    return [_atracao_item(x) for x in itens]
+
+@router.post("/{modelo_id}/atracoes",status_code=201)
+def adicionar_atracao_modelo(modelo_id:int,dados:EventoModeloAtracaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    modelo=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
+    valores=dados.model_dump();_validar_atracao_modelo(db,modelo,valores)
+    item=EventoModeloAtracao(eventomodelo_id=modelo_id,**valores);db.add(item);db.commit()
+    item=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodeloatracao_id==item.eventomodeloatracao_id).first()
+    return _atracao_item(item)
+
+@router.put("/atracoes/{item_id}")
+def atualizar_atracao_modelo(item_id:int,dados:EventoModeloAtracaoUpdate,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    item=db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodeloatracao_id==item_id).first()
+    if not item: raise HTTPException(404,"Atração padrão não encontrada.")
+    modelo=_modelo(db,item.eventomodelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
+    valores={"atracao_id":item.atracao_id,"ordem":item.ordem,"nrminutoinicio":item.nrminutoinicio,"nrminutoduracao":item.nrminutoduracao}
+    valores.update(dados.model_dump(exclude_none=True));_validar_atracao_modelo(db,modelo,valores,item_id)
+    for chave,valor in valores.items():setattr(item,chave,valor)
+    db.commit();item=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodeloatracao_id==item_id).first();return _atracao_item(item)
+
+@router.delete("/atracoes/{item_id}",status_code=204)
+def excluir_atracao_modelo(item_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+    item=db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodeloatracao_id==item_id).first()
+    if not item: raise HTTPException(404,"Atração padrão não encontrada.")
+    modelo=_modelo(db,item.eventomodelo_id,_org(payload));validar_mutacao_loja(payload,modelo.organizacao_id,modelo.loja_id)
+    db.delete(item);db.commit()
 
 @router.get("")
 def listar(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
@@ -63,10 +123,14 @@ def _somar_mes(data:datetime,meses:int):
 def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,x.organizacao_id,x.loja_id)
     loja=db.get(Loja,x.loja_id); duracao=(dados.dtfim-dados.dtinicio) if dados.dtfim else None; ids=[]
+    atracoes_padrao=db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem).all()
     for i in range(dados.repeticoes):
         inicio=_somar_mes(dados.dtinicio,i) if dados.recorrencia=="MENSAL" else dados.dtinicio+timedelta(days=i*(14 if dados.recorrencia=="QUINZENAL" else 7 if dados.recorrencia=="SEMANAL" else 0))
         evento=Evento(organizacao_id=x.organizacao_id,loja_id=x.loja_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dspoliticareembolso=x.dspoliticareembolso,dspoliticacashback=x.dspoliticacashback,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=x.nmlocalevento,dsendlocevento=x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
         db.add(evento);db.flush()
+        for padrao in atracoes_padrao:
+            inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)
+            db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=inicio_atracao+timedelta(minutes=padrao.nrminutoduracao)))
         lote=EventoLote(organizacao_id=x.organizacao_id,loja_id=x.loja_id,evento_id=evento.evento_id,nmlote="Ingresso único",vrprecolote=x.vrprecolote,qttotallote=x.qttotallote or getattr(loja,"qtcpdloja",None),qtvendidalote=0,dtiniciovenda=datetime.now(),dtfimvenda=inicio,statuslote="ATIVO")
         db.add(lote);ids.append(evento.evento_id)
     db.commit();return {"sessoes_criadas":len(ids),"evento_ids":ids}
