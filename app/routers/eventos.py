@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.models.evento import Evento
@@ -26,6 +25,15 @@ from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
+
+STATUS_EVENTO_VALIDOS = {"RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO"}
+
+
+def normalizar_status_evento(valor: str) -> str:
+    status = valor.strip().upper()
+    if status not in STATUS_EVENTO_VALIDOS:
+        raise HTTPException(status_code=422, detail="Status do evento inválido.")
+    return status
 
 
 def salvar_banner_evento(arquivo: UploadFile | None) -> str | None:
@@ -325,8 +333,7 @@ def criar_evento(
         if not loja:
             raise HTTPException(status_code=404, detail="Loja não encontrada")
         validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
-        if statusevento.upper() == 'ATIVO':
-            validar_publicacao_loja(db, loja_id)
+        status_evento = normalizar_status_evento(statusevento)
 
         banner_url = salvar_banner_evento(urlbannerevento)
 
@@ -343,7 +350,7 @@ def criar_evento(
             nmlocalevento=nmlocalevento,
             dsendlocevento=dsendlocevento,
             urlbannerevento=banner_url,
-            statusevento=statusevento,
+            statusevento=status_evento,
         )
 
         db.add(novo)
@@ -428,9 +435,7 @@ def atualizar_evento(
             evento.dsendlocevento = dsendlocevento
 
         if statusevento is not None:
-            if statusevento.upper() == 'ATIVO':
-                validar_publicacao_loja(db, evento.loja_id)
-            evento.statusevento = statusevento
+            evento.statusevento = normalizar_status_evento(statusevento)
 
         if urlbannerevento is not None and urlbannerevento.filename:
             evento.urlbannerevento = salvar_banner_evento(urlbannerevento)

@@ -1194,7 +1194,7 @@ CREATE TABLE evento (
   urlbannerevento        VARCHAR(255) NULL,
   urlmapaingressos       VARCHAR(255) NULL,
   dsmapaingressos        VARCHAR(255) NULL,
-  statusevento           ENUM('RASCUNHO','ATIVO','ENCERRADO','CANCELADO') NOT NULL DEFAULT 'RASCUNHO',
+  statusevento           ENUM('RASCUNHO','ATIVO','INATIVO','ENCERRADO','CANCELADO') NOT NULL DEFAULT 'RASCUNHO',
   dtcriacao              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu               DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 

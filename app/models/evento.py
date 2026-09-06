@@ -26,7 +26,7 @@ class Evento(Base):
     dsmapaingressos = Column(String(255), nullable=True)
 
     statusevento = Column(
-        Enum("RASCUNHO", "ATIVO", "ENCERRADO", "CANCELADO", name="evento_statusevento"),
+        Enum("RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO", name="evento_statusevento"),
         nullable=False,
         server_default="RASCUNHO",
     )
