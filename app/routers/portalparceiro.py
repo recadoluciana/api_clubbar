@@ -473,8 +473,8 @@ def listar_materiais(
             LeadMaterial.leadestabelecimento_id == leadestabelecimento_id,
         )
         .order_by(
-            LeadMaterial.dtcriacao.desc(),
-            LeadMaterial.leadmaterial_id.desc(),
+            LeadMaterial.dtcriacao.asc(),
+            LeadMaterial.leadmaterial_id.asc(),
         )
         .all()
     )
