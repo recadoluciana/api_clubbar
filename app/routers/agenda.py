@@ -9,13 +9,13 @@ from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
-from app.models.eventolote import EventoLote
 from app.models.loja import Loja
 from app.models.agendamensal import AgendaMensal
 from app.schemas.atracao import EventoRapidoAgendaIn
 from app.services.agenda_service import obter_ou_criar_agenda
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.evento_imagem_service import imagem_evento
+from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
 
 router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
 
@@ -115,14 +115,17 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
     try:
         db.add(evento); db.flush()
         programacao=EventoAtracao(evento_id=evento.evento_id,atracao_id=atracao.atracao_id,dtinicioatracao=dados.dtinicioatracao,dtfimatracao=dados.dtfimatracao)
-        lote=EventoLote(
-            organizacao_id=org,loja_id=loja.loja_id,evento_id=evento.evento_id,
-            nmlote="Lote único",vrprecolote=dados.preco_lote,
-            qttotallote=loja.qtcpdloja,qtvendidalote=0,
-            dtiniciovenda=datetime.now(),dtfimvenda=dados.dtinicioatracao,statuslote="ATIVO",
+        lote_inteira, lote_meia = criar_ingressos_pista_inteira_meia(
+            db,
+            organizacao_id=org,
+            loja_id=loja.loja_id,
+            evento_id=evento.evento_id,
+            inicio_evento=dados.dtinicioatracao,
+            preco_inteira=dados.preco_lote,
+            capacidade=loja.qtcpdloja,
         )
-        db.add_all([programacao,lote]); db.commit(); db.refresh(evento); db.refresh(lote)
-        return {"evento_id":evento.evento_id,"lote_id":lote.lote_id,"mensagem":"Evento, atração e lote criados com sucesso."}
+        db.add(programacao); db.commit(); db.refresh(evento)
+        return {"evento_id":evento.evento_id,"lote_id":lote_inteira.lote_id,"lote_meia_id":lote_meia.lote_id,"mensagem":"Evento, atração e ingressos de inteira e meia entrada criados com sucesso."}
     except Exception:
         db.rollback(); raise
 

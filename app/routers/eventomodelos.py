@@ -8,7 +8,6 @@ from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.evento import Evento
-from app.models.eventolote import EventoLote
 from app.models.eventomodelo import EventoModelo
 from app.models.eventomodeloatracao import EventoModeloAtracao
 from app.services.agenda_service import obter_ou_criar_agenda
@@ -18,6 +17,7 @@ from app.models.loja import Loja
 from app.routers.eventos import salvar_banner_evento
 from app.schemas.eventomodelo import AgendarEventoModeloIn, EventoModeloAtracaoIn, EventoModeloAtracaoUpdate
 from app.services.evento_imagem_service import imagem_evento_modelo
+from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
 
 router = APIRouter(prefix="/eventos-modelos", tags=["Eventos padrão"])
 
@@ -140,6 +140,8 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
         for padrao in atracoes_padrao:
             inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)
             db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=inicio_atracao+timedelta(minutes=padrao.nrminutoduracao)))
-        lote=EventoLote(organizacao_id=x.organizacao_id,loja_id=x.loja_id,evento_id=evento.evento_id,nmlote="Ingresso único",vrprecolote=x.vrprecolote,qttotallote=x.qttotallote or getattr(loja,"qtcpdloja",None),qtvendidalote=0,dtiniciovenda=datetime.now(),dtfimvenda=inicio,statuslote="ATIVO")
-        db.add(lote);ids.append(evento.evento_id)
+        capacidade=x.qttotallote or getattr(loja,"qtcpdloja",None)
+        if not capacidade or capacidade <= 0: raise HTTPException(422,"Informe a capacidade do estabelecimento ou do evento padrão.")
+        criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=x.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=x.vrprecolote,capacidade=capacidade)
+        ids.append(evento.evento_id)
     db.commit();return {"sessoes_criadas":len(ids),"evento_ids":ids}
