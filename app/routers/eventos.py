@@ -26,6 +26,7 @@ from app.models.organizacao import Organizacao
 from app.models.venda import Venda
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
+from app.services.evento_imagem_service import imagem_evento
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -54,6 +55,7 @@ def salvar_banner_evento(arquivo: UploadFile | None) -> str | None:
 
 
 def evento_to_out_br(
+    db: Session,
     ev: Evento,
     nmloja: str | None = None,
     nmcidade: str | None = None,
@@ -73,7 +75,7 @@ def evento_to_out_br(
         "dtfimevento": ev.dtfimevento,
         "nmlocalevento": ev.nmlocalevento,
         "dsendlocevento": ev.dsendlocevento,
-        "urlbannerevento": ev.urlbannerevento,
+        "urlbannerevento": imagem_evento(db, ev),
         "statusevento": ev.statusevento,
         "nmloja": nmloja,
         "nmcidade": nmcidade,
@@ -117,7 +119,7 @@ def listar_eventos_proximos(
         .all()
     )
 
-    return [evento_to_out_br(ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
+    return [evento_to_out_br(db, ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
 
 
 @router.get("/proximos", response_model=list[EventoOutBR])
@@ -173,7 +175,7 @@ def listar_eventos_proximos_global(
     )
 
     return [
-        evento_to_out_br(ev, nmloja, nmcidade, urllogoloja, total_vendas_loja)
+        evento_to_out_br(db, ev, nmloja, nmcidade, urllogoloja, total_vendas_loja)
         for ev, nmloja, nmcidade, urllogoloja, total_vendas_loja in eventos
     ]
 
@@ -207,7 +209,7 @@ def listar_eventos_da_loja(
             "dtfimevento": evento.dtfimevento,
             "nmlocalevento": evento.nmlocalevento,
             "dsendlocevento": evento.dsendlocevento,
-            "urlbannerevento": f"{evento.urlbannerevento}" if evento.urlbannerevento else None,
+            "urlbannerevento": imagem_evento(db, evento),
             "statusevento": evento.statusevento,
         }
         for evento in eventos
@@ -270,7 +272,7 @@ def get_evento_por_id(
         "dspoliticacancelamento": evento_obj.dspoliticacancelamento,
         "dspoliticareembolso": evento_obj.dspoliticareembolso,
         "dspoliticacashback": evento_obj.dspoliticacashback,
-        "urlbannerevento": f"{evento_obj.urlbannerevento}" if getattr(evento_obj, "urlbannerevento", None) else None,
+        "urlbannerevento": imagem_evento(db, evento_obj),
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,
         "nmcidade": nmcidade,

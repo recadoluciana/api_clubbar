@@ -17,6 +17,7 @@ from app.models.atracao import Atracao
 from app.models.loja import Loja
 from app.routers.eventos import salvar_banner_evento
 from app.schemas.eventomodelo import AgendarEventoModeloIn, EventoModeloAtracaoIn, EventoModeloAtracaoUpdate
+from app.services.evento_imagem_service import imagem_evento_modelo
 
 router = APIRouter(prefix="/eventos-modelos", tags=["Eventos padrão"])
 
@@ -24,8 +25,8 @@ def _org(payload):
     try: return int(payload["organizacao_id"])
     except (KeyError, TypeError, ValueError): raise HTTPException(403, "Organização não identificada.")
 
-def _item(x):
-    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":x.loja_id,"nmtituloevento":x.nmtituloevento,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"dspoliticareembolso":x.dspoliticareembolso,"dspoliticacashback":x.dspoliticacashback,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":x.urlbannerevento,"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0),"qttotallote":x.qttotallote}
+def _item(db, x):
+    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":x.loja_id,"nmtituloevento":x.nmtituloevento,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"dspoliticareembolso":x.dspoliticareembolso,"dspoliticacashback":x.dspoliticacashback,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":imagem_evento_modelo(db, x),"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0),"qttotallote":x.qttotallote}
 
 def _modelo(db,id,org):
     x=db.query(EventoModelo).filter(EventoModelo.eventomodelo_id==id,EventoModelo.organizacao_id==org).first()
@@ -98,7 +99,7 @@ def excluir_atracao_modelo(item_id:int,payload=Depends(get_usuario_logado),db:Se
 @router.get("")
 def listar(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload); validar_mutacao_loja(payload,org,loja_id)
-    return [_item(x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org,EventoModelo.loja_id==loja_id).order_by(EventoModelo.nmtituloevento).all()]
+    return [_item(db, x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org,EventoModelo.loja_id==loja_id).order_by(EventoModelo.nmtituloevento).all()]
 
 @router.post("",status_code=201)
 def criar(organizacao_id:int=Form(...),loja_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),dspoliticareembolso:str|None=Form(None),dspoliticacashback:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),qttotallote:int|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
@@ -106,7 +107,7 @@ def criar(organizacao_id:int=Form(...),loja_id:int=Form(...),nmtituloevento:str=
     if organizacao_id!=org: raise HTTPException(403,"Organização inválida.")
     validar_mutacao_loja(payload,org,loja_id)
     x=EventoModelo(organizacao_id=org,loja_id=loja_id,nmtituloevento=nmtituloevento.strip(),dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,dspoliticareembolso=dspoliticareembolso,dspoliticacashback=dspoliticacashback,nmlocalevento=nmlocalevento,dsendlocevento=dsendlocevento,statusevento=statusevento.upper(),vrprecolote=vrprecolote,qttotallote=qttotallote,urlbannerevento=salvar_banner_evento(urlbannerevento))
-    db.add(x);db.commit();db.refresh(x);return _item(x)
+    db.add(x);db.commit();db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
 def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),dspoliticareembolso:str|None=Form(None),dspoliticacashback:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),qttotallote:int|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
@@ -114,7 +115,7 @@ def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|
     for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"dspoliticareembolso":dspoliticareembolso,"dspoliticacashback":dspoliticacashback,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"statusevento":statusevento,"vrprecolote":vrprecolote,"qttotallote":qttotallote}.items():
         if v is not None:setattr(x,k,v.upper() if k=="statusevento" else v)
     if urlbannerevento and urlbannerevento.filename:x.urlbannerevento=salvar_banner_evento(urlbannerevento)
-    db.commit();db.refresh(x);return _item(x)
+    db.commit();db.refresh(x);return _item(db, x)
 
 @router.delete("/{modelo_id}",status_code=204)
 def excluir(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
