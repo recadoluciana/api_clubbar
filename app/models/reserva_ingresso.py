@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric
+from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -13,6 +13,8 @@ class ReservaIngresso(Base):
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id"), nullable=False)
     evento_id = Column(BigInteger, ForeignKey("evento.evento_id"), nullable=False)
     lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=False)
+    lotepreco_id = Column(BigInteger, ForeignKey("eventolotepreco.lotepreco_id"), nullable=False)
+    tipobeneficio = Column(String(30), nullable=True)
     venda_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
     qtreservada = Column(Integer, nullable=False)
     vrunitario = Column(Numeric(10, 2), nullable=False)

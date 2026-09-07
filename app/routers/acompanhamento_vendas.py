@@ -10,6 +10,7 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
@@ -161,20 +162,20 @@ def detalhe_vendas_evento(
     valor = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda * ItVenda.vrunititvenda), else_=0)), 0)
     rows = db.query(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
-        EventoLote.tipoingresso, EventoLote.vrprecolote,
+        EventoLotePreco.tipopreco, EventoLotePreco.vrpreco,
         EventoSetor.nmsetor, quantidade.label("quantidade"), valor.label("valor"),
-    ).outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id).outerjoin(
-        ItVenda, (ItVenda.lote_id == EventoLote.lote_id) & (ItVenda.sititvenda == "ATIVO")
+    ).join(EventoLotePreco, EventoLotePreco.lote_id == EventoLote.lote_id).outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id).outerjoin(
+        ItVenda, (ItVenda.lotepreco_id == EventoLotePreco.lotepreco_id) & (ItVenda.sititvenda == "ATIVO")
     ).outerjoin(Venda, (Venda.venda_id == ItVenda.venda_id) & (Venda.sitvenda == "PAGA")).filter(
         EventoLote.evento_id == evento_id
     ).group_by(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
-        EventoLote.tipoingresso, EventoLote.vrprecolote, EventoSetor.nmsetor,
-    ).order_by(EventoLote.nrlote, EventoSetor.nmsetor, EventoLote.tipoingresso).all()
+        EventoLotePreco.tipopreco, EventoLotePreco.vrpreco, EventoSetor.nmsetor,
+    ).order_by(EventoLote.nrlote, EventoSetor.nmsetor, EventoLotePreco.nrordem).all()
     lotes = [{
         "lote_id": int(row.lote_id), "nrlote": int(row.nrlote), "nmlote": row.nmlote,
-        "setor": row.nmsetor or "Setor único", "tipo": row.tipoingresso,
-        "valor_unitario": _dinheiro(row.vrprecolote),
+        "setor": row.nmsetor or "Setor único", "tipo": row.tipopreco,
+        "valor_unitario": _dinheiro(row.vrpreco),
         "quantidade_vendida": int(row.quantidade or 0), "valor_total": _dinheiro(row.valor),
     } for row in rows]
     return {

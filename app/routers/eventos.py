@@ -302,7 +302,7 @@ def get_evento_por_id(
             {
                 "lote_id": lista_lotes.lote_id,
                 "nmlote": getattr(lista_lotes, "nmlote", None),
-                "vrprecolote": float(getattr(lista_lotes, "vrprecolote", 0) or 0),
+                "vrprecolote": float(lista_lotes.precos[0].vrpreco if lista_lotes.precos else 0),
                 "qttotallote": getattr(lista_lotes, "qttotallote", None),
                 "qtvendidalote": getattr(lista_lotes, "qtvendidalote", None),
                 "statuslote": getattr(lista_lotes, "statuslote", None),

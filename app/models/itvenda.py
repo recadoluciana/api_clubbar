@@ -37,6 +37,8 @@ class ItVenda(Base):
     nmparticipante = Column(String(150), nullable=True)
     cpfparticipante = Column(String(11), nullable=True)
     lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=True)
+    lotepreco_id = Column(BigInteger, ForeignKey("eventolotepreco.lotepreco_id"), nullable=True)
+    tipobeneficio = Column(String(30), nullable=True)
 
     pctaxaitvenda = Column(Numeric(5, 2), default=0)
     vrtaxaitvenda = Column(Numeric(10, 2), default=0)

@@ -115,7 +115,7 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
     try:
         db.add(evento); db.flush()
         programacao=EventoAtracao(evento_id=evento.evento_id,atracao_id=atracao.atracao_id,dtinicioatracao=dados.dtinicioatracao,dtfimatracao=dados.dtfimatracao)
-        lote_inteira, lote_meia = criar_ingressos_pista_inteira_meia(
+        lote = criar_ingressos_pista_inteira_meia(
             db,
             organizacao_id=org,
             loja_id=loja.loja_id,
@@ -125,7 +125,7 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
             capacidade=loja.qtcpdloja,
         )
         db.add(programacao); db.commit(); db.refresh(evento)
-        return {"evento_id":evento.evento_id,"lote_id":lote_inteira.lote_id,"lote_meia_id":lote_meia.lote_id,"mensagem":"Evento, atração e ingressos de inteira e meia entrada criados com sucesso."}
+        return {"evento_id":evento.evento_id,"lote_id":lote.lote_id,"mensagem":"Evento, atração e modalidades de ingresso criados com sucesso."}
     except Exception:
         db.rollback(); raise
 

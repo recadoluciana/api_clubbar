@@ -28,6 +28,8 @@ def _saida(reserva: ReservaIngresso) -> dict:
         "cliente_id": reserva.cliente_id,
         "evento_id": reserva.evento_id,
         "lote_id": reserva.lote_id,
+        "lotepreco_id": reserva.lotepreco_id,
+        "tipo_beneficio": reserva.tipobeneficio,
         "quantidade": reserva.qtreservada,
         "valor_unitario": float(reserva.vrunitario),
         "percentual_taxa": float(reserva.pctaxa),
@@ -42,7 +44,7 @@ def _saida(reserva: ReservaIngresso) -> dict:
 @router.post("")
 def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db)):
     try:
-        reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, quantidade=payload.quantidade)
+        reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, lotepreco_id=payload.lotepreco_id, tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
         db.commit()
         db.refresh(reserva)
         return _saida(reserva)

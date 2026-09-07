@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, model_validator
 class AgendarEventoModeloIn(BaseModel):
     dtinicio: datetime
     dtfim: datetime | None = None
+    capacidade: int = Field(gt=0)
     recorrencia: str = "UNICA"
     repeticoes: int = Field(default=1, ge=1, le=60)
 

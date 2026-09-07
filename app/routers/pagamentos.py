@@ -18,6 +18,7 @@ from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
@@ -159,7 +160,8 @@ def _recalcular_itens_carrinho(
                     detail=f"Lote {lote_id_int} nÃ£o encontrado",
                 )
 
-            vrunitario = round(float(lote.vrprecolote or 0), 2)
+            preco = db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote.lote_id, EventoLotePreco.tipopreco == "INTEIRA").first()
+            vrunitario = round(float(preco.vrpreco if preco else 0), 2)
             subtotal   = round(vrunitario * qt_prod, 2)
 
             percentual_taxa = round(float(it.get("pctaxaitvenda") or 0), 2)

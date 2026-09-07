@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, field_validator
 class ReservaIngressoCreate(BaseModel):
     cliente_id: int
     lote_id: int
+    lotepreco_id: int
+    tipo_beneficio: str | None = None
     quantidade: int = Field(ge=1, le=20)
 
 

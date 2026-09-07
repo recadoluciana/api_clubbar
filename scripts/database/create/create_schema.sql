@@ -1143,6 +1143,8 @@ CREATE TABLE itvenda (
   tipoitem              ENUM('PRODUTO','INGRESSO') NOT NULL,
   produto_id            BIGINT NULL,
   lote_id               BIGINT NULL,
+  lotepreco_id          BIGINT NULL,
+  tipobeneficio         VARCHAR(30) NULL,
   qtitvenda             INT NOT NULL DEFAULT 1,
   vrunititvenda         DECIMAL(10,2) NOT NULL,
   identregaitvenda      ENUM('SIM','NAO') NOT NULL DEFAULT 'NAO',
@@ -1210,7 +1212,8 @@ CREATE INDEX idx_itvenda_entrega
 CREATE TABLE reserva_ingresso (
   reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
-  evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL,
+  evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, lotepreco_id BIGINT NOT NULL,
+  tipobeneficio VARCHAR(30) NULL,
   venda_id BIGINT NULL, qtreservada INT NOT NULL,
   vrunitario DECIMAL(10,2) NOT NULL, pctaxa DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrtaxa DECIMAL(10,2) NOT NULL DEFAULT 0, vrtotal DECIMAL(10,2) NOT NULL,
@@ -1339,7 +1342,7 @@ CREATE TABLE eventomodelo (
   nmlocalevento VARCHAR(120) NULL, dsendlocevento VARCHAR(200) NULL,
   urlbannerevento VARCHAR(255) NULL, urlmapaingressos VARCHAR(255) NULL,
   dsmapaingressos VARCHAR(255) NULL,
-  vrprecolote DECIMAL(10,2) NOT NULL DEFAULT 0.00, qttotallote INT NULL,
+  vrprecolote DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   statusevento ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -1497,9 +1500,7 @@ CREATE TABLE eventolote (
   evento_id        BIGINT NOT NULL,
   eventosetor_id   BIGINT NULL,
   nrlote           INT NOT NULL DEFAULT 1,
-  tipoingresso     VARCHAR(15) NOT NULL DEFAULT 'UNICO',
   nmlote           VARCHAR(80) NOT NULL,
-  vrprecolote      DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   qttotallote      INT NULL,
   qtvendidalote    INT NULL,
   dtiniciovenda    DATETIME NULL,
@@ -1535,10 +1536,25 @@ CREATE TABLE eventolote (
         OR qtvendidalote IS NULL
         OR qtvendidalote <= qttotallote
       )
-    ),
+    )
 
-  CONSTRAINT chk_lote_preco
-    CHECK (vrprecolote >= 0)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE eventolotepreco (
+  lotepreco_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  lote_id BIGINT NOT NULL,
+  nmpreco VARCHAR(100) NOT NULL,
+  tipopreco VARCHAR(30) NOT NULL,
+  vrpreco DECIMAL(10,2) NOT NULL,
+  aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE,
+  exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE,
+  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  nrordem INT NOT NULL DEFAULT 1,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_lotepreco_tipo (lote_id, tipopreco),
+  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id) ON DELETE CASCADE,
+  CHECK (vrpreco >= 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_lote_evento_status
@@ -1570,6 +1586,12 @@ ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_lote
   FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
   ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE reserva_ingresso ADD CONSTRAINT fk_reserva_lotepreco
+  FOREIGN KEY (lotepreco_id) REFERENCES eventolotepreco(lotepreco_id);
+
+ALTER TABLE itvenda ADD CONSTRAINT fk_itvenda_lotepreco
+  FOREIGN KEY (lotepreco_id) REFERENCES eventolotepreco(lotepreco_id);
 
 ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_evento

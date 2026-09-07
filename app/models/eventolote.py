@@ -33,11 +33,7 @@ class EventoLote(Base):
         nullable=True,
     )
     nrlote = Column(Integer, nullable=False, server_default="1")
-    tipoingresso = Column(String(15), nullable=False, server_default="UNICO")
-
     nmlote = Column(String(80), nullable=False)
-
-    vrprecolote = Column(DECIMAL(10, 2), nullable=False, server_default="0.00")
 
     qttotallote = Column(Integer, nullable=True)
     qtvendidalote = Column(Integer, nullable=True)
@@ -66,6 +62,7 @@ class EventoLote(Base):
 
     evento = relationship("Evento")
     setor = relationship("EventoSetor")
+    precos = relationship("EventoLotePreco", cascade="all, delete-orphan", order_by="EventoLotePreco.nrordem")
 
     @property
     def nmsetor(self):
@@ -76,8 +73,8 @@ class EventoLote(Base):
             f"<EventoLote id={self.lote_id} "
             f"evento={self.evento_id} "
             f"nome={self.nmlote!r} "
-            f"preco={self.vrprecolote} "
             f"status={self.statuslote}>"
         )
 
 from app.models.eventosetor import EventoSetor  # noqa: E402,F401
+from app.models.eventolotepreco import EventoLotePreco  # noqa: E402,F401

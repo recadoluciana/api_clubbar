@@ -11,6 +11,7 @@ from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.evento import Evento
 from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 
@@ -73,7 +74,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             idtipoproduto="I",
             nmproduto=f"{nome_evento} - {lote.nmlote}",
             dsproduto=f"Ingresso para {nome_evento}",
-            vrprecoprod=lote.vrprecolote,
+            vrprecoprod=(db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote.lote_id, EventoLotePreco.tipopreco == "INTEIRA").first().vrpreco),
             urlfotoproduto=banner_evento,
             sitproduto="ATIVO",
         )

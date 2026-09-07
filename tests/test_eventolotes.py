@@ -56,7 +56,7 @@ def criar_lote():
     lote.loja_id = 2
     lote.evento_id = 3
     lote.nmlote = "Primeiro lote"
-    lote.vrprecolote = Decimal("50.00")
+    lote.eventosetor_id = 10
     lote.qttotallote = 100
     lote.qtvendidalote = 0
     lote.dtiniciovenda = None
@@ -75,7 +75,7 @@ class AtualizarLoteTest(unittest.TestCase):
         "loja_id": 2,
     }
 
-    def test_preco_do_ingresso_fica_somente_no_lote(self):
+    def test_status_do_estoque_compartilhado_pode_ser_atualizado(self):
         lote = criar_lote()
         produto = Registro()
         produto.lote_id = 5
@@ -84,16 +84,16 @@ class AtualizarLoteTest(unittest.TestCase):
 
         resposta = atualizar_lote_evento(
             lote_id=5,
-            data=EventoLoteUpdate(vrprecolote=75.5),
+            data=EventoLoteUpdate(statuslote="INATIVO"),
             db=banco,
             usuario=self.usuario,
         )
 
-        self.assertEqual(75.5, lote.vrprecolote)
+        self.assertEqual("INATIVO", lote.statuslote)
         self.assertEqual(Decimal("50.00"), produto.vrprecoprod)
         self.assertEqual(1, banco.commits)
         self.assertEqual(0, banco.rollbacks)
-        self.assertEqual(75.5, resposta["lote"]["vrprecolote"])
+        self.assertEqual("INATIVO", resposta["lote"]["statuslote"])
 
     def test_erro_no_commit_faz_rollback_da_operacao_completa(self):
         lote = criar_lote()
@@ -105,7 +105,7 @@ class AtualizarLoteTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as erro:
             atualizar_lote_evento(
                 lote_id=5,
-                data=EventoLoteUpdate(vrprecolote=80),
+                data=EventoLoteUpdate(statuslote="INATIVO"),
                 db=banco,
                 usuario=self.usuario,
             )
@@ -114,18 +114,18 @@ class AtualizarLoteTest(unittest.TestCase):
         self.assertEqual(1, banco.commits)
         self.assertEqual(1, banco.rollbacks)
 
-    def test_lote_sem_produto_espelho_pode_ser_atualizado(self):
+    def test_nome_do_lote_pode_ser_atualizado(self):
         lote = criar_lote()
         banco = BancoFalso([lote, []])
 
         atualizar_lote_evento(
             lote_id=5,
-            data=EventoLoteUpdate(vrprecolote=90),
+            data=EventoLoteUpdate(nmlote="Lote 2 - Pista"),
             db=banco,
             usuario=self.usuario,
         )
 
-        self.assertEqual(90, lote.vrprecolote)
+        self.assertEqual("Lote 2 - Pista", lote.nmlote)
         self.assertEqual(1, banco.commits)
 
 

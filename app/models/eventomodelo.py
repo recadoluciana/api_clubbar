@@ -18,7 +18,6 @@ class EventoModelo(Base):
     urlmapaingressos = Column(String(255))
     dsmapaingressos = Column(String(255))
     vrprecolote = Column(Numeric(10, 2), nullable=False, server_default="0")
-    qttotallote = Column(Integer)
     statusevento = Column(Enum("ATIVO", "INATIVO", name="eventomodelo_status"), nullable=False, server_default="ATIVO")
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.now())

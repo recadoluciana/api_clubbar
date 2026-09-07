@@ -11,6 +11,7 @@ from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
 from app.models.venda import Venda
@@ -18,8 +19,12 @@ from app.models.itvenda import ItVenda
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
+def _saida_lote(db: Session, lote: EventoLote) -> dict:
+    vendidos_cota = db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id).filter(ItVenda.lote_id == lote.lote_id, ItVenda.sititvenda == "ATIVO", EventoLotePreco.aplicacotalegal.is_(True)).scalar() or 0
+    return {"lote_id": lote.lote_id, "organizacao_id": lote.organizacao_id, "loja_id": lote.loja_id, "evento_id": lote.evento_id, "nmlote": lote.nmlote, "eventosetor_id": lote.eventosetor_id, "nmsetor": lote.nmsetor, "nrlote": lote.nrlote, "qttotallote": lote.qttotallote, "qtvendidalote": lote.qtvendidalote or 0, "dtiniciovenda": lote.dtiniciovenda, "dtfimvenda": lote.dtfimvenda, "statuslote": lote.statuslote, "dtcriacao": lote.dtcriacao, "dtultatu": lote.dtultatu, "cotalegal": int((lote.qttotallote or 0) * .40), "qtvendidacotalegal": int(vendidos_cota), "precos": [{"lotepreco_id": p.lotepreco_id, "nmpreco": p.nmpreco, "tipopreco": p.tipopreco, "vrpreco": float(p.vrpreco), "aplicacotalegal": bool(p.aplicacotalegal), "exigecomprovante": bool(p.exigecomprovante), "situacao": p.situacao, "nrordem": p.nrordem} for p in lote.precos]}
 
-@router.get("/{evento_id}/lotes", response_model=list[EventoLoteOut])
+
+@router.get("/{evento_id}/lotes")
 def listar_lotes_evento(
     evento_id: int,
     db: Session = Depends(get_db),
@@ -30,11 +35,11 @@ def listar_lotes_evento(
         .filter(EventoLote.evento_id == evento_id)
         .filter(EventoLote.statuslote == "ATIVO")
         .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
-        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc(), EventoLote.tipoingresso.asc())
+        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc())
         .all()
     )
 
-    return lotes
+    return [_saida_lote(db, lote) for lote in lotes]
 
 
 @router.get("/{evento_id}/lotes_todos")
@@ -51,32 +56,11 @@ def listar_todos_lotes_evento(
         db.query(EventoLote)
         .filter(EventoLote.evento_id == evento_id)
         .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
-        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc(), EventoLote.tipoingresso.asc())
+        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc())
         .all()
     )
 
-    return [
-        {
-            "lote_id": lote.lote_id,
-            "organizacao_id": lote.organizacao_id,
-            "loja_id": lote.loja_id,
-            "evento_id": lote.evento_id,
-            "nmlote": lote.nmlote,
-            "eventosetor_id": lote.eventosetor_id,
-            "nmsetor": lote.nmsetor,
-            "nrlote": lote.nrlote,
-            "tipoingresso": lote.tipoingresso,
-            "vrprecolote": float(lote.vrprecolote or 0),
-            "qttotallote": lote.qttotallote,
-            "qtvendidalote": lote.qtvendidalote,
-            "dtiniciovenda": lote.dtiniciovenda,
-            "dtfimvenda": lote.dtfimvenda,
-            "statuslote": lote.statuslote,
-            "dtcriacao": lote.dtcriacao,
-            "dtultatu": lote.dtultatu,
-        }
-        for lote in lotes
-    ]
+    return [_saida_lote(db, lote) for lote in lotes]
 
 
 @router.post("/{evento_id}/lotes")
@@ -99,20 +83,8 @@ def criar_lote_evento(
         if data.eventosetor_id is not None:
             setor = db.query(EventoSetor).filter(EventoSetor.eventosetor_id == data.eventosetor_id, EventoSetor.evento_id == evento_id).first()
             if not setor: raise HTTPException(status_code=404, detail="Setor do evento não encontrado")
-        capacidade = setor.qtcapacidade if setor else loja.qtcpdloja
-        if not capacidade or capacidade <= 0:
-            raise HTTPException(status_code=422, detail="Informe a capacidade do setor ou do estabelecimento")
-        filtro_capacidade = [EventoLote.evento_id == evento_id]
-        if setor:
-            filtro_capacidade.append(EventoLote.eventosetor_id == setor.eventosetor_id)
-        else:
-            filtro_capacidade.append(EventoLote.eventosetor_id.is_(None))
-        total_existente = db.query(func.coalesce(func.sum(EventoLote.qttotallote), 0)).filter(*filtro_capacidade).scalar() or 0
-        quantidade_total = data.qttotallote
-        if quantidade_total is None:
-            quantidade_total = max(int(capacidade) - int(total_existente), 0)
-        if quantidade_total <= 0 or int(total_existente) + quantidade_total > int(capacidade):
-            raise HTTPException(status_code=422, detail="A soma dos ingressos não pode ultrapassar a capacidade disponível")
+        if data.qttotallote > setor.qtcapacidade:
+            raise HTTPException(422, "A capacidade do lote não pode ultrapassar a capacidade do setor")
 
         novo = EventoLote(
             organizacao_id=data.organizacao_id,
@@ -120,17 +92,17 @@ def criar_lote_evento(
             evento_id=evento_id,
             eventosetor_id=data.eventosetor_id,
             nrlote=data.nrlote,
-            tipoingresso=data.tipoingresso,
             nmlote=data.nmlote,
-            vrprecolote=data.vrprecolote,
-            qttotallote=quantidade_total,
-            qtvendidalote=data.qtvendidalote,
+            qttotallote=data.qttotallote,
+            qtvendidalote=0,
             dtiniciovenda=data.dtiniciovenda,
             dtfimvenda=data.dtfimvenda,
             statuslote=data.statuslote if data.statuslote else "ATIVO",
         )
 
         db.add(novo)
+        db.flush()
+        db.add_all([EventoLotePreco(lote_id=novo.lote_id, **p.model_dump()) for p in data.precos])
         db.commit()
         db.refresh(novo)
 
@@ -162,21 +134,6 @@ def atualizar_lote_evento(
             raise HTTPException(status_code=404, detail="Lote não encontrado")
         validar_mutacao_loja(usuario, lote.organizacao_id, lote.loja_id)
 
-        if data.organizacao_id is not None:
-            lote.organizacao_id = data.organizacao_id
-
-        if data.loja_id is not None:
-            loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
-            if not loja:
-                raise HTTPException(status_code=404, detail="Loja não encontrada")
-            lote.loja_id = data.loja_id
-
-        if data.evento_id is not None:
-            evento = db.query(Evento).filter(Evento.evento_id == data.evento_id).first()
-            if not evento:
-                raise HTTPException(status_code=404, detail="Evento não encontrado")
-            lote.evento_id = data.evento_id
-
         if data.nmlote is not None:
             lote.nmlote = data.nmlote
         if "eventosetor_id" in data.model_fields_set:
@@ -184,25 +141,18 @@ def atualizar_lote_evento(
                 raise HTTPException(status_code=404, detail="Setor do evento não encontrado")
             lote.eventosetor_id = data.eventosetor_id
         if data.nrlote is not None: lote.nrlote = data.nrlote
-        if data.tipoingresso is not None: lote.tipoingresso = data.tipoingresso
-
-        if data.vrprecolote is not None:
-            lote.vrprecolote = data.vrprecolote
 
         if data.qttotallote is not None:
-            loja_capacidade = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
             setor_id_atual = getattr(lote, "eventosetor_id", None)
             setor_capacidade = db.query(EventoSetor).filter(EventoSetor.eventosetor_id == setor_id_atual).first() if setor_id_atual else None
-            capacidade = setor_capacidade.qtcapacidade if setor_capacidade else getattr(loja_capacidade, "qtcpdloja", None)
-            filtro = [EventoLote.evento_id == lote.evento_id, EventoLote.lote_id != lote_id]
-            filtro.append(EventoLote.eventosetor_id == setor_id_atual if setor_id_atual else EventoLote.eventosetor_id.is_(None))
-            total_outros = db.query(func.coalesce(func.sum(EventoLote.qttotallote), 0)).filter(*filtro).scalar() or 0
-            if not capacidade or int(total_outros) + data.qttotallote > int(capacidade):
-                raise HTTPException(status_code=422, detail="A soma dos ingressos não pode ultrapassar a capacidade disponível")
+            if not setor_capacidade or data.qttotallote > setor_capacidade.qtcapacidade or data.qttotallote < int(lote.qtvendidalote or 0):
+                raise HTTPException(422, "Capacidade inválida para o setor ou menor que a quantidade já vendida")
             lote.qttotallote = data.qttotallote
-
-        if data.qtvendidalote is not None:
-            lote.qtvendidalote = data.qtvendidalote
+        if data.precos is not None:
+            if int(lote.qtvendidalote or 0) > 0:
+                raise HTTPException(409, "Os preços de um lote com vendas não podem ser substituídos. Crie um novo lote.")
+            db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
+            db.add_all([EventoLotePreco(lote_id=lote_id, **p.model_dump()) for p in data.precos])
 
         if data.dtiniciovenda is not None:
             lote.dtiniciovenda = data.dtiniciovenda
@@ -227,8 +177,6 @@ def atualizar_lote_evento(
                 "eventosetor_id": getattr(lote, "eventosetor_id", None),
                 "nmsetor": getattr(lote, "nmsetor", None),
                 "nrlote": getattr(lote, "nrlote", 1),
-                "tipoingresso": getattr(lote, "tipoingresso", "UNICO"),
-                "vrprecolote": float(lote.vrprecolote or 0),
                 "qttotallote": lote.qttotallote,
                 "qtvendidalote": lote.qtvendidalote,
                 "dtiniciovenda": lote.dtiniciovenda,
@@ -293,11 +241,11 @@ def quantidade_vendida_lote(
         raise HTTPException(status_code=404, detail="Lote não encontrado")
 
     qtd_vendida = (
-        db.query(ItVenda)
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .filter(ItVenda.lote_id == lote_id)
         .filter(Venda.sitvenda == "PAGA")
-        .count()
+        .scalar() or 0
     )
 
     from app.services.reserva_ingresso_service import expirar_reservas, quantidade_reservada
