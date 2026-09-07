@@ -19,8 +19,8 @@ from app.models.usuario import Usuario
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.pagvenda import PagVenda
-from app.core.config import ASAAS_API_KEY
 from app.services.asaas_service import estornar_pagamento_asaas
+from app.services.asaas_split_service import obter_conta_asaas_da_loja
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
 router = APIRouter(prefix="/entregas", tags=["entregas"])
@@ -229,8 +229,13 @@ async def cancelar_ingresso(
             ),
         )
     payment_id = str(pagamento.idtransacaopagvenda or "").strip()
-    if not payment_id or not ASAAS_API_KEY:
+    if not payment_id:
         raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
+
+    # As vendas com split são cobradas pela subconta do estabelecimento.
+    # O estorno precisa ser solicitado com a chave da mesma conta que criou
+    # a cobrança; a chave principal do Clubbar não possui acesso ao pagamento.
+    api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
 
     valor_reembolso = round(
         float(item.vrunititvenda or 0) * int(item.qtitvenda or 1)
@@ -245,7 +250,7 @@ async def cancelar_ingresso(
             payment_id=payment_id,
             valor=valor_reembolso,
             descricao=f"Cancelamento ingresso Clubbar item {item.itvenda_id}",
-            api_key=ASAAS_API_KEY,
+            api_key=api_key_estorno,
         )
     except HTTPException as exc:
         db.rollback()
