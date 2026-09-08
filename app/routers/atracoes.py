@@ -113,6 +113,8 @@ def atualizar_estilo_musical(estilo_id:int,dados:EstiloMusicalIn,payload=Depends
     org=_org(payload)
     estilo=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacaoestilomusical_id==estilo_id,OrganizacaoEstiloMusical.organizacao_id==org).first()
     if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
+    if estilo.estilomusical_id and dados.nmestilomusical != estilo.nmestilomusical:
+        raise HTTPException(422,"Estilos do catálogo não podem ter seu nome alterado.")
     duplicado=db.query(OrganizacaoEstiloMusical).filter(OrganizacaoEstiloMusical.organizacao_id==org,OrganizacaoEstiloMusical.nmestilomusical==dados.nmestilomusical,OrganizacaoEstiloMusical.organizacaoestilomusical_id!=estilo_id).first()
     if duplicado: raise HTTPException(409,"Já existe um estilo musical com esse nome.")
     estilo.nmestilomusical=dados.nmestilomusical; estilo.sitestilomusical=dados.sitestilomusical
