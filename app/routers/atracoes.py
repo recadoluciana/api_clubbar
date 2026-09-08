@@ -24,8 +24,8 @@ def _org(payload):
 
 def _validar_gestao_estilos(payload):
     cargo = str(payload.get("dscargo") or "").strip().upper()
-    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "GERENTE"}:
-        raise HTTPException(403, "Somente administradores e gerentes podem gerenciar estilos musicais.")
+    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "MANAGER"}:
+        raise HTTPException(403, "Somente administradores e managers podem gerenciar estilos musicais.")
 
 def _estilo_item(e):
     return {

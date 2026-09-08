@@ -115,7 +115,7 @@ class PainelGerencialTest(unittest.TestCase):
         self.assertIn("venda.sitvenda", filtros)
 
     @patch("app.routers.painel_gerencial._hoje_local")
-    def test_gerente_fica_limitado_a_loja_do_jwt(self, hoje_local):
+    def test_manager_fica_limitado_a_loja_do_jwt(self, hoje_local):
         hoje_local.return_value = date(2026, 8, 4)
         banco = BancoFalso([
             [SimpleNamespace(loja_id=4, nmloja="Loja Gerenciada")],
@@ -130,7 +130,7 @@ class PainelGerencialTest(unittest.TestCase):
         usuario = {
             "sub": "8",
             "role": "usuario",
-            "dscargo": "GERENTE",
+            "dscargo": "MANAGER",
             "organizacao_id": 9,
             "loja_id": 4,
         }
@@ -141,7 +141,7 @@ class PainelGerencialTest(unittest.TestCase):
         filtros = " ".join(filtro for query in banco.filtros_por_query for filtro in query)
         self.assertIn("loja.loja_id", filtros)
         self.assertIn("venda.loja_id", filtros)
-        self.assertIn("produto.loja_id", filtros)
+        self.assertIn("venda.loja_id", filtros)
         self.assertIn("eventolote.loja_id", filtros)
 
     def test_cargo_sem_loja_no_jwt_recebe_403(self):
@@ -149,7 +149,7 @@ class PainelGerencialTest(unittest.TestCase):
         usuario = {
             "sub": "8",
             "role": "usuario",
-            "dscargo": "GERENTE",
+            "dscargo": "MANAGER",
             "organizacao_id": 9,
             "loja_id": None,
         }

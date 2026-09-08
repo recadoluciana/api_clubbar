@@ -630,6 +630,15 @@ def _senha_inicial_superadmin(documento: str, nome_responsavel: str) -> str:
         )
 
     return f"{numeros[:6]}{nome[:6]}"
+
+
+def _identificador_email_loja(nome_loja: str) -> str:
+    normalizado = unicodedata.normalize("NFKD", nome_loja)
+    sem_acentos = "".join(c for c in normalizado if not unicodedata.combining(c))
+    identificador = re.sub(r"[^a-z0-9]", "", sem_acentos.lower())
+    if not identificador:
+        raise HTTPException(422, "O nome da loja não permite gerar os usuários operacionais.")
+    return identificador
     
 @router.post(
     "/{leadparceiro_id}/converter-em-parceiro",
@@ -777,6 +786,30 @@ async def converter_lead_em_parceiro(
         # Obtém o loja_id antes do commit.
         db.flush()
 
+        identificador_loja = _identificador_email_loja(nova_loja.nmloja)
+        senha_operacional = "101010"
+        usuarios_operacionais = []
+        for prefixo, cargo, nome_cargo in (
+            ("barman", "BARMAN", "Barman"),
+            ("ticketman", "TICKETMAN", "Ticketman"),
+            ("cashier", "CASHIER", "Cashier"),
+        ):
+            email_operacional = f"{prefixo}{identificador_loja}@clubbar.com.br"
+            if db.query(Usuario).filter(Usuario.emailuser == email_operacional).first():
+                raise HTTPException(409, f"O usuário {email_operacional} já existe.")
+            usuario_operacional = Usuario(
+                organizacao_id=nova_organizacao.organizacao_id,
+                loja_id=nova_loja.loja_id,
+                nmusuario=f"{nome_cargo} - {nova_loja.nmloja}",
+                emailuser=email_operacional,
+                senhahashuser=hash_senha(senha_operacional),
+                dscargo=cargo,
+                situsuario="ATIVO",
+            )
+            db.add(usuario_operacional)
+            usuarios_operacionais.append(usuario_operacional)
+        db.flush()
+
         if primeira_conversao:
             categorias_padrao = db.query(CategoriaPadrao).filter(
                 CategoriaPadrao.nmcategoria.in_(CATEGORIAS_PADRAO),
@@ -874,6 +907,16 @@ async def converter_lead_em_parceiro(
                 "convite_enviado": False,
             },
             "categorias": [categoria.nmcategoria for categoria in categorias],
+            "usuarios_operacionais": [
+                {
+                    "usuario_id": usuario.usuario_id,
+                    "nome": usuario.nmusuario,
+                    "email": usuario.emailuser,
+                    "cargo": usuario.dscargo,
+                    "senha_inicial": senha_operacional,
+                }
+                for usuario in usuarios_operacionais
+            ],
         }
 
         db.commit()

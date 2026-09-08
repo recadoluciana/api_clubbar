@@ -15,12 +15,27 @@ class CategoriaPadrao(Base):
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 
 
+class CardapioModelo(Base):
+    __tablename__ = "cardapiomodelo"
+
+    cardapiomodelo_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    organizacao_id = Column(BigInteger, nullable=False, index=True)
+    nmcardapio = Column(String(120), nullable=False)
+    tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL", "SAZONAL", "EVENTO"), nullable=False, server_default="PRINCIPAL")
+    sitcardapio = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
+    dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (UniqueConstraint("organizacao_id", "nmcardapio", name="uk_cardapiomodelo_org_nome"),)
+
+
 class Cardapio(Base):
     __tablename__ = "cardapio"
 
     cardapio_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, nullable=False, index=True)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
+    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id"), nullable=False, index=True)
     nmcardapio = Column(String(120), nullable=False)
     tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL", "SAZONAL", "EVENTO"), nullable=False, server_default="PRINCIPAL")
     prioridade = Column(Integer, nullable=False, server_default="0")
@@ -28,7 +43,7 @@ class Cardapio(Base):
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 
-    __table_args__ = (UniqueConstraint("loja_id", "nmcardapio", name="uk_cardapio_loja_nome"),)
+    __table_args__ = (UniqueConstraint("loja_id", "cardapiomodelo_id", name="uk_cardapio_loja_modelo"),)
 
 
 class CardapioVersao(Base):

@@ -19,7 +19,7 @@ from app.models.venda import Venda
 
 
 router = APIRouter(prefix="/acompanhamento-vendas", tags=["Acompanhamento de vendas"])
-_CARGOS = {"SUPERADMIN", "ADMIN", "GERENTE"}
+_CARGOS = {"SUPERADMIN", "ADMIN", "MANAGER"}
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
 
 
@@ -33,13 +33,13 @@ def _escopo(usuario: dict) -> tuple[int, int | None]:
     cargo = str(usuario.get("dscargo") or "").upper()
     if organizacao_id <= 0 or cargo not in _CARGOS:
         raise HTTPException(403, "Usuário sem permissão para acompanhar vendas")
-    if cargo == "GERENTE":
+    if cargo == "MANAGER":
         try:
             loja_id = int(usuario.get("loja_id") or 0)
         except (TypeError, ValueError):
             loja_id = 0
         if loja_id <= 0:
-            raise HTTPException(403, "Gerente sem estabelecimento vinculado")
+            raise HTTPException(403, "Manager sem estabelecimento vinculado")
         return organizacao_id, loja_id
     return organizacao_id, None
 
@@ -84,7 +84,6 @@ def produtos_pendentes(
         ItVenda.tipoitem == "PRODUTO",
         ItVenda.sititvenda == "ATIVO",
         ItVenda.identregaitvenda == "NAO",
-        Produto.idtipoproduto == "P",
     )
     if loja_final is not None:
         query = query.filter(Venda.loja_id == loja_final)

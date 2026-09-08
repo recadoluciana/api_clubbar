@@ -48,14 +48,14 @@ def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> N
     tipo_normalizado = (idtipoproduto or "").strip().upper()
 
     if tipo_normalizado == "I":
-        if cargo_normalizado != "PORTEIRO":
+        if cargo_normalizado != "TICKETMAN":
             raise HTTPException(
                 status_code=403,
                 detail="Somente o Ticketman pode validar e baixar ingressos.",
             )
         return
 
-    if cargo_normalizado not in {"BARMAN", "GARCOM"}:
+    if cargo_normalizado not in {"BARMAN", "WAITER"}:
         raise HTTPException(
             status_code=403,
             detail="Somente Barman ou Waiter podem validar e baixar produtos.",

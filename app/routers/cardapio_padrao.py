@@ -90,7 +90,7 @@ def copiar_loja_para_cardapio_padrao(
     )
     produtos_origem = (
         db.query(Produto)
-        .filter(Produto.organizacao_id == organizacao_id, Produto.loja_id == loja_id, Produto.idtipoproduto == "P")
+        .filter(Produto.organizacao_id == organizacao_id)
         .all()
     )
     if not categorias_origem and not produtos_origem:
@@ -174,7 +174,6 @@ def importar_cardapio_padrao(
             if destino is None:
                 destino = Categoria(
                     organizacao_id=loja.organizacao_id,
-                    loja_id=loja_id,
                     nmcategoria=padrao.nmcategoria,
                     sitcategoria=padrao.sitcategoria,
                     idordcategoria=padrao.idordcategoria,
@@ -187,7 +186,7 @@ def importar_cardapio_padrao(
 
         nomes_existentes = {
             p.nmproduto.strip().casefold()
-            for p in db.query(Produto).filter(Produto.loja_id == loja_id, Produto.idtipoproduto == "P").all()
+            for p in db.query(Produto).filter(Produto.organizacao_id == loja.organizacao_id).all()
         }
         for padrao in produtos_padrao:
             chave = padrao.nmproduto.strip().casefold()
@@ -196,14 +195,11 @@ def importar_cardapio_padrao(
                 continue
             db.add(Produto(
                 organizacao_id=loja.organizacao_id,
-                loja_id=loja_id,
                 categoria_id=mapa_categorias.get(padrao.cardapio_padrao_categoria_id),
                 nmproduto=padrao.nmproduto,
                 dsproduto=padrao.dsproduto,
                 vrprecoprod=padrao.vrprecoprod,
                 sitproduto=padrao.sitproduto,
-                idtipoproduto="P",
-                lote_id=None,
                 urlfotoproduto=padrao.urlfotoproduto,
                 tipodesconto=padrao.tipodesconto or "NENHUM",
                 vrdesconto=padrao.vrdesconto or 0,

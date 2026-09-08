@@ -7,7 +7,6 @@ class Produto(Base):
 
     produto_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, nullable=False, index=True)
-    loja_id = Column(BigInteger, nullable=False)
     categoria_id = Column(BigInteger, ForeignKey("categoria.categoria_id"), nullable=True)
     nmproduto = Column(String(100), nullable=False)
     dsproduto = Column(String(255), nullable=True)
@@ -20,9 +19,6 @@ class Produto(Base):
         server_default=text("CURRENT_TIMESTAMP"),
         server_onupdate=text("CURRENT_TIMESTAMP"),
     )
-    idtipoproduto = Column(Enum("I", "P", name="idtipoproduto_enum"), nullable=False, server_default="P")
-    lote_id = Column(BigInteger, nullable=True)
-
     urlfotoproduto = Column(String(255), nullable=True)
 
     tipodesconto = Column(

@@ -89,6 +89,7 @@ def despublicar(loja_id: int, ano: int, mes: int, payload=Depends(get_usuario_lo
 
 @router.post("/evento-rapido", status_code=201)
 def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    raise HTTPException(410, "Cadastre um evento padrão e associe-o à data desejada.")
     if dados.dtinicioatracao.date() < datetime.now().date():
         raise HTTPException(422, "Não é permitido criar eventos em datas passadas.")
     try:

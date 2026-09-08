@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 
 
-CARGOS_GERENCIAIS = {"SUPERADMIN", "ADMIN", "GERENTE"}
+CARGOS_GERENCIAIS = {"SUPERADMIN", "ADMIN", "MANAGER"}
 
 
 def validar_gerenciamento_organizacao(payload: dict, organizacao_id: int) -> None:

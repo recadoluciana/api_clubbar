@@ -23,81 +23,6 @@ router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
 @router.post("/adicionar", response_model=AddItemOut)
 def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
-
-
-    def get_or_create_produto_por_lote(organizacao_id: int, loja_id: int, lote_id: int) -> Produto:
-
-
-        # valida lote
-        lote = (
-            db.query(EventoLote)
-            .filter(
-                EventoLote.lote_id == lote_id,
-                EventoLote.organizacao_id == organizacao_id,
-                EventoLote.loja_id == loja_id,
-                EventoLote.statuslote == "ATIVO",
-            )
-            .first()
-        )
-        if not lote:
-            raise HTTPException(status_code=404, detail="Lote não encontrado ou inativo")
-
-        # procura produto “espelho” pelo lote_id
-        produto = (
-            db.query(Produto)
-            .filter(
-                Produto.organizacao_id == organizacao_id,
-                Produto.loja_id == loja_id,
-                Produto.lote_id == lote_id,
-                Produto.sitproduto == "ATIVO",
-            )
-            .first()
-        )
-        if produto:
-            print("entrei na funcao produto por loja", produto)
-            return produto
-
-        evento = (
-            db.query(Evento)
-            .filter(Evento.evento_id == lote.evento_id)
-            .first()
-        )
-
-        nome_evento   = evento.nmtituloevento if evento else "Evento"
-        banner_evento = evento.urlbannerevento if evento else None
-
-        # cria produto “espelho”
-        produto = Produto(
-            organizacao_id=organizacao_id,
-            loja_id=loja_id,
-            lote_id=lote_id,
-            idtipoproduto="I",
-            nmproduto=f"{nome_evento} - {lote.nmlote}",
-            dsproduto=f"Ingresso para {nome_evento}",
-            vrprecoprod=(db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote.lote_id, EventoLotePreco.tipopreco == "INTEIRA").first().vrpreco),
-            urlfotoproduto=banner_evento,
-            sitproduto="ATIVO",
-        )
-        db.add(produto)
-
-        try:
-            db.flush()  # garante produto_id aqui
-        except IntegrityError:
-            db.rollback()
-            produto = (
-                db.query(Produto)
-                .filter(
-                    Produto.organizacao_id == organizacao_id,
-                    Produto.loja_id == loja_id,
-                    Produto.lote_id == lote_id,
-                )
-                .first()
-            )
-            if not produto:
-                raise
-        return produto
-    # ----------------------------------- fim da função 
-        
     if payload.idtipoproduto == "P" and not payload.produto_id:
         raise HTTPException(status_code=400, detail="produto_id obrigatório")
 
@@ -114,9 +39,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             .filter(
                 Produto.produto_id == payload.produto_id,
                 Produto.organizacao_id == payload.organizacao_id,
-                Produto.loja_id == payload.loja_id,
                 Produto.sitproduto == "ATIVO",
-                Produto.idtipoproduto == "P",
             )
             .first()
         )
@@ -346,7 +269,6 @@ def obter_itens_carrinho(
             Produto.vrdesconto,
             Produto.dtinidesconto,
             Produto.dtfimdesconto,
-            Produto.idtipoproduto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
             ItCarrinho.nmparticipante,
@@ -380,7 +302,7 @@ def obter_itens_carrinho(
         total += subtotal
         qt_total += qt
 
-        tipo_produto = (i.idtipoproduto or "P").strip().upper()
+        tipo_produto = "P"
 
         itens.append(
             {
@@ -517,8 +439,7 @@ def get_itens_carrinho(
         .join(
             Produto,
             (Produto.produto_id == ItCarrinho.produto_id)
-            & (Produto.organizacao_id == Carrinho.organizacao_id)
-            & (Produto.loja_id == Carrinho.loja_id),
+            & (Produto.organizacao_id == Carrinho.organizacao_id),
         )
         .filter(Carrinho.cliente_id == int(cliente_id))
         .filter(Carrinho.organizacao_id == int(organizacao_id))

@@ -31,8 +31,6 @@ class Loja(Base):
     
     dsrefeloja = Column(String(255))
 
-    dsestiloloja  = Column(String(255))
-    
     nrdiavalidade = Column(BigInteger,nullable=False, default=90)
     idvalidadeprod = Column(CHAR(1), nullable=False, default="S")
 

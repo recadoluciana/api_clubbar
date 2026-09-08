@@ -17,7 +17,7 @@ from app.models.organizacao import Organizacao
 from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
-from app.core.permissoes_loja import validar_mutacao_loja
+from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 
 router = APIRouter(tags=["Produtos"])
 
@@ -94,10 +94,10 @@ def listar_produtos_mais_vendidos(
     quantidade = func.count(ItVenda.itvenda_id).label("quantidade_vendida")
 
     rows = (
-        db.query(Produto, Loja.nmloja, quantidade)
+        db.query(Produto, Loja.loja_id, Loja.nmloja, quantidade)
         .join(ItVenda, ItVenda.produto_id == Produto.produto_id)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .join(Loja, Loja.loja_id == Produto.loja_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
         .join(
             Organizacao,
             Organizacao.organizacao_id == Produto.organizacao_id,
@@ -106,24 +106,23 @@ def listar_produtos_mais_vendidos(
             Venda.sitvenda == "PAGA",
             ItVenda.sititvenda == "ATIVO",
             Produto.sitproduto == "ATIVO",
-            Produto.idtipoproduto == "P",
             Loja.sitloja == "ATIVA",
             Organizacao.sitorganizacao == "ATIVA",
         )
-        .group_by(Produto.produto_id, Loja.nmloja)
+        .group_by(Produto.produto_id, Loja.loja_id, Loja.nmloja)
         .order_by(quantidade.desc(), Produto.nmproduto.asc())
         .limit(limite)
         .all()
     )
 
     resultado = []
-    for produto, nmloja, quantidade_vendida in rows:
+    for produto, loja_id, nmloja, quantidade_vendida in rows:
         vrprecofinal, descontoativo = calcular_preco_final(produto)
         resultado.append(
             {
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
-                "loja_id": produto.loja_id,
+                "loja_id": int(loja_id),
                 "nmloja": nmloja,
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto or "",
@@ -150,7 +149,7 @@ def excluir_produto(
 
     if not produto:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
-    validar_mutacao_loja(usuario, produto.organizacao_id, produto.loja_id)
+    validar_gerenciamento_organizacao(usuario, produto.organizacao_id)
 
     usado_itcarrinho = db.query(
         exists().where(ItCarrinho.produto_id == produto_id)
@@ -197,7 +196,7 @@ def atualizar_produto(
 
         if not produto:
             raise HTTPException(status_code=404, detail="Produto não encontrado")
-        validar_mutacao_loja(usuario, produto.organizacao_id, produto.loja_id)
+        validar_gerenciamento_organizacao(usuario, produto.organizacao_id)
 
         if urlfotoproduto is not None and urlfotoproduto.filename:
             if not urlfotoproduto.content_type or not urlfotoproduto.content_type.startswith("image/"):
@@ -269,7 +268,6 @@ def atualizar_produto(
             "mensagem": "Produto atualizado com sucesso",
             "produto_id": produto.produto_id,
             "organizacao_id": produto.organizacao_id,
-            "loja_id": produto.loja_id,
             "categoria_id": produto.categoria_id,
             "nmproduto": produto.nmproduto,
             "dsproduto": produto.dsproduto,
@@ -298,11 +296,13 @@ def listar_produtos_por_loja(
     incluir_inativos: bool = False,
     db: Session = Depends(get_db),
 ):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja:
+        raise HTTPException(status_code=404, detail="Loja não encontrada")
     query = (
         db.query(Produto, Categoria.nmcategoria)
         .outerjoin(Categoria, Categoria.categoria_id == Produto.categoria_id)
-        .filter(Produto.loja_id == loja_id)
-        .filter(Produto.idtipoproduto == "P")
+        .filter(Produto.organizacao_id == loja.organizacao_id)
     )
 
     if not incluir_inativos:
@@ -319,7 +319,7 @@ def listar_produtos_por_loja(
             {
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
-                "loja_id": produto.loja_id,
+                "loja_id": loja_id,
                 "categoria_id": produto.categoria_id,
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto,
@@ -374,12 +374,6 @@ async def criar_produto(
     if pccashback is not None and (pccashback < 0 or pccashback > 100):
         raise HTTPException(status_code=400, detail="O percentual de cashback deve ficar entre 0% e 100%.")
 
-    if idtipoproduto == "I" and not lote_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Para produto do tipo 'I', o campo lote_id é obrigatório."
-        )
-
     if categoria_id:
         categoria = db.query(Categoria).filter(
             Categoria.categoria_id == categoria_id,
@@ -389,14 +383,11 @@ async def criar_produto(
         if not categoria:
             raise HTTPException(status_code=404, detail="Categoria não encontrada para esta organização.")
 
-    if idtipoproduto == "P":
-        lote_id = None
-
     produto_existente = (
         db.query(Produto)
         .filter(
-            Produto.loja_id == loja_id,
-            Produto.nmproduto == nmproduto
+            Produto.organizacao_id == organizacao_id,
+            func.lower(Produto.nmproduto) == nmproduto.lower()
         )
         .first()
     )
@@ -404,7 +395,7 @@ async def criar_produto(
     if produto_existente:
         raise HTTPException(
             status_code=400,
-            detail="Já existe um produto com esse nome nesta loja."
+            detail="Já existe um produto com esse nome nesta organização."
         )
 
     nome_arquivo_foto = None
@@ -435,14 +426,11 @@ async def criar_produto(
 
     novo_produto = Produto(
         organizacao_id=organizacao_id,
-        loja_id=loja_id,
         categoria_id=categoria_id,
         nmproduto=nmproduto,
         dsproduto=dsproduto,
         vrprecoprod=vrprecoprod,
         sitproduto=sitproduto,
-        idtipoproduto=idtipoproduto,
-        lote_id=lote_id,
         urlfotoproduto=url_foto,
         tipodesconto=tipodesconto,
         vrdesconto=vrdesconto,
@@ -459,14 +447,11 @@ async def criar_produto(
         "message": "Produto cadastrado com sucesso.",
         "produto_id": novo_produto.produto_id,
         "organizacao_id": novo_produto.organizacao_id,
-        "loja_id": novo_produto.loja_id,
         "categoria_id": novo_produto.categoria_id,
         "nmproduto": novo_produto.nmproduto,
         "dsproduto": novo_produto.dsproduto,
         "vrprecoprod": float(novo_produto.vrprecoprod),
         "sitproduto": novo_produto.sitproduto,
-        "idtipoproduto": novo_produto.idtipoproduto,
-        "lote_id": novo_produto.lote_id,
         "foto": nome_arquivo_foto,
         "urlfotoproduto": novo_produto.urlfotoproduto,
         "tipodesconto": novo_produto.tipodesconto,
@@ -499,7 +484,6 @@ def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
     return {
         "produto_id": produto.produto_id,
         "organizacao_id": produto.organizacao_id,
-        "loja_id": produto.loja_id,
         "categoria_id": produto.categoria_id,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,

@@ -368,7 +368,6 @@ CREATE TABLE loja (
   urlfachadaloja VARCHAR(255) NULL,
   vrtaxaprod     DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing      DECIMAL(10,2) NOT NULL DEFAULT 5,
-  dsestiloloja   VARCHAR(255) NULL,
   dtcriacao      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu       DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -719,12 +718,12 @@ CREATE TABLE usuario (
   dscargo         ENUM(
     'SUPERADMIN',
     'ADMIN',
-    'GERENTE',
-    'CAIXA',
+    'MANAGER',
+    'CASHIER',
     'TOTEM',
     'BARMAN',
-    'GARCOM',
-    'PORTEIRO'
+    'WAITER',
+    'TICKETMAN'
   ) NOT NULL DEFAULT 'BARMAN',
 
   situsuario      VARCHAR(15) NOT NULL DEFAULT 'ATIVO',
@@ -837,30 +836,20 @@ ALTER TABLE categoria
 CREATE TABLE produto (
   produto_id       BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
-  loja_id          BIGINT NOT NULL,
   categoria_id     BIGINT NULL,
   nmproduto        VARCHAR(100) NOT NULL,
   dsproduto        VARCHAR(255) NULL,
-  idtipoproduto    ENUM('I','P') NOT NULL DEFAULT 'P',
   vrprecoprod      DECIMAL(10,2) NOT NULL,
   sitproduto       ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
   skuproduto       VARCHAR(100) NULL,
   dtcriacao        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu         DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-  lote_id          BIGINT NULL,
   urlfotoproduto   VARCHAR(255) NULL,
   tipodesconto     ENUM('NENHUM','PERCENTUAL','VALOR') NOT NULL DEFAULT 'NENHUM',
   vrdesconto       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   pccashback       DECIMAL(10,2) NULL,
   dtinidesconto    DATETIME NULL,
   dtfimdesconto    DATETIME NULL,
-
-  UNIQUE KEY uk_produto_id_lote (produto_id, lote_id),
-
-  CONSTRAINT fk_produto_loja
-    FOREIGN KEY (organizacao_id, loja_id)
-    REFERENCES loja(organizacao_id, loja_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
 
   CONSTRAINT fk_produto_categoria
     FOREIGN KEY (categoria_id)
@@ -875,22 +864,34 @@ CREATE TABLE produto (
     CHECK (pccashback IS NULL OR (pccashback >= 0 AND pccashback <= 100))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX idx_produto_org_loja_sit
-  ON produto(organizacao_id, loja_id, sitproduto);
+CREATE INDEX idx_produto_org_sit
+  ON produto(organizacao_id, sitproduto);
 
-CREATE INDEX idx_produto_org_loja_sit_nome
-  ON produto(organizacao_id, loja_id, sitproduto, nmproduto);
+CREATE INDEX idx_produto_org_sit_nome
+  ON produto(organizacao_id, sitproduto, nmproduto);
 
 CREATE INDEX idx_produto_categoria
   ON produto(categoria_id);
 
-CREATE UNIQUE INDEX uq_produto_lote
-  ON produto(organizacao_id, loja_id, lote_id);
+CREATE TABLE cardapiomodelo (
+  cardapiomodelo_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  nmcardapio VARCHAR(120) NOT NULL,
+  tipocardapio ENUM('PRINCIPAL','ESPECIAL','SAZONAL','EVENTO') NOT NULL DEFAULT 'PRINCIPAL',
+  sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cardapiomodelo_organizacao FOREIGN KEY (organizacao_id)
+    REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  UNIQUE KEY uk_cardapiomodelo_org_nome (organizacao_id, nmcardapio),
+  KEY idx_cardapiomodelo_org_situacao (organizacao_id, sitcardapio)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE cardapio (
   cardapio_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
   loja_id BIGINT NOT NULL,
+  cardapiomodelo_id BIGINT NOT NULL,
   nmcardapio VARCHAR(120) NOT NULL,
   tipocardapio ENUM('PRINCIPAL','ESPECIAL','SAZONAL','EVENTO') NOT NULL DEFAULT 'PRINCIPAL',
   prioridade INT NOT NULL DEFAULT 0,
@@ -899,7 +900,9 @@ CREATE TABLE cardapio (
   dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_cardapio_loja FOREIGN KEY (organizacao_id, loja_id)
     REFERENCES loja(organizacao_id, loja_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapio_loja_nome (loja_id, nmcardapio),
+  CONSTRAINT fk_cardapio_modelo FOREIGN KEY (cardapiomodelo_id)
+    REFERENCES cardapiomodelo(cardapiomodelo_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  UNIQUE KEY uk_cardapio_loja_modelo (loja_id, cardapiomodelo_id),
   KEY idx_cardapio_loja_situacao (loja_id, sitcardapio, prioridade)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1335,7 +1338,7 @@ CREATE TABLE atracaoorganizacaoestilomusical (
 
 CREATE TABLE eventomodelo (
   eventomodelo_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL,
+  organizacao_id BIGINT NOT NULL,
   nmtituloevento VARCHAR(120) NOT NULL,
   dsdescevento TEXT NULL, dspoliticacancelamento TEXT NULL,
   dspoliticareembolso TEXT NULL, dspoliticacashback TEXT NULL,
@@ -1347,8 +1350,7 @@ CREATE TABLE eventomodelo (
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
-  FOREIGN KEY (loja_id) REFERENCES loja(loja_id),
-  INDEX idx_eventomodelo_org_loja_status (organizacao_id, loja_id, statusevento)
+  INDEX idx_eventomodelo_org_status (organizacao_id, statusevento)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE eventomodeloatracao (
@@ -1389,7 +1391,7 @@ CREATE TABLE evento (
   organizacao_id         BIGINT NOT NULL,
   loja_id                BIGINT NOT NULL,
   agendamensal_id        BIGINT NOT NULL,
-  eventomodelo_id        BIGINT NULL,
+  eventomodelo_id        BIGINT NOT NULL,
   nmtituloevento         VARCHAR(120) NOT NULL,
   dtinicioevento         DATETIME NOT NULL,
   dtfimevento            DATETIME NULL,
@@ -1564,19 +1566,6 @@ CREATE INDEX idx_lote_evento_status
 CREATE INDEX idx_lote_loja_evento
   ON eventolote(organizacao_id, loja_id, evento_id);
 
-
--- FKs que dependem de eventolote (adiadas para evitar erro de ordem)
-ALTER TABLE produto
-  ADD CONSTRAINT fk_produto_eventolote
-  FOREIGN KEY (organizacao_id, loja_id, lote_id)
-  REFERENCES eventolote(organizacao_id, loja_id, lote_id)
-  ON DELETE RESTRICT ON UPDATE RESTRICT;
-
-ALTER TABLE itcarrinho
-  ADD CONSTRAINT fk_itcarrinho_produto_lote
-  FOREIGN KEY (produto_id, lote_id)
-  REFERENCES produto(produto_id, lote_id)
-  ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE itvenda
   ADD CONSTRAINT fk_itvenda_lote

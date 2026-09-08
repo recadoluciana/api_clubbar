@@ -2,9 +2,13 @@ from datetime import datetime
 from pydantic import BaseModel, Field, model_validator
 
 class AgendarEventoModeloIn(BaseModel):
+    loja_id: int = Field(gt=0)
     dtinicio: datetime
     dtfim: datetime | None = None
     capacidade: int = Field(gt=0)
+    preco_inteira: float | None = Field(default=None, ge=0)
+    local: str | None = Field(default=None, max_length=120)
+    endereco: str | None = Field(default=None, max_length=200)
     recorrencia: str = "UNICA"
     repeticoes: int = Field(default=1, ge=1, le=60)
 

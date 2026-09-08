@@ -30,10 +30,10 @@ class PermissoesOrganizacaoTest(unittest.TestCase):
     def test_admin_pode_alterar_qualquer_loja_da_organizacao(self):
         validar_mutacao_loja(payload("ADMIN"), 10, 999)
 
-    def test_gerente_so_pode_alterar_sua_loja(self):
-        validar_mutacao_loja(payload("GERENTE", 20), 10, 20)
+    def test_manager_so_pode_alterar_sua_loja(self):
+        validar_mutacao_loja(payload("MANAGER", 20), 10, 20)
         with self.assertRaises(HTTPException) as erro:
-            validar_mutacao_loja(payload("GERENTE", 20), 10, 21)
+            validar_mutacao_loja(payload("MANAGER", 20), 10, 21)
         self.assertEqual(erro.exception.status_code, 403)
 
 
@@ -43,8 +43,8 @@ class VinculoCargoLojaTest(unittest.TestCase):
             with self.subTest(cargo=cargo), self.assertRaises(HTTPException):
                 _validar_vinculo_cargo_loja(cargo, 1)
 
-    def test_cargos_operacionais_e_gerente_exigem_loja(self):
-        for cargo in ("GERENTE", "CAIXA", "TOTEM", "BARMAN", "GARCOM", "PORTEIRO"):
+    def test_cargos_operacionais_e_manager_exigem_loja(self):
+        for cargo in ("MANAGER", "CASHIER", "TOTEM", "BARMAN", "WAITER", "TICKETMAN"):
             with self.subTest(cargo=cargo), self.assertRaises(HTTPException):
                 _validar_vinculo_cargo_loja(cargo, None)
             _validar_vinculo_cargo_loja(cargo, 1)

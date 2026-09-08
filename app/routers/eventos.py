@@ -330,6 +330,7 @@ def criar_evento(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
+    raise HTTPException(status_code=410, detail="Eventos devem ser criados a partir de um evento padrão.")
     try:
         inicio_evento = datetime.fromisoformat(dtinicioevento)
         if inicio_evento.date() < datetime.now().date():

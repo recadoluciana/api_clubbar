@@ -30,7 +30,7 @@ def validar_permissao_mutacao_loja(
     cargo = str(payload.get("dscargo") or "").strip().upper()
     organizacao_usuario = payload.get("organizacao_id")
     loja_usuario = payload.get("loja_id")
-    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "GERENTE"}:
+    if payload.get("role") != "usuario" or cargo not in {"SUPERADMIN", "ADMIN", "MANAGER"}:
         raise HTTPException(status_code=403, detail="Você não possui permissão para alterar lojas.")
     if int(organizacao_usuario or 0) != organizacao_id:
         raise HTTPException(status_code=403, detail="A loja não pertence à sua organização.")
@@ -211,7 +211,6 @@ def listar_todas_lojas_ativas(
             Loja.dsinstaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
-            Loja.dsestiloloja,
             Estado.sgestado,
             Loja.dtcriacao,
         )
@@ -246,7 +245,6 @@ def listar_todas_lojas_ativas(
             "dsinstaloja": r.dsinstaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
-            "dsestiloloja": r.dsestiloloja,
             "sgestado": r.sgestado or "",
             "dtcriacao": r.dtcriacao,
         }
@@ -387,7 +385,6 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.nrtelloja,
             Loja.dsinstaloja,
             Loja.dsrefeloja,
-            Loja.dsestiloloja,
             Loja.cidade_id,
             Loja.urllogoloja,
             Loja.urlfachadaloja,
@@ -420,7 +417,6 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "nrtelloja": row.nrtelloja,
         "dsinstaloja": row.dsinstaloja,
         "dsrefeloja": row.dsrefeloja,
-        "dsestiloloja": row.dsestiloloja,
         "cidade_id": row.cidade_id,
         "nmcidade": row.nmcidade,
         "urllogoloja": f"{row.urllogoloja}" if row.urllogoloja else None,
@@ -444,7 +440,6 @@ def criar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     aberto24x7: str = Form("N"),
-    dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     idvalidadeprod: str = Form("S"),
     vrtaxaprod: float | None = Form(0),
@@ -497,7 +492,6 @@ def criar_loja(
             dsinstaloja=dsinstaloja,
             nrtelloja=nrtelloja,
             aberto24x7=aberto24x7,
-            dsestiloloja=dsestiloloja,
             nrdiavalidade=nrdiavalidade,
             idvalidadeprod=idvalidadeprod,
             vrtaxaprod=vrtaxaprod,
@@ -529,7 +523,6 @@ def criar_loja(
             "dsinstaloja": nova.dsinstaloja,
             "aberto24x7": nova.aberto24x7,
             "idvalidadeprod": nova.idvalidadeprod,
-            "dsestiloloja": nova.dsestiloloja,
             "qtcpdloja": nova.qtcpdloja,
         }
 
@@ -577,7 +570,6 @@ def listar_lojas_por_organizacao_todas(
             "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "aberto24x7": loja.aberto24x7,
-            "dsestiloloja": loja.dsestiloloja,
             "nrdiavalidade": loja.nrdiavalidade,
             "idvalidadeprod": loja.idvalidadeprod,
             "sitloja": loja.sitloja,
@@ -608,7 +600,6 @@ def atualizar_loja(
     dsinstaloja: str | None = Form(None),
     nrtelloja: str | None = Form(None),
     aberto24x7: str | None = Form(None),
-    dsestiloloja: str | None = Form(None),
     nrdiavalidade: int | None = Form(None),
     idvalidadeprod: str | None = Form(None),
     vrtaxaprod: float | None = Form(None),
@@ -685,9 +676,6 @@ def atualizar_loja(
         if aberto24x7 is not None:
             loja.aberto24x7 = validar_aberto24x7(aberto24x7)
 
-        if dsestiloloja is not None:
-            loja.dsestiloloja = dsestiloloja
-
         controle_validade = (
             idvalidadeprod
             if idvalidadeprod is not None
@@ -755,7 +743,6 @@ def atualizar_loja(
                 "dsinstaloja": loja.dsinstaloja,
                 "nrtelloja": loja.nrtelloja,
                 "aberto24x7": loja.aberto24x7,
-                "dsestiloloja": loja.dsestiloloja,
                 "nrdiavalidade": loja.nrdiavalidade,
                 "idvalidadeprod": loja.idvalidadeprod,
                 "sitloja": loja.sitloja,
@@ -787,14 +774,6 @@ def deletar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = De
         validar_permissao_mutacao_loja(
             payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
         )
-
-        existe_produto = db.query(Produto).filter(Produto.loja_id == loja_id).first()
-
-        if existe_produto:
-            raise HTTPException(
-                status_code=400,
-                detail="Não é possível deletar a loja, pois existem produtos vinculados"
-            )
 
         db.delete(loja)
         db.commit()

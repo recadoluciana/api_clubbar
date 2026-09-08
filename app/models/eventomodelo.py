@@ -6,7 +6,6 @@ class EventoModelo(Base):
     __tablename__ = "eventomodelo"
     eventomodelo_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
-    loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
     nmtituloevento = Column(String(120), nullable=False)
     dsdescevento = Column(Text)
     dspoliticacancelamento = Column(Text)

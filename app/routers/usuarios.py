@@ -19,21 +19,21 @@ router = APIRouter(tags=["Usuários"])
 CARGOS_VALIDOS = {
     "SUPERADMIN",
     "ADMIN",
-    "GERENTE",
-    "CAIXA",
+    "MANAGER",
+    "CASHIER",
     "TOTEM",
     "BARMAN",
-    "GARCOM",
-    "PORTEIRO",
+    "WAITER",
+    "TICKETMAN",
 }
 CARGOS_SEM_LOJA = {"SUPERADMIN", "ADMIN"}
 CARGOS_COM_LOJA_OBRIGATORIA = {
-    "GERENTE",
-    "CAIXA",
+    "MANAGER",
+    "CASHIER",
     "TOTEM",
     "BARMAN",
-    "GARCOM",
-    "PORTEIRO",
+    "WAITER",
+    "TICKETMAN",
 }
 
 
@@ -91,7 +91,7 @@ def _validar_vinculo_cargo_loja(cargo: str, loja_id: int | None) -> None:
     if cargo in CARGOS_COM_LOJA_OBRIGATORIA and loja_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Gerente e cargos operacionais devem estar vinculados a uma loja.",
+            detail="Manager e cargos operacionais devem estar vinculados a uma loja.",
         )
 
 

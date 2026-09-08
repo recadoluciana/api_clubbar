@@ -6,11 +6,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.permissoes_loja import validar_mutacao_loja
+from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.cardapio import (
-    Cardapio, CardapioItem, CardapioProgramacao, CardapioReajuste,
+    Cardapio, CardapioItem, CardapioModelo, CardapioProgramacao, CardapioReajuste,
     CardapioVersao, CardapioVersaoCategoria,
 )
 from app.models.categoria import Categoria
@@ -25,6 +25,11 @@ router = APIRouter(tags=["Cardápios"])
 class CardapioIn(BaseModel):
     nmcardapio: str = Field(min_length=2, max_length=120)
     tipocardapio: str = "PRINCIPAL"
+    prioridade: int = Field(default=0, ge=0, le=999)
+
+
+class AssociarCardapioIn(BaseModel):
+    cardapiomodelo_id: int
     prioridade: int = Field(default=0, ge=0, le=999)
 
 
@@ -94,7 +99,8 @@ def _saida_cardapio(db: Session, item: Cardapio) -> dict:
     versoes = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == item.cardapio_id).order_by(CardapioVersao.nrversao.desc()).all()
     return {
         "cardapio_id": item.cardapio_id, "organizacao_id": item.organizacao_id,
-        "loja_id": item.loja_id, "nmcardapio": item.nmcardapio,
+        "loja_id": item.loja_id, "cardapiomodelo_id": item.cardapiomodelo_id,
+        "nmcardapio": item.nmcardapio,
         "tipocardapio": item.tipocardapio, "prioridade": item.prioridade,
         "sitcardapio": item.sitcardapio,
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
@@ -106,7 +112,7 @@ def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
     saida = []
     for vinculo, categoria in categorias:
         itens = db.query(CardapioItem, Produto).join(Produto, Produto.produto_id == CardapioItem.produto_id).filter(CardapioItem.cardapioversaocategoria_id == vinculo.cardapioversaocategoria_id, CardapioItem.sititem == "ATIVO").order_by(CardapioItem.idorditem).all()
-        saida.append({"cardapioversaocategoria_id": vinculo.cardapioversaocategoria_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "dsicone": categoria.dsicone, "idordcategoria": vinculo.idordcategoria, "itens": [{"cardapioitem_id": ci.cardapioitem_id, "produto_id": p.produto_id, "organizacao_id": p.organizacao_id, "loja_id": p.loja_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "nmproduto": p.nmproduto, "dsproduto": p.dsproduto, "urlfotoproduto": p.urlfotoproduto, "vrpreco": float(ci.vrpreco), "vrprecoprod": float(ci.vrpreco), "vrprecofinal": float(ci.vrpreco), "sitproduto": p.sitproduto, "tipodesconto": "NENHUM", "vrdesconto": 0.0, "descontoativo": False, "pccashback": float(p.pccashback) if p.pccashback is not None else None, "idorditem": ci.idorditem} for ci, p in itens]})
+        saida.append({"cardapioversaocategoria_id": vinculo.cardapioversaocategoria_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "dsicone": categoria.dsicone, "idordcategoria": vinculo.idordcategoria, "itens": [{"cardapioitem_id": ci.cardapioitem_id, "produto_id": p.produto_id, "organizacao_id": p.organizacao_id, "loja_id": cardapio.loja_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "nmproduto": p.nmproduto, "dsproduto": p.dsproduto, "urlfotoproduto": p.urlfotoproduto, "vrpreco": float(ci.vrpreco), "vrprecoprod": float(ci.vrpreco), "vrprecofinal": float(ci.vrpreco), "sitproduto": p.sitproduto, "tipodesconto": "NENHUM", "vrdesconto": 0.0, "descontoativo": False, "pccashback": float(p.pccashback) if p.pccashback is not None else None, "idorditem": ci.idorditem} for ci, p in itens]})
     return {"cardapio_id": cardapio.cardapio_id, "nmcardapio": cardapio.nmcardapio, "cardapioversao_id": versao.cardapioversao_id, "nrversao": versao.nrversao, "statusversao": versao.statusversao, "categorias": saida}
 
 
@@ -114,6 +120,44 @@ def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
 def listar(loja_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _loja(db, loja_id, payload)
     return [_saida_cardapio(db, item) for item in db.query(Cardapio).filter(Cardapio.loja_id == loja_id).order_by(Cardapio.prioridade.desc(), Cardapio.nmcardapio).all()]
+
+
+@router.get("/organizacoes/{organizacao_id}/cardapios-padrao")
+def listar_padroes(organizacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    itens = db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == organizacao_id).order_by(CardapioModelo.nmcardapio).all()
+    return [{"cardapiomodelo_id": x.cardapiomodelo_id, "organizacao_id": x.organizacao_id, "nmcardapio": x.nmcardapio, "tipocardapio": x.tipocardapio, "sitcardapio": x.sitcardapio} for x in itens]
+
+
+@router.post("/organizacoes/{organizacao_id}/cardapios-padrao", status_code=201)
+def criar_padrao(organizacao_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    tipo = dados.tipocardapio.upper()
+    if tipo not in {"PRINCIPAL", "ESPECIAL", "SAZONAL", "EVENTO"}:
+        raise HTTPException(422, "Tipo de cardápio inválido.")
+    nome = dados.nmcardapio.strip()
+    if db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == organizacao_id, func.lower(CardapioModelo.nmcardapio) == nome.lower()).first():
+        raise HTTPException(409, "Já existe um cardápio padrão com esse nome.")
+    item = CardapioModelo(organizacao_id=organizacao_id, nmcardapio=nome, tipocardapio=tipo)
+    db.add(item); db.commit(); db.refresh(item)
+    return {"cardapiomodelo_id": item.cardapiomodelo_id, "organizacao_id": item.organizacao_id, "nmcardapio": item.nmcardapio, "tipocardapio": item.tipocardapio, "sitcardapio": item.sitcardapio}
+
+
+def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) -> Cardapio:
+    existente = db.query(Cardapio).filter(Cardapio.loja_id == loja.loja_id, Cardapio.cardapiomodelo_id == modelo.cardapiomodelo_id).first()
+    if existente:
+        return existente
+    item = Cardapio(organizacao_id=loja.organizacao_id, loja_id=loja.loja_id, cardapiomodelo_id=modelo.cardapiomodelo_id, nmcardapio=modelo.nmcardapio, tipocardapio=modelo.tipocardapio, prioridade=prioridade)
+    db.add(item); db.flush(); db.add(CardapioVersao(cardapio_id=item.cardapio_id, nrversao=1)); db.commit(); db.refresh(item)
+    return item
+
+
+@router.post("/lojas/{loja_id}/cardapios/associar", status_code=201)
+def associar(loja_id: int, dados: AssociarCardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    loja = _loja(db, loja_id, payload)
+    modelo = db.query(CardapioModelo).filter(CardapioModelo.cardapiomodelo_id == dados.cardapiomodelo_id, CardapioModelo.organizacao_id == loja.organizacao_id, CardapioModelo.sitcardapio == "ATIVO").first()
+    if not modelo: raise HTTPException(404, "Cardápio padrão não encontrado.")
+    return _saida_cardapio(db, _associar(db, loja, modelo, dados.prioridade))
 
 
 @router.post("/lojas/{loja_id}/cardapios", status_code=201)
@@ -124,11 +168,12 @@ def criar(loja_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), 
         raise HTTPException(422, "Tipo de cardápio inválido.")
     if tipo == "PRINCIPAL" and db.query(Cardapio).filter(Cardapio.loja_id == loja_id, Cardapio.tipocardapio == "PRINCIPAL", Cardapio.sitcardapio == "ATIVO").first():
         raise HTTPException(409, "A loja já possui um cardápio principal.")
-    item = Cardapio(organizacao_id=loja.organizacao_id, loja_id=loja_id, nmcardapio=dados.nmcardapio.strip(), tipocardapio=tipo, prioridade=dados.prioridade)
-    db.add(item); db.flush()
-    db.add(CardapioVersao(cardapio_id=item.cardapio_id, nrversao=1))
-    db.commit(); db.refresh(item)
-    return _saida_cardapio(db, item)
+    nome = dados.nmcardapio.strip()
+    modelo = db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == loja.organizacao_id, func.lower(CardapioModelo.nmcardapio) == nome.lower()).first()
+    if not modelo:
+        modelo = CardapioModelo(organizacao_id=loja.organizacao_id, nmcardapio=nome, tipocardapio=tipo)
+        db.add(modelo); db.flush()
+    return _saida_cardapio(db, _associar(db, loja, modelo, dados.prioridade))
 
 
 @router.post("/cardapios/{cardapio_id}/nova-versao", status_code=201)
@@ -166,8 +211,8 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
         raise HTTPException(422, "Um produto não pode aparecer duas vezes na mesma versão.")
     if db.query(Categoria).filter(Categoria.categoria_id.in_(categorias_ids), Categoria.organizacao_id == cardapio.organizacao_id).count() != len(categorias_ids):
         raise HTTPException(422, "Uma ou mais categorias não pertencem à organização.")
-    if db.query(Produto).filter(Produto.produto_id.in_(produtos_ids), Produto.loja_id == cardapio.loja_id, Produto.idtipoproduto == "P").count() != len(produtos_ids):
-        raise HTTPException(422, "Um ou mais produtos não pertencem à loja.")
+    if db.query(Produto).filter(Produto.produto_id.in_(produtos_ids), Produto.organizacao_id == cardapio.organizacao_id).count() != len(produtos_ids):
+        raise HTTPException(422, "Um ou mais produtos não pertencem à organização.")
     db.query(CardapioVersaoCategoria).filter(CardapioVersaoCategoria.cardapioversao_id == versao_id).delete(synchronize_session=False)
     db.flush()
     for categoria in dados.categorias:

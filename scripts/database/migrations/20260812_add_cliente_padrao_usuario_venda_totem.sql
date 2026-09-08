@@ -43,11 +43,11 @@ ALTER TABLE venda
 ALTER TABLE usuario
   MODIFY COLUMN dscargo ENUM(
     'ADMIN',
-    'GERENTE',
+    'MANAGER',
     'CAIXA',
     'TOTEM',
     'BARMAN',
-    'GARCOM',
-    'PORTEIRO',
+    'WAITER',
+    'TICKETMAN',
     'SUPERADMIN'
   ) NOT NULL DEFAULT 'BARMAN';

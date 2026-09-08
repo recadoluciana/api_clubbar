@@ -52,12 +52,12 @@ class CaixaItemIn(BaseModel):
 
 def _contexto_caixa(payload: dict, db: Session) -> tuple[Loja, Cliente]:
     cargo = str(payload.get("dscargo") or "").upper()
-    if payload.get("role") != "usuario" or cargo not in {"CAIXA", "TOTEM"}:
-        raise HTTPException(403, "Acesso exclusivo para usuários CAIXA.")
+    if payload.get("role") != "usuario" or cargo not in {"CASHIER", "TOTEM"}:
+        raise HTTPException(403, "Acesso exclusivo para usuários CASHIER.")
     loja_id = payload.get("loja_id")
     organizacao_id = payload.get("organizacao_id")
     if not loja_id:
-        raise HTTPException(403, "O usuário CAIXA deve estar vinculado a uma loja.")
+        raise HTTPException(403, "O usuário CASHIER deve estar vinculado a uma loja.")
     loja = db.query(Loja).filter(
         Loja.loja_id == int(loja_id),
         Loja.organizacao_id == int(organizacao_id),
@@ -99,10 +99,8 @@ def adicionar_item_caixa(dados: CaixaItemIn, payload: dict = Depends(get_usuario
     loja, cliente = _contexto_caixa(payload, db)
     produto = db.query(Produto).filter(
         Produto.produto_id == dados.produto_id,
-        Produto.loja_id == loja.loja_id,
         Produto.organizacao_id == loja.organizacao_id,
         Produto.sitproduto == "ATIVO",
-        Produto.idtipoproduto == "P",
     ).first()
     if not produto:
         raise HTTPException(404, "Produto não encontrado nesta loja.")
