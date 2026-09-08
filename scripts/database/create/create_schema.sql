@@ -1502,6 +1502,7 @@ CREATE TABLE eventolote (
   nrlote           INT NOT NULL DEFAULT 1,
   nmlote           VARCHAR(80) NOT NULL,
   qttotallote      INT NULL,
+  usarcapacidaderestante CHAR(1) NOT NULL DEFAULT 'N',
   qtvendidalote    INT NULL,
   dtiniciovenda    DATETIME NULL,
   dtfimvenda       DATETIME NULL,

@@ -36,6 +36,7 @@ class EventoLote(Base):
     nmlote = Column(String(80), nullable=False)
 
     qttotallote = Column(Integer, nullable=True)
+    usarcapacidaderestante = Column(String(1), nullable=False, server_default="N")
     qtvendidalote = Column(Integer, nullable=True)
 
     dtiniciovenda = Column(DateTime, nullable=True)

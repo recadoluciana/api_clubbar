@@ -11,7 +11,7 @@ def criar_lote_pista_com_precos(db: Session, *, organizacao_id: int, loja_id: in
     meia = (valor / Decimal("2")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     setor = EventoSetor(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, nmsetor="Pista", dssetor="Área geral do evento", qtcapacidade=int(capacidade), nrordem=1, sitsetor="ATIVO")
     db.add(setor); db.flush()
-    lote = EventoLote(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, eventosetor_id=setor.eventosetor_id, nrlote=1, nmlote="Lote 1 - Pista", qttotallote=int(capacidade), qtvendidalote=0, dtiniciovenda=datetime.now(), dtfimvenda=inicio_evento + timedelta(hours=2), statuslote="ATIVO")
+    lote = EventoLote(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, eventosetor_id=setor.eventosetor_id, nrlote=1, nmlote="Lote 1 - Pista", qttotallote=None, usarcapacidaderestante="S", qtvendidalote=0, dtiniciovenda=datetime.now(), dtfimvenda=inicio_evento + timedelta(hours=2), statuslote="ATIVO")
     db.add(lote); db.flush()
     db.add_all([
         EventoLotePreco(lote_id=lote.lote_id, nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=valor, aplicacotalegal=False, exigecomprovante=False, nrordem=1),

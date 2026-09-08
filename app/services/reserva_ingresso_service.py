@@ -14,6 +14,20 @@ from app.models.reserva_ingresso import ReservaIngresso
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 
+def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> EventoLote | None:
+    lotes = db.query(EventoLote).filter(EventoLote.evento_id == lote.evento_id, EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.statuslote.in_(("ATIVO", "ESGOTADO", "ENCERRADO"))).order_by(EventoLote.nrlote, EventoLote.lote_id).all()
+    if not lotes: return None
+    iniciados = [i for i, item in enumerate(lotes) if item.dtiniciovenda is None or item.dtiniciovenda <= agora]
+    indice = max(iniciados) if iniciados else 0
+    for i, item in enumerate(lotes):
+        reservada = quantidade_reservada(db, item.lote_id)
+        esgotado = item.qttotallote is not None and int(item.qtvendidalote or 0) + reservada >= int(item.qttotallote)
+        encerrado = item.dtfimvenda is not None and agora > item.dtfimvenda
+        if i < indice or esgotado or encerrado:
+            continue
+        return item
+    return None
+
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
     query = db.query(ReservaIngresso).filter(
@@ -54,8 +68,15 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
         raise HTTPException(422, "Selecione o benefício Pessoa idosa")
     agora = datetime.now()
     if lote.statuslote != "ATIVO" or (lote.dtiniciovenda and agora < lote.dtiniciovenda) or (lote.dtfimvenda and agora > lote.dtfimvenda):
-        raise HTTPException(409, "Este lote não está disponível para venda")
+        # O próximo lote pode abrir antes da data quando o anterior esgotar.
+        if lote_atual_do_setor(db, lote, agora) is not lote:
+            raise HTTPException(409, "Este lote não está disponível para venda")
     expirar_reservas(db)
+    if lote_atual_do_setor(db, lote, agora) is not lote:
+        raise HTTPException(409, "Outro lote está vigente para este setor")
+    reservada_lote = quantidade_reservada(db, lote_id)
+    if lote.qttotallote is not None and int(lote.qtvendidalote or 0) + reservada_lote + quantidade > int(lote.qttotallote):
+        raise HTTPException(409, "O limite comercial deste lote foi atingido")
     reservada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id).filter(EventoLote.evento_id == lote.evento_id, ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE), ReservaIngresso.dtexpiracao > datetime.now()).scalar() or 0)
     vendida = int(db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0)).filter(EventoLote.evento_id == lote.evento_id).scalar() or 0)
     capacidade_evento = int(db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(EventoSetor.evento_id == lote.evento_id, EventoSetor.sitsetor == "ATIVO").scalar() or 0)
