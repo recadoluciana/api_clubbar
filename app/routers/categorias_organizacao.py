@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.security import get_usuario_logado
+from app.core.security import get_operador_logado, get_usuario_logado
 from app.database import get_db
 from app.models.cardapio import CategoriaPadrao
 from app.models.categoria import Categoria
@@ -18,6 +18,49 @@ class SelecaoCategoriasIn(BaseModel):
 class CategoriaPersonalizadaIn(BaseModel):
     nmcategoria: str = Field(min_length=2, max_length=120)
     dsicone: str | None = Field(default="more_horiz", max_length=50)
+
+
+class CategoriaPadraoSituacaoIn(BaseModel):
+    sitcategoria: str = Field(max_length=10)
+
+
+def _saida_padrao(item: CategoriaPadrao) -> dict:
+    return {
+        "categoriapadrao_id": item.categoriapadrao_id,
+        "nmcategoria": item.nmcategoria,
+        "dsicone": item.dsicone,
+        "sitcategoria": item.sitcategoria,
+        "idordcategoria": item.idordcategoria,
+    }
+
+
+@router.get("/admin/categorias-padrao")
+def admin_listar_categorias_padrao(
+    _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)
+):
+    itens = db.query(CategoriaPadrao).order_by(
+        CategoriaPadrao.idordcategoria, CategoriaPadrao.nmcategoria
+    ).all()
+    return [_saida_padrao(item) for item in itens]
+
+
+@router.patch("/admin/categorias-padrao/{categoria_id}/situacao")
+def admin_alterar_situacao_categoria_padrao(
+    categoria_id: int,
+    dados: CategoriaPadraoSituacaoIn,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    item = db.get(CategoriaPadrao, categoria_id)
+    if not item:
+        raise HTTPException(404, "Categoria padrão não encontrada.")
+    situacao = dados.sitcategoria.strip().upper()
+    if situacao not in {"ATIVA", "INATIVA"}:
+        raise HTTPException(422, "A situação deve ser ATIVA ou INATIVA.")
+    item.sitcategoria = situacao
+    db.commit()
+    db.refresh(item)
+    return _saida_padrao(item)
 
 
 def _validar_organizacao(payload: dict, organizacao_id: int) -> None:
