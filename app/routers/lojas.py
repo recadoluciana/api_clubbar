@@ -4,6 +4,7 @@ import os
 import uuid
 import shutil
 import traceback
+import json
 
 from app.database import get_db
 from app.models.loja import Loja
@@ -15,9 +16,78 @@ from app.core.config import UPLOAD_LOJAS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.models.cashback_config import CashbackConfig
+from app.models.lojaestilomusical import LojaEstiloMusical
+from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.services.cashback_service import obter_ou_criar_config
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
+
+
+def estilos_da_loja(db: Session, loja_id: int) -> list[dict]:
+    estilos = (
+        db.query(OrganizacaoEstiloMusical)
+        .join(
+            LojaEstiloMusical,
+            LojaEstiloMusical.organizacaoestilomusical_id
+            == OrganizacaoEstiloMusical.organizacaoestilomusical_id,
+        )
+        .filter(
+            LojaEstiloMusical.loja_id == loja_id,
+            OrganizacaoEstiloMusical.sitestilomusical == "ATIVO",
+        )
+        .order_by(OrganizacaoEstiloMusical.nmestilomusical.asc())
+        .all()
+    )
+    return [
+        {
+            "estilomusical_id": estilo.organizacaoestilomusical_id,
+            "organizacaoestilomusical_id": estilo.organizacaoestilomusical_id,
+            "nmestilomusical": estilo.nmestilomusical,
+        }
+        for estilo in estilos
+    ]
+
+
+def salvar_estilos_da_loja(
+    db: Session,
+    loja: Loja,
+    estilos_ids_json: str | None,
+) -> None:
+    if estilos_ids_json is None:
+        return
+    try:
+        ids = {int(valor) for valor in json.loads(estilos_ids_json)}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raise HTTPException(422, "A lista de estilos musicais é inválida.")
+
+    estilos = (
+        db.query(OrganizacaoEstiloMusical)
+        .filter(
+            OrganizacaoEstiloMusical.organizacao_id == loja.organizacao_id,
+            OrganizacaoEstiloMusical.organizacaoestilomusical_id.in_(ids),
+            OrganizacaoEstiloMusical.sitestilomusical == "ATIVO",
+        )
+        .all()
+        if ids
+        else []
+    )
+    if len(estilos) != len(ids):
+        raise HTTPException(
+            422,
+            "Selecione somente estilos musicais ativos da sua organização.",
+        )
+    db.query(LojaEstiloMusical).filter(
+        LojaEstiloMusical.loja_id == loja.loja_id
+    ).delete(synchronize_session=False)
+    db.add_all(
+        [
+            LojaEstiloMusical(
+                loja_id=loja.loja_id,
+                organizacaoestilomusical_id=estilo_id,
+            )
+            for estilo_id in ids
+        ]
+    )
 
 
 def validar_permissao_mutacao_loja(
@@ -225,8 +295,10 @@ def listar_todas_lojas_ativas(
 
     lojas = rows.order_by(Loja.nmloja.asc()).all()
 
-    return [
-        {
+    resultado = []
+    for r in lojas:
+        estilos = estilos_da_loja(db, r.loja_id)
+        resultado.append({
             "loja_id": r.loja_id,
             "organizacao_id": r.organizacao_id,
             "estado_id": r.estado_id,
@@ -247,9 +319,10 @@ def listar_todas_lojas_ativas(
             "vrtaxaing": float(r.vrtaxaing or 0),
             "sgestado": r.sgestado or "",
             "dtcriacao": r.dtcriacao,
-        }
-        for r in lojas
-    ]
+            "estilos": estilos,
+            "dsestiloloja": ", ".join(e["nmestilomusical"] for e in estilos),
+        })
+    return resultado
 
 @router.get("/com_retirada")
 def listar_lojas_com_retirada_pendente(
@@ -449,6 +522,7 @@ def criar_loja(
     qtcpdloja: int | None = Form(None),
     usacashback: str = Form("N"),
     pccashback: float = Form(0),
+    estilos_ids: str | None = Form(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
@@ -504,6 +578,7 @@ def criar_loja(
 
         db.add(nova)
         db.flush()
+        salvar_estilos_da_loja(db, nova, estilos_ids)
         usar = usacashback.strip().upper() == "S"
         if pccashback < 0 or pccashback > 100 or (usar and pccashback <= 0):
             raise HTTPException(422, "Informe um percentual de cashback entre 0,01% e 100%")
@@ -556,8 +631,10 @@ def listar_lojas_por_organizacao_todas(
 
     base_url = str(request.base_url).rstrip("/")
 
-    return [
-        {
+    resultado = []
+    for loja in lojas:
+        estilos = estilos_da_loja(db, loja.loja_id)
+        resultado.append({
             "loja_id": loja.loja_id,
             "organizacao_id": loja.organizacao_id,
             "estado_id": loja.estado_id,
@@ -580,10 +657,9 @@ def listar_lojas_por_organizacao_todas(
             "qtcpdloja": loja.qtcpdloja,
             "usacashback": "S" if configs.get(loja.loja_id) and configs[loja.loja_id].sitcashback == "ATIVO" else "N",
             "pccashback": float(configs[loja.loja_id].pccashback) if configs.get(loja.loja_id) else 0.0,
-
-        }
-        for loja in lojas
-    ]
+            "estilos": estilos,
+        })
+    return resultado
 
 
 @router.put("/{loja_id}")
@@ -609,6 +685,7 @@ def atualizar_loja(
     qtcpdloja: int | None = Form(None),
     usacashback: str | None = Form(None),
     pccashback: float | None = Form(None),
+    estilos_ids: str | None = Form(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
@@ -723,6 +800,8 @@ def atualizar_loja(
         if config.sitcashback == "ATIVO" and float(config.pccashback or 0) <= 0:
             raise HTTPException(422, "Cashback ativo exige percentual maior que zero")
 
+        salvar_estilos_da_loja(db, loja, estilos_ids)
+
         db.commit()
         db.refresh(loja)
 
@@ -751,6 +830,7 @@ def atualizar_loja(
                 "urllogoloja": loja.urllogoloja,
                 "urlfachadaloja": loja.urlfachadaloja,
                 "qtcpdloja": loja.qtcpdloja,
+                "estilos": estilos_da_loja(db, loja.loja_id),
             }
         }
 
