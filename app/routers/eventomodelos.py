@@ -26,7 +26,7 @@ def _org(payload):
     except (KeyError, TypeError, ValueError): raise HTTPException(403, "Organização não identificada.")
 
 def _item(db, x):
-    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":0,"nmtituloevento":x.nmtituloevento,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"dspoliticareembolso":x.dspoliticareembolso,"dspoliticacashback":x.dspoliticacashback,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":imagem_evento_modelo(db, x),"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0)}
+    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":0,"nmtituloevento":x.nmtituloevento,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"tipolocalevento":x.tipolocalevento,"nrceplocalevento":x.nrceplocalevento,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":imagem_evento_modelo(db, x),"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0)}
 
 def _modelo(db,id,org):
     x=db.query(EventoModelo).filter(EventoModelo.eventomodelo_id==id,EventoModelo.organizacao_id==org).first()
@@ -102,18 +102,26 @@ def listar(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     return [_item(db, x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org).order_by(EventoModelo.nmtituloevento).all()]
 
 @router.post("",status_code=201)
-def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),dspoliticareembolso:str|None=Form(None),dspoliticacashback:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload)
     if organizacao_id!=org: raise HTTPException(403,"Organização inválida.")
     validar_gerenciamento_organizacao(payload,org)
-    x=EventoModelo(organizacao_id=org,nmtituloevento=nmtituloevento.strip(),dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,dspoliticareembolso=dspoliticareembolso,dspoliticacashback=dspoliticacashback,nmlocalevento=nmlocalevento,dsendlocevento=dsendlocevento,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
+    tipo=tipolocalevento.strip().upper()
+    if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
+    if tipo == "OUTRO" and (not nrceplocalevento or not nmlocalevento or not dsendlocevento): raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
+    x=EventoModelo(organizacao_id=org,nmtituloevento=nmtituloevento.strip(),dsdescevento=dsdescevento,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
     db.add(x);db.commit();db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
-def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),dspoliticareembolso:str|None=Form(None),dspoliticacashback:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),tipolocalevento:str|None=Form(None),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_gerenciamento_organizacao(payload,x.organizacao_id)
-    for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"dspoliticareembolso":dspoliticareembolso,"dspoliticacashback":dspoliticacashback,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
+    tipo=(tipolocalevento or x.tipolocalevento).strip().upper()
+    if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
+    for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"nrceplocalevento":nrceplocalevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
         if v is not None:setattr(x,k,v.upper() if k=="statusevento" else v)
+    x.tipolocalevento=tipo
+    if tipo=="ESTABELECIMENTO": x.nrceplocalevento=x.nmlocalevento=x.dsendlocevento=None
+    elif not x.nrceplocalevento or not x.nmlocalevento or not x.dsendlocevento: raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
     if urlbannerevento and urlbannerevento.filename:x.urlbannerevento=salvar_banner_evento(urlbannerevento)
     db.commit();db.refresh(x);return _item(db, x)
 
@@ -137,7 +145,7 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
     for i in range(dados.repeticoes):
         inicio=_somar_mes(dados.dtinicio,i) if dados.recorrencia=="MENSAL" else dados.dtinicio+timedelta(days=i*(14 if dados.recorrencia=="QUINZENAL" else 7 if dados.recorrencia=="SEMANAL" else 0))
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
-        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dspoliticareembolso=x.dspoliticareembolso,dspoliticacashback=x.dspoliticacashback,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=dados.local or x.nmlocalevento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
+        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=dados.local or x.nmlocalevento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
         db.add(evento);db.flush()
         for padrao in atracoes_padrao:
             inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)

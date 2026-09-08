@@ -15,8 +15,6 @@ class EventoDescricao(Base):
     )
     dsdescevento = Column(Text, nullable=True)
     dspoliticacancelamento = Column(Text, nullable=True)
-    dspoliticareembolso = Column(Text, nullable=True)
-    dspoliticacashback = Column(Text, nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.now())
 

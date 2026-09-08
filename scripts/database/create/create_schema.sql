@@ -1341,7 +1341,8 @@ CREATE TABLE eventomodelo (
   organizacao_id BIGINT NOT NULL,
   nmtituloevento VARCHAR(120) NOT NULL,
   dsdescevento TEXT NULL, dspoliticacancelamento TEXT NULL,
-  dspoliticareembolso TEXT NULL, dspoliticacashback TEXT NULL,
+  tipolocalevento ENUM('ESTABELECIMENTO','OUTRO') NOT NULL DEFAULT 'ESTABELECIMENTO',
+  nrceplocalevento VARCHAR(9) NULL,
   nmlocalevento VARCHAR(120) NULL, dsendlocevento VARCHAR(200) NULL,
   urlbannerevento VARCHAR(255) NULL, urlmapaingressos VARCHAR(255) NULL,
   dsmapaingressos VARCHAR(255) NULL,
@@ -1430,8 +1431,6 @@ CREATE TABLE eventodescricao (
   evento_id                 BIGINT PRIMARY KEY,
   dsdescevento              TEXT NULL,
   dspoliticacancelamento    TEXT NULL,
-  dspoliticareembolso       TEXT NULL,
-  dspoliticacashback        TEXT NULL,
   dtcriacao                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu                  DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_eventodescricao_evento

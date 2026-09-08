@@ -71,14 +71,6 @@ class Evento(Base):
         lambda self: self._obter_texto("dspoliticacancelamento"),
         lambda self, valor: self._definir_texto("dspoliticacancelamento", valor),
     )
-    dspoliticareembolso = property(
-        lambda self: self._obter_texto("dspoliticareembolso"),
-        lambda self, valor: self._definir_texto("dspoliticareembolso", valor),
-    )
-    dspoliticacashback = property(
-        lambda self: self._obter_texto("dspoliticacashback"),
-        lambda self, valor: self._definir_texto("dspoliticacashback", valor),
-    )
 
 
 from app.models.eventodescricao import EventoDescricao  # noqa: E402,F401
