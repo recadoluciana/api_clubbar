@@ -40,7 +40,7 @@ class ConverterLeadParceiroIn(BaseModel):
     tipo_loja: TipoParceiro
     email_responsavel: EmailStr
     taxa_produtos: float = Field(default=5, ge=0, le=100)
-    taxa_ingressos: float = Field(default=5, ge=0, le=100)
+    taxa_ingressos: float = Field(default=10, ge=0, le=100)
     titularfinanceiro_id: int | None = Field(default=None, gt=0)
 
 

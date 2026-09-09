@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import get_operador_logado, get_usuario_logado
 from app.database import get_db
@@ -24,6 +25,11 @@ class CategoriaPadraoSituacaoIn(BaseModel):
     sitcategoria: str = Field(max_length=10)
 
 
+class CategoriaPadraoCreateIn(BaseModel):
+    nmcategoria: str = Field(min_length=2, max_length=120)
+    dsicone: str = Field(default="more_horiz", min_length=2, max_length=50)
+
+
 def _saida_padrao(item: CategoriaPadrao) -> dict:
     return {
         "categoriapadrao_id": item.categoriapadrao_id,
@@ -42,6 +48,31 @@ def admin_listar_categorias_padrao(
         CategoriaPadrao.idordcategoria, CategoriaPadrao.nmcategoria
     ).all()
     return [_saida_padrao(item) for item in itens]
+
+
+@router.post("/admin/categorias-padrao", status_code=201)
+def admin_criar_categoria_padrao(
+    dados: CategoriaPadraoCreateIn,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    maior_ordem = db.query(CategoriaPadrao.idordcategoria).order_by(
+        CategoriaPadrao.idordcategoria.desc()
+    ).first()
+    item = CategoriaPadrao(
+        nmcategoria=dados.nmcategoria.strip(),
+        dsicone=dados.dsicone.strip(),
+        sitcategoria="ATIVA",
+        idordcategoria=(int(maior_ordem[0]) + 1 if maior_ordem else 1),
+    )
+    db.add(item)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Já existe uma categoria com esse nome.")
+    db.refresh(item)
+    return _saida_padrao(item)
 
 
 @router.patch("/admin/categorias-padrao/{categoria_id}/situacao")

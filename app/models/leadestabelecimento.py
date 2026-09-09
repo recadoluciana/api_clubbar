@@ -47,7 +47,7 @@ class LeadEstabelecimento(Base):
     mensagem = Column(Text, nullable=True)
     status = Column(Enum(StatusLeadEstabelecimento), nullable=False, server_default=text("'NOVO'"), index=True)
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
-    vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="5")
+    vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="10")
     vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="0")
     dtaceite = Column(DateTime, nullable=True)
     dtconversao = Column(DateTime, nullable=True)

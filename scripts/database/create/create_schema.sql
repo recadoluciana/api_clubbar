@@ -139,7 +139,7 @@ CREATE TABLE leadestabelecimento (
     'CONVERTIDO','RECUSOU_PARCERIA'
   ) NOT NULL DEFAULT 'NOVO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
-  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 10,
   vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   dtaceite DATETIME NULL,
@@ -614,7 +614,7 @@ CREATE TABLE leadestabelecimentocontrato (
   versao VARCHAR(30) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
-  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 10,
   vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   tipopessoa VARCHAR(2) NULL,
