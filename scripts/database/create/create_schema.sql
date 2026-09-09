@@ -140,6 +140,7 @@ CREATE TABLE leadestabelecimento (
   ) NOT NULL DEFAULT 'NOVO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   dtaceite DATETIME NULL,
   dtconversao DATETIME NULL,
@@ -367,7 +368,8 @@ CREATE TABLE loja (
   urllogoloja    VARCHAR(255) NULL,
   urlfachadaloja VARCHAR(255) NULL,
   vrtaxaprod     DECIMAL(10,2) NOT NULL DEFAULT 5,
-  vrtaxaing      DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaing      DECIMAL(10,2) NOT NULL DEFAULT 10,
+  vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
   dtcriacao      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu       DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -588,15 +590,32 @@ CREATE TABLE contratopadrao (
   CONSTRAINT ck_contratopadrao_situacao CHECK (sitcontrato IN ('ATIVO','INATIVO'))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE taxapadrao (
+  taxapadrao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  nrversao BIGINT NOT NULL,
+  pctaxaproduto DECIMAL(10,2) NOT NULL,
+  pctaxaingresso DECIMAL(10,2) NOT NULL,
+  vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
+  sittaxapadrao VARCHAR(15) NOT NULL DEFAULT 'RASCUNHO',
+  dtiniciovigencia DATETIME NULL,
+  dtfimvigencia DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_taxapadrao_versao (nrversao),
+  INDEX idx_taxapadrao_situacao (sittaxapadrao)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE leadestabelecimentocontrato (
   leadestabelecimentocontrato_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   leadestabelecimento_id BIGINT NOT NULL,
   titularfinanceiro_id BIGINT NULL,
   contratopadrao_id BIGINT NULL,
+  taxapadrao_id BIGINT NULL,
   versao VARCHAR(30) NOT NULL,
   status VARCHAR(20) NOT NULL DEFAULT 'RASCUNHO',
   vrtaxaprod DECIMAL(10,2) NOT NULL DEFAULT 5,
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 5,
+  vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   tipopessoa VARCHAR(2) NULL,
   cpfcnpjcontratante VARCHAR(14) NULL,
@@ -625,6 +644,8 @@ CREATE TABLE leadestabelecimentocontrato (
     REFERENCES titularfinanceiro(titularfinanceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_leadestabelecimentocontrato_padrao FOREIGN KEY (contratopadrao_id)
     REFERENCES contratopadrao(contratopadrao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_leadestabelecimentocontrato_taxa FOREIGN KEY (taxapadrao_id)
+    REFERENCES taxapadrao(taxapadrao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT chk_leadestabelecimentocontrato_status CHECK (
     status IN ('RASCUNHO','ENVIADO','ACEITO','RECUSADO','CANCELADO','EXPIRADO')
   ),

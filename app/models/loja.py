@@ -54,7 +54,8 @@ class Loja(Base):
     urlfachadaloja = Column(String(255), nullable=True)
 
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, default=5)
-    vrtaxaing = Column(Numeric(10, 2), nullable=False, default=5)
+    vrtaxaing = Column(Numeric(10, 2), nullable=False, default=10)
+    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, default=0)
     
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),

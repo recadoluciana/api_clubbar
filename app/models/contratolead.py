@@ -23,10 +23,12 @@ class LeadEstabelecimentoContrato(Base):
         ForeignKey("contratopadrao.contratopadrao_id", ondelete="RESTRICT", onupdate="CASCADE"),
         nullable=True,
     )
+    taxapadrao_id = Column(BigInteger, ForeignKey("taxapadrao.taxapadrao_id"), nullable=True)
     versao = Column(String(30), nullable=False)
     status = Column(String(20), nullable=False, server_default="RASCUNHO")
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="5")
+    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="0")
     vrimplantacao = Column(Numeric(10, 2), nullable=False, server_default="0")
     tipopessoa = Column(String(2), nullable=True)
     cpfcnpjcontratante = Column(String(14), nullable=True)

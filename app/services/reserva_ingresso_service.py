@@ -10,6 +10,7 @@ from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
+from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
@@ -88,13 +89,15 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
             raise HTTPException(409, "A cota de meia-entrada deste lote foi esgotada")
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")
+    minimo = Decimal(str(loja.vrtaxaminimaingresso or 0)) if loja else Decimal("0")
     unitario = Decimal(str(preco.vrpreco or 0)).quantize(Decimal("0.01"))
+    taxa_unitaria = calcular_taxa_ingresso_unitaria(unitario, percentual, minimo)
     reserva = ReservaIngresso(
         organizacao_id=lote.organizacao_id, loja_id=lote.loja_id, cliente_id=cliente_id,
         evento_id=lote.evento_id, lote_id=lote.lote_id, lotepreco_id=preco.lotepreco_id, tipobeneficio=beneficio,
         qtreservada=quantidade, vrunitario=unitario, pctaxa=percentual,
-        vrtaxa=(unitario * percentual / Decimal("100")).quantize(Decimal("0.01")),
-        vrtotal=(unitario * quantidade * (Decimal("1") + percentual / Decimal("100"))).quantize(Decimal("0.01")),
+        vrtaxa=taxa_unitaria,
+        vrtotal=((unitario + taxa_unitaria) * quantidade).quantize(Decimal("0.01")),
         sitreserva="PREENCHENDO", dtexpiracao=agora + timedelta(minutes=5),
     )
     db.add(reserva)

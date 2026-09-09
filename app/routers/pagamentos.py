@@ -165,7 +165,8 @@ def _recalcular_itens_carrinho(
             subtotal   = round(vrunitario * qt_prod, 2)
 
             percentual_taxa = round(float(it.get("pctaxaitvenda") or 0), 2)
-            taxa_unitaria = round(vrunitario * percentual_taxa / 100, 2)
+            # A taxa já foi calculada e congelada no carrinho, inclusive o piso por ingresso.
+            taxa_unitaria = round(float(it.get("vrtaxaitvenda") or 0) / qt_prod, 2)
             taxa_linha = round(taxa_unitaria * qt_prod, 2)
             total_geral += subtotal + taxa_linha
 

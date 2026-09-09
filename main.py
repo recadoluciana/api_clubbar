@@ -56,6 +56,7 @@ from app.routers import eventosetores
 from app.routers import eventomodelos
 from app.routers import acompanhamento_vendas
 from app.routers import cora
+from app.routers import taxapadrao
 
 
 app = FastAPI(title="clubbar API")
@@ -184,6 +185,7 @@ app.include_router(auditoria.router)
 app.include_router(eventosetores.router)
 app.include_router(acompanhamento_vendas.router)
 app.include_router(cora.router)
+app.include_router(taxapadrao.router)
 
 @app.get("/health")
 def health():

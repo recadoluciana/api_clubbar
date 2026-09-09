@@ -34,7 +34,7 @@ Pela ativação da conta financeira, configuração inicial da organização e d
 3. COMISSÃO SOBRE AS VENDAS
 Pelas vendas realizadas por meio da plataforma serão aplicadas as seguintes taxas Clubbar:
 - Produtos: {{TAXA_PRODUTOS}}% sobre o valor definido para incidência.
-- Ingressos: {{TAXA_INGRESSOS}}% sobre o valor definido para incidência.
+- Ingressos: {{TAXA_INGRESSOS}}% por ingresso ou o valor mínimo de R$ {{TAXA_MINIMA_INGRESSO}}, prevalecendo o maior valor.
 As regras de cálculo, split e repasse observarão as condições apresentadas no momento da contratação e da venda.
 
 4. CUSTOS DO MEIO DE PAGAMENTO

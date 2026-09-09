@@ -14,6 +14,8 @@ from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.contratopadrao import ContratoPadrao
+from app.models.taxapadrao import TaxaPadrao
+from app.services.taxa_service import taxa_padrao_vigente
 from app.models.leadestabelecimento import LeadEstabelecimento, StatusLeadEstabelecimento
 from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
@@ -33,8 +35,8 @@ portal_router = APIRouter(prefix="/portal-parceiro", tags=["Portal do parceiro"]
 
 class LeadEstabelecimentoContratoCreate(BaseModel):
     versao: str | None = Field(default=None, max_length=30)
-    vrtaxaprod: float = Field(default=5, ge=0, le=100)
-    vrtaxaing: float = Field(default=5, ge=0, le=100)
+    vrtaxaprod: float | None = Field(default=None, ge=0, le=100)
+    vrtaxaing: float | None = Field(default=None, ge=0, le=100)
     cpfcnpj: str = Field(min_length=11, max_length=18)
     nmrazaosocial: str = Field(min_length=2, max_length=160)
 
@@ -92,10 +94,12 @@ def _out(item: LeadEstabelecimentoContrato) -> dict:
         "leadestabelecimentocontrato_id": item.leadestabelecimentocontrato_id,
         "leadestabelecimento_id": item.leadestabelecimento_id,
         "contratopadrao_id": item.contratopadrao_id,
+        "taxapadrao_id": item.taxapadrao_id,
         "versao": item.versao,
         "status": item.status,
         "vrtaxaprod": float(item.vrtaxaprod),
         "vrtaxaing": float(item.vrtaxaing),
+        "vrtaxaminimaingresso": float(item.vrtaxaminimaingresso),
         "vrimplantacao": float(item.vrimplantacao),
         "tipopessoa": item.tipopessoa,
         "cpfcnpjcontratante": item.cpfcnpjcontratante,
@@ -130,6 +134,7 @@ def _gerar_conteudo(
     versao: str,
     taxa_produtos: float,
     taxa_ingressos: float,
+    taxa_minima_ingresso: float,
     modelo: ContratoPadrao,
     nome_contratante: str,
     cpfcnpj_contratante: str,
@@ -155,9 +160,15 @@ def _gerar_conteudo(
         "{{MODALIDADE_VENDA}}": _valor(estabelecimento.tipovenda),
         "{{TAXA_PRODUTOS}}": f"{taxa_produtos:.2f}",
         "{{TAXA_INGRESSOS}}": f"{taxa_ingressos:.2f}",
+        "{{TAXA_MINIMA_INGRESSO}}": f"{taxa_minima_ingresso:.2f}",
         "{{TAXA_IMPLANTACAO}}": f"{float(modelo.vrimplantacao):.2f}",
     }
     conteudo = modelo.conteudomodelo
+    if "{{TAXA_MINIMA_INGRESSO}}" not in conteudo:
+        conteudo += (
+            "\n- Regra da taxa de conveniência: {{TAXA_INGRESSOS}}% por ingresso "
+            "ou o mínimo de R$ {{TAXA_MINIMA_INGRESSO}}, prevalecendo o maior valor."
+        )
     for marcador, valor in valores.items():
         conteudo = conteudo.replace(marcador, valor)
     return conteudo.strip()
@@ -167,7 +178,7 @@ def _contexto_contrato(
     db: Session,
     leadestabelecimento_id: int,
     dados: LeadEstabelecimentoContratoCreate,
-) -> tuple[LeadEstabelecimento, ContratoPadrao, str, str, str]:
+) -> tuple[LeadEstabelecimento, ContratoPadrao, TaxaPadrao, str, str, str, float, float]:
     estabelecimento = db.query(LeadEstabelecimento).filter(
         LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id
     ).first()
@@ -189,18 +200,25 @@ def _contexto_contrato(
     ).order_by(ContratoPadrao.contratopadrao_id.desc()).first()
     if not modelo:
         raise HTTPException(422, "Cadastre e ative um contrato padrão antes de gerar contratos")
-    return estabelecimento, modelo, _gerar_conteudo(
+    taxa = taxa_padrao_vigente(db)
+    # O contrato sempre congela a versão vigente; valores enviados pela tela não podem
+    # alterar silenciosamente a política comercial versionada.
+    taxa_produtos = float(taxa.pctaxaproduto)
+    taxa_ingressos = float(taxa.pctaxaingresso)
+    taxa_minima = float(taxa.vrtaxaminimaingresso)
+    return estabelecimento, modelo, taxa, _gerar_conteudo(
         estabelecimento,
         lead,
         cidade,
         estado,
         modelo.versao,
-        dados.vrtaxaprod,
-        dados.vrtaxaing,
+        taxa_produtos,
+        taxa_ingressos,
+        taxa_minima,
         modelo,
         razao_social,
         cpfcnpj,
-    ), cpfcnpj, razao_social
+    ), cpfcnpj, razao_social, taxa_produtos, taxa_ingressos
 
 
 @router.get("/estabelecimento/{leadestabelecimento_id}")
@@ -227,7 +245,7 @@ def previsualizar_contrato(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    _, _, conteudo, _, _ = _contexto_contrato(db, leadestabelecimento_id, dados)
+    _, _, _, conteudo, _, _, _, _ = _contexto_contrato(db, leadestabelecimento_id, dados)
     return {"conteudocontrato": conteudo}
 
 
@@ -241,7 +259,7 @@ def criar_contrato(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    estabelecimento, modelo, conteudo, cpfcnpj, razao_social = _contexto_contrato(
+    estabelecimento, modelo, taxa, conteudo, cpfcnpj, razao_social, taxa_produtos, taxa_ingressos = _contexto_contrato(
         db, leadestabelecimento_id, dados
     )
     contrato_aceito = db.query(LeadEstabelecimentoContrato).filter(
@@ -262,10 +280,12 @@ def criar_contrato(
     item = LeadEstabelecimentoContrato(
         leadestabelecimento_id=leadestabelecimento_id,
         contratopadrao_id=modelo.contratopadrao_id,
+        taxapadrao_id=taxa.taxapadrao_id,
         status="ENVIADO",
         versao=modelo.versao,
-        vrtaxaprod=dados.vrtaxaprod,
-        vrtaxaing=dados.vrtaxaing,
+        vrtaxaprod=taxa_produtos,
+        vrtaxaing=taxa_ingressos,
+        vrtaxaminimaingresso=taxa.vrtaxaminimaingresso,
         vrimplantacao=modelo.vrimplantacao,
         tipopessoa="PJ" if len(cpfcnpj) == 14 else "PF",
         cpfcnpjcontratante=cpfcnpj,
@@ -281,8 +301,9 @@ def criar_contrato(
         hashdocumento=sha256(conteudo.encode("utf-8")).hexdigest(),
         dtdisponibilizacao=datetime.now(),
     )
-    estabelecimento.vrtaxaprod = dados.vrtaxaprod
-    estabelecimento.vrtaxaing = dados.vrtaxaing
+    estabelecimento.vrtaxaprod = taxa_produtos
+    estabelecimento.vrtaxaing = taxa_ingressos
+    estabelecimento.vrtaxaminimaingresso = taxa.vrtaxaminimaingresso
     db.add(item)
     db.add(
         LeadMensagem(

@@ -271,6 +271,7 @@ def obter_resumo(
                     "conteudocontrato": contrato.conteudocontrato,
                     "vrtaxaprod": float(contrato.vrtaxaprod),
                     "vrtaxaing": float(contrato.vrtaxaing),
+                    "vrtaxaminimaingresso": float(contrato.vrtaxaminimaingresso),
                     "vrimplantacao": float(contrato.vrimplantacao),
                     "dtaceite": contrato.dtaceite,
                     "cobranca_implantacao": cobrancas_por_contrato.get(
@@ -306,6 +307,7 @@ def obter_resumo(
                 "status": item.status.value if hasattr(item.status, "value") else item.status,
                 "vrtaxaprod": float(item.vrtaxaprod),
                 "vrtaxaing": float(item.vrtaxaing),
+                "vrtaxaminimaingresso": float(item.vrtaxaminimaingresso),
                 "contratos": contratos_por_estabelecimento.get(
                     item.leadestabelecimento_id, []
                 ),

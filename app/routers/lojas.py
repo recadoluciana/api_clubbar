@@ -247,7 +247,8 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "urlfachadaloja": r.urlfachadaloja,
             "dsinstaloja": r.dsinstaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
-            "vrtaxaing": float(r.vrtaxaing or 0),            
+            "vrtaxaing": float(r.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
         }
         for r in rows
     ]
@@ -317,6 +318,7 @@ def listar_todas_lojas_ativas(
             "dsinstaloja": r.dsinstaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
             "sgestado": r.sgestado or "",
             "dtcriacao": r.dtcriacao,
             "estilos": estilos,
@@ -376,6 +378,7 @@ def listar_lojas_com_retirada_pendente(
             "urlfachadaloja": r.urlfachadaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
 
         }
         for r in lojas
@@ -433,6 +436,7 @@ def listar_lojas_cidade(
             "urlfachadaloja": r.urlfachadaloja,
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
 
         }
         for r in lojas
@@ -496,6 +500,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "urlfachadaloja": row.urlfachadaloja,
         "vrtaxaprod": float(row.vrtaxaprod or 0),
         "vrtaxaing": float(row.vrtaxaing or 0),
+        "vrtaxaminimaingresso": float(row.vrtaxaminimaingresso or 0),
 
     }
 
@@ -654,6 +659,7 @@ def listar_lojas_por_organizacao_todas(
             "urlfachadaloja": loja.urlfachadaloja,
             "vrtaxaprod": float(loja.vrtaxaprod or 0),
             "vrtaxaing": float(loja.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(loja.vrtaxaminimaingresso or 0),
             "qtcpdloja": loja.qtcpdloja,
             "usacashback": "S" if configs.get(loja.loja_id) and configs[loja.loja_id].sitcashback == "ATIVO" else "N",
             "pccashback": float(configs[loja.loja_id].pccashback) if configs.get(loja.loja_id) else 0.0,

@@ -52,6 +52,7 @@ DROP TABLE IF EXISTS cliente;
 DROP TABLE IF EXISTS cobrancaimplantacao;
 DROP TABLE IF EXISTS leadestabelecimentocontrato;
 DROP TABLE IF EXISTS contratopadrao;
+DROP TABLE IF EXISTS taxapadrao;
 DROP TABLE IF EXISTS contratolead;
 DROP TABLE IF EXISTS titularfinanceiro;
 DROP TABLE IF EXISTS lojahorario;

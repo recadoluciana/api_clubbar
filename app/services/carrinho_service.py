@@ -5,6 +5,8 @@ from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
+from app.services.taxa_service import calcular_taxa_ingresso_unitaria
+from decimal import Decimal
 
 def get_carrinho(
     db: Session,
@@ -85,10 +87,14 @@ def get_carrinho(
 
         if idtipoproduto == "I":
             percentual_taxa = round(float(getattr(loja_car, "vrtaxaing", 0) or 0), 2)
+            taxa_unitaria = calcular_taxa_ingresso_unitaria(
+                Decimal(str(vrprecoprod)), Decimal(str(percentual_taxa)),
+                Decimal(str(getattr(loja_car, "vrtaxaminimaingresso", 0) or 0)),
+            )
+            valor_taxa = float(taxa_unitaria * qt_aux)
         else:
             percentual_taxa = round(float(getattr(loja_car, "vrtaxaprod", 0) or 0), 2)
-
-        valor_taxa = round(subtotal * (percentual_taxa / 100), 2)
+            valor_taxa = round(subtotal * (percentual_taxa / 100), 2)
 
         observacao = (getattr(it, "dsobsitcar", None) or "").strip()
         chave = (int(it.produto_id), observacao, vrprecoprod)
