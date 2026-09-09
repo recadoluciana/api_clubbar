@@ -162,17 +162,14 @@ def admin_criar_estilo(dados:EstiloMusicalIn,_=Depends(get_operador_logado),db:S
 def admin_atualizar_estilo(estilo_id:int,dados:EstiloMusicalIn,_=Depends(get_operador_logado),db:Session=Depends(get_db)):
     estilo=db.get(EstiloMusical,estilo_id)
     if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
-    estilo.nmestilomusical=dados.nmestilomusical; estilo.sitestilomusical=dados.sitestilomusical
-    try: db.commit()
-    except IntegrityError: db.rollback(); raise HTTPException(409,"Já existe um estilo musical com esse nome.")
+    # O catálogo mestre é imutável quanto ao nome; somente sua disponibilidade muda.
+    estilo.sitestilomusical=dados.sitestilomusical
+    db.commit()
     return {"estilomusical_id":estilo.estilomusical_id,"nmestilomusical":estilo.nmestilomusical,"sitestilomusical":estilo.sitestilomusical}
 
 @router.delete("/admin/estilos-musicais/{estilo_id}",status_code=204)
 def admin_excluir_estilo(estilo_id:int,_=Depends(get_operador_logado),db:Session=Depends(get_db)):
-    estilo=db.get(EstiloMusical,estilo_id)
-    if not estilo: raise HTTPException(404,"Estilo musical não encontrado.")
-    if estilo.estilos_organizacoes: raise HTTPException(409,"O estilo já foi adotado por organizações. Inative-o em vez de excluir.")
-    db.delete(estilo); db.commit()
+    raise HTTPException(405,"Estilos do catálogo não podem ser excluídos. Inative o estilo.")
 
 @router.post("/atracoes", status_code=201)
 def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
