@@ -1,3 +1,4 @@
+from app.services.contrato_automatico import garantir_contrato
 #portalparceiro.py
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
+from app.models.estado import Estado
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.implantacao_service import saida_cobranca
@@ -139,6 +141,8 @@ def cadastrar_estabelecimento(
         mensagem=(dados.mensagem or "").strip() or None,
     )
     db.add(item)
+    db.flush()
+    garantir_contrato(db, item)
     db.commit()
     db.refresh(item)
     return {
@@ -244,6 +248,14 @@ def obter_resumo(
         .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
         .all()
     )
+    cidades_por_id = {
+        item.cidade_id: db.get(Cidade, item.cidade_id)
+        for item in estabelecimentos if item.cidade_id
+    }
+    estados_por_id = {
+        item.estado_id: db.get(Estado, item.estado_id)
+        for item in estabelecimentos if item.estado_id
+    }
     contratos_por_estabelecimento: dict[int, list[dict]] = {}
     cobrancas_por_contrato: dict[int, dict] = {}
     ids_estabelecimentos = [item.leadestabelecimento_id for item in estabelecimentos]
@@ -269,6 +281,8 @@ def obter_resumo(
                     "versao": contrato.versao,
                     "status": contrato.status,
                     "conteudocontrato": contrato.conteudocontrato,
+                    "cpfcnpjcontratante": contrato.cpfcnpjcontratante,
+                    "nmrazaosocial": contrato.nmrazaosocial,
                     "vrtaxaprod": float(contrato.vrtaxaprod),
                     "vrtaxaing": float(contrato.vrtaxaing),
                     "vrtaxaminimaingresso": float(contrato.vrtaxaminimaingresso),
@@ -304,6 +318,18 @@ def obter_resumo(
                 "email_responsavel": item.email_responsavel or lead.email,
                 "tipo": item.tipo,
                 "tipovenda": item.tipovenda,
+                "cpfcnpj": item.cpfcnpj,
+                "telefone": item.telefone,
+                "email": item.email,
+                "cep": item.cep,
+                "endereco": item.endereco,
+                "numero": item.numero,
+                "complemento": item.complemento,
+                "bairro": item.bairro,
+                "cidade_id": item.cidade_id,
+                "estado_id": item.estado_id,
+                "nmcidade": getattr(cidades_por_id.get(item.cidade_id), "nmcidade", None),
+                "sgestado": getattr(estados_por_id.get(item.estado_id), "sgestado", None),
                 "status": item.status.value if hasattr(item.status, "value") else item.status,
                 "vrtaxaprod": float(item.vrtaxaprod),
                 "vrtaxaing": float(item.vrtaxaing),

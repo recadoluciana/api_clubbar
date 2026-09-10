@@ -93,8 +93,8 @@ class LeadEstabelecimentoOut(BaseModel):
     cpfcnpj: str | None = None
     telefone: str | None = None
     email: str | None = None
-    estado_id: int
-    cidade_id: int
+    estado_id: int | None = None
+    cidade_id: int | None = None
     cep: str | None = None
     endereco: str | None = None
     numero: str | None = None
@@ -111,6 +111,19 @@ class LeadEstabelecimentoOut(BaseModel):
     class Config:
         from_attributes = True
 
+class LeadEstabelecimentoCadastro(LeadEstabelecimentoCreate):
+    estado_id: int | None = Field(default=None, gt=0)
+    cidade_id: int | None = Field(default=None, gt=0)
+    cpfcnpj: str = Field(min_length=11, max_length=18)
+
+    @field_validator("cpfcnpj")
+    @classmethod
+    def documento_obrigatorio(cls, valor: str | None) -> str:
+        if not valor or len(valor) not in (11, 14):
+            raise ValueError("Informe um CPF com 11 dígitos ou um CNPJ com 14 dígitos.")
+        return valor
+
+
 class LeadParceiroCreate(BaseModel):
     nmresponsavel: str = Field(
         ...,
@@ -118,7 +131,7 @@ class LeadParceiroCreate(BaseModel):
         max_length=120,
     )
 
-    nmorganizacao: str | None = Field(default=None, max_length=160)
+    nmorganizacao: str = Field(min_length=1, max_length=160)
 
     telefone: str = Field(
         ...,
@@ -128,7 +141,7 @@ class LeadParceiroCreate(BaseModel):
 
     email: EmailStr
 
-    estabelecimentos: list[LeadEstabelecimentoCreate] = Field(min_length=1, max_length=20)
+    estabelecimentos: list[LeadEstabelecimentoCadastro] = Field(min_length=1, max_length=20)
 
     @field_validator(
         "nmresponsavel",
@@ -177,9 +190,9 @@ class LeadParceiroCreate(BaseModel):
     @field_validator("nmorganizacao")
     @classmethod
     def normalizar_organizacao(cls, valor: str | None) -> str | None:
-        if valor is None:
-            return None
-        return valor.strip() or None
+        if not valor or not valor.strip():
+            raise ValueError("Informe o nome do grupo ou empresa.")
+        return valor.strip()
 
 
 class LeadParceiroUpdate(BaseModel):
@@ -268,8 +281,8 @@ class LeadParceiroOut(BaseModel):
     telefone: str
     email: str
 
-    estado_id: int
-    cidade_id: int
+    estado_id: int | None = None
+    cidade_id: int | None = None
 
     nmestado: str
     sgestado: str

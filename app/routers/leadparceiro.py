@@ -1,3 +1,4 @@
+from app.services.contrato_automatico import garantir_contrato
 import re
 import secrets
 import traceback
@@ -250,7 +251,7 @@ def criar_interesse_parceiro(
     for item in payload.estabelecimentos:
         estado = db.query(Estado).filter(Estado.estado_id == item.estado_id).first()
         cidade = db.query(Cidade).filter(Cidade.cidade_id == item.cidade_id).first()
-        if not estado or not cidade or cidade.estado_id != item.estado_id:
+        if (item.estado_id is not None and not estado) or (item.cidade_id is not None and (not cidade or cidade.estado_id != item.estado_id)):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cidade e estado inválidos para {item.nmestabelecimento}.",
@@ -283,6 +284,8 @@ def criar_interesse_parceiro(
         ]
         db.add_all(estabelecimentos)
         db.flush()
+        for estabelecimento in estabelecimentos:
+            garantir_contrato(db, estabelecimento)
 
         acesso_portal = criar_acesso_portal(
             db=db,
@@ -317,8 +320,8 @@ def criar_interesse_parceiro(
                 estabelecimentos=[
                     {
                         **_serializar_estabelecimento(item),
-                        "cidade": cidade.nmcidade,
-                        "estado": estado.sgestado,
+                        "cidade": cidade.nmcidade if cidade else "",
+                        "estado": estado.sgestado if estado else "",
                     }
                     for item, (estado, cidade) in zip(
                         estabelecimentos, localidades
@@ -453,6 +456,8 @@ def adicionar_estabelecimento(
         **payload.model_dump(),
     )
     db.add(item)
+    db.flush()
+    garantir_contrato(db, item)
     db.commit()
     db.refresh(item)
     return _serializar_estabelecimento(item)

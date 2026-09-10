@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado
 from app.database import get_db
+from app.services.contrato_automatico import _gerar_conteudo, preencher_contrato_portal
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.contratolead import LeadEstabelecimentoContrato
@@ -119,59 +120,6 @@ def _out(item: LeadEstabelecimentoContrato) -> dict:
         "dtdisponibilizacao": item.dtdisponibilizacao,
         "dtcriacao": item.dtcriacao,
     }
-
-
-def _valor(valor: object | None, padrao: str = "não informado") -> str:
-    texto = str(valor or "").strip()
-    return texto or padrao
-
-
-def _gerar_conteudo(
-    estabelecimento: LeadEstabelecimento,
-    lead: LeadParceiro,
-    cidade: Cidade | None,
-    estado: Estado | None,
-    versao: str,
-    taxa_produtos: float,
-    taxa_ingressos: float,
-    taxa_minima_ingresso: float,
-    modelo: ContratoPadrao,
-    nome_contratante: str,
-    cpfcnpj_contratante: str,
-) -> str:
-    complemento = f", {_valor(estabelecimento.complemento)}" if estabelecimento.complemento else ""
-    endereco = (
-        f"{_valor(estabelecimento.endereco)}, {_valor(estabelecimento.numero)}{complemento}, "
-        f"bairro {_valor(estabelecimento.bairro)}, {_valor(getattr(cidade, 'nmcidade', None))}/"
-        f"{_valor(getattr(estado, 'sgestado', None))}, CEP {_valor(estabelecimento.cep)}"
-    )
-    responsavel = _valor(estabelecimento.nmresponsavel, lead.nmresponsavel)
-    telefone = _valor(estabelecimento.telefone_responsavel, estabelecimento.telefone or lead.telefone)
-    email = _valor(estabelecimento.email_responsavel, estabelecimento.email or lead.email)
-    valores = {
-        "{{VERSAO}}": modelo.versao,
-        "{{NOME_ESTABELECIMENTO}}": nome_contratante,
-        "{{CPF_CNPJ}}": cpfcnpj_contratante,
-        "{{RESPONSAVEL}}": responsavel,
-        "{{TELEFONE}}": telefone,
-        "{{EMAIL}}": email,
-        "{{ENDERECO}}": endereco,
-        "{{ATIVIDADE}}": _valor(estabelecimento.tipo),
-        "{{MODALIDADE_VENDA}}": _valor(estabelecimento.tipovenda),
-        "{{TAXA_PRODUTOS}}": f"{taxa_produtos:.2f}",
-        "{{TAXA_INGRESSOS}}": f"{taxa_ingressos:.2f}",
-        "{{TAXA_MINIMA_INGRESSO}}": f"{taxa_minima_ingresso:.2f}",
-        "{{TAXA_IMPLANTACAO}}": f"{float(modelo.vrimplantacao):.2f}",
-    }
-    conteudo = modelo.conteudomodelo
-    if "{{TAXA_MINIMA_INGRESSO}}" not in conteudo:
-        conteudo += (
-            "\n- Regra da taxa de conveniência: {{TAXA_INGRESSOS}}% por ingresso "
-            "ou o mínimo de R$ {{TAXA_MINIMA_INGRESSO}}, prevalecendo o maior valor."
-        )
-    for marcador, valor in valores.items():
-        conteudo = conteudo.replace(marcador, valor)
-    return conteudo.strip()
 
 
 def _contexto_contrato(
@@ -319,6 +267,19 @@ def criar_contrato(
     return _out(item)
 
 
+class DadosContratoPortal(BaseModel):
+    cpfcnpj: str = Field(min_length=11, max_length=18)
+    nmrazaosocial: str = Field(min_length=2, max_length=160)
+
+
+@portal_router.patch("/contratos/{contrato_id}/dados")
+def salvar_dados_contrato_portal(
+    contrato_id: int, dados: DadosContratoPortal,
+    lead: LeadParceiro = Depends(obter_lead_portal), db: Session = Depends(get_db),
+):
+    return _out(preencher_contrato_portal(db, lead.leadparceiro_id, contrato_id, dados.cpfcnpj, dados.nmrazaosocial))
+
+
 @portal_router.patch("/contratos/{leadestabelecimentocontrato_id}/aceitar")
 async def aceitar_contrato(
     leadestabelecimentocontrato_id: int,
@@ -338,10 +299,13 @@ async def aceitar_contrato(
             == leadestabelecimentocontrato_id,
             LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
         )
+        .with_for_update()
         .first()
     )
     if not item:
         raise HTTPException(status_code=404, detail="Contrato não encontrado.")
+    if item.status == "RASCUNHO":
+        raise HTTPException(422, "Preencha os dados do contrato antes de assinar.")
     if item.status != "ACEITO":
         item.status = "ACEITO"
         item.nmsignatario = lead.nmresponsavel

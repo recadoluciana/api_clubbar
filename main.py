@@ -51,12 +51,14 @@ from app.routers import leadatendimento
 from app.routers import contratolead
 from app.routers import contratopadrao
 from app.routers import cardapios
+from app.routers import cardapio_padrao
 from app.routers import auditoria
 from app.routers import eventosetores
 from app.routers import eventomodelos
 from app.routers import acompanhamento_vendas
 from app.routers import cora
 from app.routers import taxapadrao
+from app.routers import manuais
 
 
 app = FastAPI(title="clubbar API")
@@ -181,11 +183,13 @@ app.include_router(contratolead.router)
 app.include_router(contratolead.portal_router)
 app.include_router(contratopadrao.router)
 app.include_router(cardapios.router)
+app.include_router(cardapio_padrao.router)
 app.include_router(auditoria.router)
 app.include_router(eventosetores.router)
 app.include_router(acompanhamento_vendas.router)
 app.include_router(cora.router)
 app.include_router(taxapadrao.router)
+app.include_router(manuais.router)
 
 @app.get("/health")
 def health():

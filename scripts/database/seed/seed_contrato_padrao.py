@@ -61,7 +61,16 @@ As partes tratarão dados pessoais apenas para as finalidades da parceria e obse
 11. SUSPENSÃO E ENCERRAMENTO
 O Clubbar poderá suspender o acesso em caso de fraude, risco operacional, obrigação legal, inadimplência ou descumprimento contratual. Este contrato vigora por prazo indeterminado e pode ser encerrado por qualquer parte, sem prejuízo das obrigações já constituídas.
 
-12. ACEITE ELETRÔNICO
+12. MANUTENÇÕES CORRETIVAS
+São manutenções corretivas aquelas destinadas a corrigir erros ou falhas nas funcionalidades existentes dos aplicativos e da plataforma Clubbar. O ESTABELECIMENTO PARCEIRO poderá relatar essas ocorrências pelos canais de suporte, fornecendo as informações necessárias à análise. O Clubbar analisará os relatos e corrigirá as falhas confirmadas sob sua responsabilidade, sem cobrança adicional pela correção, em prazo razoável e tecnicamente viável, considerando a gravidade, o impacto, a complexidade, as dependências de terceiros e a capacidade operacional da empresa. O parceiro será informado sobre o andamento e, quando possível, sobre a previsão de solução, respeitados os prazos legais aplicáveis.
+
+13. MANUTENÇÕES EVOLUTIVAS E MELHORIAS
+São manutenções evolutivas as solicitações de novas funcionalidades, melhorias ou alterações das funcionalidades existentes que não constituam correção de erro. O Clubbar poderá aceitar ou recusar essas solicitações conforme sua avaliação técnica e comercial. Se a solicitação for aceita para desenvolvimento, será apresentado orçamento com escopo, valor, condições de pagamento e prazo estimado, cabendo ao ESTABELECIMENTO PARCEIRO decidir se deseja contratar o serviço. A implementação dependerá da aprovação expressa do orçamento e do cumprimento das condições de pagamento acordadas. As melhorias implementadas integrarão a plataforma e serão disponibilizadas a todos os parceiros do Clubbar, inclusive futuros parceiros, sem exclusividade para o solicitante, ainda que este tenha custeado o desenvolvimento.
+
+14. LIMITAÇÃO DE RESPONSABILIDADE POR PREJUÍZOS
+Na máxima extensão permitida pela legislação aplicável, o Clubbar não responderá por prejuízos decorrentes do uso ou da indisponibilidade da ferramenta, incluindo perdas financeiras, perda de receitas, lucros cessantes ou interrupção das atividades do ESTABELECIMENTO PARCEIRO, ainda que relacionados a erro ou falha identificada na plataforma. A identificação de erro, sua análise ou correção não implicam, por si só, reconhecimento de obrigação de indenizar, ressarcir ou pagar valores estipulados unilateralmente pelo parceiro. Esta cláusula não afasta responsabilidades que não possam ser excluídas por contrato, inclusive em caso de dolo, culpa grave ou direitos assegurados por normas legais obrigatórias, nem dispensa o Clubbar de cumprir suas obrigações de manutenção corretiva.
+
+15. ACEITE ELETRÔNICO
 O responsável declara ter lido e concordado com o conteúdo integral. O aceite eletrônico, acompanhado da versão, cópia do documento, hash, identificação do signatário, data, hora e registro técnico, será armazenado como comprovação.
 
 Ao aceitar, {{RESPONSAVEL}} confirma sua concordância em nome do estabelecimento {{NOME_ESTABELECIMENTO}}.

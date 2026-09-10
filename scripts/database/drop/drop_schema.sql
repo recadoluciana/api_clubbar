@@ -1,6 +1,8 @@
 -- Remove integralmente o schema Clubbar do banco atualmente selecionado.
 -- Confirme o ambiente e o nome do banco antes de executar.
 SET FOREIGN_KEY_CHECKS = 0;
+DROP TABLE IF EXISTS manualversao;
+DROP TABLE IF EXISTS manualguia;
 
 DROP TABLE IF EXISTS cashback_saldo;
 DROP TABLE IF EXISTS cashback_movimento;
