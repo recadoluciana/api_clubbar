@@ -84,12 +84,14 @@ def recuperar_dados_portal(
     dados: PortalRecuperarDados, db: Session = Depends(get_db)
 ):
     email = str(dados.email).strip().lower()
+    telefone = _somente_digitos(dados.telefone)
     leads = (
         db.query(LeadParceiro)
         .filter(func.lower(func.trim(LeadParceiro.email)) == email)
         .order_by(LeadParceiro.leadparceiro_id.desc())
         .all()
     )
+    leads = [lead for lead in leads if _somente_digitos(lead.telefone) == telefone]
     if leads:
         enviar_dados_portal_lead(
             email,
@@ -99,7 +101,9 @@ def recuperar_dados_portal(
             ],
         )
     return {
-        "mensagem": "Se o e-mail estiver cadastrado, os dados serão enviados em instantes."
+        "mensagem": "Cadastro encontrado, um novo e-mail foi enviado para você poder acessar o botão Já sou cadastrado e continuar com a contratação do nosso app."
+        if leads
+        else "Não encontramos um cadastro com esses dados."
     }
 
 

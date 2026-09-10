@@ -15,6 +15,7 @@ class PortalLoginLead(BaseModel):
 
 class PortalRecuperarDados(BaseModel):
     email: EmailStr
+    telefone: str = Field(min_length=10, max_length=30)
 
 
 class PortalAgendamentoResposta(BaseModel):
