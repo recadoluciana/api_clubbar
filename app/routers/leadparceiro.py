@@ -526,6 +526,42 @@ def atualizar_interesse_parceiro(
             detail="Lead não encontrado.",
         )
 
+    if payload.email is not None:
+        email_normalizado = str(payload.email).strip().lower()
+        email_em_uso = (
+            db.query(LeadParceiro.leadparceiro_id)
+            .filter(
+                LeadParceiro.leadparceiro_id != leadparceiro_id,
+                func.lower(func.trim(LeadParceiro.email)) == email_normalizado,
+            )
+            .first()
+        )
+        if email_em_uso:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'O e-mail "{email_normalizado}" já está cadastrado em outro lead.',
+            )
+        payload.email = email_normalizado
+
+    if payload.telefone is not None:
+        telefone_normalizado = "".join(
+            caractere for caractere in payload.telefone if caractere.isdigit()
+        )
+        telefone_em_uso = (
+            db.query(LeadParceiro.leadparceiro_id)
+            .filter(
+                LeadParceiro.leadparceiro_id != leadparceiro_id,
+                LeadParceiro.telefone == telefone_normalizado,
+            )
+            .first()
+        )
+        if telefone_em_uso:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f'O telefone "{telefone_normalizado}" já está cadastrado em outro lead.',
+            )
+        payload.telefone = telefone_normalizado
+
     if payload.nmresponsavel is not None:
         lead.nmresponsavel = (
             payload.nmresponsavel
@@ -549,7 +585,21 @@ def atualizar_interesse_parceiro(
     if payload.email is not None:
         lead.email = payload.email
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as erro:
+        db.rollback()
+        detalhe = str(getattr(erro, "orig", erro)).lower()
+        if "email" in detalhe:
+            mensagem = "O e-mail informado já está cadastrado em outro lead."
+        elif "telefone" in detalhe:
+            mensagem = "O telefone informado já está cadastrado em outro lead."
+        else:
+            mensagem = "Não foi possível atualizar o lead por conflito de dados."
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=mensagem,
+        ) from erro
     db.refresh(lead)
 
     resultado = _buscar_lead_com_localidade(
