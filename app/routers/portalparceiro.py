@@ -338,6 +338,10 @@ def obter_resumo(
                 "vrtaxaprod": float(item.vrtaxaprod),
                 "vrtaxaing": float(item.vrtaxaing),
                 "vrtaxaminimaingresso": float(item.vrtaxaminimaingresso),
+                "dtaceite": item.dtaceite,
+                "dtconversao": item.dtconversao,
+                "dtcriacao": item.dtcriacao,
+                "dtultatu": item.dtultatu,
                 "contratos": contratos_por_estabelecimento.get(
                     item.leadestabelecimento_id, []
                 ),
