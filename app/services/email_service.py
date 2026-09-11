@@ -1,5 +1,6 @@
 import os
 from html import escape
+from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from app.services.email_templates import template_email_clubbar
@@ -110,6 +111,7 @@ def enviar_confirmacao_cadastro_lead(
     destinatario: str,
     lead: dict,
     estabelecimentos: list[dict],
+    token: str | None = None,
 ) -> None:
     nomes_tipo = {
         "BAR": "Bar",
@@ -161,6 +163,23 @@ def enviar_confirmacao_cadastro_lead(
         )
 
     organizacao = lead.get("nmorganizacao") or "Não informada"
+    link_html = ""
+    if token:
+        ambiente = os.getenv("APP_ENV", "development").strip().lower()
+        site_padrao = (
+            "https://clubbarsite-desenvolvimento.up.railway.app"
+            if ambiente in {"dev", "development"}
+            else "https://clubbar.com.br"
+        )
+        site = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
+        link = f"{site}/portal-lead.html#acesso={quote(token)}"
+        link_html = (
+            "<p>Clique no link abaixo para prosseguir com seu atendimento:</p>"
+            f"<p><a href='{escape(link)}' style='display:inline-block;padding:14px 22px;"
+            "background:#ffc107;color:#000;text-decoration:none;border-radius:10px;"
+            "font-weight:bold'>Acessar meu atendimento</a></p>"
+        )
+
     conteudo = f"""
     <p>Olá, <b>{escape(str(lead.get('nmresponsavel') or ''))}</b>.</p>
     <p>Seu interesse no Clubbar foi cadastrado com sucesso. Confira os dados enviados:</p>
@@ -172,6 +191,7 @@ def enviar_confirmacao_cadastro_lead(
     </div>
     {''.join(cards)}
     <p>A equipe Clubbar entrará em contato para dar continuidade ao atendimento.</p>
+    {link_html}
     """
     _enviar_email(
         destinatario,

@@ -1,6 +1,6 @@
 {
-    "name": "clubbar_admin",
-    "short_name": "clubbar_admin",
+    "name": "Clubbar Gestao",
+    "short_name": "Clubbar Gestao",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -217,7 +217,7 @@ def criar_interesse_parceiro(
         )
         if organizacao_existente:
             conflitos.append(
-                f'A organização "{payload.nmorganizacao}" já está cadastrada.'
+                f'A empresa "{payload.nmorganizacao}" já está cadastrada.'
             )
 
     email_existente = (
@@ -327,6 +327,7 @@ def criar_interesse_parceiro(
                         estabelecimentos, localidades
                     )
                 ],
+                token=acesso_portal,
             )
         except Exception:
             traceback.print_exc()
