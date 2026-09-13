@@ -931,8 +931,7 @@ CREATE TABLE cardapioversao (
   cardapioversao_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   cardapio_id BIGINT NOT NULL,
   nrversao INT NOT NULL,
-  statusversao ENUM('RASCUNHO','AGUARDANDO_ASAAS','PROGRAMADA','PUBLICADA','SUBSTITUIDA','CANCELADA') NOT NULL DEFAULT 'RASCUNHO',
-  publicaraposaprovacao CHAR(1) NOT NULL DEFAULT 'N',
+  statusversao ENUM('RASCUNHO','PROGRAMADA','PUBLICADA','SUBSTITUIDA','CANCELADA') NOT NULL DEFAULT 'RASCUNHO',
   dtiniciovigencia DATETIME NULL,
   dtfimvigencia DATETIME NULL,
   dtpublicacao DATETIME NULL,
@@ -941,8 +940,7 @@ CREATE TABLE cardapioversao (
   CONSTRAINT fk_cardapioversao_cardapio FOREIGN KEY (cardapio_id)
     REFERENCES cardapio(cardapio_id) ON DELETE CASCADE ON UPDATE CASCADE,
   UNIQUE KEY uk_cardapioversao_numero (cardapio_id, nrversao),
-  KEY idx_cardapioversao_status_vigencia (statusversao, dtiniciovigencia, dtfimvigencia),
-  CHECK (publicaraposaprovacao IN ('S','N'))
+  KEY idx_cardapioversao_status_vigencia (statusversao, dtiniciovigencia, dtfimvigencia)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE cardapioversaocategoria (

@@ -16,7 +16,6 @@ from app.models.cardapio import (
 from app.models.categoria import Categoria
 from app.models.loja import Loja
 from app.models.produto import Produto
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
 
 
 router = APIRouter(tags=["Cardápios"])
@@ -50,7 +49,6 @@ class ConteudoVersaoIn(BaseModel):
 
 
 class PublicarIn(BaseModel):
-    publicar_apos_aprovacao: bool = False
     dtinicio: datetime | None = None
     dtfim: datetime | None = None
 
@@ -242,14 +240,6 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():
         raise HTTPException(422, "Inclua pelo menos um produto antes de publicar.")
     versao.dtiniciovigencia, versao.dtfimvigencia = dados.dtinicio, dados.dtfim
-    try:
-        validar_publicacao_loja(db, cardapio.loja_id)
-    except HTTPException:
-        if not dados.publicar_apos_aprovacao:
-            raise
-        versao.statusversao, versao.publicaraposaprovacao = "AGUARDANDO_ASAAS", "S"
-        db.commit()
-        return {"statusversao": versao.statusversao, "mensagem": "Cardápio será publicado após a aprovação do Asaas."}
     agora = datetime.now()
     db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao == "PUBLICADA").update({"statusversao": "SUBSTITUIDA"}, synchronize_session=False)
     versao.statusversao = "PROGRAMADA" if dados.dtinicio and dados.dtinicio > agora else "PUBLICADA"
