@@ -282,6 +282,7 @@ def listar_todas_lojas_ativas(
             Loja.dsinstaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
+            Loja.vrtaxaminimaingresso,
             Estado.sgestado,
             Loja.dtcriacao,
         )
