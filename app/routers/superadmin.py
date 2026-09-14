@@ -353,6 +353,19 @@ def listar_organizacoes_parceiras(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
+    documentos = {}
+    for org_id, nome, documento in (
+        db.query(Organizacao.organizacao_id, LeadEstabelecimento.nmestabelecimento,
+                 LeadEstabelecimento.cpfcnpj)
+        .join(LeadEstabelecimento,
+              LeadEstabelecimento.leadparceiro_id == Organizacao.leadparceiro_id)
+        .filter(LeadEstabelecimento.cpfcnpj.isnot(None),
+                LeadEstabelecimento.cpfcnpj != "")
+        .order_by(LeadEstabelecimento.leadestabelecimento_id).all()
+    ):
+        documentos.setdefault(int(org_id), []).append(
+            {"estabelecimento": nome, "cpfcnpj": documento}
+        )
     rows = (
         db.query(
             Organizacao.organizacao_id,
@@ -384,6 +397,7 @@ def listar_organizacoes_parceiras(
             "organizacao_id": int(row.organizacao_id),
             "nmorganizacao": row.nmorganizacao,
             "nmresponsavelprincipal": row.nmresponsavelprincipal,
+            "documentos_estabelecimentos": documentos.get(int(row.organizacao_id), []),
             "emailorganizacao": row.emailorganizacao,
             "telorganizacao": row.telorganizacao,
             "sitorganizacao": row.sitorganizacao,
