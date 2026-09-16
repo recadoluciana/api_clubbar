@@ -696,6 +696,24 @@ def _identificador_email_loja(nome_loja: str) -> str:
     if not identificador:
         raise HTTPException(422, "O nome da loja não permite gerar os usuários operacionais.")
     return identificador
+
+
+def _nomes_para_conversao(
+    lead: LeadParceiro, estabelecimento: LeadEstabelecimento
+) -> tuple[str, str]:
+    nome_organizacao = (lead.nmorganizacao or "").strip()
+    nome_loja = (estabelecimento.nmestabelecimento or "").strip()
+    if not nome_organizacao or len(nome_organizacao) > 120:
+        raise HTTPException(
+            status_code=422,
+            detail="O nome da organização do lead deve ter até 120 caracteres.",
+        )
+    if not nome_loja or len(nome_loja) > 120:
+        raise HTTPException(
+            status_code=422,
+            detail="O nome do estabelecimento deve ter até 120 caracteres.",
+        )
+    return nome_organizacao, nome_loja
     
 @router.post(
     "/{leadparceiro_id}/converter-em-parceiro",
@@ -735,6 +753,8 @@ async def converter_lead_em_parceiro(
     ).first()
     if not estabelecimento:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    nome_organizacao, nome_loja = _nomes_para_conversao(lead, estabelecimento)
 
     status_estabelecimento = (
         estabelecimento.status.value
@@ -786,7 +806,7 @@ async def converter_lead_em_parceiro(
         categorias = []
         if primeira_conversao:
             nova_organizacao = Organizacao(
-                nmorganizacao=dados.nome_organizacao.strip(),
+                nmorganizacao=nome_organizacao,
                 emailorganizacao=email_responsavel,
                 telorganizacao=lead.telefone.strip(),
                 sitorganizacao="ATIVA",
@@ -817,7 +837,7 @@ async def converter_lead_em_parceiro(
                 titular_financeiro.titularfinanceiro_id
                 if titular_financeiro else None
             ),
-            nmloja=dados.nome_loja.strip(),
+            nmloja=nome_loja,
             endloja=contrato_aceito.enderecocontratante or estabelecimento.endereco,
             nrceploja=contrato_aceito.cepcontratante or estabelecimento.cep,
             nrendeloja=contrato_aceito.numerocontratante or estabelecimento.numero,

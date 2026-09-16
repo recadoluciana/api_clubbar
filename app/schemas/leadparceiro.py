@@ -35,8 +35,6 @@ StatusLeadEstabelecimentoSchema = Literal[
 
 class ConverterLeadParceiroIn(BaseModel):
     leadestabelecimento_id: int | None = Field(default=None, gt=0)
-    nome_organizacao: str = Field(min_length=2, max_length=120)
-    nome_loja: str = Field(min_length=2, max_length=120)
     tipo_loja: TipoParceiro
     email_responsavel: EmailStr
     taxa_produtos: float = Field(default=5, ge=0, le=100)

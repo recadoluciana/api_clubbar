@@ -1,14 +1,36 @@
 import inspect
 import unittest
+from fastapi import HTTPException
+
+from app.models.leadparceiro import LeadParceiro
+from app.models.leadestabelecimento import LeadEstabelecimento
 
 from app.routers.leadparceiro import (
     CATEGORIAS_PADRAO,
     _senha_inicial_superadmin,
+    _nomes_para_conversao,
     converter_lead_em_parceiro,
 )
 
 
 class ConversaoLeadParceiroTest(unittest.TestCase):
+    def test_usa_nome_do_lead_para_organizacao_e_do_estabelecimento_para_loja(self):
+        lead = LeadParceiro(nmorganizacao=" Grupo Binatto ")
+        estabelecimento = LeadEstabelecimento(nmestabelecimento=" Angela Bar ")
+        self.assertEqual(
+            ("Grupo Binatto", "Angela Bar"),
+            _nomes_para_conversao(lead, estabelecimento),
+        )
+
+    def test_rejeita_nome_de_organizacao_ausente_ou_longo(self):
+        estabelecimento = LeadEstabelecimento(nmestabelecimento="Angela Bar")
+        for nome in (None, "  ", "X" * 121):
+            with self.subTest(nome=nome), self.assertRaises(HTTPException) as erro:
+                _nomes_para_conversao(
+                    LeadParceiro(nmorganizacao=nome), estabelecimento
+                )
+            self.assertEqual(422, erro.exception.status_code)
+
     def test_senha_usa_seis_digitos_e_seis_caracteres_do_responsavel(self):
         self.assertEqual(
             "123456Carlos",
