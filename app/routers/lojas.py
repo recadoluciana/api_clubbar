@@ -510,112 +510,12 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
 
 @router.post("")
 def criar_loja(
-    organizacao_id: int = Form(...),
-    estado_id: int = Form(...),
-    cidade_id: int = Form(...),
-    nmloja: str = Form(...),
-    dsbairroloja: str | None = Form(None),
-    endloja: str | None = Form(None),
-    nrceploja: str = Form(...),
-    nrendeloja: str = Form(...),
-    dsinstaloja: str | None = Form(None),
-    nrtelloja: str | None = Form(None),
-    aberto24x7: str = Form("N"),
-    nrdiavalidade: int | None = Form(None),
-    idvalidadeprod: str = Form("S"),
-    vrtaxaprod: float | None = Form(0),
-    vrtaxaing: float | None = Form(0),
-    urllogoloja: UploadFile | None = File(None),
-    urlfachadaloja: UploadFile | None = File(None),
-    qtcpdloja: int | None = Form(None),
-    usacashback: str = Form("N"),
-    pccashback: float = Form(0),
-    estilos_ids: str | None = Form(None),
-    db: Session = Depends(get_db),
-    payload: dict = Depends(get_usuario_logado),
+    _: dict = Depends(get_usuario_logado),
 ):
-    try:
-        validar_permissao_mutacao_loja(
-            payload, organizacao_id=organizacao_id, criando=True
-        )
-        if qtcpdloja is not None and qtcpdloja <= 0:
-            raise HTTPException(status_code=422, detail="A capacidade da loja deve ser maior que zero")
-        validar_localidade(db, estado_id, cidade_id)
-        aberto24x7 = validar_aberto24x7(aberto24x7)
-        nrdiavalidade = nrdiavalidade if nrdiavalidade is not None else 90
-        idvalidadeprod, nrdiavalidade = validar_configuracao_validade(
-            idvalidadeprod,
-            nrdiavalidade,
-        )
-        nrceploja = validar_campo_endereco(
-            nrceploja,
-            "nrceploja",
-            9,
-            obrigatorio=True,
-        )
-        nrendeloja = validar_campo_endereco(
-            nrendeloja,
-            "nrendeloja",
-            20,
-            obrigatorio=True,
-        )
-        urllogoloja_aux = salvar_logo_loja(urllogoloja)
-        urlfachadaloja_aux = salvar_logo_loja(urlfachadaloja)
-
-        nova = Loja(
-            organizacao_id=organizacao_id,
-            estado_id=estado_id,
-            cidade_id=cidade_id,
-            nmloja=nmloja,
-            dsbairroloja=dsbairroloja,
-            endloja=endloja,
-            nrceploja=nrceploja,
-            nrendeloja=nrendeloja,
-            dsinstaloja=dsinstaloja,
-            nrtelloja=nrtelloja,
-            aberto24x7=aberto24x7,
-            nrdiavalidade=nrdiavalidade,
-            idvalidadeprod=idvalidadeprod,
-            vrtaxaprod=vrtaxaprod,
-            vrtaxaing=vrtaxaing,
-            urllogoloja=urllogoloja_aux,
-            urlfachadaloja=urlfachadaloja_aux,
-            qtcpdloja=qtcpdloja,
-            sitloja="ATIVA",
-        )
-
-        db.add(nova)
-        db.flush()
-        salvar_estilos_da_loja(db, nova, estilos_ids)
-        usar = usacashback.strip().upper() == "S"
-        if pccashback < 0 or pccashback > 100 or (usar and pccashback <= 0):
-            raise HTTPException(422, "Informe um percentual de cashback entre 0,01% e 100%")
-        obter_ou_criar_config(db, nova.organizacao_id, nova.loja_id, ativo=usar, percentual=pccashback)
-        db.commit()
-        db.refresh(nova)
-
-        return {
-            "mensagem": "Loja cadastrada com sucesso",
-            "loja_id": nova.loja_id,
-            "estado_id": nova.estado_id,
-            "urllogoloja": nova.urllogoloja,
-            "urlfachadaloja": nova.urlfachadaloja,
-            "endloja": nova.endloja,
-            "nrceploja": nova.nrceploja,
-            "nrendeloja": nova.nrendeloja,
-            "dsinstaloja": nova.dsinstaloja,
-            "aberto24x7": nova.aberto24x7,
-            "idvalidadeprod": nova.idvalidadeprod,
-            "qtcpdloja": nova.qtcpdloja,
-        }
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        db.rollback()
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao criar loja: {str(e)}")
+    raise HTTPException(
+        status_code=403,
+        detail="Novos estabelecimentos só podem ser criados pela conversão de um lead com contrato aceito.",
+    )
 
 
 @router.get("/organizacoes/{organizacao_id}/lojas_todas")
@@ -648,6 +548,9 @@ def listar_lojas_por_organizacao_todas(
             "estado_id": loja.estado_id,
             "cidade_id": loja.cidade_id,
             "nmloja": loja.nmloja,
+            "tipoloja": loja.tipoloja,
+            "vendaprodutos": loja.vendaprodutos,
+            "vendaingressos": loja.vendaingressos,
             "dsbairroloja": loja.dsbairroloja,
             "endloja": loja.endloja,
             "nrceploja": loja.nrceploja,
