@@ -714,6 +714,20 @@ def _nomes_para_conversao(
             detail="O nome do estabelecimento deve ter até 120 caracteres.",
         )
     return nome_organizacao, nome_loja
+
+
+def _endereco_loja_do_estabelecimento(
+    estabelecimento: LeadEstabelecimento,
+) -> dict:
+    return {
+        "endloja": estabelecimento.endereco,
+        "nrceploja": estabelecimento.cep,
+        "nrendeloja": estabelecimento.numero,
+        "complementoloja": estabelecimento.complemento,
+        "dsbairroloja": estabelecimento.bairro,
+        "estado_id": estabelecimento.estado_id,
+        "cidade_id": estabelecimento.cidade_id,
+    }
     
 @router.post(
     "/{leadparceiro_id}/converter-em-parceiro",
@@ -838,18 +852,13 @@ async def converter_lead_em_parceiro(
                 if titular_financeiro else None
             ),
             nmloja=nome_loja,
-            endloja=contrato_aceito.enderecocontratante or estabelecimento.endereco,
-            nrceploja=contrato_aceito.cepcontratante or estabelecimento.cep,
-            nrendeloja=contrato_aceito.numerocontratante or estabelecimento.numero,
-            dsbairroloja=contrato_aceito.bairrocontratante or estabelecimento.bairro,
+            **_endereco_loja_do_estabelecimento(estabelecimento),
             dsrefeloja=None,
             sitloja="ATIVA",
             aberto24x7="N",
             nrtelloja=(estabelecimento.telefone or lead.telefone).strip(),
             nrdiavalidade=90,
             idvalidadeprod="S",
-            estado_id=contrato_aceito.estado_id_contratante or estabelecimento.estado_id,
-            cidade_id=contrato_aceito.cidade_id_contratante or estabelecimento.cidade_id,
             vrtaxaprod=contrato_aceito.vrtaxaprod,
             vrtaxaing=contrato_aceito.vrtaxaing,
             vrtaxaminimaingresso=contrato_aceito.vrtaxaminimaingresso,

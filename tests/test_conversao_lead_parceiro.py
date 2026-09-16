@@ -9,11 +9,35 @@ from app.routers.leadparceiro import (
     CATEGORIAS_PADRAO,
     _senha_inicial_superadmin,
     _nomes_para_conversao,
+    _endereco_loja_do_estabelecimento,
     converter_lead_em_parceiro,
 )
 
 
 class ConversaoLeadParceiroTest(unittest.TestCase):
+    def test_endereco_da_loja_vem_inteiro_do_estabelecimento(self):
+        estabelecimento = LeadEstabelecimento(
+            endereco="Rua do Bar",
+            cep="30123456",
+            numero="42",
+            complemento="Sala 2",
+            bairro="Centro",
+            estado_id=13,
+            cidade_id=321,
+        )
+        self.assertEqual(
+            {
+                "endloja": "Rua do Bar",
+                "nrceploja": "30123456",
+                "nrendeloja": "42",
+                "complementoloja": "Sala 2",
+                "dsbairroloja": "Centro",
+                "estado_id": 13,
+                "cidade_id": 321,
+            },
+            _endereco_loja_do_estabelecimento(estabelecimento),
+        )
+
     def test_usa_nome_do_lead_para_organizacao_e_do_estabelecimento_para_loja(self):
         lead = LeadParceiro(nmorganizacao=" Grupo Binatto ")
         estabelecimento = LeadEstabelecimento(nmestabelecimento=" Angela Bar ")

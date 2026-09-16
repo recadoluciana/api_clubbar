@@ -25,6 +25,7 @@ class Loja(Base):
     endloja = Column(String(255))
     nrceploja = Column(String(9), nullable=True)
     nrendeloja = Column(String(20), nullable=True)
+    complementoloja = Column(String(120), nullable=True)
     dsbairroloja = Column(String(120))
     dsinstaloja = Column(String(255))
     sitloja = Column(String(15), nullable=False, default="ATIVA")

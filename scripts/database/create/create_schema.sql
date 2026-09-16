@@ -350,6 +350,7 @@ CREATE TABLE loja (
   endloja        VARCHAR(255) NULL,
   nrceploja      VARCHAR(9) NULL,
   nrendeloja     VARCHAR(20) NULL,
+  complementoloja VARCHAR(120) NULL,
   dsrefeloja     VARCHAR(255) NULL,
   dsinstaloja    VARCHAR(255) NULL,
   dsbairroloja   VARCHAR(120) NULL,
