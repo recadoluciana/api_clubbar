@@ -16,12 +16,23 @@ from app.models.eventosetor import EventoSetor
 from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
+from app.models.reserva_ingresso import ReservaIngresso
+from app.services.reserva_ingresso_service import capacidade_restante_setor
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
 def _saida_lote(db: Session, lote: EventoLote) -> dict:
     vendidos_cota = db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id).filter(ItVenda.lote_id == lote.lote_id, ItVenda.sititvenda == "ATIVO", EventoLotePreco.aplicacotalegal.is_(True)).scalar() or 0
-    return {"lote_id": lote.lote_id, "organizacao_id": lote.organizacao_id, "loja_id": lote.loja_id, "evento_id": lote.evento_id, "nmlote": lote.nmlote, "eventosetor_id": lote.eventosetor_id, "nmsetor": lote.nmsetor, "nrlote": lote.nrlote, "qttotallote": lote.qttotallote, "usarcapacidaderestante": lote.usarcapacidaderestante == "S", "qtvendidalote": lote.qtvendidalote or 0, "dtiniciovenda": lote.dtiniciovenda, "dtfimvenda": lote.dtfimvenda, "statuslote": lote.statuslote, "dtcriacao": lote.dtcriacao, "dtultatu": lote.dtultatu, "cotalegal": int((lote.setor.qtcapacidade if lote.setor else 0) * .40), "qtvendidacotalegal": int(vendidos_cota), "precos": [{"lotepreco_id": p.lotepreco_id, "nmpreco": p.nmpreco, "tipopreco": p.tipopreco, "vrpreco": float(p.vrpreco), "aplicacotalegal": bool(p.aplicacotalegal), "exigecomprovante": bool(p.exigecomprovante), "situacao": p.situacao, "nrordem": p.nrordem} for p in lote.precos]}
+    reservas_ativas = (
+        ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ReservaIngresso.dtexpiracao > datetime.now(),
+    )
+    reservados_lote = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).filter(ReservaIngresso.lote_id == lote.lote_id, *reservas_ativas).scalar() or 0)
+    capacidade_setor = int(lote.setor.qtcapacidade) if lote.setor else None
+    capacidade_restante = None
+    if lote.usarcapacidaderestante == "S" and capacidade_setor is not None:
+        capacidade_restante = capacidade_restante_setor(db, lote.evento_id, lote.eventosetor_id, capacidade_setor)
+    return {"lote_id": lote.lote_id, "organizacao_id": lote.organizacao_id, "loja_id": lote.loja_id, "evento_id": lote.evento_id, "nmlote": lote.nmlote, "eventosetor_id": lote.eventosetor_id, "nmsetor": lote.nmsetor, "nrlote": lote.nrlote, "qttotallote": lote.qttotallote, "usarcapacidaderestante": lote.usarcapacidaderestante == "S", "qtvendidalote": lote.qtvendidalote or 0, "qtreservadalote": reservados_lote, "qtcapacidade_setor": capacidade_setor, "qtcapacidaderestante": capacidade_restante, "dtiniciovenda": lote.dtiniciovenda, "dtfimvenda": lote.dtfimvenda, "statuslote": lote.statuslote, "dtcriacao": lote.dtcriacao, "dtultatu": lote.dtultatu, "cotalegal": int((lote.setor.qtcapacidade if lote.setor else 0) * .40), "qtvendidacotalegal": int(vendidos_cota), "precos": [{"lotepreco_id": p.lotepreco_id, "nmpreco": p.nmpreco, "tipopreco": p.tipopreco, "vrpreco": float(p.vrpreco), "aplicacotalegal": bool(p.aplicacotalegal), "exigecomprovante": bool(p.exigecomprovante), "situacao": p.situacao, "nrordem": p.nrordem} for p in lote.precos]}
 
 
 @router.get("/{evento_id}/lotes")

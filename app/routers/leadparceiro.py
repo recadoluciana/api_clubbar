@@ -18,7 +18,7 @@ from app.core.security import get_operador_logado
 from app.core.security import hash_senha
 from app.models.cidade import Cidade
 from app.models.categoria import Categoria
-from app.models.cardapio import CategoriaPadrao
+from app.models.cardapio import CategoriaPadrao, CardapioModelo
 from app.models.estado import Estado
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
@@ -829,8 +829,11 @@ async def converter_lead_em_parceiro(
             )
             db.add(nova_organizacao)
             db.flush()
+            db.add(CardapioModelo(organizacao_id=nova_organizacao.organizacao_id, nmcardapio='Cardápio padrão', tipocardapio='PRINCIPAL'))
         else:
             nova_organizacao = organizacao_existente
+            if not db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == nova_organizacao.organizacao_id).first():
+                db.add(CardapioModelo(organizacao_id=nova_organizacao.organizacao_id, nmcardapio='Cardápio padrão', tipocardapio='PRINCIPAL'))
 
         titular_financeiro = None
         if dados.titularfinanceiro_id is not None:

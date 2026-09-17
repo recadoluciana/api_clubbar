@@ -15,6 +15,26 @@ from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 
+
+def capacidade_restante_setor(db: Session, evento_id: int, setor_id: int, capacidade: int) -> int:
+    vendidos = int(
+        db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0))
+        .filter(EventoLote.evento_id == evento_id, EventoLote.eventosetor_id == setor_id)
+        .scalar() or 0
+    )
+    reservados = int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id)
+        .filter(
+            EventoLote.evento_id == evento_id,
+            EventoLote.eventosetor_id == setor_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > datetime.now(),
+        )
+        .scalar() or 0
+    )
+    return max(0, capacidade - vendidos - reservados)
+
 def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> EventoLote | None:
     lotes = db.query(EventoLote).filter(EventoLote.evento_id == lote.evento_id, EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.statuslote.in_(("ATIVO", "ESGOTADO", "ENCERRADO"))).order_by(EventoLote.nrlote, EventoLote.lote_id).all()
     if not lotes: return None
@@ -83,6 +103,12 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
     capacidade_evento = int(db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(EventoSetor.evento_id == lote.evento_id, EventoSetor.sitsetor == "ATIVO").scalar() or 0)
     if capacidade_evento <= 0 or vendida + reservada + quantidade > capacidade_evento:
         raise HTTPException(409, "A capacidade total do evento foi atingida")
+    if lote.eventosetor_id is not None:
+        setor = db.query(EventoSetor).filter(EventoSetor.eventosetor_id == lote.eventosetor_id, EventoSetor.evento_id == lote.evento_id).with_for_update().first()
+        if not setor or setor.sitsetor != "ATIVO":
+            raise HTTPException(409, "Setor indisponível para venda")
+        if quantidade > capacidade_restante_setor(db, lote.evento_id, lote.eventosetor_id, int(setor.qtcapacidade)):
+            raise HTTPException(409, "A capacidade do setor foi atingida")
     if preco.aplicacotalegal:
         usada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id).filter(ReservaIngresso.evento_id == lote.evento_id, EventoLotePreco.aplicacotalegal.is_(True), ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA"))).scalar() or 0)
         if usada + quantidade > int(capacidade_evento * 0.40):

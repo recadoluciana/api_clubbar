@@ -51,7 +51,6 @@ from app.routers import leadatendimento
 from app.routers import contratolead
 from app.routers import contratopadrao
 from app.routers import cardapios
-from app.routers import cardapio_padrao
 from app.routers import auditoria
 from app.routers import eventosetores
 from app.routers import eventomodelos
@@ -183,7 +182,6 @@ app.include_router(contratolead.router)
 app.include_router(contratolead.portal_router)
 app.include_router(contratopadrao.router)
 app.include_router(cardapios.router)
-app.include_router(cardapio_padrao.router)
 app.include_router(auditoria.router)
 app.include_router(eventosetores.router)
 app.include_router(acompanhamento_vendas.router)
