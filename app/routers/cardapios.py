@@ -2,7 +2,8 @@ from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing import Literal
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -28,14 +29,38 @@ class CardapioIn(BaseModel):
 
 
 class ItemPadraoIn(BaseModel):
-    nmcategoria: str = Field(min_length=2, max_length=120)
+    categoria_id: int = Field(gt=0)
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
-    vrpreco: Decimal = Field(ge=0)
+    vrprecoprod: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
+    skuproduto: str | None = Field(default=None, max_length=100)
+    urlfotoproduto: str | None = Field(default=None, max_length=255)
+    tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
+    vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
+    pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
+    dtinidesconto: datetime | None = None
+    dtfimdesconto: datetime | None = None
 
-
-class PrecoPadraoIn(BaseModel):
-    vrpreco: Decimal = Field(ge=0)
+    @model_validator(mode="after")
+    def validar_valores(self):
+        self.nmproduto = self.nmproduto.strip()
+        self.dsproduto = (self.dsproduto or "").strip() or None
+        self.skuproduto = (self.skuproduto or "").strip() or None
+        self.urlfotoproduto = (self.urlfotoproduto or "").strip() or None
+        if len(self.nmproduto) < 2:
+            raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
+        if self.tipodesconto == "NENHUM":
+            self.vrdesconto = Decimal("0")
+            self.dtinidesconto = None
+            self.dtfimdesconto = None
+        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
+            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
+        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrprecoprod:
+            raise ValueError("O desconto não pode superar o preço do produto.")
+        if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
+            raise ValueError("O fim do desconto deve ser posterior ao início.")
+        return self
 
 
 class AssociarCardapioIn(BaseModel):
@@ -126,13 +151,92 @@ def _saida_cardapio(db: Session, item: Cardapio) -> dict:
     }
 
 
+def _preco_final_item(preco: Decimal, produto: Produto, agora: datetime) -> tuple[Decimal, bool]:
+    tipo = produto.tipodesconto or "NENHUM"
+    desconto = Decimal(produto.vrdesconto or 0)
+    ativo = (
+        tipo != "NENHUM"
+        and desconto > 0
+        and (produto.dtinidesconto is None or agora >= produto.dtinidesconto)
+        and (produto.dtfimdesconto is None or agora <= produto.dtfimdesconto)
+    )
+    if ativo and tipo == "PERCENTUAL":
+        final = preco * (Decimal("1") - desconto / Decimal("100"))
+    elif ativo and tipo == "VALOR":
+        final = preco - desconto
+    else:
+        final = preco
+    return max(Decimal("0"), final).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ativo
+
+
 def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
-    categorias = db.query(CardapioVersaoCategoria, Categoria).join(Categoria, Categoria.categoria_id == CardapioVersaoCategoria.categoria_id).filter(CardapioVersaoCategoria.cardapioversao_id == versao.cardapioversao_id).order_by(CardapioVersaoCategoria.idordcategoria).all()
+    categorias = (
+        db.query(CardapioVersaoCategoria, Categoria)
+        .join(Categoria, Categoria.categoria_id == CardapioVersaoCategoria.categoria_id)
+        .filter(CardapioVersaoCategoria.cardapioversao_id == versao.cardapioversao_id)
+        .order_by(CardapioVersaoCategoria.idordcategoria)
+        .all()
+    )
     saida = []
+    agora = datetime.now()
     for vinculo, categoria in categorias:
-        itens = db.query(CardapioItem, Produto).join(Produto, Produto.produto_id == CardapioItem.produto_id).filter(CardapioItem.cardapioversaocategoria_id == vinculo.cardapioversaocategoria_id, CardapioItem.sititem == "ATIVO").order_by(CardapioItem.idorditem).all()
-        saida.append({"cardapioversaocategoria_id": vinculo.cardapioversaocategoria_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "dsicone": categoria.dsicone, "idordcategoria": vinculo.idordcategoria, "itens": [{"cardapioitem_id": ci.cardapioitem_id, "produto_id": p.produto_id, "organizacao_id": p.organizacao_id, "loja_id": cardapio.loja_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "nmproduto": p.nmproduto, "dsproduto": p.dsproduto, "urlfotoproduto": p.urlfotoproduto, "vrpreco": float(ci.vrpreco), "vrprecoprod": float(ci.vrpreco), "vrprecofinal": float(ci.vrpreco), "sitproduto": p.sitproduto, "tipodesconto": "NENHUM", "vrdesconto": 0.0, "descontoativo": False, "pccashback": float(p.pccashback) if p.pccashback is not None else None, "idorditem": ci.idorditem} for ci, p in itens]})
-    return {"cardapio_id": cardapio.cardapio_id, "nmcardapio": cardapio.nmcardapio, "cardapioversao_id": versao.cardapioversao_id, "nrversao": versao.nrversao, "statusversao": versao.statusversao, "categorias": saida}
+        itens = (
+            db.query(CardapioItem, Produto)
+            .join(Produto, Produto.produto_id == CardapioItem.produto_id)
+            .filter(
+                CardapioItem.cardapioversaocategoria_id == vinculo.cardapioversaocategoria_id,
+                CardapioItem.sititem == "ATIVO",
+            )
+            .order_by(CardapioItem.idorditem)
+            .all()
+        )
+        produtos = []
+        for ci, produto in itens:
+            tipo = produto.tipodesconto or "NENHUM"
+            desconto = Decimal(produto.vrdesconto or 0)
+            preco = Decimal(ci.vrpreco)
+            final, ativo = _preco_final_item(preco, produto, agora)
+            produtos.append({
+                "cardapioitem_id": ci.cardapioitem_id,
+                "produto_id": produto.produto_id,
+                "organizacao_id": produto.organizacao_id,
+                "loja_id": cardapio.loja_id,
+                "categoria_id": categoria.categoria_id,
+                "nmcategoria": categoria.nmcategoria,
+                "nmproduto": produto.nmproduto,
+                "dsproduto": produto.dsproduto,
+                "skuproduto": produto.skuproduto,
+                "urlfotoproduto": produto.urlfotoproduto,
+                "vrpreco": float(preco),
+                "vrprecoprod": float(preco),
+                "vrprecofinal": float(final),
+                "sitproduto": produto.sitproduto,
+                "tipodesconto": tipo,
+                "vrdesconto": float(desconto),
+                "descontoativo": ativo,
+                "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
+                "dtinidesconto": produto.dtinidesconto,
+                "dtfimdesconto": produto.dtfimdesconto,
+                "dtcriacao": produto.dtcriacao,
+                "dtultatu": produto.dtultatu,
+                "idorditem": ci.idorditem,
+            })
+        saida.append({
+            "cardapioversaocategoria_id": vinculo.cardapioversaocategoria_id,
+            "categoria_id": categoria.categoria_id,
+            "nmcategoria": categoria.nmcategoria,
+            "dsicone": categoria.dsicone,
+            "idordcategoria": vinculo.idordcategoria,
+            "itens": produtos,
+        })
+    return {
+        "cardapio_id": cardapio.cardapio_id,
+        "nmcardapio": cardapio.nmcardapio,
+        "cardapioversao_id": versao.cardapioversao_id,
+        "nrversao": versao.nrversao,
+        "statusversao": versao.statusversao,
+        "categorias": saida,
+    }
 
 
 @router.get("/lojas/{loja_id}/cardapios")
@@ -178,31 +282,53 @@ def _modelo_organizacao(db: Session, organizacao_id: int, modelo_id: int, payloa
 def listar_itens_padrao(organizacao_id: int, modelo_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _modelo_organizacao(db, organizacao_id, modelo_id, payload)
     linhas = db.query(CardapioModeloItem, Produto, Categoria).join(Produto, Produto.produto_id == CardapioModeloItem.produto_id).join(Categoria, Categoria.categoria_id == Produto.categoria_id).filter(CardapioModeloItem.cardapiomodelo_id == modelo_id).order_by(Categoria.idordcategoria, CardapioModeloItem.idorditem).all()
-    return [{"cardapiomodeloitem_id": item.cardapiomodeloitem_id, "produto_id": produto.produto_id, "categoria_id": categoria.categoria_id, "nmcategoria": categoria.nmcategoria, "nmproduto": produto.nmproduto, "dsproduto": produto.dsproduto, "vrpreco": float(item.vrpreco)} for item, produto, categoria in linhas]
+    return [_saida_item_padrao(item, produto, categoria) for item, produto, categoria in linhas]
+
+
+def _saida_item_padrao(item: CardapioModeloItem, produto: Produto, categoria: Categoria) -> dict:
+    return {
+        "cardapiomodeloitem_id": item.cardapiomodeloitem_id,
+        "produto_id": produto.produto_id,
+        "organizacao_id": produto.organizacao_id,
+        "categoria_id": categoria.categoria_id,
+        "nmcategoria": categoria.nmcategoria,
+        "nmproduto": produto.nmproduto,
+        "dsproduto": produto.dsproduto,
+        "vrprecoprod": float(produto.vrprecoprod),
+        "vrpreco": float(item.vrpreco),
+        "sitproduto": produto.sitproduto,
+        "skuproduto": produto.skuproduto,
+        "urlfotoproduto": produto.urlfotoproduto,
+        "tipodesconto": produto.tipodesconto,
+        "vrdesconto": float(produto.vrdesconto or 0),
+        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
+        "dtinidesconto": produto.dtinidesconto,
+        "dtfimdesconto": produto.dtfimdesconto,
+        "dtcriacao": produto.dtcriacao,
+        "dtultatu": produto.dtultatu,
+    }
+
+
+def _categoria_produto_padrao(db: Session, organizacao_id: int, categoria_id: int) -> Categoria:
+    categoria = db.query(Categoria).filter(Categoria.organizacao_id == organizacao_id, Categoria.categoria_id == categoria_id, Categoria.sitcategoria == "ATIVA").first()
+    if categoria is None:
+        raise HTTPException(422, "Selecione uma categoria ativa da organização.")
+    return categoria
 
 
 @router.post("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens", status_code=201)
 def adicionar_item_padrao(organizacao_id: int, modelo_id: int, dados: ItemPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _modelo_organizacao(db, organizacao_id, modelo_id, payload)
     _validar_edicao_padrao(payload, organizacao_id)
-    nome_categoria, nome_produto = dados.nmcategoria.strip(), dados.nmproduto.strip()
-    if len(nome_categoria) < 2 or len(nome_produto) < 2:
-        raise HTTPException(422, "Informe categoria e produto com pelo menos dois caracteres.")
+    categoria = _categoria_produto_padrao(db, organizacao_id, dados.categoria_id)
     try:
-        categoria = db.query(Categoria).filter(Categoria.organizacao_id == organizacao_id, func.lower(Categoria.nmcategoria) == nome_categoria.lower()).first()
-        if categoria is None:
-            categoria = Categoria(organizacao_id=organizacao_id, nmcategoria=nome_categoria, sitcategoria="ATIVA")
-            db.add(categoria); db.flush()
-        produto = db.query(Produto).filter(Produto.organizacao_id == organizacao_id, Produto.categoria_id == categoria.categoria_id, func.lower(Produto.nmproduto) == nome_produto.lower()).first()
-        if produto is None:
-            produto = Produto(organizacao_id=organizacao_id, categoria_id=categoria.categoria_id, nmproduto=nome_produto, dsproduto=dados.dsproduto, vrprecoprod=dados.vrpreco, sitproduto="ATIVO")
-            db.add(produto); db.flush()
-        if db.query(CardapioModeloItem).filter(CardapioModeloItem.cardapiomodelo_id == modelo_id, CardapioModeloItem.produto_id == produto.produto_id).first():
-            raise HTTPException(409, "Este produto já está no cardápio padrão.")
+        produto = Produto(organizacao_id=organizacao_id, **dados.model_dump())
+        db.add(produto); db.flush()
         ordem = db.query(func.coalesce(func.max(CardapioModeloItem.idorditem), 0)).filter(CardapioModeloItem.cardapiomodelo_id == modelo_id).scalar()
-        item = CardapioModeloItem(cardapiomodelo_id=modelo_id, produto_id=produto.produto_id, vrpreco=dados.vrpreco, idorditem=int(ordem) + 1)
+        item = CardapioModeloItem(cardapiomodelo_id=modelo_id, produto_id=produto.produto_id, vrpreco=dados.vrprecoprod, idorditem=int(ordem) + 1)
         db.add(item); db.commit(); db.refresh(item)
-        return {"cardapiomodeloitem_id": item.cardapiomodeloitem_id}
+        db.refresh(produto)
+        return _saida_item_padrao(item, produto, categoria)
     except Exception:
         db.rollback()
         raise
@@ -219,15 +345,22 @@ def remover_item_padrao(organizacao_id: int, modelo_id: int, item_id: int, paylo
 
 
 @router.put("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens/{item_id}")
-def alterar_preco_padrao(organizacao_id: int, modelo_id: int, item_id: int, dados: PrecoPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+def alterar_produto_padrao(organizacao_id: int, modelo_id: int, item_id: int, dados: ItemPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _modelo_organizacao(db, organizacao_id, modelo_id, payload)
     _validar_edicao_padrao(payload, organizacao_id)
     item = db.query(CardapioModeloItem).filter(CardapioModeloItem.cardapiomodelo_id == modelo_id, CardapioModeloItem.cardapiomodeloitem_id == item_id).first()
     if item is None:
         raise HTTPException(404, "Produto não encontrado neste cardápio.")
-    item.vrpreco = dados.vrpreco
+    categoria = _categoria_produto_padrao(db, organizacao_id, dados.categoria_id)
+    produto = db.query(Produto).filter(Produto.produto_id == item.produto_id, Produto.organizacao_id == organizacao_id).first()
+    if produto is None:
+        raise HTTPException(404, "Produto não encontrado na organização.")
+    for campo, valor in dados.model_dump().items():
+        setattr(produto, campo, valor)
+    item.vrpreco = dados.vrprecoprod
     db.commit()
-    return {"cardapiomodeloitem_id": item.cardapiomodeloitem_id, "vrpreco": float(item.vrpreco)}
+    db.refresh(produto)
+    return _saida_item_padrao(item, produto, categoria)
 
 
 def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) -> Cardapio:
