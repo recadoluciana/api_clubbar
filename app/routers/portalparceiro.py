@@ -86,14 +86,12 @@ def recuperar_dados_portal(
     dados: PortalRecuperarDados, db: Session = Depends(get_db)
 ):
     email = str(dados.email).strip().lower()
-    telefone = _somente_digitos(dados.telefone)
     leads = (
         db.query(LeadParceiro)
         .filter(func.lower(func.trim(LeadParceiro.email)) == email)
         .order_by(LeadParceiro.leadparceiro_id.desc())
         .all()
     )
-    leads = [lead for lead in leads if _somente_digitos(lead.telefone) == telefone]
     if leads:
         enviar_dados_portal_lead(
             email,
