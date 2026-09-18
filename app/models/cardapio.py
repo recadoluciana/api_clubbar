@@ -79,7 +79,7 @@ class CardapioVersaoCategoria(Base):
 
     cardapioversaocategoria_id = Column(BigInteger, primary_key=True, autoincrement=True)
     cardapioversao_id = Column(BigInteger, ForeignKey("cardapioversao.cardapioversao_id", ondelete="CASCADE"), nullable=False, index=True)
-    categoria_id = Column(BigInteger, ForeignKey("categoria.categoria_id"), nullable=False)
+    categoria_id = Column(BigInteger, ForeignKey("categoriaorg.categoria_id"), nullable=False)
     idordcategoria = Column(Integer, nullable=False, server_default="1")
 
     __table_args__ = (UniqueConstraint("cardapioversao_id", "categoria_id", name="uk_cardapioversaocategoria"),)
@@ -98,7 +98,7 @@ class CardapioItem(Base):
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 
-    __table_args__ = (UniqueConstraint("cardapioversao_id", "produto_id", name="uk_cardapioitem_produto"),)
+    __table_args__ = (UniqueConstraint("cardapioversaocategoria_id", "produto_id", name="uk_cardapioitem_categoria_produto"),)
 
 
 class CardapioProgramacao(Base):
@@ -121,7 +121,7 @@ class CardapioReajuste(Base):
 
     cardapioreajuste_id = Column(BigInteger, primary_key=True, autoincrement=True)
     cardapioversao_id = Column(BigInteger, ForeignKey("cardapioversao.cardapioversao_id"), nullable=False, index=True)
-    categoria_id = Column(BigInteger, ForeignKey("categoria.categoria_id"), nullable=True)
+    categoria_id = Column(BigInteger, ForeignKey("categoriaorg.categoria_id"), nullable=True)
     usuario_id = Column(BigInteger, ForeignKey("usuario.usuario_id"), nullable=False)
     tipoajuste = Column(Enum("PERCENTUAL", "VALOR"), nullable=False)
     operacao = Column(Enum("AUMENTO", "REDUCAO"), nullable=False)

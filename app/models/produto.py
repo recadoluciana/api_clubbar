@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, Enum, DECIMAL, ForeignKey, text
+from sqlalchemy import Column, BigInteger, String, DateTime, Enum, DECIMAL, text
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -7,7 +7,6 @@ class Produto(Base):
 
     produto_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, nullable=False, index=True)
-    categoria_id = Column(BigInteger, ForeignKey("categoria.categoria_id"), nullable=True)
     nmproduto = Column(String(100), nullable=False)
     dsproduto = Column(String(255), nullable=True)
     vrprecoprod = Column(DECIMAL(10, 2), nullable=False)

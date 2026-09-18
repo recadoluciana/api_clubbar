@@ -9,6 +9,8 @@ import traceback
 
 from app.database import get_db
 from app.models.categoria import Categoria
+from app.models.cardapio_padrao import CardapioModeloProduto, ProdutoCategoriaOrg
+from app.models.cardapio import CardapioItem, CardapioModeloItem
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -22,6 +24,17 @@ from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_
 router = APIRouter(tags=["Produtos"])
 
 os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
+
+
+def _categoria_catalogo(db: Session, produto_id: int):
+    return db.query(ProdutoCategoriaOrg.categoria_id, Categoria.nmcategoria).join(
+        Categoria, Categoria.categoria_id == ProdutoCategoriaOrg.categoria_id
+    ).filter(ProdutoCategoriaOrg.produto_id == produto_id).order_by(ProdutoCategoriaOrg.categoria_id).first()
+
+
+def _definir_categoria_catalogo(db: Session, produto_id: int, categoria_id: int):
+    db.query(ProdutoCategoriaOrg).filter(ProdutoCategoriaOrg.produto_id == produto_id).delete(synchronize_session=False)
+    db.add(ProdutoCategoriaOrg(produto_id=produto_id, categoria_id=categoria_id))
 
 
 def _parse_datetime(valor: str | None):
@@ -159,6 +172,15 @@ def excluir_produto(
         exists().where(ItVenda.produto_id == produto_id)
     ).scalar()
 
+    usado_cardapio = (
+        db.query(CardapioModeloProduto).filter(CardapioModeloProduto.produto_id == produto_id).first()
+        or db.query(CardapioItem).filter(CardapioItem.produto_id == produto_id).first()
+        or db.query(CardapioModeloItem).filter(CardapioModeloItem.produto_id == produto_id).first()
+    )
+
+    if usado_cardapio:
+        raise HTTPException(status_code=409, detail="Remova o produto dos cardápios antes de excluí-lo. Como alternativa, inative-o.")
+
     if usado_itcarrinho or usado_itvenda:
         raise HTTPException(
             status_code=400,
@@ -218,7 +240,7 @@ def atualizar_produto(
             ).first()
             if not categoria:
                 raise HTTPException(status_code=404, detail="Categoria não encontrada para esta organização.")
-            produto.categoria_id = categoria_id
+            _definir_categoria_catalogo(db, produto.produto_id, categoria_id)
 
         if nmproduto is not None:
             nmproduto = nmproduto.strip()
@@ -264,11 +286,12 @@ def atualizar_produto(
         db.commit()
         db.refresh(produto)
 
+        categoria_atual = _categoria_catalogo(db, produto.produto_id)
         return {
             "mensagem": "Produto atualizado com sucesso",
             "produto_id": produto.produto_id,
             "organizacao_id": produto.organizacao_id,
-            "categoria_id": produto.categoria_id,
+            "categoria_id": categoria_atual.categoria_id if categoria_atual else None,
             "nmproduto": produto.nmproduto,
             "dsproduto": produto.dsproduto,
             "vrprecoprod": float(produto.vrprecoprod),
@@ -299,11 +322,7 @@ def listar_produtos_por_loja(
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
-    query = (
-        db.query(Produto, Categoria.nmcategoria)
-        .outerjoin(Categoria, Categoria.categoria_id == Produto.categoria_id)
-        .filter(Produto.organizacao_id == loja.organizacao_id)
-    )
+    query = db.query(Produto).filter(Produto.organizacao_id == loja.organizacao_id)
 
     if not incluir_inativos:
         query = query.filter(Produto.sitproduto == "ATIVO")
@@ -312,20 +331,21 @@ def listar_produtos_por_loja(
 
     saida = []
 
-    for produto, nmcategoria in rows:
+    for produto in rows:
         vrprecofinal, descontoativo = calcular_preco_final(produto)
+        categoria_catalogo = _categoria_catalogo(db, produto.produto_id)
 
         saida.append(
             {
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
                 "loja_id": loja_id,
-                "categoria_id": produto.categoria_id,
+                "categoria_id": categoria_catalogo.categoria_id if categoria_catalogo else None,
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto,
                 "vrprecoprod": float(produto.vrprecoprod),
                 "sitproduto": produto.sitproduto,
-                "nmcategoria": nmcategoria,
+                "nmcategoria": categoria_catalogo.nmcategoria if categoria_catalogo else None,
                 "urlfotoproduto": produto.urlfotoproduto,
                 "tipodesconto": produto.tipodesconto or "NENHUM",
                 "vrdesconto": float(produto.vrdesconto or 0),
@@ -426,7 +446,6 @@ async def criar_produto(
 
     novo_produto = Produto(
         organizacao_id=organizacao_id,
-        categoria_id=categoria_id,
         nmproduto=nmproduto,
         dsproduto=dsproduto,
         vrprecoprod=vrprecoprod,
@@ -440,6 +459,9 @@ async def criar_produto(
     )
 
     db.add(novo_produto)
+    db.flush()
+    if categoria_id:
+        db.add(ProdutoCategoriaOrg(produto_id=novo_produto.produto_id, categoria_id=categoria_id))
     db.commit()
     db.refresh(novo_produto)
 
@@ -447,7 +469,7 @@ async def criar_produto(
         "message": "Produto cadastrado com sucesso.",
         "produto_id": novo_produto.produto_id,
         "organizacao_id": novo_produto.organizacao_id,
-        "categoria_id": novo_produto.categoria_id,
+        "categoria_id": categoria_id,
         "nmproduto": novo_produto.nmproduto,
         "dsproduto": novo_produto.dsproduto,
         "vrprecoprod": float(novo_produto.vrprecoprod),
@@ -480,11 +502,12 @@ def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
         )
 
     vrprecofinal, descontoativo = calcular_preco_final(produto)
+    categoria_catalogo = _categoria_catalogo(db, produto.produto_id)
 
     return {
         "produto_id": produto.produto_id,
         "organizacao_id": produto.organizacao_id,
-        "categoria_id": produto.categoria_id,
+        "categoria_id": categoria_catalogo.categoria_id if categoria_catalogo else None,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,
         "vrprecoprod": float(produto.vrprecoprod),

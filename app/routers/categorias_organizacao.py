@@ -7,7 +7,7 @@ from app.core.security import get_operador_logado, get_usuario_logado
 from app.database import get_db
 from app.models.cardapio import CategoriaPadrao
 from app.models.categoria import Categoria
-from app.models.produto import Produto
+from app.models.cardapio_padrao import ProdutoCategoriaOrg
 
 
 router = APIRouter(tags=["Categorias de cardápio"])
@@ -197,6 +197,30 @@ def criar_personalizada(organizacao_id: int, dados: CategoriaPersonalizadaIn, pa
     return _saida(item)
 
 
+@router.patch("/organizacoes/{organizacao_id}/categorias/{categoria_id}/situacao")
+def alterar_situacao_categoria_organizacao(
+    organizacao_id: int,
+    categoria_id: int,
+    dados: CategoriaPadraoSituacaoIn,
+    payload=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    _validar_organizacao(payload, organizacao_id)
+    item = db.query(Categoria).filter(
+        Categoria.organizacao_id == organizacao_id,
+        Categoria.categoria_id == categoria_id,
+    ).first()
+    if item is None:
+        raise HTTPException(404, "Categoria não encontrada nesta organização.")
+    situacao = dados.sitcategoria.strip().upper()
+    if situacao not in {"ATIVA", "INATIVA"}:
+        raise HTTPException(422, "A situação deve ser ATIVA ou INATIVA.")
+    item.sitcategoria = situacao
+    db.commit()
+    db.refresh(item)
+    return _saida(item)
+
+
 @router.delete("/organizacoes/{organizacao_id}/categorias/{categoria_id}")
 def excluir_categoria_organizacao(
     organizacao_id: int,
@@ -211,7 +235,7 @@ def excluir_categoria_organizacao(
     ).first()
     if not item:
         raise HTTPException(404, "Categoria não encontrada.")
-    if db.query(Produto).filter(Produto.categoria_id == categoria_id).first():
+    if db.query(ProdutoCategoriaOrg).filter(ProdutoCategoriaOrg.categoria_id == categoria_id).first():
         raise HTTPException(
             409,
             "Não é possível apagar esta categoria: existem produtos vinculados. "

@@ -9,7 +9,7 @@ from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.models.categoria import Categoria
-from app.models.produto import Produto
+from app.models.cardapio_padrao import ProdutoCategoriaOrg
 
 router = APIRouter(prefix="/lojas", tags=["Categorias"])
 
@@ -255,8 +255,8 @@ def deletar_categoria_por_loja(
         raise HTTPException(status_code=404, detail="Categoria não encontrada")
     validar_mutacao_loja(usuario, loja.organizacao_id, loja_id)
 
-    existe_produto = db.query(Produto).filter(
-        Produto.categoria_id == categoria_id,
+    existe_produto = db.query(ProdutoCategoriaOrg).filter(
+        ProdutoCategoriaOrg.categoria_id == categoria_id,
     ).first()
 
     if existe_produto:

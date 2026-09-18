@@ -3,7 +3,7 @@ from sqlalchemy.sql import func
 from app.database import Base
 
 class Categoria(Base):
-    __tablename__ = "categoria"
+    __tablename__ = "categoriaorg"
 
     categoria_id = Column(BigInteger, primary_key=True, index=True)
     organizacao_id = Column(BigInteger, nullable=False, index=True)

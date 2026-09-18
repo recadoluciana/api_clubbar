@@ -828,7 +828,7 @@ CREATE TABLE categoriapadrao (
   KEY idx_categoriapadrao_situacao_ordem (sitcategoria, idordcategoria)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE categoria (
+CREATE TABLE categoriaorg (
   categoria_id     BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
   categoriapadrao_id BIGINT NULL,
@@ -849,16 +849,15 @@ CREATE TABLE categoria (
     ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX idx_categoria_organizacao ON categoria(organizacao_id);
+CREATE INDEX idx_categoria_organizacao ON categoriaorg(organizacao_id);
 
-ALTER TABLE categoria
+ALTER TABLE categoriaorg
   ADD UNIQUE KEY uk_categoria_nome (organizacao_id, nmcategoria),
   ADD UNIQUE KEY uk_categoria_padrao_org (organizacao_id, categoriapadrao_id);
 
 CREATE TABLE produto (
   produto_id       BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id   BIGINT NOT NULL,
-  categoria_id     BIGINT NULL,
   nmproduto        VARCHAR(100) NOT NULL,
   dsproduto        VARCHAR(255) NULL,
   vrprecoprod      DECIMAL(10,2) NOT NULL,
@@ -873,11 +872,6 @@ CREATE TABLE produto (
   dtinidesconto    DATETIME NULL,
   dtfimdesconto    DATETIME NULL,
 
-  CONSTRAINT fk_produto_categoria
-    FOREIGN KEY (categoria_id)
-    REFERENCES categoria(categoria_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-
   CONSTRAINT chk_produto_preco
     CHECK (vrprecoprod >= 0),
 
@@ -886,14 +880,19 @@ CREATE TABLE produto (
     CHECK (pccashback IS NULL OR (pccashback >= 0 AND pccashback <= 100))
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE produtocategoriaorg (
+  produto_id BIGINT NOT NULL,
+  categoria_id BIGINT NOT NULL,
+  PRIMARY KEY (produto_id, categoria_id),
+  CONSTRAINT fk_produtocategoriaorg_produto FOREIGN KEY (produto_id) REFERENCES produto(produto_id) ON DELETE CASCADE,
+  CONSTRAINT fk_produtocategoriaorg_categoria FOREIGN KEY (categoria_id) REFERENCES categoriaorg(categoria_id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE INDEX idx_produto_org_sit
   ON produto(organizacao_id, sitproduto);
 
 CREATE INDEX idx_produto_org_sit_nome
   ON produto(organizacao_id, sitproduto, nmproduto);
-
-CREATE INDEX idx_produto_categoria
-  ON produto(categoria_id);
 
 CREATE TABLE cardapiomodelo (
   cardapiomodelo_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -964,7 +963,7 @@ CREATE TABLE cardapioversaocategoria (
   CONSTRAINT fk_cardapioversaocategoria_versao FOREIGN KEY (cardapioversao_id)
     REFERENCES cardapioversao(cardapioversao_id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_cardapioversaocategoria_categoria FOREIGN KEY (categoria_id)
-    REFERENCES categoria(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    REFERENCES categoriaorg(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY uk_cardapioversaocategoria (cardapioversao_id, categoria_id),
   KEY idx_cardapioversaocategoria_ordem (cardapioversao_id, idordcategoria)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -985,7 +984,8 @@ CREATE TABLE cardapioitem (
     REFERENCES cardapioversaocategoria(cardapioversaocategoria_id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_cardapioitem_produto FOREIGN KEY (produto_id)
     REFERENCES produto(produto_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapioitem_produto (cardapioversao_id, produto_id),
+  UNIQUE KEY uk_cardapioitem_categoria_produto (cardapioversaocategoria_id, produto_id),
+  KEY idx_cardapioitem_versao (cardapioversao_id),
   KEY idx_cardapioitem_categoria_ordem (cardapioversaocategoria_id, idorditem),
   CHECK (vrpreco >= 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1022,7 +1022,7 @@ CREATE TABLE cardapioreajuste (
   CONSTRAINT fk_cardapioreajuste_versao FOREIGN KEY (cardapioversao_id)
     REFERENCES cardapioversao(cardapioversao_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_cardapioreajuste_categoria FOREIGN KEY (categoria_id)
-    REFERENCES categoria(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    REFERENCES categoriaorg(categoria_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_cardapioreajuste_usuario FOREIGN KEY (usuario_id)
     REFERENCES usuario(usuario_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   KEY idx_cardapioreajuste_versao_data (cardapioversao_id, dtcriacao),
@@ -2170,48 +2170,33 @@ CREATE TABLE IF NOT EXISTS manualversao (
     CONSTRAINT fk_manualversao_manual FOREIGN KEY (manual_id) REFERENCES manualguia(manual_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE cardapio_padrao_categoria (
-  cardapio_padrao_categoria_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+CREATE TABLE cardapiomodelocategoria (
+  cardapiomodelocategoria_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
-  nmcategoria VARCHAR(120) NOT NULL,
-  sitcategoria VARCHAR(10) NOT NULL DEFAULT 'ATIVA',
+  cardapiomodelo_id BIGINT NOT NULL,
+  categoria_id BIGINT NOT NULL,
   idordcategoria BIGINT NOT NULL DEFAULT 1,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapio_padrao_categoria_org
+  CONSTRAINT fk_cardapiomodelocategoria_org
     FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapio_padrao_categoria_nome (organizacao_id, nmcategoria),
-  KEY idx_cardapio_padrao_categoria_org (organizacao_id)
+  CONSTRAINT fk_cardapiomodelocategoria_modelo
+    FOREIGN KEY (cardapiomodelo_id) REFERENCES cardapiomodelo(cardapiomodelo_id) ON DELETE CASCADE,
+  CONSTRAINT fk_cardapiomodelocategoria_categoria
+    FOREIGN KEY (categoria_id) REFERENCES categoriaorg(categoria_id),
+  UNIQUE KEY uk_cardapiomodelocategoria_modelo_categoria (cardapiomodelo_id, categoria_id),
+  KEY idx_cardapiomodelocategoria_org (organizacao_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE cardapio_padrao_produto (
-  cardapio_padrao_produto_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL,
-  cardapio_padrao_categoria_id BIGINT NULL,
-  nmproduto VARCHAR(100) NOT NULL,
-  dsproduto VARCHAR(255) NULL,
-  vrprecoprod DECIMAL(10,2) NOT NULL,
-  sitproduto VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
-  urlfotoproduto VARCHAR(255) NULL,
-  tipodesconto VARCHAR(15) NOT NULL DEFAULT 'NENHUM',
-  vrdesconto DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-  pccashback DECIMAL(10,2) NULL,
-  dtinidesconto DATETIME NULL,
-  dtfimdesconto DATETIME NULL,
-  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapio_padrao_produto_org
-    FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_cardapio_padrao_produto_categoria
-    FOREIGN KEY (cardapio_padrao_categoria_id)
-    REFERENCES cardapio_padrao_categoria(cardapio_padrao_categoria_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapio_padrao_produto_nome (organizacao_id, nmproduto),
-  KEY idx_cardapio_padrao_produto_org (organizacao_id),
-  KEY idx_cardapio_padrao_produto_categoria (cardapio_padrao_categoria_id),
-  CONSTRAINT chk_cardapio_padrao_produto_preco CHECK (vrprecoprod >= 0),
-  CONSTRAINT chk_cardapio_padrao_produto_cashback
-    CHECK (pccashback IS NULL OR (pccashback >= 0 AND pccashback <= 100))
+CREATE TABLE cardapiomodeloproduto (
+  cardapiomodeloproduto_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cardapiomodelocategoria_id BIGINT NOT NULL,
+  produto_id BIGINT NOT NULL,
+  idorditem INT NOT NULL DEFAULT 1,
+  CONSTRAINT fk_cardapiomodeloproduto_categoria FOREIGN KEY (cardapiomodelocategoria_id)
+    REFERENCES cardapiomodelocategoria(cardapiomodelocategoria_id) ON DELETE CASCADE,
+  CONSTRAINT fk_cardapiomodeloproduto_produto FOREIGN KEY (produto_id)
+    REFERENCES produto(produto_id),
+  UNIQUE KEY uk_cardapiomodeloproduto_categoria_produto (cardapiomodelocategoria_id, produto_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

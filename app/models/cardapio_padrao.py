@@ -1,49 +1,40 @@
-from sqlalchemy import BigInteger, Column, DateTime, DECIMAL, ForeignKey, String, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database import Base
 
 
-class CardapioPadraoCategoria(Base):
-    __tablename__ = "cardapio_padrao_categoria"
+class CardapioModeloCategoria(Base):
+    __tablename__ = "cardapiomodelocategoria"
 
-    cardapio_padrao_categoria_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    cardapiomodelocategoria_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
-    nmcategoria = Column(String(120), nullable=False)
-    sitcategoria = Column(String(10), nullable=False, default="ATIVA")
+    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id", ondelete="CASCADE"), nullable=False, index=True)
+    categoria_id = Column(BigInteger, ForeignKey("categoriaorg.categoria_id"), nullable=False)
     idordcategoria = Column(BigInteger, nullable=False, default=1)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("organizacao_id", "nmcategoria", name="uk_cardapio_padrao_categoria_nome"),
+        UniqueConstraint("cardapiomodelo_id", "categoria_id", name="uk_cardapiomodelocategoria_modelo_categoria"),
     )
 
 
-class CardapioPadraoProduto(Base):
-    __tablename__ = "cardapio_padrao_produto"
+class CardapioModeloProduto(Base):
+    __tablename__ = "cardapiomodeloproduto"
 
-    cardapio_padrao_produto_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
-    cardapio_padrao_categoria_id = Column(
-        BigInteger,
-        ForeignKey("cardapio_padrao_categoria.cardapio_padrao_categoria_id"),
-        nullable=True,
-        index=True,
-    )
-    nmproduto = Column(String(100), nullable=False)
-    dsproduto = Column(String(255), nullable=True)
-    vrprecoprod = Column(DECIMAL(10, 2), nullable=False)
-    sitproduto = Column(String(10), nullable=False, default="ATIVO")
-    urlfotoproduto = Column(String(255), nullable=True)
-    tipodesconto = Column(String(15), nullable=False, default="NENHUM")
-    vrdesconto = Column(DECIMAL(10, 2), nullable=False, default=0)
-    pccashback = Column(DECIMAL(10, 2), nullable=True)
-    dtinidesconto = Column(DateTime, nullable=True)
-    dtfimdesconto = Column(DateTime, nullable=True)
-    dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
-    dtultatu = Column(DateTime, nullable=True, onupdate=func.now())
+    cardapiomodeloproduto_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    cardapiomodelocategoria_id = Column(BigInteger, ForeignKey("cardapiomodelocategoria.cardapiomodelocategoria_id", ondelete="CASCADE"), nullable=False, index=True)
+    produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False, index=True)
+    idorditem = Column(Integer, nullable=False, default=1)
 
     __table_args__ = (
-        UniqueConstraint("organizacao_id", "nmproduto", name="uk_cardapio_padrao_produto_nome"),
+        UniqueConstraint("cardapiomodelocategoria_id", "produto_id", name="uk_cardapiomodeloproduto_categoria_produto"),
     )
+
+
+class ProdutoCategoriaOrg(Base):
+    __tablename__ = "produtocategoriaorg"
+
+    produto_id = Column(BigInteger, ForeignKey("produto.produto_id", ondelete="CASCADE"), primary_key=True)
+    categoria_id = Column(BigInteger, ForeignKey("categoriaorg.categoria_id"), primary_key=True)

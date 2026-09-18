@@ -6,29 +6,30 @@ from types import SimpleNamespace
 from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
-from app.routers.cardapios import ItemPadraoIn, _categoria_produto_padrao, _preco_final_item, _saida_item_padrao, _validar_edicao_padrao, criar
+from app.routers.cardapios import ItemPadraoIn, _categoria_do_padrao, _categoria_produto_padrao, _preco_final_item, _saida_item_padrao, _validar_edicao_padrao, criar
 from main import app
 
 
 class CardapioPadraoEmpresaTest(unittest.TestCase):
     def test_itens_exigem_preco_nao_negativo(self):
-        self.assertEqual(ItemPadraoIn(categoria_id=1, nmproduto="Água", vrprecoprod=0).vrprecoprod, 0)
+        self.assertEqual(ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=0).vrprecoprod, 0)
         with self.assertRaises(ValidationError):
-            ItemPadraoIn(categoria_id=1, nmproduto="Água", vrprecoprod=-1)
+            ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=-1)
         with self.assertRaises(ValidationError):
-            ItemPadraoIn(categoria_id=0, nmproduto="Água", vrprecoprod=5)
+            ItemPadraoIn(cardapiomodelocategoria_id=0, nmproduto="Água", vrprecoprod=5)
 
     def test_desconto_e_cashback_sao_validados(self):
         with self.assertRaises(ValidationError):
-            ItemPadraoIn(categoria_id=1, nmproduto="Água", vrprecoprod=5, tipodesconto="PERCENTUAL", vrdesconto=101)
+            ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=5, tipodesconto="PERCENTUAL", vrdesconto=101)
         with self.assertRaises(ValidationError):
-            ItemPadraoIn(categoria_id=1, nmproduto="Água", vrprecoprod=5, pccashback=101)
+            ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=5, pccashback=101)
         with self.assertRaises(ValidationError):
-            ItemPadraoIn(categoria_id=1, nmproduto="Água", vrprecoprod=5, tipodesconto="VALOR", vrdesconto=6)
+            ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=5, tipodesconto="VALOR", vrdesconto=6)
 
     def test_resposta_contem_atributos_do_produto(self):
-        item = SimpleNamespace(cardapiomodeloitem_id=1, vrpreco=12.50)
-        categoria = SimpleNamespace(categoria_id=2, nmcategoria="Bebidas")
+        vinculo = SimpleNamespace(cardapiomodeloproduto_id=9)
+        categoria = SimpleNamespace(cardapiomodelocategoria_id=1, categoria_id=2)
+        origem = SimpleNamespace(nmcategoria="Bebidas")
         produto = SimpleNamespace(
             produto_id=3, organizacao_id=4, nmproduto="Água", dsproduto="Sem gás",
             vrprecoprod=12.50, sitproduto="ATIVO", skuproduto="AGUA-01",
@@ -36,8 +37,9 @@ class CardapioPadraoEmpresaTest(unittest.TestCase):
             vrdesconto=10, pccashback=5, dtinidesconto=None, dtfimdesconto=None,
             dtcriacao=None, dtultatu=None,
         )
-        resposta = _saida_item_padrao(item, produto, categoria)
+        resposta = _saida_item_padrao(vinculo, produto, categoria, origem)
         self.assertEqual(resposta["categoria_id"], 2)
+        self.assertEqual(resposta["produto_id"], 3)
         self.assertEqual(resposta["skuproduto"], "AGUA-01")
         self.assertEqual(resposta["tipodesconto"], "PERCENTUAL")
         self.assertEqual(resposta["pccashback"], 5)
@@ -52,6 +54,15 @@ class CardapioPadraoEmpresaTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as erro:
             _categoria_produto_padrao(db, 1, 99)
         self.assertEqual(erro.exception.status_code, 422)
+
+    def test_categoria_precisa_pertencer_ao_cardapio(self):
+        from unittest.mock import Mock
+
+        db = Mock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        with self.assertRaises(HTTPException) as erro:
+            _categoria_do_padrao(db, 1, 4, 99)
+        self.assertEqual(erro.exception.status_code, 404)
 
     def test_desconto_do_padrao_afeta_preco_final_na_vigencia(self):
         agora = datetime(2026, 9, 16, 12, 0)
