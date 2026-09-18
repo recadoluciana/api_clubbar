@@ -39,9 +39,9 @@ class PortalEstabelecimentoCreate(BaseModel):
     email: EmailStr | None = None
     estado_id: int = Field(gt=0)
     cidade_id: int = Field(gt=0)
-    cep: str | None = Field(default=None, max_length=9)
-    endereco: str | None = Field(default=None, max_length=255)
-    numero: str | None = Field(default=None, max_length=20)
+    cep: str = Field(pattern=r"^\d{8}$")
+    endereco: str = Field(min_length=1, max_length=255)
+    numero: str = Field(min_length=1, max_length=20)
     complemento: str | None = Field(default=None, max_length=120)
-    bairro: str | None = Field(default=None, max_length=120)
+    bairro: str = Field(min_length=1, max_length=120)
     mensagem: str | None = Field(default=None, max_length=1000)

@@ -27,6 +27,7 @@ from app.schemas.portalparceiro import (
 )
 from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
 from app.services.email_service import enviar_dados_portal_lead
+from app.services.endereco_lead import validar_cep_lead
 
 
 router = APIRouter(
@@ -114,11 +115,15 @@ def cadastrar_estabelecimento(
     db: Session = Depends(get_db),
 ):
     cidade = db.query(Cidade).filter(Cidade.cidade_id == dados.cidade_id).first()
-    if not cidade or cidade.estado_id != dados.estado_id:
+    estado = db.get(Estado, dados.estado_id)
+    if not cidade or not estado or cidade.estado_id != dados.estado_id:
         raise HTTPException(
             status_code=422,
             detail="Cidade e estado informados são incompatíveis.",
         )
+    if not all((valor or "").strip() for valor in (dados.endereco, dados.numero, dados.bairro)):
+        raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
+    validar_cep_lead(dados.cep, cidade, estado)
     documento = "".join(c for c in (dados.cpfcnpj or "") if c.isdigit()) or None
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,

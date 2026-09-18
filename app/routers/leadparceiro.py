@@ -1,4 +1,5 @@
 from app.services.contrato_automatico import garantir_contrato
+from app.services.endereco_lead import validar_cep_lead
 import re
 import secrets
 import traceback
@@ -29,6 +30,7 @@ from app.schemas.leadparceiro import (
     LeadParceiroUpdate,
     ConverterLeadParceiroIn,
     LeadEstabelecimentoCreate,
+    LeadEstabelecimentoNovo,
     LeadEstabelecimentoUpdate,
     LeadEstabelecimentoOut,
 )
@@ -251,11 +253,14 @@ def criar_interesse_parceiro(
     for item in payload.estabelecimentos:
         estado = db.query(Estado).filter(Estado.estado_id == item.estado_id).first()
         cidade = db.query(Cidade).filter(Cidade.cidade_id == item.cidade_id).first()
-        if (item.estado_id is not None and not estado) or (item.cidade_id is not None and (not cidade or cidade.estado_id != item.estado_id)):
+        if not estado or not cidade or cidade.estado_id != item.estado_id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cidade e estado inválidos para {item.nmestabelecimento}.",
             )
+        if not all((valor or "").strip() for valor in (item.endereco, item.numero, item.bairro)):
+            raise HTTPException(422, f"Complete o endereço de {item.nmestabelecimento}.")
+        validar_cep_lead(item.cep, cidade, estado)
         localidades.append((estado, cidade))
 
     lead = LeadParceiro(
@@ -435,7 +440,7 @@ def buscar_interesse_parceiro(
 )
 def adicionar_estabelecimento(
     leadparceiro_id: int,
-    payload: LeadEstabelecimentoCreate,
+    payload: LeadEstabelecimentoNovo,
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
@@ -452,6 +457,10 @@ def adicionar_estabelecimento(
             status_code=422,
             detail="Cidade e estado informados são incompatíveis.",
         )
+    estado = db.get(Estado, payload.estado_id)
+    if not all((valor or "").strip() for valor in (payload.endereco, payload.numero, payload.bairro)):
+        raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
+    validar_cep_lead(payload.cep, cidade, estado)
     item = LeadEstabelecimento(
         leadparceiro_id=leadparceiro_id,
         **payload.model_dump(),

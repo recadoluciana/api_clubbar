@@ -14,6 +14,10 @@ class LeadCadastroMultiploTest(unittest.TestCase):
             "tipovenda": "AMBOS",
             "estado_id": 17,
             "cidade_id": cidade_id,
+            "cep": "30130000",
+            "endereco": "Rua da Bahia",
+            "numero": "100",
+            "bairro": "Centro",
         }
 
     def test_aceita_varios_estabelecimentos_no_mesmo_cadastro(self):
@@ -56,10 +60,14 @@ class LeadCadastroMultiploTest(unittest.TestCase):
             cadastro = LeadParceiroCreate(nmorganizacao="Grupo Teste", nmresponsavel="Pessoa Teste", telefone="11999999999", email="pessoa@example.com", estabelecimentos=[item])
             self.assertEqual(cadastro.estabelecimentos[0].cpfcnpj, esperado)
 
-    def test_empresa_obrigatoria_e_endereco_opcional(self):
+    def test_aceita_cep_com_mascara_e_normaliza(self):
         item = self._estabelecimento("Bar", 1)
-        item.pop("estado_id")
-        item.pop("cidade_id")
+        item["cep"] = "30130-000"
+        cadastro = LeadParceiroCreate(nmorganizacao="Grupo Teste", nmresponsavel="Pessoa Teste", telefone="11999999999", email="pessoa@example.com", estabelecimentos=[item])
+        self.assertEqual(cadastro.estabelecimentos[0].cep, "30130000")
+
+    def test_empresa_e_endereco_obrigatorios(self):
+        item = self._estabelecimento("Bar", 1)
         dados = dict(nmresponsavel="Pessoa Teste", telefone="11999999999", email="pessoa@example.com", estabelecimentos=[item])
         for valor in (None, "", "   "):
             with self.assertRaises(ValidationError):
@@ -68,8 +76,15 @@ class LeadCadastroMultiploTest(unittest.TestCase):
             LeadParceiroCreate(**dados)
         cadastro = LeadParceiroCreate(**dados, nmorganizacao=" Empresa ")
         self.assertEqual(cadastro.nmorganizacao, "Empresa")
-        self.assertIsNone(cadastro.estabelecimentos[0].estado_id)
-        self.assertIsNone(cadastro.estabelecimentos[0].cidade_id)
+        for campo in ("cep", "endereco", "numero", "bairro", "estado_id", "cidade_id"):
+            sem_campo = self._estabelecimento("Bar", 1)
+            sem_campo.pop(campo)
+            with self.subTest(campo=campo), self.assertRaises(ValidationError):
+                LeadParceiroCreate(**{**dados, "estabelecimentos": [sem_campo]}, nmorganizacao="Empresa")
+        com_cep_invalido = self._estabelecimento("Bar", 1)
+        com_cep_invalido["cep"] = "12345"
+        with self.assertRaises(ValidationError):
+            LeadParceiroCreate(**{**dados, "estabelecimentos": [com_cep_invalido]}, nmorganizacao="Empresa")
 
 
 if __name__ == "__main__":

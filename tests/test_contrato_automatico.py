@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from unittest.mock import patch
 from hashlib import sha256
 from sqlalchemy import BigInteger, create_engine
 from sqlalchemy.ext.compiler import compiles
@@ -192,8 +193,9 @@ class ContratoAutomaticoTest(unittest.TestCase):
     def test_cadastro_portal_disponibiliza_contrato_na_mesma_transacao(self):
         from app.routers.portalparceiro import cadastrar_estabelecimento
         from app.schemas.portalparceiro import PortalEstabelecimentoCreate
-        dados = PortalEstabelecimentoCreate(nmestabelecimento="Novo bar", tipo="BAR", estado_id=1, cidade_id=1)
-        resultado = cadastrar_estabelecimento(dados, self.db.get(LeadParceiro, 1), self.db)
+        dados = PortalEstabelecimentoCreate(nmestabelecimento="Novo bar", tipo="BAR", estado_id=1, cidade_id=1, cep="30130000", endereco="Rua da Bahia", numero="100", bairro="Centro")
+        with patch("app.routers.portalparceiro.validar_cep_lead"):
+            resultado = cadastrar_estabelecimento(dados, self.db.get(LeadParceiro, 1), self.db)
         contrato = self.db.query(LeadEstabelecimentoContrato).filter_by(
             leadestabelecimento_id=resultado["leadestabelecimento_id"]).one()
         self.assertEqual(contrato.status, "RASCUNHO")

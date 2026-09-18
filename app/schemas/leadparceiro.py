@@ -109,9 +109,21 @@ class LeadEstabelecimentoOut(BaseModel):
     class Config:
         from_attributes = True
 
-class LeadEstabelecimentoCadastro(LeadEstabelecimentoCreate):
-    estado_id: int | None = Field(default=None, gt=0)
-    cidade_id: int | None = Field(default=None, gt=0)
+class LeadEstabelecimentoNovo(LeadEstabelecimentoCreate):
+    estado_id: int = Field(gt=0)
+    cidade_id: int = Field(gt=0)
+    cep: str = Field(pattern=r"^\d{8}$")
+    endereco: str = Field(min_length=1, max_length=255)
+    numero: str = Field(min_length=1, max_length=20)
+    bairro: str = Field(min_length=1, max_length=120)
+
+    @field_validator("cep", mode="before")
+    @classmethod
+    def normalizar_cep_obrigatorio(cls, valor: str | None) -> str | None:
+        return "".join(caractere for caractere in valor if caractere.isdigit()) if isinstance(valor, str) else valor
+
+
+class LeadEstabelecimentoCadastro(LeadEstabelecimentoNovo):
     cpfcnpj: str = Field(min_length=11, max_length=18)
 
     @field_validator("cpfcnpj")
