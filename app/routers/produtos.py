@@ -10,7 +10,7 @@ import traceback
 from app.database import get_db
 from app.models.categoria import Categoria
 from app.models.cardapio_padrao import CardapioModeloProduto, ProdutoCategoriaOrg
-from app.models.cardapio import CardapioItem, CardapioModeloItem
+from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao, CardapioVersaoCategoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -20,6 +20,7 @@ from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
+from app.services.precos_cardapio import atualizar_preco_nas_lojas
 
 router = APIRouter(tags=["Produtos"])
 
@@ -62,12 +63,12 @@ def _parse_datetime(valor: str | None):
     )
 
 
-def calcular_preco_final(produto: Produto):
+def calcular_preco_final(produto: Produto, preco_base=None):
     agora = datetime.now()
 
     tipodesconto = (produto.tipodesconto or "NENHUM").upper()
     vrdesconto = float(produto.vrdesconto or 0)
-    vrprecoprod = float(produto.vrprecoprod or 0)
+    vrprecoprod = float(preco_base if preco_base is not None else (produto.vrprecoprod or 0))
 
     dtini = produto.dtinidesconto
     dtfim = produto.dtfimdesconto
@@ -175,7 +176,6 @@ def excluir_produto(
     usado_cardapio = (
         db.query(CardapioModeloProduto).filter(CardapioModeloProduto.produto_id == produto_id).first()
         or db.query(CardapioItem).filter(CardapioItem.produto_id == produto_id).first()
-        or db.query(CardapioModeloItem).filter(CardapioModeloItem.produto_id == produto_id).first()
     )
 
     if usado_cardapio:
@@ -200,6 +200,7 @@ def atualizar_produto(
     nmproduto: str | None = Form(None),
     dsproduto: str | None = Form(None),
     vrprecoprod: float | None = Form(None),
+    atualizar_preco_lojas: bool = Form(False),
     sitproduto: str | None = Form(None),
     tipodesconto: str | None = Form(None),
     vrdesconto: float | None = Form(None),
@@ -251,10 +252,13 @@ def atualizar_produto(
         if dsproduto is not None:
             produto.dsproduto = dsproduto
 
+        preco_anterior = float(produto.vrprecoprod)
         if vrprecoprod is not None:
             if vrprecoprod <= 0:
                 raise HTTPException(status_code=400, detail="Preço do produto deve ser maior que zero.")
             produto.vrprecoprod = vrprecoprod
+            if atualizar_preco_lojas and round(vrprecoprod, 2) != round(preco_anterior, 2):
+                atualizar_preco_nas_lojas(db, produto.organizacao_id, produto.produto_id, vrprecoprod)
 
         if sitproduto is not None:
             produto.sitproduto = sitproduto
@@ -312,7 +316,7 @@ def atualizar_produto(
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar produto: {str(e)}")
 
 
-# >>>>> lista todos os produtos da loja do tipo P (produto)
+# Produtos vinculados à versão mais recente dos cardápios desta loja.
 @router.get("/lojas/{loja_id}/produtos")
 def listar_produtos_por_loja(
     loja_id: int,
@@ -322,30 +326,55 @@ def listar_produtos_por_loja(
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail="Loja não encontrada")
-    query = db.query(Produto).filter(Produto.organizacao_id == loja.organizacao_id)
+    ultima_versao = (
+        db.query(
+            CardapioVersao.cardapio_id.label("cardapio_id"),
+            func.max(CardapioVersao.nrversao).label("nrversao"),
+        )
+        .group_by(CardapioVersao.cardapio_id)
+        .subquery()
+    )
+    query = (
+        db.query(Produto, Categoria, CardapioItem)
+        .join(CardapioItem, CardapioItem.produto_id == Produto.produto_id)
+        .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
+        .join(ultima_versao, (ultima_versao.c.cardapio_id == CardapioVersao.cardapio_id) & (ultima_versao.c.nrversao == CardapioVersao.nrversao))
+        .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+        .join(CardapioVersaoCategoria, CardapioVersaoCategoria.cardapioversaocategoria_id == CardapioItem.cardapioversaocategoria_id)
+        .join(Categoria, Categoria.categoria_id == CardapioVersaoCategoria.categoria_id)
+        .filter(Cardapio.loja_id == loja_id, Cardapio.organizacao_id == loja.organizacao_id, Produto.organizacao_id == loja.organizacao_id, Categoria.organizacao_id == loja.organizacao_id)
+    )
 
     if not incluir_inativos:
         query = query.filter(Produto.sitproduto == "ATIVO")
 
-    rows = query.order_by(Produto.nmproduto.asc()).all()
+    rows = query.order_by(Produto.nmproduto.asc(), Categoria.nmcategoria.asc()).all()
 
     saida = []
+    produtos_listados = {}
 
-    for produto in rows:
-        vrprecofinal, descontoativo = calcular_preco_final(produto)
-        categoria_catalogo = _categoria_catalogo(db, produto.produto_id)
+    for produto, categoria, item in rows:
+        if produto.produto_id in produtos_listados:
+            existente = produtos_listados[produto.produto_id]
+            if categoria.categoria_id not in existente["categoria_ids"]:
+                existente["categoria_ids"].append(categoria.categoria_id)
+                existente["categorias"].append(categoria.nmcategoria)
+                existente["nmcategoria"] = ", ".join(existente["categorias"])
+            continue
+        vrprecofinal, descontoativo = calcular_preco_final(produto, item.vrpreco)
 
-        saida.append(
-            {
+        registro = {
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
                 "loja_id": loja_id,
-                "categoria_id": categoria_catalogo.categoria_id if categoria_catalogo else None,
+                "categoria_id": categoria.categoria_id,
+                "categoria_ids": [categoria.categoria_id],
+                "categorias": [categoria.nmcategoria],
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto,
-                "vrprecoprod": float(produto.vrprecoprod),
+                "vrprecoprod": float(item.vrpreco),
                 "sitproduto": produto.sitproduto,
-                "nmcategoria": categoria_catalogo.nmcategoria if categoria_catalogo else None,
+                "nmcategoria": categoria.nmcategoria,
                 "urlfotoproduto": produto.urlfotoproduto,
                 "tipodesconto": produto.tipodesconto or "NENHUM",
                 "vrdesconto": float(produto.vrdesconto or 0),
@@ -355,7 +384,8 @@ def listar_produtos_por_loja(
                 "descontoativo": descontoativo,
                 "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
             }
-        )
+        produtos_listados[produto.produto_id] = registro
+        saida.append(registro)
 
     return saida
 

@@ -12,7 +12,9 @@ from main import app
 
 class CardapioPadraoEmpresaTest(unittest.TestCase):
     def test_itens_exigem_preco_nao_negativo(self):
-        self.assertEqual(ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=0).vrprecoprod, 0)
+        item = ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=0)
+        self.assertEqual(item.vrprecoprod, 0)
+        self.assertFalse(item.atualizar_preco_lojas)
         with self.assertRaises(ValidationError):
             ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=-1)
         with self.assertRaises(ValidationError):

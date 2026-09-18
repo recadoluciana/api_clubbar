@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import event, inspect
 from sqlalchemy.orm import Session
 
+from app.database import AuditedSession
 from app.models.auditoria import Auditoria
 
 
@@ -140,7 +141,7 @@ def registrar_eventos_auditoria() -> None:
         return
     _eventos_registrados = True
 
-    @event.listens_for(Session, "before_flush")
+    @event.listens_for(AuditedSession, "before_flush")
     def capturar_alteracoes(session: Session, _flush_context, _instances) -> None:
         pendentes = session.info.setdefault("auditoria_pendentes", [])
 
@@ -161,7 +162,7 @@ def registrar_eventos_auditoria() -> None:
             if not isinstance(objeto, Auditoria):
                 pendentes.append(("EXCLUSAO", objeto, _estado_completo(objeto), None))
 
-    @event.listens_for(Session, "after_flush_postexec")
+    @event.listens_for(AuditedSession, "after_flush_postexec")
     def persistir_auditoria(session: Session, _flush_context) -> None:
         pendentes = session.info.pop("auditoria_pendentes", [])
         for acao, objeto, anteriores, novos in pendentes:
@@ -169,6 +170,6 @@ def registrar_eventos_auditoria() -> None:
                 novos = _estado_completo(objeto)
             session.add(_criar_evento(objeto, acao, anteriores, novos))
 
-    @event.listens_for(Session, "after_rollback")
+    @event.listens_for(AuditedSession, "after_rollback")
     def descartar_auditoria_de_transacao_cancelada(session: Session) -> None:
         session.info.pop("auditoria_pendentes", None)

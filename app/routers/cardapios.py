@@ -21,6 +21,7 @@ from app.models.categoria import Categoria
 from app.models.cardapio_padrao import CardapioModeloCategoria, CardapioModeloProduto
 from app.models.loja import Loja
 from app.models.produto import Produto
+from app.services.precos_cardapio import atualizar_preco_nas_lojas
 
 
 router = APIRouter(tags=["Cardápios"])
@@ -35,6 +36,7 @@ class CardapioIn(BaseModel):
 class ItemPadraoIn(BaseModel):
     cardapiomodelocategoria_id: int = Field(gt=0)
     produto_id: int | None = Field(default=None, gt=0)
+    atualizar_preco_lojas: bool = False
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
     vrprecoprod: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
@@ -408,7 +410,7 @@ def adicionar_item_padrao(organizacao_id: int, modelo_id: int, dados: ItemPadrao
         else:
             if db.query(Produto).filter(Produto.organizacao_id == organizacao_id, func.lower(Produto.nmproduto) == dados.nmproduto.lower()).first():
                 raise HTTPException(409, "Este produto já existe na organização. Selecione-o para utilizar neste cardápio.")
-            campos = dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"})
+            campos = dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id", "atualizar_preco_lojas"})
             produto = Produto(organizacao_id=organizacao_id, **campos)
             db.add(produto); db.flush()
         if db.query(CardapioModeloProduto).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, CardapioModeloProduto.produto_id == produto.produto_id).first():
@@ -452,8 +454,11 @@ def alterar_produto_padrao(organizacao_id: int, modelo_id: int, item_id: int, da
     categoria = _categoria_do_padrao(db, organizacao_id, modelo_id, dados.cardapiomodelocategoria_id)
     if dados.produto_id is not None and dados.produto_id != produto.produto_id:
         raise HTTPException(422, "O produto do vínculo não pode ser trocado nesta edição.")
-    for campo, valor in dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"}).items():
+    preco_anterior = Decimal(produto.vrprecoprod)
+    for campo, valor in dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id", "atualizar_preco_lojas"}).items():
         setattr(produto, campo, valor)
+    if dados.atualizar_preco_lojas and dados.vrprecoprod != preco_anterior:
+        atualizar_preco_nas_lojas(db, organizacao_id, produto.produto_id, dados.vrprecoprod)
     vinculo.cardapiomodelocategoria_id = categoria.cardapiomodelocategoria_id
     db.commit()
     db.refresh(produto)

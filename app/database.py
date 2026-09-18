@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import Session, sessionmaker, declarative_base
 from app.core.config import DATABASE_URL
 
 if not DATABASE_URL:
@@ -14,7 +14,12 @@ engine = create_engine(
     future=True,
 )
 
+class AuditedSession(Session):
+    """Sessões da aplicação; fixtures externas não recebem hooks de auditoria."""
+
+
 SessionLocal = sessionmaker(
+    class_=AuditedSession,
     autocommit=False,
     autoflush=False,
     bind=engine,

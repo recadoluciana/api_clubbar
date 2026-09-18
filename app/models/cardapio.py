@@ -29,18 +29,6 @@ class CardapioModelo(Base):
     __table_args__ = (UniqueConstraint("organizacao_id", "nmcardapio", name="uk_cardapiomodelo_org_nome"),)
 
 
-class CardapioModeloItem(Base):
-    __tablename__ = "cardapiomodeloitem"
-
-    cardapiomodeloitem_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id", ondelete="CASCADE"), nullable=False, index=True)
-    produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False)
-    vrpreco = Column(Numeric(10, 2), nullable=False)
-    idorditem = Column(Integer, nullable=False, server_default="1")
-
-    __table_args__ = (UniqueConstraint("cardapiomodelo_id", "produto_id", name="uk_cardapiomodeloitem_produto"),)
-
-
 class Cardapio(Base):
     __tablename__ = "cardapio"
 
