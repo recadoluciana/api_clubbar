@@ -3,11 +3,18 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 class ClienteRegister(BaseModel):
-    nmcliente   : str
-    emailcliente: str
-    senhahashcli: str
+    nmcliente   : str = Field(min_length=3, max_length=120)
+    emailcliente: EmailStr
+    senhahashcli: str = Field(min_length=6, max_length=72)
     nrtelcliente: Optional[str] = None
-    nrcpfcliente: Optional[str] = None
+    nrcpfcliente: str = Field(min_length=11, max_length=15)
+    endcliente: str = Field(min_length=2, max_length=150)
+    nrendcliente: str = Field(min_length=1, max_length=20)
+    complcliente: Optional[str] = Field(default=None, max_length=80)
+    bairrocliente: str = Field(min_length=2, max_length=80)
+    cepcliente: str = Field(min_length=8, max_length=10)
+    cidadecliente: str = Field(min_length=2, max_length=100)
+    ufcliente: str = Field(min_length=2, max_length=2)
 
 class ClienteLogin(BaseModel):
     email: EmailStr

@@ -217,9 +217,15 @@ async def obter_ou_criar_customer_asaas_loja(
     cliente = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
     if not cliente:
         raise HTTPException(404, "Cliente não encontrado")
+    cpf_cnpj = "".join(filter(str.isdigit, cliente.nrcpfcliente or ""))
+    if len(cpf_cnpj) not in (11, 14):
+        raise HTTPException(
+            422,
+            "Informe um CPF ou CNPJ válido em Dados pessoais antes de realizar o pagamento.",
+        )
     body = {
         "name": cliente.nmcliente,
-        "cpfCnpj": cliente.nrcpfcliente,
+        "cpfCnpj": cpf_cnpj,
         "email": cliente.emailcliente,
         "mobilePhone": cliente.nrtelcliente,
         "address": cliente.endcliente,

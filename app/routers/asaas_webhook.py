@@ -22,7 +22,6 @@ from app.models.cliente import Cliente
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.implantacao_service import reconciliar_cobranca_implantacao
 from app.services.asaas_service import buscar_customer_asaas
-from app.services.repasse_service import criar_repasse_da_venda
 from app.core.config import (
     ASAAS_API_KEY,
     ASAAS_WEBHOOK_TOKEN,
@@ -340,12 +339,6 @@ async def asaas_webhook(
             registro_checkout.status = "PAID"
             if payment_id:
                 registro_checkout.payment_id = str(payment_id)
-            if venda_id:
-                criar_repasse_da_venda(
-                    db,
-                    venda_id=int(venda_id),
-                    checkout=registro_checkout,
-                )
 
         db.commit()
 

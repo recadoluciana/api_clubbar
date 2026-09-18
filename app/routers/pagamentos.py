@@ -46,7 +46,6 @@ from app.services.asaas_service import (
     cancelar_checkout_asaas,
     excluir_qrcode_pix_estatico_asaas,
 )
-from app.services.repasse_service import criar_repasse_da_venda
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar

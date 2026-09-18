@@ -12,7 +12,6 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.venda import Venda
 from app.services.pagamento_status_service import set_venda_como_paga
-from app.services.repasse_service import criar_repasse_da_venda
 from app.services.venda_service import gerar_token_qr
 
 
@@ -60,7 +59,6 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
     checkout.status = "PAID"
     checkout.dsorigemconfirmacao = "CONSULTA"
     checkout.dtconfirmacao = datetime.now()
-    criar_repasse_da_venda(db, venda_id=venda.venda_id, checkout=checkout)
     return {"ok": True, "venda_id": venda.venda_id, "pagvenda_id": pag.pagvenda_id}
 
 

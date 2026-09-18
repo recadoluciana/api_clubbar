@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 
@@ -21,6 +22,24 @@ from passlib.exc import UnknownHashError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+
+def _cpf_valido(cpf: str) -> bool:
+    if len(cpf) != 11 or len(set(cpf)) == 1:
+        return False
+
+    for tamanho in (9, 10):
+        soma = sum(
+            int(cpf[indice]) * (tamanho + 1 - indice)
+            for indice in range(tamanho)
+        )
+        digito = (soma * 10) % 11
+        if digito == 10:
+            digito = 0
+        if digito != int(cpf[tamanho]):
+            return False
+
+    return True
+
 @router.post("/register_cliente")
 def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
     email = data.emailcliente.lower().strip()
@@ -33,29 +52,65 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
 
     cpf = ''.join(filter(str.isdigit, data.nrcpfcliente or ""))
 
-    if cpf:
-        cliente_existente = (
-            db.query(Cliente)
-            .filter(Cliente.nrcpfcliente == cpf)
-            .first()
+    if not _cpf_valido(cpf):
+        raise HTTPException(status_code=422, detail="Informe um CPF válido.")
+
+    cliente_existente = (
+        db.query(Cliente)
+        .filter(Cliente.nrcpfcliente == cpf)
+        .first()
+    )
+
+    if cliente_existente:
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe um cliente cadastrado com este CPF."
         )
 
-        if cliente_existente:
-            raise HTTPException(
-                status_code=400,
-                detail="Já existe um cliente cadastrado com este CPF."
-            )
+    cep = ''.join(filter(str.isdigit, data.cepcliente or ""))
+    if len(cep) != 8:
+        raise HTTPException(status_code=422, detail="Informe um CEP válido.")
+
+    endereco = data.endcliente.strip()
+    numero = data.nrendcliente.strip()
+    bairro = data.bairrocliente.strip()
+    cidade = data.cidadecliente.strip()
+    uf = data.ufcliente.strip().upper()
+    if not all((endereco, numero, bairro, cidade)) or len(uf) != 2:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe o endereço completo do cliente.",
+        )
 
     cli = Cliente(
         nmcliente=(data.nmcliente or "").strip(),
         emailcliente=email,
         senhahashcli=hash_senha(data.senhahashcli),
         nrtelcliente=telefone or None,
-        nrcpfcliente=cpf or None,
+        nrcpfcliente=cpf,
+        endcliente=endereco,
+        nrendcliente=numero,
+        complcliente=(data.complcliente or "").strip() or None,
+        bairrocliente=bairro,
+        cepcliente=cep,
+        cidadecliente=cidade,
+        ufcliente=uf,
     )
 
     db.add(cli)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if db.query(Cliente).filter(Cliente.nrcpfcliente == cpf).first():
+            raise HTTPException(
+                status_code=400,
+                detail="Já existe um cliente cadastrado com este CPF.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe um cliente cadastrado com estes dados.",
+        )
     db.refresh(cli)
 
     token = criar_jwt(

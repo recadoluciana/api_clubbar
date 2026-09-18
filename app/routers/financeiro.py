@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -6,15 +7,25 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado, get_usuario_logado
+from app.core.config import ASAAS_API_KEY
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.lojacontabancaria import LojaContaBancaria
 from app.models.repassefinanceiro import RepasseFinanceiro
 from app.models.venda import Venda
+from app.routers.titularfinanceiro import _asaas
 
 
 router = APIRouter(prefix="/financeiro", tags=["Financeiro"])
+
+
+def _valor_split(item: dict) -> Decimal:
+    for campo in ("totalValue", "value", "fixedValue"):
+        valor = item.get(campo)
+        if valor is not None:
+            return Decimal(str(valor))
+    return Decimal("0")
 
 
 class ContaBancariaIn(BaseModel):
@@ -38,6 +49,102 @@ class RepasseUpdateIn(BaseModel):
     idtransferencia: str | None = Field(default=None, max_length=100)
     urlcomprovante: str | None = Field(default=None, max_length=500)
     observacao: str | None = None
+
+
+@router.get("/extrato-asaas")
+async def extrato_asaas_clubbar(
+    data_inicio: date | None = None,
+    data_fim: date | None = None,
+    offset: int = 0,
+    limite: int = 100,
+    _: dict = Depends(get_operador_logado),
+):
+    if not ASAAS_API_KEY:
+        raise HTTPException(422, "A chave Asaas da conta Clubbar não está configurada")
+
+    hoje = date.today()
+    inicio = data_inicio or date(hoje.year, hoje.month, 1)
+    fim = data_fim or hoje
+    if inicio > fim:
+        raise HTTPException(422, "A data inicial não pode ser posterior à data final")
+
+    limite = min(max(limite, 1), 100)
+    saldo = await _asaas("GET", "/finance/balance", ASAAS_API_KEY)
+    extrato = await _asaas(
+        "GET",
+        "/financialTransactions",
+        ASAAS_API_KEY,
+        params={
+            "startDate": inicio.isoformat(),
+            "finishDate": fim.isoformat(),
+            "offset": max(offset, 0),
+            "limit": limite,
+            "order": "desc",
+        },
+    )
+    splits = await _asaas(
+        "GET",
+        "/payments/splits/received",
+        ASAAS_API_KEY,
+        params={
+            "paymentConfirmedDate[ge]": inicio.isoformat(),
+            "paymentConfirmedDate[le]": fim.isoformat(),
+            "offset": 0,
+            "limit": 100,
+        },
+    )
+
+    transacoes = [
+        {
+            "id": item.get("id"),
+            "data": item.get("date") or item.get("effectiveDate"),
+            "tipo": item.get("type"),
+            "descricao": item.get("description"),
+            "valor": item.get("value"),
+            "saldo": item.get("balance"),
+            "pagamento_id": item.get("paymentId"),
+            "transferencia_id": item.get("transferId"),
+        }
+        for item in extrato.get("data", [])
+    ]
+
+    recebimentos_pendentes = []
+    for item in splits.get("data", []):
+        status = str(item.get("status") or "").upper()
+        if status not in {"PENDING", "AWAITING_CREDIT"}:
+            continue
+        pagamento = item.get("payment") if isinstance(item.get("payment"), dict) else {}
+        valor = _valor_split(item)
+        recebimentos_pendentes.append(
+            {
+                "id": item.get("id"),
+                "data": pagamento.get("confirmedDate") or item.get("paymentConfirmedDate"),
+                "tipo": "SPLIT",
+                "status": status,
+                "descricao": item.get("description") or "Split recebido pelo Clubbar",
+                "valor_bruto": float(valor),
+                "valor_liquido": float(valor),
+                "data_prevista_credito": item.get("creditDate"),
+                "referencia": pagamento.get("externalReference"),
+            }
+        )
+
+    return {
+        "conta": "Clubbar",
+        "saldo": float(saldo.get("balance") or 0),
+        "data_inicio": inicio,
+        "data_fim": fim,
+        "total": extrato.get("totalCount", len(transacoes)),
+        "possui_mais": bool(extrato.get("hasMore")),
+        "transacoes": transacoes,
+        "total_pendente": float(
+            sum(
+                Decimal(str(item["valor_liquido"] or 0))
+                for item in recebimentos_pendentes
+            )
+        ),
+        "recebimentos_pendentes": recebimentos_pendentes,
+    }
 
 
 def _loja_do_parceiro(db: Session, loja_id: int, usuario: dict) -> Loja:
