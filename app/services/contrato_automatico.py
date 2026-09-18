@@ -15,6 +15,27 @@ def _valor(valor: object | None, padrao: str = "não informado") -> str:
     return texto or padrao
 
 
+def _atividade_formatada(valor: str | None) -> str:
+    nomes = {
+        "BAR": "Bar",
+        "CASA_NOTURNA": "Casa Noturna",
+        "PRODUTOR_EVENTOS": "Produtor de Eventos",
+        "CASA_EVENTOS": "Casa de Eventos",
+    }
+    codigo = _valor(valor)
+    return nomes.get(codigo, codigo)
+
+
+def _modalidade_venda_formatada(valor: str | None) -> str:
+    nomes = {
+        "PRODUTOS": "Venda de produtos",
+        "INGRESSOS": "Venda de ingressos",
+        "AMBOS": "Venda de produtos e ingressos",
+    }
+    codigo = _valor(valor)
+    return nomes.get(codigo, codigo)
+
+
 def endereco_contrato(estabelecimento: LeadEstabelecimento, cidade: Cidade | None, estado: Estado | None) -> str:
     complemento = f", {_valor(estabelecimento.complemento)}" if estabelecimento.complemento else ""
     return (
@@ -61,8 +82,10 @@ def _gerar_conteudo(
         "{{TELEFONE}}": telefone,
         "{{EMAIL}}": email,
         "{{ENDERECO}}": endereco,
-        "{{ATIVIDADE}}": _valor(estabelecimento.tipo),
-        "{{MODALIDADE_VENDA}}": _valor(estabelecimento.tipovenda),
+        "{{ATIVIDADE}}": _atividade_formatada(estabelecimento.tipo),
+        "{{MODALIDADE_VENDA}}": _modalidade_venda_formatada(
+            estabelecimento.tipovenda
+        ),
         "{{TAXA_PRODUTOS}}": f"{taxa_produtos:.2f}",
         "{{TAXA_INGRESSOS}}": f"{taxa_ingressos:.2f}",
         "{{TAXA_MINIMA_INGRESSO}}": f"{taxa_minima_ingresso:.2f}",

@@ -123,6 +123,26 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertEqual(garantir_contrato(self.db, self.est).leadestabelecimentocontrato_id, item.leadestabelecimentocontrato_id)
         self.assertEqual(self.db.query(LeadEstabelecimentoContrato).count(), 1)
 
+    def test_formata_atividade_e_modalidade_de_venda_no_contrato(self):
+        self.est.tipo = "CASA_NOTURNA"
+        self.est.tipovenda = "AMBOS"
+        modelo = self.db.get(ContratoPadrao, 1)
+        modelo.conteudomodelo = (
+            "Atividade: {{ATIVIDADE}}\n"
+            "Modalidade de venda: {{MODALIDADE_VENDA}}"
+        )
+        self.db.commit()
+
+        item = garantir_contrato(self.db, self.est)
+
+        self.assertIn("Atividade: Casa Noturna", item.conteudocontrato)
+        self.assertIn(
+            "Modalidade de venda: Venda de produtos e ingressos",
+            item.conteudocontrato,
+        )
+        self.assertNotIn("CASA_NOTURNA", item.conteudocontrato)
+        self.assertNotIn("AMBOS", item.conteudocontrato)
+
     def test_preenche_sem_alterar_clausulas_e_preserva_aceito(self):
         item = garantir_contrato(self.db, self.est)
         item = preencher_contrato_portal(self.db, 1, item.leadestabelecimentocontrato_id, "123.456.789-01", "Minha empresa")
