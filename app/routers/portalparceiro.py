@@ -271,9 +271,10 @@ def obter_resumo(
             .all()
         )
         for contrato in contratos:
+            contrato_cobranca_id = contrato.contratoorigem_id or contrato.leadestabelecimentocontrato_id
             cobranca = db.query(CobrancaImplantacao).filter(
                 CobrancaImplantacao.leadestabelecimentocontrato_id
-                == contrato.leadestabelecimentocontrato_id
+                == contrato_cobranca_id
             ).first()
             if cobranca:
                 cobrancas_por_contrato[contrato.leadestabelecimentocontrato_id] = saida_cobranca(cobranca)
@@ -282,11 +283,22 @@ def obter_resumo(
             ).append(
                 {
                     "leadestabelecimentocontrato_id": contrato.leadestabelecimentocontrato_id,
+                    "tipoinstrumento": contrato.tipoinstrumento or "ORIGINAL",
+                    "contratoorigem_id": contrato.contratoorigem_id,
+                    "nrretificacao": contrato.nrretificacao,
+                    "dsjustificativa": contrato.dsjustificativa,
                     "versao": contrato.versao,
                     "status": contrato.status,
                     "conteudocontrato": contrato.conteudocontrato,
                     "cpfcnpjcontratante": contrato.cpfcnpjcontratante,
                     "nmrazaosocial": contrato.nmrazaosocial,
+                    "cepcontratante": contrato.cepcontratante,
+                    "enderecocontratante": contrato.enderecocontratante,
+                    "numerocontratante": contrato.numerocontratante,
+                    "bairrocontratante": contrato.bairrocontratante,
+                    "complementocontratante": contrato.complementocontratante,
+                    "estado_id_contratante": contrato.estado_id_contratante,
+                    "cidade_id_contratante": contrato.cidade_id_contratante,
                     "vrtaxaprod": float(contrato.vrtaxaprod),
                     "vrtaxaing": float(contrato.vrtaxaing),
                     "vrtaxaminimaingresso": float(contrato.vrtaxaminimaingresso),

@@ -608,6 +608,11 @@ CREATE TABLE taxapadrao (
 
 CREATE TABLE leadestabelecimentocontrato (
   leadestabelecimentocontrato_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  tipoinstrumento VARCHAR(20) NOT NULL DEFAULT 'ORIGINAL',
+  contratoorigem_id BIGINT NULL,
+  nrretificacao INT NULL,
+  dsjustificativa VARCHAR(500) NULL,
+  mesmaparteconfirmada CHAR(1) NULL,
   leadestabelecimento_id BIGINT NOT NULL,
   titularfinanceiro_id BIGINT NULL,
   contratopadrao_id BIGINT NULL,
@@ -641,6 +646,8 @@ CREATE TABLE leadestabelecimentocontrato (
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_leadestabelecimentocontrato_estabelecimento FOREIGN KEY (leadestabelecimento_id)
     REFERENCES leadestabelecimento(leadestabelecimento_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT fk_contrato_retificacao_origem FOREIGN KEY (contratoorigem_id)
+    REFERENCES leadestabelecimentocontrato(leadestabelecimentocontrato_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_leadestabelecimentocontrato_titular FOREIGN KEY (titularfinanceiro_id)
     REFERENCES titularfinanceiro(titularfinanceiro_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   CONSTRAINT fk_leadestabelecimentocontrato_padrao FOREIGN KEY (contratopadrao_id)
@@ -652,7 +659,8 @@ CREATE TABLE leadestabelecimentocontrato (
   ),
   INDEX idx_leadestabelecimentocontrato_estabelecimento (leadestabelecimento_id),
   INDEX idx_leadestabelecimentocontrato_padrao (contratopadrao_id),
-  INDEX idx_leadestabelecimentocontrato_status (status)
+  INDEX idx_leadestabelecimentocontrato_status (status),
+  UNIQUE KEY uk_contrato_retificacao_numero (contratoorigem_id, nrretificacao)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE cobrancaimplantacao (

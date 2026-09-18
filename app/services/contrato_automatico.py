@@ -14,6 +14,27 @@ def _valor(valor: object | None, padrao: str = "não informado") -> str:
     return texto or padrao
 
 
+def endereco_contrato(estabelecimento: LeadEstabelecimento, cidade: Cidade | None, estado: Estado | None) -> str:
+    complemento = f", {_valor(estabelecimento.complemento)}" if estabelecimento.complemento else ""
+    return (
+        f"{_valor(estabelecimento.endereco)}, {_valor(estabelecimento.numero)}{complemento}, "
+        f"bairro {_valor(estabelecimento.bairro)}, {_valor(getattr(cidade, 'nmcidade', None))}/"
+        f"{_valor(getattr(estado, 'sgestado', None))}, CEP {_valor(estabelecimento.cep)}"
+    )
+
+
+def campos_endereco_pendentes(estabelecimento: LeadEstabelecimento) -> list[str]:
+    campos = {
+        "CEP": len("".join(c for c in (estabelecimento.cep or "") if c.isdigit())) == 8,
+        "endereço": bool((estabelecimento.endereco or "").strip()),
+        "número": bool((estabelecimento.numero or "").strip()),
+        "bairro": bool((estabelecimento.bairro or "").strip()),
+        "estado": bool(estabelecimento.estado_id),
+        "cidade": bool(estabelecimento.cidade_id),
+    }
+    return [nome for nome, preenchido in campos.items() if not preenchido]
+
+
 def _gerar_conteudo(
     estabelecimento: LeadEstabelecimento,
     lead: LeadParceiro,
@@ -27,12 +48,7 @@ def _gerar_conteudo(
     nome_contratante: str,
     cpfcnpj_contratante: str,
 ) -> str:
-    complemento = f", {_valor(estabelecimento.complemento)}" if estabelecimento.complemento else ""
-    endereco = (
-        f"{_valor(estabelecimento.endereco)}, {_valor(estabelecimento.numero)}{complemento}, "
-        f"bairro {_valor(estabelecimento.bairro)}, {_valor(getattr(cidade, 'nmcidade', None))}/"
-        f"{_valor(getattr(estado, 'sgestado', None))}, CEP {_valor(estabelecimento.cep)}"
-    )
+    endereco = endereco_contrato(estabelecimento, cidade, estado)
     responsavel = _valor(estabelecimento.nmresponsavel, lead.nmresponsavel)
     telefone = _valor(estabelecimento.telefone_responsavel, estabelecimento.telefone or lead.telefone)
     email = _valor(estabelecimento.email_responsavel, estabelecimento.email or lead.email)

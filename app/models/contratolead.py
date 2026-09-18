@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Numeric, String, Text, text
+from sqlalchemy import BigInteger, CHAR, Column, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, text
 
 from app.database import Base
 
@@ -7,6 +7,11 @@ class LeadEstabelecimentoContrato(Base):
     __tablename__ = "leadestabelecimentocontrato"
 
     leadestabelecimentocontrato_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    tipoinstrumento = Column(String(20), nullable=False, server_default="ORIGINAL")
+    contratoorigem_id = Column(BigInteger, ForeignKey("leadestabelecimentocontrato.leadestabelecimentocontrato_id", ondelete="RESTRICT"), nullable=True, index=True)
+    nrretificacao = Column(Integer, nullable=True)
+    dsjustificativa = Column(String(500), nullable=True)
+    mesmaparteconfirmada = Column(CHAR(1), nullable=True)
     leadestabelecimento_id = Column(
         BigInteger,
         ForeignKey("leadestabelecimento.leadestabelecimento_id", ondelete="RESTRICT", onupdate="RESTRICT"),
@@ -51,3 +56,5 @@ class LeadEstabelecimentoContrato(Base):
     dtfim = Column(DateTime, nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (UniqueConstraint("contratoorigem_id", "nrretificacao", name="uk_contrato_retificacao_numero"),)

@@ -809,9 +809,16 @@ async def converter_lead_em_parceiro(
     ).order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc()).first()
     if not contrato_aceito:
         raise HTTPException(409, "Contrato aceito não encontrado")
+    if db.query(LeadEstabelecimentoContrato).filter(
+        LeadEstabelecimentoContrato.leadestabelecimento_id == estabelecimento.leadestabelecimento_id,
+        LeadEstabelecimentoContrato.tipoinstrumento == "RETIFICACAO",
+        LeadEstabelecimentoContrato.status == "ENVIADO",
+    ).first():
+        raise HTTPException(409, "Aguarde a assinatura ou cancele a retificação pendente antes de converter.")
+    contrato_cobranca_id = contrato_aceito.contratoorigem_id or contrato_aceito.leadestabelecimentocontrato_id
     cobranca_implantacao = db.query(CobrancaImplantacao).filter(
         CobrancaImplantacao.leadestabelecimentocontrato_id
-        == contrato_aceito.leadestabelecimentocontrato_id
+        == contrato_cobranca_id
     ).first()
     senha_inicial = secrets.token_urlsafe(9)
     primeira_conversao = organizacao_existente is None
