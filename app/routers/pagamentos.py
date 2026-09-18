@@ -17,6 +17,7 @@ from app.schemas.pagamentos import PagarNovoIn
 from app.models.carrinho import Carrinho
 from app.models.venda import Venda
 from app.models.produto import Produto
+from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.cashback_movimento import CashbackMovimento
@@ -108,6 +109,8 @@ def db_tx(db: Session):
 def _recalcular_itens_carrinho(
     db: Session,
     itens: list[Dict[str, Any]],
+    loja_id: int,
+    organizacao_id: int,
 ) -> tuple[list[Dict[str, Any]], float]:
     itens_recalculados = []
     total_geral = 0.0
@@ -194,7 +197,35 @@ def _recalcular_itens_carrinho(
 
             continue
 
-        vrprecofinal, descontoativo = calcular_preco_final(produto)
+        agora = datetime.now()
+        item_cardapio = (
+            db.query(CardapioItem)
+            .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
+            .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+            .filter(
+                CardapioItem.cardapioitem_id == int(it.get("cardapioitem_id") or 0),
+                CardapioItem.produto_id == produto_id_int,
+                CardapioItem.sititem == "ATIVO",
+                Cardapio.loja_id == loja_id,
+                Cardapio.organizacao_id == organizacao_id,
+                Cardapio.sitcardapio == "ATIVO",
+                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+                (CardapioVersao.dtiniciovigencia.is_(None)) | (CardapioVersao.dtiniciovigencia <= agora),
+                (CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora),
+            )
+            .first()
+        )
+        if item_cardapio is None or produto.organizacao_id != organizacao_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"O produto '{produto.nmproduto}' não está mais disponível no cardápio publicado da loja. Remova-o e adicione novamente.",
+            )
+        if Decimal(str(it.get("vrprecoprod") or 0)) != Decimal(item_cardapio.vrpreco):
+            raise HTTPException(
+                status_code=409,
+                detail=f"O preço de '{produto.nmproduto}' mudou desde que foi adicionado ao carrinho. Remova-o e adicione novamente para conferir o novo valor.",
+            )
+        vrprecofinal, descontoativo = calcular_preco_final(produto, item_cardapio.vrpreco)
         vrunitario = round(float(vrprecofinal), 2)
         subtotal   = round(vrunitario * qt_prod, 2)
 
@@ -327,7 +358,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
 
         agora = datetime.now()
         await _cancelar_tentativas_anteriores(db, carrinho_id)
-        itens_recalculados, _ = _recalcular_itens_carrinho(db, itens)
+        itens_recalculados, _ = _recalcular_itens_carrinho(db, itens, payload.loja_id, payload.organizacao_id)
         _, valor_total, valor_taxa = _montar_itens_asaas(itens_recalculados)
         valor_taxa = round(sum(float(item.get("vrtaxaitvenda") or 0) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados), 2)
         valor_cashback, debitos_cashback = reservar_uso(db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id, loja_id=payload.loja_id, total_produtos=valor_total, valor_solicitado=payload.valor_cashback) if payload.usar_cashback else (Decimal("0"), [])
@@ -433,7 +464,9 @@ async def pagar_asaas(
 
         itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
             db,
-            itens_car
+            itens_car,
+            payload.loja_id,
+            payload.organizacao_id,
         )
 
         carrinho_id = int(carrinho.get("carrinho_id") or 0)

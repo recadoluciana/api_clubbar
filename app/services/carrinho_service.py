@@ -97,11 +97,13 @@ def get_carrinho(
             valor_taxa = round(subtotal * (percentual_taxa / 100), 2)
 
         observacao = (getattr(it, "dsobsitcar", None) or "").strip()
-        chave = (int(it.produto_id), observacao, vrprecoprod)
+        cardapioitem_id = getattr(it, "cardapioitem_id", None)
+        chave = (int(it.produto_id), cardapioitem_id, observacao, vrprecoprod)
         if chave not in itens_agrupados:
             itens_agrupados[chave] = {
                 "itcarrinho_id": it.itcarrinho_id,
                 "produto_id": it.produto_id,
+                "cardapioitem_id": cardapioitem_id,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,
