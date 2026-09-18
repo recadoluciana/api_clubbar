@@ -19,6 +19,8 @@ from app.models.cashback_config import CashbackConfig
 from app.models.lojaestilomusical import LojaEstiloMusical
 from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.services.cashback_service import obter_ou_criar_config
+from app.models.titularfinanceiro import TitularFinanceiro
+from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -552,6 +554,11 @@ def listar_lojas_por_organizacao_todas(
             "estado_id": loja.estado_id,
             "cidade_id": loja.cidade_id,
             "nmloja": loja.nmloja,
+            "cpfcnpjloja": loja.cpfcnpjloja,
+            "cnpjraiz": loja.cnpjraiz,
+            "tipoestabelecimento": loja.tipoestabelecimento,
+            "nmrazaosocial": loja.nmrazaosocial,
+            "titularfinanceiro_id": loja.titularfinanceiro_id,
             "tipoloja": loja.tipoloja,
             "vendaprodutos": loja.vendaprodutos,
             "vendaingressos": loja.vendaingressos,
@@ -586,6 +593,10 @@ def atualizar_loja(
     estado_id: int | None = Form(None),
     cidade_id: int | None = Form(None),
     nmloja: str | None = Form(None),
+    cpfcnpjloja: str | None = Form(None),
+    tipoestabelecimento: str | None = Form(None),
+    nmrazaosocial: str | None = Form(None),
+    titularfinanceiro_id: int | None = Form(None),
     dsbairroloja: str | None = Form(None),
     endloja: str | None = Form(None),
     nrceploja: str | None = Form(None),
@@ -638,6 +649,45 @@ def atualizar_loja(
 
         if nmloja is not None:
             loja.nmloja = nmloja
+
+        if cpfcnpjloja is not None:
+            try:
+                documento = normalizar_cpf_cnpj(cpfcnpjloja)
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            duplicada = db.query(Loja).filter(
+                Loja.cpfcnpjloja == documento,
+                Loja.loja_id != loja.loja_id,
+            ).first()
+            if duplicada:
+                raise HTTPException(409, "Este CPF/CNPJ já pertence a outro estabelecimento")
+            loja.cpfcnpjloja = documento
+            loja.cnpjraiz = raiz_cnpj(documento)
+            if len(documento or "") != 14:
+                loja.tipoestabelecimento = None
+
+        if tipoestabelecimento is not None:
+            tipo_fiscal = tipoestabelecimento.strip().upper()
+            if tipo_fiscal not in {"MATRIZ", "FILIAL"}:
+                raise HTTPException(422, "Tipo fiscal deve ser MATRIZ ou FILIAL")
+            if len(loja.cpfcnpjloja or "") != 14:
+                raise HTTPException(422, "Matriz ou filial só pode ser informado para CNPJ")
+            loja.tipoestabelecimento = tipo_fiscal
+
+        if nmrazaosocial is not None:
+            razao = nmrazaosocial.strip()
+            if not razao:
+                raise HTTPException(422, "Razão social não pode ficar vazia")
+            loja.nmrazaosocial = razao
+
+        if titularfinanceiro_id is not None:
+            titular = db.query(TitularFinanceiro).filter(
+                TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+                TitularFinanceiro.organizacao_id == loja.organizacao_id,
+            ).first()
+            if not titular:
+                raise HTTPException(422, "Titular financeiro não pertence à organização")
+            loja.titularfinanceiro_id = titularfinanceiro_id
 
         if dsbairroloja is not None:
             loja.dsbairroloja = dsbairroloja
@@ -732,6 +782,11 @@ def atualizar_loja(
                 "estado_id": loja.estado_id,
                 "cidade_id": loja.cidade_id,
                 "nmloja": loja.nmloja,
+                "cpfcnpjloja": loja.cpfcnpjloja,
+                "cnpjraiz": loja.cnpjraiz,
+                "tipoestabelecimento": loja.tipoestabelecimento,
+                "nmrazaosocial": loja.nmrazaosocial,
+                "titularfinanceiro_id": loja.titularfinanceiro_id,
                 "dsbairroloja": loja.dsbairroloja,
                 "endloja": loja.endloja,
                 "nrceploja": loja.nrceploja,

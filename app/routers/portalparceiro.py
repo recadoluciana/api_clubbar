@@ -28,6 +28,7 @@ from app.schemas.portalparceiro import (
 from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
 from app.services.email_service import enviar_dados_portal_lead
 from app.services.endereco_lead import validar_cep_lead
+from app.utils.documento import normalizar_cpf_cnpj
 
 
 router = APIRouter(
@@ -124,7 +125,10 @@ def cadastrar_estabelecimento(
     if not all((valor or "").strip() for valor in (dados.endereco, dados.numero, dados.bairro)):
         raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
     validar_cep_lead(dados.cep, cidade, estado)
-    documento = "".join(c for c in (dados.cpfcnpj or "") if c.isdigit()) or None
+    try:
+        documento = normalizar_cpf_cnpj(dados.cpfcnpj)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,
         nmestabelecimento=dados.nmestabelecimento.strip(),
@@ -295,6 +299,9 @@ def obter_resumo(
                     "versao": contrato.versao,
                     "status": contrato.status,
                     "conteudocontrato": contrato.conteudocontrato,
+                    "hashdocumento": contrato.hashdocumento,
+                    "nmsignatario": contrato.nmsignatario,
+                    "cpfcnpjsignatario": contrato.cpfcnpjsignatario,
                     "cpfcnpjcontratante": contrato.cpfcnpjcontratante,
                     "nmrazaosocial": contrato.nmrazaosocial,
                     "cepcontratante": contrato.cepcontratante,

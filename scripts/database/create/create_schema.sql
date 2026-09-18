@@ -347,6 +347,10 @@ CREATE TABLE loja (
   leadestabelecimento_id BIGINT NULL,
   titularfinanceiro_id BIGINT NULL,
   nmloja         VARCHAR(120) NOT NULL,
+  cpfcnpjloja    VARCHAR(14) NULL,
+  cnpjraiz       VARCHAR(8) NULL,
+  tipoestabelecimento VARCHAR(10) NULL,
+  nmrazaosocial  VARCHAR(160) NULL,
   endloja        VARCHAR(255) NULL,
   nrceploja      VARCHAR(9) NULL,
   nrendeloja     VARCHAR(20) NULL,
@@ -390,7 +394,9 @@ CREATE TABLE loja (
     FOREIGN KEY (leadestabelecimento_id) REFERENCES leadestabelecimento(leadestabelecimento_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
-  UNIQUE KEY uk_loja_leadestabelecimento (leadestabelecimento_id)
+  UNIQUE KEY uk_loja_leadestabelecimento (leadestabelecimento_id),
+  UNIQUE KEY uk_loja_cpfcnpj (cpfcnpjloja),
+  KEY idx_loja_cnpjraiz (cnpjraiz)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE INDEX idx_loja_org ON loja(organizacao_id);
@@ -562,6 +568,10 @@ CREATE TABLE titularfinanceiro (
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_titularfinanceiro_organizacao (organizacao_id),
+  UNIQUE KEY uk_titularfinanceiro_cpfcnpj (cpfcnpj),
+  UNIQUE KEY uk_titularfinanceiro_asaas_account (asaas_account_id),
+  UNIQUE KEY uk_titularfinanceiro_asaas_wallet (asaas_wallet_id),
+  UNIQUE KEY uk_titularfinanceiro_org_id (organizacao_id, titularfinanceiro_id),
   CONSTRAINT fk_titularfinanceiro_organizacao FOREIGN KEY (organizacao_id)
     REFERENCES organizacao(organizacao_id) ON UPDATE CASCADE ON DELETE RESTRICT,
   CONSTRAINT fk_titularfinanceiro_cidade FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id),
@@ -574,6 +584,15 @@ ALTER TABLE loja
     ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 CREATE INDEX idx_loja_titularfinanceiro ON loja(titularfinanceiro_id);
+
+ALTER TABLE loja
+  ADD KEY idx_loja_org_titular (organizacao_id, titularfinanceiro_id),
+  ADD CONSTRAINT fk_loja_titular_org
+    FOREIGN KEY (organizacao_id, titularfinanceiro_id)
+    REFERENCES titularfinanceiro(organizacao_id, titularfinanceiro_id)
+    ON DELETE RESTRICT ON UPDATE RESTRICT,
+  ADD CONSTRAINT chk_loja_tipo_estabelecimento
+    CHECK (tipoestabelecimento IS NULL OR tipoestabelecimento IN ('MATRIZ', 'FILIAL'));
 
 CREATE TABLE contratopadrao (
   contratopadrao_id BIGINT AUTO_INCREMENT PRIMARY KEY,

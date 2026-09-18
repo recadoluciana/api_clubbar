@@ -7,6 +7,7 @@ from pydantic import (
     Field,
     field_validator,
 )
+from app.utils.documento import normalizar_cpf_cnpj
 
 
 TipoParceiro = Literal[
@@ -61,7 +62,15 @@ class LeadEstabelecimentoCreate(BaseModel):
     bairro: str | None = Field(default=None, max_length=120)
     mensagem: str | None = Field(default=None, max_length=1000)
 
-    @field_validator("cpfcnpj", "telefone", "telefone_responsavel", "cep")
+    @field_validator("cpfcnpj")
+    @classmethod
+    def normalizar_documento_opcional(cls, valor: str | None) -> str | None:
+        try:
+            return normalizar_cpf_cnpj(valor)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("telefone", "telefone_responsavel", "cep")
     @classmethod
     def somente_numeros_opcional(cls, valor: str | None) -> str | None:
         if valor is None:
@@ -129,9 +138,13 @@ class LeadEstabelecimentoCadastro(LeadEstabelecimentoNovo):
     @field_validator("cpfcnpj")
     @classmethod
     def documento_obrigatorio(cls, valor: str | None) -> str:
-        if not valor or len(valor) not in (11, 14):
-            raise ValueError("Informe um CPF com 11 dígitos ou um CNPJ com 14 dígitos.")
-        return valor
+        try:
+            documento = normalizar_cpf_cnpj(valor)
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        if not documento:
+            raise ValueError("Informe o CPF ou CNPJ do estabelecimento.")
+        return documento
 
 
 class LeadParceiroCreate(BaseModel):

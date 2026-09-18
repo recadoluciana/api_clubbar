@@ -8,6 +8,7 @@ from app.models.contratopadrao import ContratoPadrao
 from app.models.leadestabelecimento import LeadEstabelecimento, StatusLeadEstabelecimento
 from app.models.leadparceiro import LeadParceiro
 from app.services.taxa_service import taxa_padrao_vigente
+from app.utils.documento import normalizar_cpf_cnpj
 
 def _valor(valor: object | None, padrao: str = "não informado") -> str:
     texto = str(valor or "").strip()
@@ -96,7 +97,7 @@ def garantir_contrato(db, estabelecimento):
         raise HTTPException(422, "Nenhum contrato padrão ativo está disponível.")
     taxa = taxa_padrao_vigente(db)
     lead = db.get(LeadParceiro, estabelecimento.leadparceiro_id)
-    documento = "".join(c for c in (estabelecimento.cpfcnpj or "") if c.isdigit())
+    documento = normalizar_cpf_cnpj(estabelecimento.cpfcnpj) or ""
     item = LeadEstabelecimentoContrato(
         leadestabelecimento_id=estabelecimento.leadestabelecimento_id,
         contratopadrao_id=modelo.contratopadrao_id, taxapadrao_id=taxa.taxapadrao_id,

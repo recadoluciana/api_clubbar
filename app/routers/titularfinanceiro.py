@@ -6,6 +6,7 @@ import secrets
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import APP_ENV, ASAAS_API_KEY
@@ -17,6 +18,7 @@ from app.models.loja import Loja
 from app.models.lojaasaas import LojaAsaas
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.models.titularfinanceiro import TitularFinanceiro
+from app.utils.documento import normalizar_cpf_cnpj
 
 
 router = APIRouter(prefix="/titular-financeiro", tags=["Titular financeiro"])
@@ -49,7 +51,15 @@ class TitularFinanceiroIn(BaseModel):
             raise ValueError("Tipo de titular deve ser PF ou PJ")
         return tipo
 
-    @field_validator("cpfcnpj", "cep", "telefone")
+    @field_validator("cpfcnpj")
+    @classmethod
+    def validar_documento(cls, valor: str) -> str:
+        try:
+            return normalizar_cpf_cnpj(valor) or ""
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("cep", "telefone")
     @classmethod
     def somente_numeros(cls, valor: str) -> str:
         return "".join(c for c in valor if c.isdigit())
@@ -75,10 +85,27 @@ def _out(titular: TitularFinanceiro) -> dict:
 
 
 @router.get("/organizacao/{organizacao_id}")
-def consultar(organizacao_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+def consultar(
+    organizacao_id: int,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
     _validar_escopo(payload, organizacao_id)
-    titular = db.query(TitularFinanceiro).filter(TitularFinanceiro.organizacao_id == organizacao_id).first()
-    return _out(titular) if titular else None
+    titular, loja = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+        obrigatorio=False,
+    )
+    if not titular:
+        return None
+    retorno = _out(titular)
+    retorno["loja_id"] = loja.loja_id if loja else None
+    return retorno
 
 
 @router.get("/organizacao/{organizacao_id}/todos")
@@ -109,9 +136,17 @@ def criar_titular(
         raise HTTPException(status_code=422, detail="Organização divergente")
     if dados.tipotitular == "PF" and dados.dtnascimento is None:
         raise HTTPException(status_code=422, detail="Data de nascimento é obrigatória para PF")
+    if db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.cpfcnpj == dados.cpfcnpj
+    ).first():
+        raise HTTPException(409, "Este CPF/CNPJ já possui um titular financeiro no Clubbar")
     titular = TitularFinanceiro(**dados.model_dump())
     db.add(titular)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "CPF/CNPJ ou conta Asaas já cadastrada") from exc
     db.refresh(titular)
     return _out(titular)
 
@@ -143,20 +178,51 @@ def vincular_titular_a_loja(
 
 
 @router.put("/organizacao/{organizacao_id}")
-def salvar(organizacao_id: int, dados: TitularFinanceiroIn, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+def salvar(
+    organizacao_id: int,
+    dados: TitularFinanceiroIn,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
     _validar_escopo(payload, organizacao_id)
     if dados.organizacao_id != organizacao_id:
         raise HTTPException(status_code=422, detail="Organização divergente")
     if dados.tipotitular == "PF" and dados.dtnascimento is None:
         raise HTTPException(status_code=422, detail="Data de nascimento é obrigatória para PF")
-    titular = db.query(TitularFinanceiro).filter(TitularFinanceiro.organizacao_id == organizacao_id).first()
+    titular, loja = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+        obrigatorio=False,
+    )
+    por_documento = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.cpfcnpj == dados.cpfcnpj
+    ).first()
+    if por_documento and por_documento.organizacao_id != organizacao_id:
+        raise HTTPException(409, "Este CPF/CNPJ já pertence a outra organização no Clubbar")
+    if titular and titular.asaas_account_id and titular.cpfcnpj != dados.cpfcnpj:
+        raise HTTPException(409, "O CPF/CNPJ não pode ser alterado após a criação da subconta Asaas")
+    if por_documento and titular and por_documento.titularfinanceiro_id != titular.titularfinanceiro_id:
+        raise HTTPException(409, "Este CPF/CNPJ já está cadastrado em outro titular")
+    titular = titular or por_documento
     if titular is None:
         titular = TitularFinanceiro(organizacao_id=organizacao_id)
         db.add(titular)
     for campo, valor in dados.model_dump().items():
         if campo != "organizacao_id":
             setattr(titular, campo, valor)
-    db.commit()
+    db.flush()
+    if loja:
+        loja.titularfinanceiro_id = titular.titularfinanceiro_id
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "CPF/CNPJ ou conta Asaas já cadastrada") from exc
     db.refresh(titular)
     return _out(titular)
 
@@ -201,7 +267,7 @@ async def _localizar_subconta_existente(documento: str, email: str) -> dict | No
         )
         encontradas = [
             item for item in (por_email.get("data") or [])
-            if "".join(c for c in str(item.get("cpfCnpj") or "") if c.isdigit()) == documento
+            if normalizar_cpf_cnpj(str(item.get("cpfCnpj") or "")) == documento
         ]
     if len(encontradas) > 1:
         raise HTTPException(
@@ -241,14 +307,20 @@ async def extrato_asaas(
     data_fim: date | None = None,
     offset: int = 0,
     limite: int = 50,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
     _validar_escopo(payload, organizacao_id)
-    titular = db.query(TitularFinanceiro).filter(
-        TitularFinanceiro.organizacao_id == organizacao_id
-    ).first()
-    if not titular or not titular.asaas_api_key_criptografada:
+    titular, loja = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+    )
+    if not titular.asaas_api_key_criptografada:
         raise HTTPException(422, "Ative os recebimentos no Asaas antes de consultar o extrato")
     api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
     hoje = date.today()
@@ -291,6 +363,9 @@ async def extrato_asaas(
             "data_prevista_credito": item.get("estimatedCreditDate") or item.get("creditDate"),
         })
     return {
+        "titularfinanceiro_id": titular.titularfinanceiro_id,
+        "loja_id": loja.loja_id if loja else None,
+        "nmrazaosocial": titular.nmrazaosocial,
         "saldo": float(saldo.get("balance") or 0),
         "data_inicio": inicio,
         "data_fim": fim,
@@ -302,12 +377,84 @@ async def extrato_asaas(
     }
 
 
+def _loja_da_organizacao(db: Session, organizacao_id: int, loja_id: int) -> Loja:
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+    ).first()
+    if not loja:
+        raise HTTPException(404, "Estabelecimento não encontrado nesta organização")
+    return loja
+
+
+def _resolver_titular(
+    db: Session,
+    organizacao_id: int,
+    payload: dict,
+    *,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
+    obrigatorio: bool = True,
+) -> tuple[TitularFinanceiro | None, Loja | None]:
+    loja_escopo = payload.get("loja_id")
+    if loja_escopo is not None:
+        if loja_id is not None and int(loja_escopo) != loja_id:
+            raise HTTPException(403, "Estabelecimento fora do seu acesso")
+        loja_id = int(loja_escopo)
+
+    loja = _loja_da_organizacao(db, organizacao_id, loja_id) if loja_id else None
+    if loja and titularfinanceiro_id and loja.titularfinanceiro_id not in {
+        None,
+        titularfinanceiro_id,
+    }:
+        raise HTTPException(409, "O titular informado não está vinculado ao estabelecimento")
+
+    id_titular = titularfinanceiro_id or (loja.titularfinanceiro_id if loja else None)
+    if id_titular:
+        titular = db.query(TitularFinanceiro).filter(
+            TitularFinanceiro.titularfinanceiro_id == id_titular,
+            TitularFinanceiro.organizacao_id == organizacao_id,
+        ).first()
+        if not titular:
+            raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+        return titular, loja
+
+    if loja:
+        if obrigatorio:
+            raise HTTPException(422, "Cadastre e vincule o titular financeiro deste estabelecimento")
+        return None, loja
+
+    titulares = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.organizacao_id == organizacao_id
+    ).order_by(TitularFinanceiro.titularfinanceiro_id).all()
+    if not titulares:
+        if obrigatorio:
+            raise HTTPException(422, "Cadastre e vincule o titular financeiro deste estabelecimento")
+        return None, loja
+    if len(titulares) > 1:
+        raise HTTPException(
+            409,
+            "Esta organização possui mais de um titular financeiro. Selecione o estabelecimento.",
+        )
+    return titulares[0], loja
+
+
 @router.post("/organizacao/{organizacao_id}/ativar-recebimentos")
-async def ativar_recebimentos(organizacao_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+async def ativar_recebimentos(
+    organizacao_id: int,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
     _validar_escopo(payload, organizacao_id)
-    titular = db.query(TitularFinanceiro).filter(TitularFinanceiro.organizacao_id == organizacao_id).first()
-    if not titular:
-        raise HTTPException(status_code=422, detail="Preencha os dados financeiros antes de ativar recebimentos")
+    titular, _ = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+    )
     if titular.asaas_account_id:
         return _out(titular)
     documento = titular.cpfcnpj
@@ -349,11 +496,9 @@ async def ativar_recebimentos(organizacao_id: int, db: Session = Depends(get_db)
     ambiente = "production" if APP_ENV in {"production", "prod"} else "sandbox"
     lojas = db.query(Loja).filter(
         Loja.organizacao_id == organizacao_id,
-        (Loja.titularfinanceiro_id.is_(None))
-        | (Loja.titularfinanceiro_id == titular.titularfinanceiro_id),
+        Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
     ).all()
     for loja in lojas:
-        loja.titularfinanceiro_id = titular.titularfinanceiro_id
         config = db.query(LojaAsaas).filter(LojaAsaas.loja_id == loja.loja_id, LojaAsaas.ambiente == ambiente).first()
         if config is None:
             token = secrets.token_urlsafe(32)
@@ -372,10 +517,22 @@ async def ativar_recebimentos(organizacao_id: int, db: Session = Depends(get_db)
 
 
 @router.post("/organizacao/{organizacao_id}/verificar-asaas")
-async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+async def verificar_asaas(
+    organizacao_id: int,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
     _validar_escopo(payload, organizacao_id)
-    titular = db.query(TitularFinanceiro).filter(TitularFinanceiro.organizacao_id == organizacao_id).first()
-    if not titular or not titular.asaas_api_key_criptografada:
+    titular, _ = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+    )
+    if not titular.asaas_api_key_criptografada:
         raise HTTPException(status_code=422, detail="Recebimentos ainda não foram ativados")
     api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
     situacao = await _asaas("GET", "/myAccount/status/", api_key)
@@ -394,15 +551,18 @@ async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), pa
         Loja.organizacao_id == organizacao_id,
         Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
     )
+    loja_ids_titular = [item[0] for item in lojas_titular.all()]
     for config in db.query(LojaAsaas).filter(
         LojaAsaas.organizacao_id == organizacao_id,
-        LojaAsaas.loja_id.in_(lojas_titular),
+        LojaAsaas.loja_id.in_(loja_ids_titular),
         LojaAsaas.ambiente == ambiente,
     ).all():
         config.statusintegracao = "ATIVA" if titular.status_asaas == "APROVADO" else "PENDENTE"
     publicacoes = {"agendas_publicadas": 0, "cardapios_publicados": 0}
     if titular.status_asaas == "APROVADO":
-        publicacoes = publicar_conteudos_aguardando_asaas(db, organizacao_id)
+        publicacoes = publicar_conteudos_aguardando_asaas(
+            db, organizacao_id, loja_ids=loja_ids_titular
+        )
     db.commit()
     db.refresh(titular)
     retorno = _out(titular)
@@ -415,17 +575,29 @@ async def verificar_asaas(organizacao_id: int, db: Session = Depends(get_db), pa
 @router.post("/organizacao/{organizacao_id}/aprovar-sandbox")
 async def aprovar_subconta_sandbox(
     organizacao_id: int,
+    loja_id: int | None = None,
+    titularfinanceiro_id: int | None = None,
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
     _validar_escopo(payload, organizacao_id)
     if APP_ENV in {"production", "prod"}:
         raise HTTPException(status_code=403, detail="A aprovação simulada existe somente no Sandbox")
-    titular = db.query(TitularFinanceiro).filter(
-        TitularFinanceiro.organizacao_id == organizacao_id
-    ).first()
-    if not titular or not titular.asaas_api_key_criptografada:
+    titular, _ = _resolver_titular(
+        db,
+        organizacao_id,
+        payload,
+        loja_id=loja_id,
+        titularfinanceiro_id=titularfinanceiro_id,
+    )
+    if not titular.asaas_api_key_criptografada:
         raise HTTPException(status_code=422, detail="Crie a subconta antes de aprová-la")
     api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
     await _asaas("POST", "/sandbox/myAccount/approve", api_key)
-    return await verificar_asaas(organizacao_id, db, payload)
+    return await verificar_asaas(
+        organizacao_id,
+        loja_id,
+        titularfinanceiro_id,
+        db,
+        payload,
+    )

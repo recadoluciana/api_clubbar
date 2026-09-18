@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import BigInteger, Column, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -32,3 +32,14 @@ class TitularFinanceiro(Base):
     dtultimaverificacao = Column(DateTime, nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+
+    __table_args__ = (
+        UniqueConstraint("cpfcnpj", name="uk_titularfinanceiro_cpfcnpj"),
+        UniqueConstraint("asaas_account_id", name="uk_titularfinanceiro_asaas_account"),
+        UniqueConstraint("asaas_wallet_id", name="uk_titularfinanceiro_asaas_wallet"),
+        UniqueConstraint(
+            "organizacao_id",
+            "titularfinanceiro_id",
+            name="uk_titularfinanceiro_org_id",
+        ),
+    )

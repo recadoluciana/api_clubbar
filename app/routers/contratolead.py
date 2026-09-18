@@ -30,6 +30,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from app.utils.documento import normalizar_cpf_cnpj
 
 
 router = APIRouter(prefix="/lead-estabelecimento-contratos", tags=["Contratos de estabelecimentos de leads"])
@@ -48,18 +49,7 @@ class IsencaoImplantacaoIn(BaseModel):
     justificativa: str = Field(min_length=10, max_length=500)
 
 
-@portal_router.get("/contratos/{leadestabelecimentocontrato_id}/pdf")
-def contrato_pdf_portal(
-    leadestabelecimentocontrato_id: int,
-    lead: LeadParceiro = Depends(obter_lead_portal),
-    db: Session = Depends(get_db),
-):
-    contrato = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
-        LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == leadestabelecimentocontrato_id,
-        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
-    ).first()
-    if not contrato:
-        raise HTTPException(404, "Contrato não encontrado")
+def _resposta_pdf_contrato(contrato: LeadEstabelecimentoContrato) -> StreamingResponse:
     arquivo = BytesIO()
     estilos = getSampleStyleSheet()
     titulo = ParagraphStyle(
@@ -85,11 +75,42 @@ def contrato_pdf_portal(
         historia.append(Paragraph(texto or "&nbsp;", corpo))
     documento.build(historia)
     arquivo.seek(0)
-    nome = f"contrato-clubbar-{leadestabelecimentocontrato_id}.pdf"
+    nome = f"contrato-clubbar-{contrato.leadestabelecimentocontrato_id}.pdf"
     return StreamingResponse(
         arquivo, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nome}"'},
     )
+
+
+@portal_router.get("/contratos/{leadestabelecimentocontrato_id}/pdf")
+def contrato_pdf_portal(
+    leadestabelecimentocontrato_id: int,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    contrato = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
+        LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == leadestabelecimentocontrato_id,
+        LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+    ).first()
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+    return _resposta_pdf_contrato(contrato)
+
+
+@router.get("/{leadestabelecimentocontrato_id}/pdf")
+def contrato_pdf_admin(
+    leadestabelecimentocontrato_id: int,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    contrato = db.get(
+        LeadEstabelecimentoContrato, leadestabelecimentocontrato_id
+    )
+    if not contrato:
+        raise HTTPException(404, "Contrato não encontrado")
+    if contrato.status != "ACEITO":
+        raise HTTPException(409, "Somente instrumentos assinados podem ser baixados")
+    return _resposta_pdf_contrato(contrato)
 
 
 def _out(item: LeadEstabelecimentoContrato) -> dict:
@@ -138,9 +159,10 @@ def _contexto_contrato(
     ).first()
     if not estabelecimento:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
-    cpfcnpj = "".join(caractere for caractere in dados.cpfcnpj if caractere.isdigit())
-    if len(cpfcnpj) not in (11, 14):
-        raise HTTPException(422, "Informe um CPF ou CNPJ válido para o contrato")
+    try:
+        cpfcnpj = normalizar_cpf_cnpj(dados.cpfcnpj)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     razao_social = dados.nmrazaosocial.strip()
     if len(cpfcnpj) == 14 and not razao_social:
         raise HTTPException(422, "A razão social é obrigatória para contrato com CNPJ")
@@ -315,10 +337,11 @@ def _preparar_retificacao(db: Session, estabelecimento_id: int, dados: Retificac
     estado = db.get(Estado, dados.estado_id)
     if cidade is None or estado is None or cidade.estado_id != estado.estado_id:
         raise HTTPException(422, "Cidade e estado informados são incompatíveis.")
-    documento = "".join(c for c in dados.cpfcnpj if c.isdigit())
-    anterior_documento = "".join(c for c in (anterior.cpfcnpjcontratante or "") if c.isdigit())
-    if len(documento) not in (11, 14):
-        raise HTTPException(422, "Informe CPF ou CNPJ com 11 ou 14 dígitos.")
+    try:
+        documento = normalizar_cpf_cnpj(dados.cpfcnpj)
+        anterior_documento = normalizar_cpf_cnpj(anterior.cpfcnpjcontratante)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
     if anterior_documento != documento:
         if estabelecimento.status == StatusLeadEstabelecimento.CONVERTIDO:
             raise HTTPException(409, "Após a conversão, a correção do CPF/CNPJ exige revisão do cadastro financeiro da empresa.")

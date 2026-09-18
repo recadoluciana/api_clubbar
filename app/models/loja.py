@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, UniqueConstraint, CHAR,Numeric,Integer
+from sqlalchemy import Column, BigInteger, String, DateTime, ForeignKey, ForeignKeyConstraint, UniqueConstraint, CHAR,Numeric,Integer
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -22,6 +22,10 @@ class Loja(Base):
     )
 
     nmloja = Column(String(120), nullable=False)
+    cpfcnpjloja = Column(String(14), nullable=True, unique=True, index=True)
+    cnpjraiz = Column(String(8), nullable=True, index=True)
+    tipoestabelecimento = Column(String(10), nullable=True)
+    nmrazaosocial = Column(String(160), nullable=True)
     endloja = Column(String(255))
     nrceploja = Column(String(9), nullable=True)
     nrendeloja = Column(String(20), nullable=True)
@@ -60,6 +64,12 @@ class Loja(Base):
     
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),
-
-
+        ForeignKeyConstraint(
+            ["organizacao_id", "titularfinanceiro_id"],
+            [
+                "titularfinanceiro.organizacao_id",
+                "titularfinanceiro.titularfinanceiro_id",
+            ],
+            name="fk_loja_titular_org",
+        ),
     )

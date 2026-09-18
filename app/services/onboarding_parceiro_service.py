@@ -10,7 +10,8 @@ def validar_publicacao_loja(db: Session, loja_id: int) -> None:
     if not loja:
         raise HTTPException(status_code=404, detail='Loja nao encontrada')
     titular = db.query(TitularFinanceiro).filter(
-        TitularFinanceiro.organizacao_id == loja.organizacao_id
+        TitularFinanceiro.organizacao_id == loja.organizacao_id,
+        TitularFinanceiro.titularfinanceiro_id == loja.titularfinanceiro_id,
     ).first()
     if not titular or titular.status_asaas != 'APROVADO':
         raise HTTPException(status_code=409, detail='Recebimentos ainda nao aprovados pelo Asaas. Salve como rascunho.')
