@@ -38,13 +38,11 @@ def capacidade_restante_setor(db: Session, evento_id: int, setor_id: int, capaci
 def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> EventoLote | None:
     lotes = db.query(EventoLote).filter(EventoLote.evento_id == lote.evento_id, EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.statuslote.in_(("ATIVO", "ESGOTADO", "ENCERRADO"))).order_by(EventoLote.nrlote, EventoLote.lote_id).all()
     if not lotes: return None
-    iniciados = [i for i, item in enumerate(lotes) if item.dtiniciovenda is None or item.dtiniciovenda <= agora]
-    indice = max(iniciados) if iniciados else 0
-    for i, item in enumerate(lotes):
+    for item in lotes:
         reservada = quantidade_reservada(db, item.lote_id)
         esgotado = item.qttotallote is not None and int(item.qtvendidalote or 0) + reservada >= int(item.qttotallote)
         encerrado = item.dtfimvenda is not None and agora > item.dtfimvenda
-        if i < indice or esgotado or encerrado:
+        if item.statuslote != "ATIVO" or esgotado or encerrado:
             continue
         return item
     return None

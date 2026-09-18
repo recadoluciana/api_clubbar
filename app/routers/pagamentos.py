@@ -650,6 +650,9 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 'pagamento_id': checkout_consultado.checkout_id,
                 'status': 'SUBSTITUIDO',
                 'detail': 'Esta tentativa foi substituida por uma mais recente.',
+                'tipo_compra': 'INGRESSO'
+                if getattr(checkout_consultado, 'reserva_ingresso_id', None)
+                else 'PRODUTO',
             }
     checkout = checkout_consultado
     if not checkout:
@@ -701,6 +704,9 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                     'pagamento_id': checkout.checkout_id,
                     'status': 'PAGO',
                     'venda_id': checkout.venda_id,
+                    'tipo_compra': 'INGRESSO'
+                    if getattr(checkout, 'reserva_ingresso_id', None)
+                    else 'PRODUTO',
                     'cashback_gerado': _valor_cashback_gerado(
                         db, checkout.venda_id
                     ),
@@ -772,6 +778,9 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     return {
         "pagamento_id": checkout.checkout_id,
         "status": "PAGO" if pago else status_atual,
+        "tipo_compra": "INGRESSO"
+        if getattr(checkout, "reserva_ingresso_id", None)
+        else "PRODUTO",
         "venda_id": checkout.venda_id if pago else None,
         "cashback_gerado": _valor_cashback_gerado(db, checkout.venda_id)
         if pago
