@@ -221,6 +221,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Loja.dsinstaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
+            Loja.vrtaxaminimaingresso,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -349,7 +350,8 @@ def listar_lojas_com_retirada_pendente(
             Loja.urllogoloja,
             Loja.urlfachadaloja,
             Loja.vrtaxaprod,
-            Loja.vrtaxaing,            
+            Loja.vrtaxaing,
+            Loja.vrtaxaminimaingresso,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -407,7 +409,8 @@ def listar_lojas_cidade(
             Loja.urllogoloja,
             Loja.urlfachadaloja,
             Loja.vrtaxaprod,
-            Loja.vrtaxaing,            
+            Loja.vrtaxaing,
+            Loja.vrtaxaminimaingresso,
 
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
@@ -469,6 +472,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.urlfachadaloja,
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
+            Loja.vrtaxaminimaingresso,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
