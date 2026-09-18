@@ -479,17 +479,26 @@ def listar_usuarios_da_organizacao(
 @router.get("/vendas-hoje")
 def detalhar_vendas_hoje(
     data: date | None = Query(default=None),
+    data_inicio: date | None = Query(default=None),
+    data_fim: date | None = Query(default=None),
     organizacao_id: int | None = Query(default=None, ge=1),
     loja_id: int | None = Query(default=None, ge=1),
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    data_consulta = data or datetime.now(_FUSO_BRASIL).date()
-    hoje_inicio, hoje_fim = _limites_data_utc(data_consulta)
+    hoje = datetime.now(_FUSO_BRASIL).date()
+    inicio_consulta = data_inicio or data or hoje
+    fim_consulta = data_fim or data or inicio_consulta
+    if fim_consulta < inicio_consulta:
+        raise HTTPException(422, "A data final não pode ser anterior à data inicial")
+    if (fim_consulta - inicio_consulta).days >= 30:
+        raise HTTPException(422, "O período máximo para consulta é de 30 dias")
+    inicio_utc, _ = _limites_data_utc(inicio_consulta)
+    _, fim_utc = _limites_data_utc(fim_consulta)
     filtros = [
         Venda.sitvenda == "PAGA",
-        Venda.dtcriacao >= hoje_inicio,
-        Venda.dtcriacao < hoje_fim,
+        Venda.dtcriacao >= inicio_utc,
+        Venda.dtcriacao < fim_utc,
     ]
     if organizacao_id is not None:
         filtros.append(Venda.organizacao_id == organizacao_id)
@@ -544,7 +553,9 @@ def detalhar_vendas_hoje(
         for row in rows
     ]
     return {
-        "data": data_consulta,
+        "data": inicio_consulta,
+        "data_inicio": inicio_consulta,
+        "data_fim": fim_consulta,
         "quantidade_vendas": sum(item["quantidade_vendas"] for item in detalhes),
         "taxa_produtos": sum(item["taxa_produtos"] for item in detalhes),
         "taxa_ingressos": sum(item["taxa_ingressos"] for item in detalhes),
