@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -7,6 +8,24 @@ from app.schemas.cliente import AlterarSenhaClienteRequest, ClientePerfilUpdate
 from app.core.security import get_usuario_logado, verificar_senha, hash_senha
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
+
+
+def _cpf_valido(cpf: str) -> bool:
+    if len(cpf) != 11 or len(set(cpf)) == 1:
+        return False
+
+    for tamanho in (9, 10):
+        soma = sum(
+            int(cpf[indice]) * (tamanho + 1 - indice)
+            for indice in range(tamanho)
+        )
+        digito = (soma * 10) % 11
+        if digito == 10:
+            digito = 0
+        if digito != int(cpf[tamanho]):
+            return False
+
+    return True
 
 
 @router.put("/me/alterar_senha")
@@ -112,21 +131,23 @@ def atualizar_perfil_cliente(
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
-    cpf = ''.join(filter(str.isdigit, payload.nrcpfcliente or '')) or None
+    cpf = ''.join(filter(str.isdigit, payload.nrcpfcliente or ''))
     telefone = ''.join(filter(str.isdigit, payload.nrtelcliente or '')) or None
     cep = ''.join(filter(str.isdigit, payload.cepcliente or '')) or None
 
-    if cpf:
-        outro = db.query(Cliente).filter(
-            Cliente.nrcpfcliente == cpf,
-            Cliente.cliente_id != cliente_id
-        ).first()
+    if not _cpf_valido(cpf):
+        raise HTTPException(status_code=422, detail="Informe um CPF válido.")
 
-        if outro:
-            raise HTTPException(
-                status_code=400,
-                detail="Já existe outro cliente com este CPF"
-            )
+    outro = db.query(Cliente).filter(
+        Cliente.nrcpfcliente == cpf,
+        Cliente.cliente_id != cliente_id
+    ).first()
+
+    if outro:
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe outro cliente cadastrado com este CPF.",
+        )
 
     cli.nmcliente = payload.nmcliente.strip()
     cli.nrtelcliente = telefone
@@ -140,7 +161,14 @@ def atualizar_perfil_cliente(
     cli.ufcliente = payload.ufcliente.strip().upper() if payload.ufcliente else None
     cli.idcidadeibge = payload.idcidadeibge
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Já existe outro cliente cadastrado com este CPF.",
+        )
 
     return {
         "message": "Dados atualizados com sucesso",

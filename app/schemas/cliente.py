@@ -5,7 +5,7 @@ from typing import Optional
 class ClientePerfilUpdate(BaseModel):
     nmcliente: str = Field(min_length=3, max_length=120)
     nrtelcliente: Optional[str] = Field(default=None, max_length=15)
-    nrcpfcliente: Optional[str] = Field(default=None, max_length=15)
+    nrcpfcliente: str = Field(min_length=11, max_length=15)
     endcliente: Optional[str] = Field(default=None, max_length=150)
     nrendcliente: Optional[str] = Field(default=None, max_length=20)
     complcliente: Optional[str] = Field(default=None, max_length=80)

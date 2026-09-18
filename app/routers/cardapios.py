@@ -78,6 +78,7 @@ class AssociarCardapioIn(BaseModel):
 class ItemIn(BaseModel):
     produto_id: int
     vrpreco: Decimal = Field(ge=0)
+    sititem: Literal["ATIVO", "INATIVO"] = "ATIVO"
     idorditem: int = Field(default=1, ge=1)
 
 
@@ -176,7 +177,13 @@ def _preco_final_item(preco: Decimal, produto: Produto, agora: datetime) -> tupl
     return max(Decimal("0"), final).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ativo
 
 
-def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
+def _conteudo(
+    db: Session,
+    versao: CardapioVersao,
+    cardapio: Cardapio,
+    *,
+    incluir_inativos: bool = False,
+) -> dict:
     categorias = (
         db.query(CardapioVersaoCategoria, Categoria)
         .join(Categoria, Categoria.categoria_id == CardapioVersaoCategoria.categoria_id)
@@ -187,17 +194,17 @@ def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
     saida = []
     agora = datetime.now()
     for vinculo, categoria in categorias:
-        itens = (
+        consulta_itens = (
             db.query(CardapioItem, Produto)
             .join(Produto, Produto.produto_id == CardapioItem.produto_id)
             .filter(
                 CardapioItem.cardapioversaocategoria_id == vinculo.cardapioversaocategoria_id,
-                CardapioItem.sititem == "ATIVO",
                 Produto.organizacao_id == cardapio.organizacao_id,
             )
-            .order_by(CardapioItem.idorditem)
-            .all()
         )
+        if not incluir_inativos:
+            consulta_itens = consulta_itens.filter(CardapioItem.sititem == "ATIVO")
+        itens = consulta_itens.order_by(CardapioItem.idorditem).all()
         produtos = []
         for ci, produto in itens:
             tipo = produto.tipodesconto or "NENHUM"
@@ -218,6 +225,7 @@ def _conteudo(db: Session, versao: CardapioVersao, cardapio: Cardapio) -> dict:
                 "vrpreco": float(preco),
                 "vrprecoprod": float(preco),
                 "vrprecofinal": float(final),
+                "sititem": ci.sititem,
                 "sitproduto": produto.sitproduto,
                 "tipodesconto": tipo,
                 "vrdesconto": float(desconto),
@@ -534,13 +542,13 @@ def nova_versao(cardapio_id: int, payload=Depends(get_usuario_logado), db: Sessi
         for item in db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == origem.cardapioversao_id).all():
             db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, sititem=item.sititem, idorditem=item.idorditem))
     db.commit(); db.refresh(nova)
-    return _conteudo(db, nova, cardapio)
+    return _conteudo(db, nova, cardapio, incluir_inativos=True)
 
 
 @router.get("/cardapios/versoes/{versao_id}")
 def consultar_versao(versao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     versao, cardapio = _versao(db, versao_id, payload)
-    return _conteudo(db, versao, cardapio)
+    return _conteudo(db, versao, cardapio, incluir_inativos=True)
 
 
 @router.put("/cardapios/versoes/{versao_id}/conteudo")
@@ -563,9 +571,9 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
         vinculo = CardapioVersaoCategoria(cardapioversao_id=versao_id, categoria_id=categoria.categoria_id, idordcategoria=categoria.idordcategoria)
         db.add(vinculo); db.flush()
         for item in categoria.itens:
-            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, sititem=item.sititem, idorditem=item.idorditem))
     db.commit()
-    return _conteudo(db, versao, cardapio)
+    return _conteudo(db, versao, cardapio, incluir_inativos=True)
 
 
 @router.post("/cardapios/{cardapio_id}/programacoes", status_code=201)
@@ -616,7 +624,7 @@ def reajustar(versao_id: int, dados: ReajusteIn, payload=Depends(get_usuario_log
         item.vrpreco = novo
     db.add(CardapioReajuste(cardapioversao_id=versao_id, categoria_id=dados.categoria_id, usuario_id=int(payload["sub"]), tipoajuste=dados.tipoajuste, operacao=dados.operacao, valorajuste=dados.valorajuste, arredondamento=dados.arredondamento, qtitensalterados=len(itens)))
     db.commit()
-    return {"itens_alterados": len(itens), "conteudo": _conteudo(db, versao, cardapio)}
+    return {"itens_alterados": len(itens), "conteudo": _conteudo(db, versao, cardapio, incluir_inativos=True)}
 
 
 def _programacao_valida(item: CardapioProgramacao, agora: datetime) -> bool:

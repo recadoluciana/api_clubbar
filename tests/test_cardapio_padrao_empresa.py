@@ -6,11 +6,17 @@ from types import SimpleNamespace
 from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
-from app.routers.cardapios import ItemPadraoIn, _categoria_do_padrao, _categoria_produto_padrao, _preco_final_item, _saida_item_padrao, _validar_edicao_padrao, criar
+from app.routers.cardapios import ItemIn, ItemPadraoIn, _categoria_do_padrao, _categoria_produto_padrao, _preco_final_item, _saida_item_padrao, _validar_edicao_padrao, criar
 from main import app
 
 
 class CardapioPadraoEmpresaTest(unittest.TestCase):
+    def test_item_da_loja_controla_disponibilidade(self):
+        self.assertEqual(ItemIn(produto_id=1, vrpreco=10).sititem, "ATIVO")
+        self.assertEqual(ItemIn(produto_id=1, vrpreco=10, sititem="INATIVO").sititem, "INATIVO")
+        with self.assertRaises(ValidationError):
+            ItemIn(produto_id=1, vrpreco=10, sititem="INDISPONIVEL")
+
     def test_itens_exigem_preco_nao_negativo(self):
         item = ItemPadraoIn(cardapiomodelocategoria_id=1, nmproduto="Água", vrprecoprod=0)
         self.assertEqual(item.vrprecoprod, 0)
