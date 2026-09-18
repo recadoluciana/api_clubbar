@@ -171,6 +171,8 @@ async def criar_venda_paga_por_carrinho_gateway(
     itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
         db,
         itens,
+        carrinho_db.loja_id,
+        carrinho_db.organizacao_id,
     )
     valor_pago = Decimal(str(pagamento.get('value') or 0)).quantize(
         Decimal('0.01')

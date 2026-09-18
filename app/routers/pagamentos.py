@@ -404,6 +404,11 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
         )
         db.add(registro)
         db.flush()
+        _salvar_snapshot_checkout(
+            db,
+            registro.checkout_asaas_id,
+            itens_recalculados,
+        )
         vincular_uso_ao_checkout(db, debitos_cashback, registro)
         db.commit()
         return {
@@ -716,7 +721,6 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 .first()
                 is not None
             )
-            possui_snapshot = False
             if possui_snapshot:
                 await criar_venda_paga_por_checkout_snapshot(
                     db,
