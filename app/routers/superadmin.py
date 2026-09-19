@@ -379,6 +379,14 @@ def listar_organizacoes_parceiras(
             Organizacao.dtcriacao,
             func.count(func.distinct(Loja.loja_id)).label("quantidade_lojas"),
             func.count(func.distinct(Usuario.usuario_id)).label("quantidade_usuarios"),
+            func.count(
+                func.distinct(
+                    case(
+                        (Usuario.loja_id.is_(None), Usuario.usuario_id),
+                        else_=None,
+                    )
+                )
+            ).label("quantidade_usuarios_sem_loja"),
         )
         .outerjoin(Loja, Loja.organizacao_id == Organizacao.organizacao_id)
         .outerjoin(Usuario, Usuario.organizacao_id == Organizacao.organizacao_id)
@@ -406,6 +414,9 @@ def listar_organizacoes_parceiras(
             "dtcriacao": row.dtcriacao,
             "quantidade_lojas": int(row.quantidade_lojas or 0),
             "quantidade_usuarios": int(row.quantidade_usuarios or 0),
+            "quantidade_usuarios_sem_loja": int(
+                row.quantidade_usuarios_sem_loja or 0
+            ),
         }
         for row in rows
     ]
