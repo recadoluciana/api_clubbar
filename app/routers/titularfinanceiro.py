@@ -78,7 +78,7 @@ def _out(titular: TitularFinanceiro) -> dict:
             "nmrazaosocial", "nmfantasia", "dtnascimento", "email", "telefone",
             "cep", "endereco", "numero", "complemento", "bairro", "cidade_id",
             "estado_id", "vrfaturamentomensal", "asaas_account_id", "asaas_wallet_id",
-            "status_asaas", "onboarding_url", "dtultimaverificacao",
+            "status_asaas", "sittitular", "onboarding_url", "dtultimaverificacao",
         )
     }
 
@@ -178,7 +178,7 @@ def vincular_titular_a_loja(
 
 
 @router.put("/organizacao/{organizacao_id}")
-def salvar(
+async def salvar(
     organizacao_id: int,
     dados: TitularFinanceiroIn,
     loja_id: int | None = None,
@@ -206,6 +206,8 @@ def salvar(
         raise HTTPException(409, "Este CPF/CNPJ já pertence a outra organização no Clubbar")
     if titular and titular.asaas_account_id and titular.cpfcnpj != dados.cpfcnpj:
         raise HTTPException(409, "O CPF/CNPJ não pode ser alterado após a criação da subconta Asaas")
+    if titular and titular.asaas_account_id and titular.tipotitular != dados.tipotitular:
+        raise HTTPException(409, "O tipo de titular não pode ser alterado após a criação da subconta Asaas")
     if por_documento and titular and por_documento.titularfinanceiro_id != titular.titularfinanceiro_id:
         raise HTTPException(409, "Este CPF/CNPJ já está cadastrado em outro titular")
     titular = titular or por_documento
@@ -215,14 +217,18 @@ def salvar(
     for campo, valor in dados.model_dump().items():
         if campo != "organizacao_id":
             setattr(titular, campo, valor)
-    db.flush()
-    if loja:
-        loja.titularfinanceiro_id = titular.titularfinanceiro_id
-        sincronizar_integracao_asaas_da_loja(db, loja, titular)
     try:
+        db.flush()
+        if titular.asaas_account_id:
+            await _sincronizar_dados_comerciais_asaas(titular, dados)
+        if loja:
+            loja.titularfinanceiro_id = titular.titularfinanceiro_id
+            sincronizar_integracao_asaas_da_loja(db, loja, titular)
         db.commit()
-    except IntegrityError as exc:
+    except (IntegrityError, HTTPException) as exc:
         db.rollback()
+        if isinstance(exc, HTTPException):
+            raise
         raise HTTPException(409, "CPF/CNPJ ou conta Asaas já cadastrada") from exc
     db.refresh(titular)
     return _out(titular)
@@ -254,6 +260,83 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None,
             detail=detalhe or data.get("message") or "Erro na integração Asaas",
         )
     return data
+
+
+async def _sincronizar_dados_comerciais_asaas(
+    titular: TitularFinanceiro, dados: TitularFinanceiroIn
+) -> None:
+    """Sincroniza no Asaas os campos cadastrais editáveis da subconta."""
+    if not titular.asaas_api_key_criptografada:
+        return
+    api_key = descriptografar_credencial(titular.asaas_api_key_criptografada)
+    atuais = await _asaas("GET", "/myAccount/commercialInfo/", api_key)
+    payload = {
+        "personType": "JURIDICA" if dados.tipotitular == "PJ" else "FISICA",
+        "cpfCnpj": titular.cpfcnpj,
+        "birthDate": dados.dtnascimento.isoformat() if dados.dtnascimento else atuais.get("birthDate"),
+        "incomeValue": float(dados.vrfaturamentomensal),
+        "email": str(dados.email),
+        "phone": dados.telefone,
+        "mobilePhone": dados.telefone,
+        "postalCode": dados.cep,
+        "address": dados.endereco,
+        "addressNumber": dados.numero,
+        "complement": dados.complemento,
+        "province": dados.bairro,
+    }
+    if dados.tipotitular == "PJ":
+        payload["companyType"] = atuais.get("companyType") or "LIMITED"
+        payload["companyName"] = dados.nmrazaosocial
+        disponiveis = atuais.get("availableCompanyNames") or []
+        if disponiveis and dados.nmrazaosocial not in disponiveis:
+            raise HTTPException(
+                status_code=422,
+                detail="A razão social informada não está entre as denominações disponíveis no Asaas.",
+            )
+    await _asaas("POST", "/myAccount/commercialInfo/", api_key, payload)
+    titular.status_asaas = "PENDENTE_DOCUMENTOS"
+
+
+@router.patch("/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/inativar")
+def inativar_titular(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+        TitularFinanceiro.organizacao_id == organizacao_id,
+    ).first()
+    if not titular:
+        raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+    if titular.asaas_account_id:
+        raise HTTPException(409, "Este titular possui uma subconta Asaas e não pode ser inativado.")
+    titular.sittitular = "INATIVO"
+    db.commit()
+    db.refresh(titular)
+    return _out(titular)
+
+
+@router.patch("/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/reativar")
+def reativar_titular(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+        TitularFinanceiro.organizacao_id == organizacao_id,
+    ).first()
+    if not titular:
+        raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+    titular.sittitular = "ATIVO"
+    db.commit()
+    db.refresh(titular)
+    return _out(titular)
 
 
 async def _localizar_subconta_existente(documento: str, email: str) -> dict | None:

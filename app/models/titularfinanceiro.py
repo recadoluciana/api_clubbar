@@ -28,6 +28,7 @@ class TitularFinanceiro(Base):
     asaas_wallet_id = Column(String(100), nullable=True)
     asaas_api_key_criptografada = Column(Text, nullable=True)
     status_asaas = Column(String(30), nullable=False, default="NAO_INICIADO")
+    sittitular = Column(String(15), nullable=False, default="ATIVO", server_default="ATIVO", index=True)
     onboarding_url = Column(Text, nullable=True)
     dtultimaverificacao = Column(DateTime, nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())

@@ -688,6 +688,8 @@ def atualizar_loja(
             ).first()
             if not titular:
                 raise HTTPException(422, "Titular financeiro não pertence à organização")
+            if str(titular.sittitular or "ATIVO").upper() != "ATIVO":
+                raise HTTPException(422, "O titular financeiro está inativo e não pode ser vinculado à loja")
             loja.titularfinanceiro_id = titularfinanceiro_id
             sincronizar_integracao_asaas_da_loja(db, loja, titular)
 
