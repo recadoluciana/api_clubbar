@@ -841,8 +841,9 @@ async def converter_lead_em_parceiro(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "A parceria foi aceita, mas a implantação precisa estar paga "
-                "ou isenta antes da conversão."
+                "Não foi possível converter o estabelecimento. A taxa de "
+                "implantação ainda precisa ser paga ou marcada como isenta. "
+                "Conclua essa etapa antes de tentar novamente."
             ),
         )
     senha_inicial = secrets.token_urlsafe(9)
