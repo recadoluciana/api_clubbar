@@ -1,4 +1,5 @@
 from datetime import datetime
+import uuid
 from html import escape
 from io import BytesIO
 from hashlib import sha256
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado
+from app.core.config import ASAAS_API_KEY
 from app.database import get_db
 from app.services.contrato_automatico import _gerar_conteudo, campos_endereco_pendentes, endereco_contrato, preencher_contrato_portal
 from app.models.cidade import Cidade
@@ -25,6 +27,7 @@ from app.models.loja import Loja
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
 from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao, saida_cobranca
+from app.services.asaas_service import cancelar_checkout_asaas
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -48,6 +51,68 @@ class LeadEstabelecimentoContratoCreate(BaseModel):
 
 class IsencaoImplantacaoIn(BaseModel):
     justificativa: str = Field(min_length=10, max_length=500)
+
+
+def _contrato_original_aceito(
+    db: Session, leadestabelecimento_id: int,
+) -> LeadEstabelecimentoContrato:
+    contrato = db.query(LeadEstabelecimentoContrato).filter(
+        LeadEstabelecimentoContrato.leadestabelecimento_id
+        == leadestabelecimento_id,
+        LeadEstabelecimentoContrato.tipoinstrumento != "RETIFICACAO",
+        LeadEstabelecimentoContrato.status == "ACEITO",
+    ).order_by(
+        LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc()
+    ).first()
+    if contrato is None:
+        raise HTTPException(409, "O contrato precisa estar assinado antes da isenção.")
+    return contrato
+
+
+async def _registrar_isencao_implantacao(
+    db: Session,
+    contrato: LeadEstabelecimentoContrato,
+    dados: IsencaoImplantacaoIn,
+    operador: dict,
+) -> CobrancaImplantacao:
+    cobranca = db.query(CobrancaImplantacao).filter(
+        CobrancaImplantacao.leadestabelecimentocontrato_id
+        == contrato.leadestabelecimentocontrato_id
+    ).with_for_update().first()
+
+    if cobranca is not None:
+        cobranca = await reconciliar_cobranca_implantacao(db, cobranca)
+        if cobranca.status == "PAGA":
+            raise HTTPException(409, "Uma implantação paga não pode ser isentada.")
+        if cobranca.status == "ISENTA":
+            return cobranca
+        if cobranca.status == "PENDENTE" and cobranca.asaas_checkout_id:
+            if not ASAAS_API_KEY:
+                raise HTTPException(503, "Conta Asaas do Clubbar não configurada.")
+            await cancelar_checkout_asaas(cobranca.asaas_checkout_id, ASAAS_API_KEY)
+    else:
+        cobranca = CobrancaImplantacao(
+            leadestabelecimentocontrato_id=(
+                contrato.leadestabelecimentocontrato_id
+            ),
+            leadestabelecimento_id=contrato.leadestabelecimento_id,
+            valor=contrato.vrimplantacao,
+            status="ISENTA",
+            external_reference=(
+                f"ISENCAO-IMPLANTACAO-"
+                f"{contrato.leadestabelecimentocontrato_id}-"
+                f"{uuid.uuid4().hex[:12]}"
+            ),
+        )
+        db.add(cobranca)
+
+    cobranca.status = "ISENTA"
+    cobranca.justificativaisencao = dados.justificativa.strip()
+    cobranca.operadorisencao_id = int(operador.get("sub") or 0) or None
+    cobranca.dtisencao = datetime.now()
+    db.commit()
+    db.refresh(cobranca)
+    return cobranca
 
 
 def _resposta_pdf_contrato(contrato: LeadEstabelecimentoContrato) -> StreamingResponse:
@@ -650,17 +715,54 @@ async def consultar_implantacao_admin(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
+    contrato = _contrato_original_aceito(db, leadestabelecimento_id)
     cobranca = db.query(CobrancaImplantacao).filter(
-        CobrancaImplantacao.leadestabelecimento_id == leadestabelecimento_id
-    ).order_by(CobrancaImplantacao.cobrancaimplantacao_id.desc()).first()
+        CobrancaImplantacao.leadestabelecimentocontrato_id
+        == contrato.leadestabelecimentocontrato_id
+    ).first()
     if not cobranca:
-        raise HTTPException(404, "Cobrança de implantação ainda não gerada")
+        return {
+            "cobrancaimplantacao_id": None,
+            "leadestabelecimentocontrato_id": (
+                contrato.leadestabelecimentocontrato_id
+            ),
+            "leadestabelecimento_id": leadestabelecimento_id,
+            "organizacao_id": None,
+            "valor": float(contrato.vrimplantacao or 0),
+            "status": (
+                "SEM_TAXA"
+                if float(contrato.vrimplantacao or 0) <= 0
+                else "NAO_GERADA"
+            ),
+            "checkout_url": None,
+            "billing_type": None,
+            "dtvencimento": None,
+            "dtpagamento": None,
+            "dtisencao": None,
+            "justificativaisencao": None,
+        }
     cobranca = await reconciliar_cobranca_implantacao(db, cobranca)
     return saida_cobranca(cobranca)
 
 
+@router.patch("/estabelecimento/{leadestabelecimento_id}/implantacao/isentar")
+async def isentar_implantacao_por_estabelecimento(
+    leadestabelecimento_id: int,
+    dados: IsencaoImplantacaoIn,
+    operador: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    contrato = _contrato_original_aceito(db, leadestabelecimento_id)
+    if float(contrato.vrimplantacao or 0) <= 0:
+        raise HTTPException(409, "Este contrato não possui taxa de implantação.")
+    cobranca = await _registrar_isencao_implantacao(
+        db, contrato, dados, operador
+    )
+    return saida_cobranca(cobranca)
+
+
 @router.patch("/implantacao/{cobrancaimplantacao_id}/isentar")
-def isentar_implantacao(
+async def isentar_implantacao(
     cobrancaimplantacao_id: int,
     dados: IsencaoImplantacaoIn,
     operador: dict = Depends(get_operador_logado),
@@ -671,12 +773,13 @@ def isentar_implantacao(
     ).with_for_update().first()
     if not cobranca:
         raise HTTPException(404, "Cobrança de implantação não encontrada")
-    if cobranca.status == "PAGA":
-        raise HTTPException(409, "Uma implantação paga não pode ser isentada")
-    cobranca.status = "ISENTA"
-    cobranca.justificativaisencao = dados.justificativa.strip()
-    cobranca.operadorisencao_id = int(operador.get("sub") or 0) or None
-    cobranca.dtisencao = datetime.now()
-    db.commit()
-    db.refresh(cobranca)
+    contrato = db.get(
+        LeadEstabelecimentoContrato,
+        cobranca.leadestabelecimentocontrato_id,
+    )
+    if contrato is None:
+        raise HTTPException(404, "Contrato da implantação não encontrado.")
+    cobranca = await _registrar_isencao_implantacao(
+        db, contrato, dados, operador
+    )
     return saida_cobranca(cobranca)
