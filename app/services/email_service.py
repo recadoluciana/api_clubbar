@@ -174,10 +174,10 @@ def enviar_confirmacao_cadastro_lead(
         site = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
         link = f"{site}/portal-lead.html#acesso={quote(token)}"
         link_html = (
-            "<p>Clique no link abaixo para prosseguir com seu atendimento:</p>"
+            "<p>Clique no link abaixo para prosseguir com seu cadastro ou editá-lo:</p>"
             f"<p><a href='{escape(link)}' style='display:inline-block;padding:14px 22px;"
             "background:#ffc107;color:#000;text-decoration:none;border-radius:10px;"
-            "font-weight:bold'>Acessar meu atendimento</a></p>"
+            "font-weight:bold'>Acessar meu cadastro</a></p>"
         )
 
     conteudo = f"""
@@ -190,7 +190,6 @@ def enviar_confirmacao_cadastro_lead(
       <b>Telefone:</b> {escape(str(lead.get('telefone') or ''))}
     </div>
     {''.join(cards)}
-    <p>A equipe Clubbar entrará em contato para dar continuidade ao atendimento.</p>
     {link_html}
     """
     _enviar_email(
@@ -198,7 +197,7 @@ def enviar_confirmacao_cadastro_lead(
         "Confirmação do seu cadastro no Clubbar",
         template_email_clubbar(
             titulo="Cadastro recebido",
-            subtitulo="Confira os dados enviados para a equipe Clubbar.",
+            subtitulo="Conferência e confirmação",
             conteudo_html=conteudo,
         ),
     )
