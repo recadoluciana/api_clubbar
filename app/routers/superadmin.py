@@ -11,6 +11,8 @@ from app.core.security import get_operador_logado
 from app.models.itvenda import ItVenda
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
+from app.models.cidade import Cidade
+from app.models.estado import Estado
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
@@ -425,7 +427,9 @@ def listar_lojas_da_organizacao(
 ):
     _organizacao_existe(db, organizacao_id)
     lojas = (
-        db.query(Loja)
+        db.query(Loja, Cidade.nmcidade, Estado.sgestado, Estado.nmestado)
+        .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .outerjoin(Estado, Estado.estado_id == Loja.estado_id)
         .filter(Loja.organizacao_id == organizacao_id)
         .order_by(Loja.nmloja.asc())
         .all()
@@ -434,15 +438,54 @@ def listar_lojas_da_organizacao(
         {
             "loja_id": int(loja.loja_id),
             "organizacao_id": int(loja.organizacao_id),
+            "leadestabelecimento_id": (
+                int(loja.leadestabelecimento_id)
+                if loja.leadestabelecimento_id is not None
+                else None
+            ),
+            "titularfinanceiro_id": (
+                int(loja.titularfinanceiro_id)
+                if loja.titularfinanceiro_id is not None
+                else None
+            ),
             "nmloja": loja.nmloja,
+            "cpfcnpjloja": loja.cpfcnpjloja,
+            "cnpjraiz": loja.cnpjraiz,
+            "tipoestabelecimento": loja.tipoestabelecimento,
+            "nmrazaosocial": loja.nmrazaosocial,
             "endloja": loja.endloja,
+            "nrceploja": loja.nrceploja,
             "nrendeloja": loja.nrendeloja,
+            "complementoloja": loja.complementoloja,
             "dsbairroloja": loja.dsbairroloja,
+            "dsinstaloja": loja.dsinstaloja,
             "nrtelloja": loja.nrtelloja,
             "sitloja": loja.sitloja,
+            "dsrefeloja": loja.dsrefeloja,
+            "nrdiavalidade": int(loja.nrdiavalidade or 0),
+            "idvalidadeprod": loja.idvalidadeprod,
+            "aberto24x7": loja.aberto24x7,
+            "qtcpdloja": loja.qtcpdloja,
             "dtcriacao": loja.dtcriacao,
+            "cidade_id": int(loja.cidade_id) if loja.cidade_id else None,
+            "nmcidade": nmcidade,
+            "estado_id": int(loja.estado_id) if loja.estado_id else None,
+            "sgestado": sgestado,
+            "nmestado": nmestado,
+            "tipoloja": loja.tipoloja,
+            "atendimentofisico": loja.atendimentofisico,
+            "vendaprodutos": loja.vendaprodutos,
+            "vendaingressos": loja.vendaingressos,
+            "dtultatu": loja.dtultatu,
+            "urllogoloja": loja.urllogoloja,
+            "urlfachadaloja": loja.urlfachadaloja,
+            "vrtaxaprod": float(loja.vrtaxaprod or 0),
+            "vrtaxaing": float(loja.vrtaxaing or 0),
+            "vrtaxaminimaingresso": float(
+                loja.vrtaxaminimaingresso or 0
+            ),
         }
-        for loja in lojas
+        for loja, nmcidade, sgestado, nmestado in lojas
     ]
 
 
