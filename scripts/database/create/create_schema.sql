@@ -1119,7 +1119,7 @@ CREATE TABLE itcarrinho (
   CONSTRAINT fk_itcarrinho_cardapioitem
     FOREIGN KEY (cardapioitem_id)
     REFERENCES cardapioitem(cardapioitem_id)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
+    ON DELETE CASCADE ON UPDATE CASCADE,
 
   CONSTRAINT chk_itcarrinho_qt
     CHECK (qtitcarrinho = 1)

@@ -16,6 +16,10 @@ from app.models.evento import Evento
 from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut,AlterarParticipanteIn
+from app.services.carrinho_service import (
+    limpar_carrinhos_abertos_cliente,
+    limpar_itens_indisponiveis,
+)
 
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
@@ -143,6 +147,14 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
     if not carr:
         return {"carrinho_id": None, "qt": 0}
 
+    removidos = limpar_itens_indisponiveis(
+        db,
+        int(carr.carrinho_id),
+        int(carr.loja_id),
+    )
+    if removidos:
+        db.commit()
+
     row = (
         db.query(
             func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
@@ -162,6 +174,7 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
 
 @router.get("/qtde_itens_geral")
 def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
+    limpar_carrinhos_abertos_cliente(db, cliente_id)
     # Soma a quantidade de itens em todos os carrinhos ABERTOS do cliente
     row = (
         db.query(
@@ -244,6 +257,14 @@ def obter_itens_carrinho(
             "total": 0,
             "itens": [],
         }
+
+    removidos = limpar_itens_indisponiveis(
+        db,
+        int(carrinho.carrinho_id),
+        int(carrinho.loja_id),
+    )
+    if removidos:
+        db.commit()
 
     itens_db = (
         db.query(
@@ -477,6 +498,7 @@ def get_lojas_com_carrinho(
     cliente_id: int,
     db: Session = Depends(get_db)
 ):
+    limpar_carrinhos_abertos_cliente(db, cliente_id)
     rows = (
         db.query(
             Loja.loja_id.label("loja_id"),

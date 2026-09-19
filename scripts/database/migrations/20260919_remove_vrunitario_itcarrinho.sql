@@ -4,5 +4,12 @@ DELETE FROM itcarrinho
 WHERE cardapioitem_id IS NULL;
 
 ALTER TABLE itcarrinho
+  DROP FOREIGN KEY fk_itcarrinho_cardapioitem,
   MODIFY COLUMN cardapioitem_id BIGINT NOT NULL,
   DROP COLUMN vrunitario;
+
+ALTER TABLE itcarrinho
+  ADD CONSTRAINT fk_itcarrinho_cardapioitem
+  FOREIGN KEY (cardapioitem_id)
+  REFERENCES cardapioitem(cardapioitem_id)
+  ON DELETE CASCADE ON UPDATE CASCADE;

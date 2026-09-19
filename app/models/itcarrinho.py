@@ -8,7 +8,12 @@ class ItCarrinho(Base):
     itcarrinho_id = Column(BigInteger, primary_key=True, autoincrement=True)
     carrinho_id = Column(BigInteger, ForeignKey("carrinho.carrinho_id"), nullable=False, index=True)
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False, index=True)
-    cardapioitem_id = Column(BigInteger, ForeignKey("cardapioitem.cardapioitem_id"), nullable=False, index=True)
+    cardapioitem_id = Column(
+        BigInteger,
+        ForeignKey("cardapioitem.cardapioitem_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     qtitcarrinho = Column(Integer, nullable=False, default=1)
     dsobsitcar = Column(String(255), nullable=True)
     dtcriacao = Column(DateTime, server_default=func.current_timestamp(), nullable=False)

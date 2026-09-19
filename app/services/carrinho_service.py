@@ -1,13 +1,104 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
 
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
-from app.models.cardapio import CardapioItem
+from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from decimal import Decimal
+
+
+def limpar_itens_indisponiveis(
+    db: Session,
+    carrinho_id: int,
+    loja_id: int,
+) -> int:
+    """Remove do carrinho itens que não pertencem mais ao cardápio vigente."""
+    itens = (
+        db.query(ItCarrinho)
+        .filter(ItCarrinho.carrinho_id == carrinho_id)
+        .all()
+    )
+    if not itens:
+        return 0
+
+    ids_no_carrinho = {
+        int(item.cardapioitem_id)
+        for item in itens
+        if item.cardapioitem_id is not None
+    }
+    agora = datetime.now()
+    ids_disponiveis = {
+        int(row[0])
+        for row in (
+            db.query(CardapioItem.cardapioitem_id)
+            .join(
+                CardapioVersao,
+                CardapioVersao.cardapioversao_id
+                == CardapioItem.cardapioversao_id,
+            )
+            .join(
+                Cardapio,
+                Cardapio.cardapio_id == CardapioVersao.cardapio_id,
+            )
+            .join(Produto, Produto.produto_id == CardapioItem.produto_id)
+            .filter(
+                CardapioItem.cardapioitem_id.in_(ids_no_carrinho),
+                CardapioItem.sititem == "ATIVO",
+                Produto.sitproduto == "ATIVO",
+                Cardapio.loja_id == loja_id,
+                Cardapio.sitcardapio == "ATIVO",
+                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+                (CardapioVersao.dtiniciovigencia.is_(None))
+                | (CardapioVersao.dtiniciovigencia <= agora),
+                (CardapioVersao.dtfimvigencia.is_(None))
+                | (CardapioVersao.dtfimvigencia >= agora),
+            )
+            .all()
+        )
+    }
+
+    ids_remover = [
+        item.itcarrinho_id
+        for item in itens
+        if item.cardapioitem_id is None
+        or int(item.cardapioitem_id) not in ids_disponiveis
+    ]
+    if not ids_remover:
+        return 0
+
+    removidos = (
+        db.query(ItCarrinho)
+        .filter(ItCarrinho.itcarrinho_id.in_(ids_remover))
+        .delete(synchronize_session=False)
+    )
+    db.flush()
+    return int(removidos or 0)
+
+
+def limpar_carrinhos_abertos_cliente(db: Session, cliente_id: int) -> int:
+    carrinhos = (
+        db.query(Carrinho)
+        .filter(
+            Carrinho.cliente_id == cliente_id,
+            Carrinho.sitcarrinho == "ABERTO",
+        )
+        .all()
+    )
+    total_removidos = sum(
+        limpar_itens_indisponiveis(
+            db,
+            int(carrinho.carrinho_id),
+            int(carrinho.loja_id),
+        )
+        for carrinho in carrinhos
+    )
+    if total_removidos:
+        db.commit()
+    return total_removidos
 
 def get_carrinho(
     db: Session,
@@ -29,6 +120,14 @@ def get_carrinho(
     )
     if not carrinho_selec:
         raise HTTPException(status_code=404, detail="Carrinho não encontrado (ABERTO)")
+
+    removidos = limpar_itens_indisponiveis(
+        db,
+        int(carrinho_selec.carrinho_id),
+        int(carrinho_selec.loja_id),
+    )
+    if removidos:
+        db.commit()
 
     # 2) busca itens do carrinho
     itens_car = (
