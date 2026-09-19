@@ -60,6 +60,8 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.completar_endereco(item.leadestabelecimentocontrato_id)
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
         asyncio.run(aceitar_contrato(item.leadestabelecimentocontrato_id, req, self.db.get(LeadParceiro, 1), self.db))
+        self.assertEqual(self.est.status.value, "ACEITOU_PARCERIA")
+        self.assertEqual(self.est.dtaceite, item.dtaceite)
         return item
 
     def dados_retificacao(self, **alteracoes):
@@ -94,7 +96,25 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertEqual(original.conteudocontrato, texto_original)
         self.assertEqual(original.hashdocumento, hash_original)
         self.assertEqual(original.status, "ACEITO")
+        self.assertEqual(self.est.status.value, "ACEITOU_PARCERIA")
         self.assertEqual(self.db.get(LeadEstabelecimentoContrato, termo["leadestabelecimentocontrato_id"]).status, "ACEITO")
+
+    def test_reabertura_de_contrato_assinado_recupera_aceite_da_parceria(self):
+        original = self.contrato_aceito()
+        self.est.status = "NOVO"
+        self.est.dtaceite = None
+        self.db.commit()
+
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        asyncio.run(aceitar_contrato(
+            original.leadestabelecimentocontrato_id,
+            req,
+            self.db.get(LeadParceiro, 1),
+            self.db,
+        ))
+
+        self.assertEqual(self.est.status.value, "ACEITOU_PARCERIA")
+        self.assertEqual(self.est.dtaceite, original.dtaceite)
 
     def test_cpf_cnpj_alterado_exige_confirmacao_mesma_parte(self):
         self.contrato_aceito()

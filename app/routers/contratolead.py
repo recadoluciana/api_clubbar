@@ -596,8 +596,26 @@ async def aceitar_contrato(
         item.cpfcnpjsignatario = item.cpfcnpjcontratante
         item.ipaceite = request.client.host if request.client else None
         item.dtaceite = datetime.now()
+        if item.tipoinstrumento != "RETIFICACAO":
+            estabelecimento.status = StatusLeadEstabelecimento.ACEITOU_PARCERIA
+            estabelecimento.dtaceite = item.dtaceite
         db.commit()
         db.refresh(item)
+    elif item.tipoinstrumento != "RETIFICACAO":
+        estabelecimento = db.get(LeadEstabelecimento, item.leadestabelecimento_id)
+        status_estabelecimento = (
+            estabelecimento.status.value
+            if hasattr(estabelecimento.status, "value")
+            else estabelecimento.status
+        )
+        if status_estabelecimento not in (
+            StatusLeadEstabelecimento.ACEITOU_PARCERIA.value,
+            StatusLeadEstabelecimento.CONVERTIDO.value,
+            StatusLeadEstabelecimento.RECUSOU_PARCERIA.value,
+        ):
+            estabelecimento.status = StatusLeadEstabelecimento.ACEITOU_PARCERIA
+            estabelecimento.dtaceite = item.dtaceite
+            db.commit()
     return _out(item)
 
 
