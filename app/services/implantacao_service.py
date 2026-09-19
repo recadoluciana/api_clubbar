@@ -52,7 +52,7 @@ async def criar_cobranca_implantacao(
     if not site_url.lower().startswith(("http://", "https://")):
         site_url = f"https://{site_url}"
     retorno = (
-        f"{site_url}/aceite-parceria.html"
+        f"{site_url}/portal-lead.html"
         f"?leadestabelecimento_id={contrato.leadestabelecimento_id}"
     )
     body = {
