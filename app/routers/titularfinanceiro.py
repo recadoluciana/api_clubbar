@@ -208,6 +208,8 @@ async def salvar(
         raise HTTPException(409, "O CPF/CNPJ não pode ser alterado após a criação da subconta Asaas")
     if titular and titular.asaas_account_id and titular.tipotitular != dados.tipotitular:
         raise HTTPException(409, "O tipo de titular não pode ser alterado após a criação da subconta Asaas")
+    if titular and titular.asaas_account_id and titular.dtnascimento != dados.dtnascimento:
+        raise HTTPException(409, "A data de nascimento não pode ser alterada após a criação da subconta Asaas")
     if por_documento and titular and por_documento.titularfinanceiro_id != titular.titularfinanceiro_id:
         raise HTTPException(409, "Este CPF/CNPJ já está cadastrado em outro titular")
     titular = titular or por_documento
