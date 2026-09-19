@@ -219,11 +219,6 @@ def _recalcular_itens_carrinho(
                 status_code=409,
                 detail=f"O produto '{produto.nmproduto}' não está mais disponível no cardápio publicado da loja. Remova-o e adicione novamente.",
             )
-        if Decimal(str(it.get("vrprecoprod") or 0)) != Decimal(item_cardapio.vrpreco):
-            raise HTTPException(
-                status_code=409,
-                detail=f"O preço de '{produto.nmproduto}' mudou desde que foi adicionado ao carrinho. Remova-o e adicione novamente para conferir o novo valor.",
-            )
         vrprecofinal, descontoativo = calcular_preco_final(produto, item_cardapio.vrpreco)
         vrunitario = round(float(vrprecofinal), 2)
         subtotal   = round(vrunitario * qt_prod, 2)

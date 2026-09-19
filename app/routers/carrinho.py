@@ -72,18 +72,6 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 detail="Este produto não está disponível em um cardápio publicado.",
             )
         cardapioitem_id_final = int(item_cardapio.cardapioitem_id)
-        preco_unitario_final = item_cardapio.vrpreco
-
-    else:  # "I"
-        produto_ingresso = get_or_create_produto_por_lote(
-            organizacao_id=payload.organizacao_id,
-            loja_id=payload.loja_id,
-            lote_id=payload.lote_id,
-        )
-        produto_id_final = int(produto_ingresso.produto_id)
-        lote_id_final = int(payload.lote_id)
-        cardapioitem_id_final = None
-        preco_unitario_final = produto_ingresso.vrprecoprod
 
     # 2) carrinho aberto do cliente
     carr = (
@@ -114,7 +102,6 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             carrinho_id=int(carr.carrinho_id),
             produto_id=produto_id_final,
             cardapioitem_id=cardapioitem_id_final,
-            vrunitario=preco_unitario_final,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,
             lote_id=lote_id_final,
@@ -159,9 +146,10 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
     row = (
         db.query(
             func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * ItCarrinho.vrunitario), 0).label("total"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * CardapioItem.vrpreco), 0).label("total"),
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
+        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(ItCarrinho.carrinho_id    == carr.carrinho_id)
         .first()
     )
@@ -263,7 +251,7 @@ def obter_itens_carrinho(
             ItCarrinho.produto_id,
             Produto.nmproduto,
             Produto.dsproduto,
-            ItCarrinho.vrunitario.label("vrprecoprod"),
+            CardapioItem.vrpreco.label("vrprecoprod"),
             Produto.urlfotoproduto,
             Produto.tipodesconto,
             Produto.vrdesconto,
@@ -275,6 +263,7 @@ def obter_itens_carrinho(
             ItCarrinho.cpfparticipante,
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
+        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
         .all()
     )
@@ -384,6 +373,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
             INSERT INTO itcarrinho (
                 carrinho_id,
                 produto_id,
+                cardapioitem_id,
                 lote_id,
                 qtitcarrinho,
                 dsobsitcar
@@ -391,6 +381,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
             SELECT
                 carrinho_id,
                 produto_id,
+                cardapioitem_id,
                 lote_id,
                 1,
                 dsobsitcar
@@ -432,7 +423,7 @@ def get_itens_carrinho(
             func.sum(ItCarrinho.qtitcarrinho).label("qtitcarrinho"),
 
             Produto.nmproduto.label("nmproduto"),
-            ItCarrinho.vrunitario.label("vrprecoprod"),
+            CardapioItem.vrpreco.label("vrprecoprod"),
             Produto.img.label("img"),
         )
         .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
@@ -441,6 +432,7 @@ def get_itens_carrinho(
             (Produto.produto_id == ItCarrinho.produto_id)
             & (Produto.organizacao_id == Carrinho.organizacao_id),
         )
+        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(Carrinho.cliente_id == int(cliente_id))
         .filter(Carrinho.organizacao_id == int(organizacao_id))
         .filter(Carrinho.loja_id == int(loja_id))
@@ -455,7 +447,7 @@ def get_itens_carrinho(
             obs_norm,
 
             Produto.nmproduto,
-            ItCarrinho.vrunitario,
+            CardapioItem.vrpreco,
             Produto.img,
         )
         .order_by(Produto.nmproduto.asc(), obs_norm.asc())

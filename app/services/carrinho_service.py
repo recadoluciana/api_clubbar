@@ -5,6 +5,7 @@ from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
+from app.models.cardapio import CardapioItem
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from decimal import Decimal
 
@@ -60,6 +61,17 @@ def get_carrinho(
         .all()
     )
     map_prod = {p.produto_id: p for p in produtos}
+    cardapioitem_ids = list({
+        it.cardapioitem_id for it in itens_car if it.cardapioitem_id is not None
+    })
+    itens_cardapio = (
+        db.query(CardapioItem)
+        .filter(CardapioItem.cardapioitem_id.in_(cardapioitem_ids))
+        .all()
+    ) if cardapioitem_ids else []
+    map_item_cardapio = {
+        item.cardapioitem_id: item for item in itens_cardapio
+    }
 
     itens_agrupados = {}
     qt_total = 0
@@ -78,7 +90,13 @@ def get_carrinho(
             )
 
         nmproduto     = getattr(prod, "nmproduto", "Produto")
-        vrprecoprod   = float(getattr(it, "vrunitario", 0) or 0)
+        item_cardapio = map_item_cardapio.get(it.cardapioitem_id)
+        if not item_cardapio:
+            raise HTTPException(
+                status_code=409,
+                detail=f"O produto '{nmproduto}' não está mais disponível no cardápio.",
+            )
+        vrprecoprod   = float(item_cardapio.vrpreco or 0)
         idtipoproduto = (getattr(prod, "idtipoproduto", "P") or "P").upper()
 
         subtotal = round(vrprecoprod * qt_aux, 2)

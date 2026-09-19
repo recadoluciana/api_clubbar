@@ -39,14 +39,16 @@ class PagamentoPrecoCardapioTest(unittest.TestCase):
             )
         self.assertEqual(erro.exception.status_code, 409)
 
-    def test_preco_alterado_nao_cobra_valor_diferente_do_carrinho(self):
+    def test_preco_alterado_usa_o_valor_atual_do_cardapio(self):
         db = self._db(SimpleNamespace(vrpreco=Decimal("90.00")))
-        with self.assertRaises(HTTPException) as erro:
-            _recalcular_itens_carrinho(
-                db, [{"produto_id": 3, "cardapioitem_id": 7, "vrprecoprod": 80, "qtitcarrinho": 1}], 5, 1,
-            )
-        self.assertEqual(erro.exception.status_code, 409)
-        self.assertIn("preço", erro.exception.detail)
+        itens, total = _recalcular_itens_carrinho(
+            db,
+            [{"produto_id": 3, "cardapioitem_id": 7, "qtitcarrinho": 1}],
+            5,
+            1,
+        )
+        self.assertEqual(itens[0]["vrunitario"], 81.0)
+        self.assertEqual(total, 81.0)
 
 
 if __name__ == "__main__":

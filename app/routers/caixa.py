@@ -21,6 +21,7 @@ from app.models.cliente import Cliente
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
+from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 from app.models.venda import Venda
 from app.routers.carrinho import adicionar_item
 from app.routers.pagamentos import (
@@ -310,11 +311,37 @@ async def cancelar_pix(
         ).all()
         carrinho_origem.sitcarrinho = "ABERTO"
         for item in snapshots:
+            item_cardapio = (
+                db.query(CardapioItem)
+                .join(
+                    CardapioVersao,
+                    CardapioVersao.cardapioversao_id
+                    == CardapioItem.cardapioversao_id,
+                )
+                .join(
+                    Cardapio,
+                    Cardapio.cardapio_id == CardapioVersao.cardapio_id,
+                )
+                .filter(
+                    CardapioItem.produto_id == item.produto_id,
+                    CardapioItem.sititem == "ATIVO",
+                    Cardapio.loja_id == checkout.loja_id,
+                    Cardapio.sitcardapio == "ATIVO",
+                    CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+                )
+                .order_by(
+                    Cardapio.prioridade.desc(),
+                    CardapioVersao.nrversao.desc(),
+                )
+                .first()
+            )
+            if not item_cardapio:
+                continue
             for _ in range(int(item.quantidade or 1)):
                 db.add(ItCarrinho(
                     carrinho_id=checkout.carrinho_id,
                     produto_id=item.produto_id,
-                    vrunitario=item.vrunitario,
+                    cardapioitem_id=item_cardapio.cardapioitem_id,
                     lote_id=item.lote_id,
                     qtitcarrinho=1,
                     dsobsitcar=item.dsobsitem,
