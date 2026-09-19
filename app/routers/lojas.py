@@ -20,6 +20,7 @@ from app.models.lojaestilomusical import LojaEstiloMusical
 from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.services.cashback_service import obter_ou_criar_config
 from app.models.titularfinanceiro import TitularFinanceiro
+from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
@@ -688,6 +689,7 @@ def atualizar_loja(
             if not titular:
                 raise HTTPException(422, "Titular financeiro não pertence à organização")
             loja.titularfinanceiro_id = titularfinanceiro_id
+            sincronizar_integracao_asaas_da_loja(db, loja, titular)
 
         if dsbairroloja is not None:
             loja.dsbairroloja = dsbairroloja

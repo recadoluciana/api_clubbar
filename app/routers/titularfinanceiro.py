@@ -1,7 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
 import os
-import secrets
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,13 +9,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import APP_ENV, ASAAS_API_KEY
-from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial, hash_token_webhook
+from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
-from app.models.lojaasaas import LojaAsaas
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
+from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.utils.documento import normalizar_cpf_cnpj
 
@@ -173,6 +172,7 @@ def vincular_titular_a_loja(
     if not titular or not loja:
         raise HTTPException(status_code=404, detail="Titular ou loja não encontrado")
     loja.titularfinanceiro_id = titularfinanceiro_id
+    sincronizar_integracao_asaas_da_loja(db, loja, titular)
     db.commit()
     return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": titularfinanceiro_id}
 
@@ -218,6 +218,7 @@ def salvar(
     db.flush()
     if loja:
         loja.titularfinanceiro_id = titular.titularfinanceiro_id
+        sincronizar_integracao_asaas_da_loja(db, loja, titular)
     try:
         db.commit()
     except IntegrityError as exc:
@@ -456,6 +457,13 @@ async def ativar_recebimentos(
         titularfinanceiro_id=titularfinanceiro_id,
     )
     if titular.asaas_account_id:
+        lojas = db.query(Loja).filter(
+            Loja.organizacao_id == organizacao_id,
+            Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
+        ).all()
+        for loja in lojas:
+            sincronizar_integracao_asaas_da_loja(db, loja, titular)
+        db.commit()
         return _out(titular)
     documento = titular.cpfcnpj
     conta = await _localizar_subconta_existente(documento, titular.email)
@@ -493,24 +501,12 @@ async def ativar_recebimentos(
     titular.asaas_api_key_criptografada = criptografada
     titular.status_asaas = "EM_ONBOARDING"
     titular.dtultimaverificacao = datetime.now()
-    ambiente = "production" if APP_ENV in {"production", "prod"} else "sandbox"
     lojas = db.query(Loja).filter(
         Loja.organizacao_id == organizacao_id,
         Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
     ).all()
     for loja in lojas:
-        config = db.query(LojaAsaas).filter(LojaAsaas.loja_id == loja.loja_id, LojaAsaas.ambiente == ambiente).first()
-        if config is None:
-            token = secrets.token_urlsafe(32)
-            config = LojaAsaas(
-                organizacao_id=organizacao_id, loja_id=loja.loja_id, ambiente=ambiente,
-                webhook_token_hash=hash_token_webhook(token),
-            )
-            db.add(config)
-        config.asaas_account_id = account_id
-        config.asaas_wallet_id = wallet_id
-        config.asaas_api_key_criptografada = criptografada
-        config.statusintegracao = "PENDENTE"
+        sincronizar_integracao_asaas_da_loja(db, loja, titular)
     db.commit()
     db.refresh(titular)
     return _out(titular)
@@ -546,18 +542,13 @@ async def verificar_asaas(
     urls = [item.get("onboardingUrl") for item in documentos.get("data", []) if item.get("onboardingUrl")]
     titular.onboarding_url = urls[0] if urls else titular.onboarding_url
     titular.dtultimaverificacao = datetime.now()
-    ambiente = "production" if APP_ENV in {"production", "prod"} else "sandbox"
-    lojas_titular = db.query(Loja.loja_id).filter(
+    lojas_titular = db.query(Loja).filter(
         Loja.organizacao_id == organizacao_id,
         Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
-    )
-    loja_ids_titular = [item[0] for item in lojas_titular.all()]
-    for config in db.query(LojaAsaas).filter(
-        LojaAsaas.organizacao_id == organizacao_id,
-        LojaAsaas.loja_id.in_(loja_ids_titular),
-        LojaAsaas.ambiente == ambiente,
-    ).all():
-        config.statusintegracao = "ATIVA" if titular.status_asaas == "APROVADO" else "PENDENTE"
+    ).all()
+    loja_ids_titular = [loja.loja_id for loja in lojas_titular]
+    for loja in lojas_titular:
+        sincronizar_integracao_asaas_da_loja(db, loja, titular)
     publicacoes = {"agendas_publicadas": 0, "cardapios_publicados": 0}
     if titular.status_asaas == "APROVADO":
         publicacoes = publicar_conteudos_aguardando_asaas(
