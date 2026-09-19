@@ -35,7 +35,7 @@ class ContratoAutomaticoTest(unittest.TestCase):
             Cidade(cidade_id=1, pais_id=1, estado_id=1, nmcidade="Teste"),
             LeadParceiro(leadparceiro_id=1, nmresponsavel="Pessoa", telefone="11999990000", email="teste@example.com"),
             ContratoPadrao(contratopadrao_id=1, versao="v1", titulo="Contrato", conteudomodelo="Clubbar: {{NOME_ESTABELECIMENTO}}; {{CPF_CNPJ}}; {{TAXA_PRODUTOS}}; {{ENDERECO}}", vrimplantacao=10, sitcontrato="ATIVO"),
-            TaxaPadrao(taxapadrao_id=1, nrversao=1, pctaxaproduto=5, pctaxaingresso=10, vrtaxaminimaingresso=2, sittaxapadrao="VIGENTE"),
+            TaxaPadrao(taxapadrao_id=1, nrversao=1, pctaxaproduto=5, pctaxaingresso=10, vrtaxaminimaingresso=2.99, sittaxapadrao="VIGENTE"),
         ])
         self.est = LeadEstabelecimento(leadestabelecimento_id=1, leadparceiro_id=1, nmestabelecimento="Clubbar", tipo="BAR", estado_id=1, cidade_id=1)
         self.db.add(self.est)
@@ -119,6 +119,8 @@ class ContratoAutomaticoTest(unittest.TestCase):
     def test_cria_rascunho_sem_documento_e_nao_duplica(self):
         item = garantir_contrato(self.db, self.est)
         self.assertEqual(item.status, "RASCUNHO")
+        self.assertEqual(float(item.vrtaxaminimaingresso), 2.99)
+        self.assertEqual(float(self.est.vrtaxaminimaingresso), 2.99)
         self.assertIn("[CPF/CNPJ a preencher]", item.conteudocontrato)
         self.assertEqual(garantir_contrato(self.db, self.est).leadestabelecimentocontrato_id, item.leadestabelecimentocontrato_id)
         self.assertEqual(self.db.query(LeadEstabelecimentoContrato).count(), 1)

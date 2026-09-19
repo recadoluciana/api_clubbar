@@ -33,7 +33,7 @@ class LeadEstabelecimentoContrato(Base):
     status = Column(String(20), nullable=False, server_default="RASCUNHO")
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, server_default="5")
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="10")
-    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="0")
+    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="2.99")
     vrimplantacao = Column(Numeric(10, 2), nullable=False, server_default="0")
     tipopessoa = Column(String(2), nullable=True)
     cpfcnpjcontratante = Column(String(14), nullable=True)

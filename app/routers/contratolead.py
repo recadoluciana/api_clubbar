@@ -368,7 +368,7 @@ def _preparar_retificacao(db: Session, estabelecimento_id: int, dados: Retificac
         alteracoes.append(f"Endereço: de '{anterior_endereco}' para '{endereco_novo}'.")
     registrar("Taxa de produtos", f"{Decimal(anterior.vrtaxaprod):.2f}%", f"{dados.vrtaxaprod:.2f}%")
     registrar("Taxa de ingressos", f"{Decimal(anterior.vrtaxaing):.2f}%", f"{dados.vrtaxaing:.2f}%")
-    registrar("Taxa mínima por ingresso", f"R$ {Decimal(anterior.vrtaxaminimaingresso):.2f}", f"R$ {dados.vrtaxaminimaingresso:.2f}")
+    registrar("Valor mínimo cobrado por ingresso", f"R$ {Decimal(anterior.vrtaxaminimaingresso):.2f}", f"R$ {dados.vrtaxaminimaingresso:.2f}")
     if not alteracoes:
         raise HTTPException(422, "Nenhum dado foi alterado em relação ao instrumento vigente.")
     texto = (
@@ -587,6 +587,9 @@ async def aceitar_contrato(
                 or endereco_contrato(estabelecimento, cidade, estado) not in item.conteudocontrato
             ):
                 raise HTTPException(422, "O endereço do contrato precisa ser atualizado antes da assinatura.")
+            estabelecimento.vrtaxaprod = item.vrtaxaprod
+            estabelecimento.vrtaxaing = item.vrtaxaing
+            estabelecimento.vrtaxaminimaingresso = item.vrtaxaminimaingresso
         item.status = "ACEITO"
         item.nmsignatario = lead.nmresponsavel
         item.cpfcnpjsignatario = item.cpfcnpjcontratante

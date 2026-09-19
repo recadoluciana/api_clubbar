@@ -119,6 +119,9 @@ def garantir_contrato(db, estabelecimento):
     if not modelo:
         raise HTTPException(422, "Nenhum contrato padrão ativo está disponível.")
     taxa = taxa_padrao_vigente(db)
+    estabelecimento.vrtaxaprod = taxa.pctaxaproduto
+    estabelecimento.vrtaxaing = taxa.pctaxaingresso
+    estabelecimento.vrtaxaminimaingresso = taxa.vrtaxaminimaingresso
     lead = db.get(LeadParceiro, estabelecimento.leadparceiro_id)
     documento = normalizar_cpf_cnpj(estabelecimento.cpfcnpj) or ""
     item = LeadEstabelecimentoContrato(

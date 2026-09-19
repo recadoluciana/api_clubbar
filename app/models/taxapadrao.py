@@ -10,7 +10,7 @@ class TaxaPadrao(Base):
     nrversao = Column(BigInteger, nullable=False, unique=True)
     pctaxaproduto = Column(Numeric(10, 2), nullable=False)
     pctaxaingresso = Column(Numeric(10, 2), nullable=False)
-    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="0")
+    vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="2.99")
     sittaxapadrao = Column(String(15), nullable=False, server_default="RASCUNHO", index=True)
     dtiniciovigencia = Column(DateTime, nullable=True)
     dtfimvigencia = Column(DateTime, nullable=True)
