@@ -80,7 +80,7 @@ origins = [
 
     # Ambiente de desenvolvimento
     "https://clubbaradmin-desenvolvimento.up.railway.app",
-    "https://clubbarcliente-desenvolvimento.up.railway.app",
+    "https://clubbarclient-desenvolvimento.up.railway.app",
 
     "https://clubbar.com.br",
     "https://www.clubbar.com.br",
@@ -91,14 +91,14 @@ origins = [
 
     # manter por enquanto durante a transição
     "https://clubbarsite-production.up.railway.app",
-    "https://clubbarcliente-production.up.railway.app",
+    "https://clubbarclient-production.up.railway.app",
     "https://clubbaradmin-production.up.railway.app",
     "https://clubbarpartner-production.up.railway.app",
     "https://bitbeer-production.up.railway.app",
 
     # manter por enquanto durante a transição
     "https://clubbarsite-desenvolvimento.up.railway.app",
-    "https://clubbarcliente-desenvolvimento.up.railway.app",
+    "https://clubbarclient-desenvolvimento.up.railway.app",
     "https://clubbaradmin-desenvolvimento.up.railway.app",
     "https://apiclubbar-desenvolvimento.up.railway.app",
     "https://clubbarpartner-desenvolvimento.up.railway.app",

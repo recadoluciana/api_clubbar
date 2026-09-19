@@ -51,6 +51,19 @@ PUBLIC_CLIENT_BASE_URL = (
     or ""
 ).strip().rstrip("/")
 
+# O serviço do Clubbar Client no Railway foi renomeado. Mantém a aplicação
+# compatível com a variável antiga até que todos os ambientes sejam atualizados.
+_CLIENT_HOSTS_ANTIGOS = {
+    "https://clubbarcliente-desenvolvimento.up.railway.app":
+        "https://clubbarclient-desenvolvimento.up.railway.app",
+    "https://clubbarcliente-production.up.railway.app":
+        "https://clubbarclient-production.up.railway.app",
+}
+PUBLIC_CLIENT_BASE_URL = _CLIENT_HOSTS_ANTIGOS.get(
+    PUBLIC_CLIENT_BASE_URL,
+    PUBLIC_CLIENT_BASE_URL,
+)
+
 PUBLIC_PARTNER_BASE_URL = (
     os.getenv("PUBLIC_PARTNER_BASE_URL")
     or os.getenv("PARTNER_URL")
