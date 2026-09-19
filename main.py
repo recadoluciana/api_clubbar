@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 import app.models as app_models
 from app.core.config import APP_ENV, UPLOAD_DIR
+from app.core.responses import ClubbarJSONResponse
 from app.database import engine
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
@@ -60,7 +61,7 @@ from app.routers import taxapadrao
 from app.routers import manuais
 
 
-app = FastAPI(title="clubbar API")
+app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
 
 registrar_eventos_auditoria()
 app.add_middleware(AuditoriaMiddleware)

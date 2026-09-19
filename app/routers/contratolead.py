@@ -31,6 +31,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from app.utils.documento import normalizar_cpf_cnpj
+from app.utils.datetime_utils import formatar_data_br
 
 
 router = APIRouter(prefix="/lead-estabelecimento-contratos", tags=["Contratos de estabelecimentos de leads"])
@@ -373,7 +374,7 @@ def _preparar_retificacao(db: Session, estabelecimento_id: int, dados: Retificac
         raise HTTPException(422, "Nenhum dado foi alterado em relação ao instrumento vigente.")
     texto = (
         f"{nrretificacao}º TERMO DE RETIFICAÇÃO E RATIFICAÇÃO DO CONTRATO CLUBBAR\n"
-        f"Contrato original nº {original.leadestabelecimentocontrato_id}, aceito em {original.dtaceite.strftime('%d/%m/%Y %H:%M') if original.dtaceite else 'data não registrada'} e identificado pelo hash {original.hashdocumento or 'não registrado'}.\n"
+        f"Contrato original nº {original.leadestabelecimentocontrato_id}, aceito em {formatar_data_br(original.dtaceite) if original.dtaceite else 'data não registrada'} e identificado pelo hash {original.hashdocumento or 'não registrado'}.\n"
         f"Estabelecimento: {estabelecimento.nmestabelecimento}.\n"
         f"Justificativa: {dados.motivo.strip()}\n"
         "As partes retificam os dados abaixo, com efeitos a partir do aceite deste termo:\n"
