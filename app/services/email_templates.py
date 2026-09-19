@@ -10,20 +10,15 @@ def template_email_clubbar(
     botao_link: str | None = None,
 ):
     ambiente = os.getenv("APP_ENV", "development").strip().lower()
-    dominio_railway = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
-    api_padrao = (
-        "https://apiclubbar-desenvolvimento.up.railway.app"
+    site_padrao = (
+        "https://clubbarsite-desenvolvimento.up.railway.app"
         if ambiente in {"dev", "development"}
-        else "https://api.clubbar.com.br"
+        else "https://clubbar.com.br"
     )
-    api_publica = (
-        os.getenv("PUBLIC_API_BASE_URL")
-        or (f"https://{dominio_railway}" if dominio_railway else "")
-        or api_padrao
-    ).rstrip("/")
+    site_publico = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
     logo_url = os.getenv(
         "EMAIL_LOGO_URL",
-        f"{api_publica}/static/logo.png",
+        f"{site_publico}/assets/images/logo.png",
     )
     bloco_botao = ""
 
@@ -74,10 +69,9 @@ def template_email_clubbar(
             <td align="center" style="background:#000;padding:30px;">
               <img
                 src="{logo_url}"
-                width="210"
-                height="70"
+                width="230"
                 alt="Clubbar"
-                style="display:block;width:210px;height:70px;border:0;object-fit:contain;"
+                style="display:block;width:230px;max-width:100%;height:auto;border:0;"
               >
             </td>
           </tr>
