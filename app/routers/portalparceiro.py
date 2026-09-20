@@ -205,6 +205,20 @@ def atualizar_estabelecimento_portal(
     if not item:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
 
+    contrato_assinado = (
+        db.query(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id)
+        .filter(
+            LeadEstabelecimentoContrato.leadestabelecimento_id == item.leadestabelecimento_id,
+            LeadEstabelecimentoContrato.status == "ACEITO",
+        )
+        .first()
+    )
+    if contrato_assinado:
+        raise HTTPException(
+            status_code=409,
+            detail="Os dados não podem mais ser alterados após a assinatura do contrato.",
+        )
+
     cidade = db.query(Cidade).filter(Cidade.cidade_id == dados.cidade_id).first()
     estado = db.get(Estado, dados.estado_id)
     if not cidade or not estado or cidade.estado_id != dados.estado_id:
