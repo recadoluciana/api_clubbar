@@ -239,7 +239,10 @@ def atualizar_estabelecimento_portal(
     item.bairro = dados.bairro.strip()
     db.commit()
     db.refresh(item)
-    return _serializar_estabelecimento(item)
+    return {
+        "leadestabelecimento_id": item.leadestabelecimento_id,
+        "mensagem": "Dados do estabelecimento atualizados com sucesso.",
+    }
 
 
 @router.get("/resumo")
