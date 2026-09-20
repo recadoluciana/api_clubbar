@@ -4,6 +4,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from app.services.email_templates import template_email_clubbar
+from app.services.public_urls import url_partner_publico, url_site_publico
 
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
@@ -39,7 +40,7 @@ def enviar_convite_parceiro(
     nome_organizacao: str,
     senha_inicial: str,
 ) -> None:
-    portal = os.getenv("PARTNER_PORTAL_URL", "https://parceiro.clubbar.com.br")
+    portal = url_partner_publico()
     conteudo = f"""
     <p>Olá, <b>{nome_responsavel}</b>.</p>
     <p>A organização <b>{nome_organizacao}</b> foi aprovada no Clubbar.</p>
@@ -59,13 +60,7 @@ def enviar_convite_parceiro(
 
 
 def enviar_acesso_portal_lead(destinatario: str, nome: str, token: str) -> None:
-    ambiente = os.getenv('APP_ENV', 'development').strip().lower()
-    site_padrao = (
-        'https://clubbarsite-desenvolvimento.up.railway.app'
-        if ambiente in {'dev', 'development'}
-        else 'https://clubbar.com.br'
-    )
-    site = os.getenv('PUBLIC_SITE_URL', site_padrao).rstrip('/')
+    site = url_site_publico()
     link = f'{site}/portal-lead.html#acesso={token}'
     conteudo = f'''
     <p>Olá, <b>{nome}</b>.</p>
@@ -165,13 +160,7 @@ def enviar_confirmacao_cadastro_lead(
     organizacao = lead.get("nmorganizacao") or "Não informada"
     link_html = ""
     if token:
-        ambiente = os.getenv("APP_ENV", "development").strip().lower()
-        site_padrao = (
-            "https://clubbarsite-desenvolvimento.up.railway.app"
-            if ambiente in {"dev", "development"}
-            else "https://clubbar.com.br"
-        )
-        site = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
+        site = url_site_publico()
         link = f"{site}/portal-lead.html#acesso={quote(token)}"
         link_html = (
             "<p>Clique no link abaixo para prosseguir com seu cadastro ou editá-lo:</p>"

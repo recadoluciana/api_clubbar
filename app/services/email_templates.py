@@ -1,4 +1,4 @@
-import os
+from app.services.public_urls import url_logo_email
 
 
 def template_email_clubbar(
@@ -9,17 +9,7 @@ def template_email_clubbar(
     botao_texto: str | None = None,
     botao_link: str | None = None,
 ):
-    ambiente = os.getenv("APP_ENV", "development").strip().lower()
-    site_padrao = (
-        "https://clubbarsite-desenvolvimento.up.railway.app"
-        if ambiente in {"dev", "development"}
-        else "https://clubbar.com.br"
-    )
-    site_publico = os.getenv("PUBLIC_SITE_URL", site_padrao).rstrip("/")
-    logo_url = os.getenv(
-        "EMAIL_LOGO_URL",
-        f"{site_publico}/assets/images/logo.png",
-    )
+    logo_url = url_logo_email()
     bloco_botao = ""
 
     if botao_texto and botao_link:
