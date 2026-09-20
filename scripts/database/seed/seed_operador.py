@@ -24,11 +24,15 @@ SOCIOS_DESENVOLVIMENTO = (
 )
 
 
-def seed(db, *, recriar: bool = False) -> None:
-    if APP_ENV not in {"dev", "development"}:
-        raise RuntimeError("Este seed de sócios com senha de teste é exclusivo de desenvolvimento.")
-    if db.execute(text("SELECT DATABASE()")).scalar() != "clubbar_dev":
-        raise RuntimeError("Seed bloqueado: a base precisa ser clubbar_dev.")
+def seed(db, *, recriar: bool = False, allow_production: bool = False) -> None:
+    is_production = APP_ENV in {"prod", "production"}
+    if APP_ENV not in {"dev", "development", "prod", "production"}:
+        raise RuntimeError(f"Seed bloqueado para APP_ENV={APP_ENV!r}.")
+    if is_production and not allow_production:
+        raise RuntimeError("Em produção, use --allow-production para criar os operadores.")
+    expected_database = "clubbar_prod" if is_production else "clubbar_dev"
+    if db.execute(text("SELECT DATABASE()")).scalar() != expected_database:
+        raise RuntimeError(f"Seed bloqueado: a base precisa ser {expected_database}.")
     if recriar:
         # DELETE preserves auto-increment and lets audit foreign keys become NULL.
         db.query(Operador).delete(synchronize_session=False)
@@ -47,9 +51,14 @@ def seed(db, *, recriar: bool = False) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Cria os três sócios no desenvolvimento.")
     parser.add_argument("--recriar", action="store_true", help="Apaga os operadores atuais e recria somente os três sócios.")
+    parser.add_argument(
+        "--allow-production",
+        action="store_true",
+        help="Autoriza explicitamente a criação dos operadores na produção.",
+    )
     args = parser.parse_args()
     with SessionLocal() as db:
-        seed(db, recriar=args.recriar)
+        seed(db, recriar=args.recriar, allow_production=args.allow_production)
         for nome, email in SOCIOS_DESENVOLVIMENTO:
             print(f"Sócio disponível: {nome} <{email}> — ADMIN / ATIVO")
 
