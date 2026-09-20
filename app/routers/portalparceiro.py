@@ -26,7 +26,10 @@ from app.schemas.portalparceiro import (
     PortalRecuperarDados,
 )
 from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
-from app.services.email_service import enviar_dados_portal_lead
+from app.services.email_service import (
+    enviar_dados_portal_lead,
+    enviar_notificacao_interesse_suporte,
+)
 from app.services.endereco_lead import validar_cep_lead
 from app.utils.documento import normalizar_cpf_cnpj
 
@@ -156,6 +159,26 @@ def cadastrar_estabelecimento(
     garantir_contrato(db, item)
     db.commit()
     db.refresh(item)
+    try:
+        enviar_notificacao_interesse_suporte(
+            lead={
+                "nmresponsavel": lead.nmresponsavel,
+                "nmorganizacao": lead.nmorganizacao,
+                "email": lead.email,
+                "telefone": lead.telefone,
+            },
+            estabelecimentos=[
+                {
+                    "nmestabelecimento": item.nmestabelecimento,
+                    "tipo": item.tipo,
+                    "tipovenda": item.tipovenda,
+                }
+            ],
+            novo_estabelecimento=True,
+        )
+    except Exception:
+        import traceback
+        traceback.print_exc()
     return {
         "leadestabelecimento_id": item.leadestabelecimento_id,
         "nmestabelecimento": item.nmestabelecimento,

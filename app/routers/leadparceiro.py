@@ -54,6 +54,7 @@ from app.services.portal_acesso_service import criar_acesso_portal
 from app.services.email_service import (
     enviar_confirmacao_cadastro_lead,
     enviar_convite_parceiro,
+    enviar_notificacao_interesse_suporte,
 )
 from app.utils.documento import (
     normalizar_cpf_cnpj,
@@ -338,6 +339,19 @@ def criar_interesse_parceiro(
                     )
                 ],
                 token=acesso_portal,
+            )
+        except Exception:
+            traceback.print_exc()
+
+        try:
+            enviar_notificacao_interesse_suporte(
+                lead={
+                    "nmresponsavel": lead.nmresponsavel,
+                    "nmorganizacao": lead.nmorganizacao,
+                    "email": lead.email,
+                    "telefone": lead.telefone,
+                },
+                estabelecimentos=[_serializar_estabelecimento(item) for item in estabelecimentos],
             )
         except Exception:
             traceback.print_exc()

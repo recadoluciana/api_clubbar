@@ -201,6 +201,42 @@ def enviar_confirmacao_cadastro_lead(
             conteudo_html=conteudo,
         ),
     )
+
+
+def enviar_notificacao_interesse_suporte(
+    lead: dict,
+    estabelecimentos: list[dict],
+    novo_estabelecimento: bool = False,
+) -> None:
+    """Avisa a equipe quando chega um novo lead ou estabelecimento interessado."""
+    tipo = "novo estabelecimento de um lead" if novo_estabelecimento else "novo lead"
+    cards = []
+    for item in estabelecimentos:
+        cards.append(
+            f"<li><b>{escape(str(item.get('nmestabelecimento') or ''))}</b>"
+            f" — {escape(str(item.get('tipo') or ''))}"
+            f" — venda: {escape(str(item.get('tipovenda') or ''))}</li>"
+        )
+    conteudo = f"""
+    <p>Foi cadastrado um <b>{escape(tipo)}</b> no Clubbar.</p>
+    <div style='margin:16px 0;padding:16px;background:#f6f6f6;border-radius:12px'>
+      <b>Responsável:</b> {escape(str(lead.get('nmresponsavel') or ''))}<br>
+      <b>Organização:</b> {escape(str(lead.get('nmorganizacao') or 'Não informada'))}<br>
+      <b>E-mail:</b> {escape(str(lead.get('email') or ''))}<br>
+      <b>Telefone:</b> {escape(str(lead.get('telefone') or ''))}
+    </div>
+    <p><b>Estabelecimento(s):</b></p>
+    <ul>{''.join(cards)}</ul>
+    """
+    _enviar_email(
+        "suporte@clubbar.com.br",
+        "Novo interesse em conhecer o Clubbar",
+        template_email_clubbar(
+            titulo="Novo interesse no Clubbar",
+            subtitulo="Uma pessoa demonstrou interesse em conhecer o aplicativo.",
+            conteudo_html=conteudo,
+        ),
+    )
 def enviar_email_codigo(destinatario: str, codigo: str):
     if not BREVO_API_KEY:
         raise HTTPException(
