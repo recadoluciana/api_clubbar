@@ -150,6 +150,70 @@ def garantir_contrato(db, estabelecimento):
     return item
 
 
+def atualizar_contrato_pendente(db, estabelecimento: LeadEstabelecimento):
+    contratos = (
+        db.query(LeadEstabelecimentoContrato)
+        .filter(
+            LeadEstabelecimentoContrato.leadestabelecimento_id
+            == estabelecimento.leadestabelecimento_id,
+            LeadEstabelecimentoContrato.status.in_(("RASCUNHO", "ENVIADO")),
+        )
+        .order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc())
+        .all()
+    )
+    contrato = next(
+        (
+            item
+            for item in contratos
+            if (item.tipoinstrumento or "ORIGINAL") != "RETIFICACAO"
+        ),
+        None,
+    )
+    if contrato is None:
+        return None
+
+    modelo = db.get(ContratoPadrao, contrato.contratopadrao_id)
+    lead = db.get(LeadParceiro, estabelecimento.leadparceiro_id)
+    if modelo is None or lead is None:
+        raise HTTPException(
+            409,
+            "Não foi possível atualizar o contrato pendente com os novos dados.",
+        )
+
+    nome_contratante = (
+        contrato.nmrazaosocial
+        or "[Nome completo ou razão social a preencher]"
+    )
+    cpfcnpj_contratante = (
+        contrato.cpfcnpjcontratante
+        or "[CPF/CNPJ a preencher]"
+    )
+    contrato.conteudocontrato = _gerar_conteudo(
+        estabelecimento,
+        lead,
+        db.get(Cidade, estabelecimento.cidade_id),
+        db.get(Estado, estabelecimento.estado_id),
+        contrato.versao,
+        float(contrato.vrtaxaprod),
+        float(contrato.vrtaxaing),
+        float(contrato.vrtaxaminimaingresso),
+        modelo,
+        nome_contratante,
+        cpfcnpj_contratante,
+    )
+    contrato.cepcontratante = estabelecimento.cep
+    contrato.enderecocontratante = estabelecimento.endereco
+    contrato.numerocontratante = estabelecimento.numero
+    contrato.complementocontratante = estabelecimento.complemento
+    contrato.bairrocontratante = estabelecimento.bairro
+    contrato.estado_id_contratante = estabelecimento.estado_id
+    contrato.cidade_id_contratante = estabelecimento.cidade_id
+    contrato.hashdocumento = sha256(
+        contrato.conteudocontrato.encode("utf-8")
+    ).hexdigest()
+    return contrato
+
+
 def preencher_contrato_portal(db, lead_id, contrato_id, documento, nome):
     item = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
         LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == contrato_id,

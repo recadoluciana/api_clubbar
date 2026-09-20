@@ -1,4 +1,7 @@
-from app.services.contrato_automatico import garantir_contrato
+from app.services.contrato_automatico import (
+    atualizar_contrato_pendente,
+    garantir_contrato,
+)
 #portalparceiro.py
 from datetime import datetime
 
@@ -237,6 +240,7 @@ def atualizar_estabelecimento_portal(
     item.numero = dados.numero.strip()
     item.complemento = (dados.complemento or "").strip() or None
     item.bairro = dados.bairro.strip()
+    atualizar_contrato_pendente(db, item)
     db.commit()
     db.refresh(item)
     return {
