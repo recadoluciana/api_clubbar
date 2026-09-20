@@ -22,6 +22,7 @@ from app.schemas.portalparceiro import (
     PortalStatusUpdate,
     PortalMensagemCreate,
     PortalEstabelecimentoCreate,
+    PortalEstabelecimentoUpdate,
     PortalLoginLead,
     PortalRecuperarDados,
 )
@@ -184,6 +185,47 @@ def cadastrar_estabelecimento(
         "nmestabelecimento": item.nmestabelecimento,
         "status": item.status,
     }
+
+
+@router.patch("/estabelecimentos/{leadestabelecimento_id}")
+def atualizar_estabelecimento_portal(
+    leadestabelecimento_id: int,
+    dados: PortalEstabelecimentoUpdate,
+    lead: LeadParceiro = Depends(obter_lead_portal),
+    db: Session = Depends(get_db),
+):
+    item = (
+        db.query(LeadEstabelecimento)
+        .filter(
+            LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id,
+            LeadEstabelecimento.leadparceiro_id == lead.leadparceiro_id,
+        )
+        .first()
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
+
+    cidade = db.query(Cidade).filter(Cidade.cidade_id == dados.cidade_id).first()
+    estado = db.get(Estado, dados.estado_id)
+    if not cidade or not estado or cidade.estado_id != dados.estado_id:
+        raise HTTPException(status_code=422, detail="Cidade e estado informados são incompatíveis.")
+    validar_cep_lead(dados.cep, cidade, estado)
+
+    item.nmresponsavel = (dados.nmresponsavel or "").strip() or None
+    item.telefone_responsavel = dados.telefone_responsavel
+    item.tipo = dados.tipo
+    item.tipovenda = dados.tipovenda
+    item.cpfcnpj = dados.cpfcnpj
+    item.estado_id = dados.estado_id
+    item.cidade_id = dados.cidade_id
+    item.cep = dados.cep
+    item.endereco = dados.endereco.strip()
+    item.numero = dados.numero.strip()
+    item.complemento = (dados.complemento or "").strip() or None
+    item.bairro = dados.bairro.strip()
+    db.commit()
+    db.refresh(item)
+    return _serializar_estabelecimento(item)
 
 
 @router.get("/resumo")
