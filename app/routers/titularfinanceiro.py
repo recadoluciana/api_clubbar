@@ -303,7 +303,14 @@ async def _sincronizar_dados_comerciais_asaas(
                 detail="A razão social informada não está entre as denominações disponíveis no Asaas.",
             )
     await _asaas("POST", "/myAccount/commercialInfo/", api_key, payload)
-    titular.status_asaas = "PENDENTE_DOCUMENTOS"
+    situacao = await _asaas("GET", "/myAccount/status/", api_key)
+    geral = str(situacao.get("general") or "PENDING").upper()
+    titular.status_asaas = {
+        "APPROVED": "APROVADO",
+        "REJECTED": "REJEITADO",
+        "AWAITING_APPROVAL": "EM_ANALISE",
+    }.get(geral, "PENDENTE_DOCUMENTOS")
+    titular.dtultimaverificacao = datetime.now()
 
 
 @router.patch("/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/inativar")
