@@ -22,6 +22,7 @@ from app.models.cardapio_padrao import CardapioModeloCategoria, CardapioModeloPr
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.services.precos_cardapio import atualizar_preco_nas_lojas
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 
 
 router = APIRouter(tags=["Cardápios"])
@@ -589,6 +590,8 @@ def programar(cardapio_id: int, dados: ProgramacaoIn, payload=Depends(get_usuari
 @router.post("/cardapios/versoes/{versao_id}/publicar")
 def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     versao, cardapio = _versao(db, versao_id, payload)
+    if cardapio.loja_id is not None:
+        validar_publicacao_loja(db, cardapio.loja_id)
     if versao.statusversao != "RASCUNHO":
         raise HTTPException(409, "Somente uma versão em rascunho pode ser publicada.")
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():

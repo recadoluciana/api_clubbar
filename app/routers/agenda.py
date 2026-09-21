@@ -59,15 +59,7 @@ def publicar(loja_id: int, ano: int, mes: int, dados: PublicacaoAgendaIn, payloa
     item = _agenda(db, loja, ano, mes)
     if not db.query(Evento).filter(Evento.agendamensal_id == item.agendamensal_id, Evento.statusevento != "CANCELADO").first():
         raise HTTPException(422, "Cadastre pelo menos um evento antes de publicar a agenda.")
-    try:
-        validar_publicacao_loja(db, loja_id)
-    except HTTPException:
-        if not dados.publicar_apos_aprovacao:
-            raise
-        item.statusagenda = "AGUARDANDO_ASAAS"
-        item.publicaraposaprovacao = "S"
-        db.commit()
-        return {"statusagenda": item.statusagenda, "mensagem": "Agenda será publicada assim que o Asaas aprovar os recebimentos."}
+    validar_publicacao_loja(db, loja_id)
     item.statusagenda = "PUBLICADA"
     item.publicaraposaprovacao = "N"
     item.dtpublicacao = datetime.now()

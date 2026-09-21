@@ -14,4 +14,7 @@ def validar_publicacao_loja(db: Session, loja_id: int) -> None:
         TitularFinanceiro.titularfinanceiro_id == loja.titularfinanceiro_id,
     ).first()
     if not titular or titular.status_asaas != 'APROVADO':
-        raise HTTPException(status_code=409, detail='Recebimentos ainda nao aprovados pelo Asaas. Salve como rascunho.')
+        raise HTTPException(
+            status_code=409,
+            detail='Este estabelecimento está temporariamente indisponível para compras. Tente novamente mais tarde.',
+        )
