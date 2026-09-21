@@ -220,10 +220,16 @@ def atualizar_usuario_por_organizacao(
             detail="Usuário não encontrado para esta organização.",
         )
 
-    if usuario.dscargo.strip().upper() == "SUPERADMIN":
+    is_superadmin_alvo = usuario.dscargo.strip().upper() == "SUPERADMIN"
+    is_proprio_superadmin = (
+        is_superadmin_alvo
+        and str(usuario_logado.get("cargo") or "").strip().upper() == "SUPERADMIN"
+        and int(usuario_logado.get("sub") or 0) == usuario.usuario_id
+    )
+    if is_superadmin_alvo and not is_proprio_superadmin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="O SUPERADMIN nao pode ser alterado pelo cadastro de usuarios.",
+            detail="Somente o próprio SUPERADMIN pode alterar o seu cadastro.",
         )
 
     loja_final = (
