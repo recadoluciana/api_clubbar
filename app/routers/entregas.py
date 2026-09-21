@@ -427,6 +427,27 @@ async def cancelar_produto(
         pagamento_asaas,
         float(venda.totalvenda or 0),
     )
+    valor_ja_reembolsado_no_banco = (
+        db.query(func.coalesce(func.sum(ItVenda.vrreembolso), 0))
+        .filter(
+            ItVenda.venda_id == venda.venda_id,
+            ItVenda.sititvenda == "CANCELADO",
+        )
+        .scalar()
+        or 0
+    )
+    saldo_registrado_na_venda = round(
+        max(
+            0,
+            float(venda.totalvenda or 0)
+            - float(valor_ja_reembolsado_no_banco),
+        ),
+        2,
+    )
+    # Alguns pagamentos antigos nao retornam todos os estornos parciais na
+    # consulta resumida do Asaas. O banco do Clubbar preserva o valor realmente
+    # solicitado em cada cancelamento e funciona como limite adicional.
+    saldo_disponivel = min(saldo_disponivel, saldo_registrado_na_venda)
     # Vendas antigas podem ter recebido um estorno acima do valor do primeiro
     # item porque a taxa comercial foi somada por engano. Nesses casos, o
     # ultimo item recebe exatamente o saldo restante da cobrança. A soma dos
