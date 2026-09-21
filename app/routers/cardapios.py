@@ -579,12 +579,50 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
 
 @router.post("/cardapios/{cardapio_id}/programacoes", status_code=201)
 def programar(cardapio_id: int, dados: ProgramacaoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _cardapio(db, cardapio_id, payload)
+    cardapio = _cardapio(db, cardapio_id, payload)
+    if cardapio.tipocardapio == "PRINCIPAL":
+        raise HTTPException(422, "A programação de exibição é exclusiva para cardápios sazonais.")
     if dados.dtfim and dados.dtinicio and dados.dtfim < dados.dtinicio:
         raise HTTPException(422, "A data final deve ser igual ou posterior à inicial.")
     item = CardapioProgramacao(cardapio_id=cardapio_id, **dados.model_dump())
     db.add(item); db.commit(); db.refresh(item)
-    return {"cardapioprogramacao_id": item.cardapioprogramacao_id, **dados.model_dump()}
+    return _saida_programacao(item)
+
+
+def _saida_programacao(item: CardapioProgramacao) -> dict:
+    return {
+        "cardapioprogramacao_id": item.cardapioprogramacao_id,
+        "diasemana": item.diasemana,
+        "dtinicio": item.dtinicio,
+        "dtfim": item.dtfim,
+        "hrinicio": item.hrinicio,
+        "hrfim": item.hrfim,
+        "sitprogramacao": item.sitprogramacao,
+    }
+
+
+@router.get("/cardapios/{cardapio_id}/programacoes")
+def listar_programacoes(cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _cardapio(db, cardapio_id, payload)
+    itens = db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapio_id == cardapio_id,
+        CardapioProgramacao.sitprogramacao == "ATIVA",
+    ).order_by(CardapioProgramacao.dtinicio.asc()).all()
+    return [_saida_programacao(item) for item in itens]
+
+
+@router.delete("/cardapios/{cardapio_id}/programacoes/{programacao_id}")
+def remover_programacao(cardapio_id: int, programacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _cardapio(db, cardapio_id, payload)
+    item = db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapioprogramacao_id == programacao_id,
+        CardapioProgramacao.cardapio_id == cardapio_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "Programação não encontrada.")
+    item.sitprogramacao = "INATIVA"
+    db.commit()
+    return {"mensagem": "Programação removida."}
 
 
 @router.post("/cardapios/versoes/{versao_id}/publicar")
@@ -603,6 +641,19 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
     versao.dtpublicacao = agora
     db.commit()
     return {"statusversao": versao.statusversao, "mensagem": "Cardápio publicado com sucesso."}
+
+
+@router.post("/cardapios/{cardapio_id}/retirar-publicacao")
+def retirar_publicacao(cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    cardapio = _cardapio(db, cardapio_id, payload)
+    quantidade = db.query(CardapioVersao).filter(
+        CardapioVersao.cardapio_id == cardapio.cardapio_id,
+        CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+    ).update({"statusversao": "CANCELADA"}, synchronize_session=False)
+    db.commit()
+    if not quantidade:
+        raise HTTPException(409, "Este cardápio não possui uma publicação ativa.")
+    return {"mensagem": "Publicação retirada. O cardápio não ficará disponível aos clientes."}
 
 
 @router.post("/cardapios/versoes/{versao_id}/reajustar")
@@ -654,4 +705,9 @@ def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
         if versao: candidatos.append((cardapio, versao))
     if not candidatos:
         raise HTTPException(404, "Nenhum cardápio publicado para esta loja no momento.")
-    return _conteudo(db, candidatos[0][1], candidatos[0][0])
+    # Um sazonal programado para este momento tem prioridade sobre o principal.
+    # Assim, a programação permite alternar a vitrine da loja sem despublicar
+    # definitivamente o cardápio principal.
+    sazonais = [item for item in candidatos if item[0].tipocardapio != "PRINCIPAL"]
+    selecionado = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
+    return _conteudo(db, selecionado[1], selecionado[0])
