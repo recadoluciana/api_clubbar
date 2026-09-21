@@ -54,10 +54,10 @@ def _cancelamento_produto_permitido(
 
 def _estornos_do_split_clubbar(
     pagamento_asaas: dict,
-    valor_taxa: float,
+    valor_taxas_canceladas: float,
 ) -> list[dict]:
-    """Devolve ao Clubbar a parte do split que compõe este item."""
-    if valor_taxa <= 0 or not ASAAS_CLUBBAR_WALLET_ID:
+    """Devolve ao Clubbar a parcela de split ainda pendente de estorno."""
+    if valor_taxas_canceladas <= 0 or not ASAAS_CLUBBAR_WALLET_ID:
         return []
     splits = pagamento_asaas.get("split") or pagamento_asaas.get("splits") or []
     if not isinstance(splits, list):
@@ -68,8 +68,23 @@ def _estornos_do_split_clubbar(
         if str(split.get("walletId") or split.get("wallet_id") or "") != ASAAS_CLUBBAR_WALLET_ID:
             continue
         split_id = str(split.get("id") or "").strip()
-        if split_id:
-            return [{"id": split_id, "value": round(valor_taxa, 2)}]
+        if not split_id:
+            return []
+
+        # Cancelamentos anteriores podem ter debitado toda a devolucao da
+        # conta da loja. Compensamos apenas o split que ainda nao foi devolvido.
+        valor_ja_estornado = 0.0
+        for estorno in pagamento_asaas.get("refunds") or []:
+            for split_estornado in estorno.get("refundedSplits") or []:
+                if str(split_estornado.get("id") or "") == split_id:
+                    valor_ja_estornado += float(split_estornado.get("value") or 0)
+
+        valor_a_estornar = round(
+            max(0, float(valor_taxas_canceladas) - valor_ja_estornado),
+            2,
+        )
+        if valor_a_estornar:
+            return [{"id": split_id, "value": valor_a_estornar}]
     return []
 
 
@@ -382,10 +397,19 @@ async def cancelar_produto(
         float(item.vrunititvenda or 0) * int(item.qtitvenda or 1),
         2,
     )
+    taxas_de_itens_cancelados = (
+        db.query(func.coalesce(func.sum(ItVenda.vrtaxaitvenda), 0))
+        .filter(
+            ItVenda.venda_id == venda.venda_id,
+            ItVenda.sititvenda.in_(("CANCELADO", "CANCELAMENTO_SOLICITADO")),
+        )
+        .scalar()
+        or 0
+    )
     pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
     split_refunds = _estornos_do_split_clubbar(
         pagamento_asaas,
-        float(item.vrtaxaitvenda or 0),
+        float(taxas_de_itens_cancelados) + float(item.vrtaxaitvenda or 0),
     )
     item.sititvenda = "CANCELAMENTO_SOLICITADO"
     db.commit()

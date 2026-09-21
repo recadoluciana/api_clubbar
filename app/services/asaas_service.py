@@ -720,9 +720,11 @@ async def estornar_pagamento_asaas(
 
 
 async def consultar_pagamento_asaas(payment_id: str, api_key: str) -> dict:
+    # A consulta resumida inclui os splits e os estornos dos splits.
+    # A consulta tradicional nao retorna esses dados em todos os cenarios.
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.get(
-            f'{ASAAS_BASE_URL}/payments/{payment_id}',
+            f'{ASAAS_BASE_URL}/lean/payments/{payment_id}',
             headers=_headers(api_key),
         )
     try:
