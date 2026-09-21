@@ -43,6 +43,14 @@ def _cancelamento_ingresso_permitido(
     )
 
 
+def _cancelamento_produto_permitido(
+    data_compra: datetime,
+    hoje: date | None = None,
+) -> bool:
+    """Produtos podem ser cancelados até o sétimo dia, por data civil."""
+    return (hoje or _hoje_brasil()) <= data_compra.date() + timedelta(days=7)
+
+
 def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> None:
     cargo_normalizado = (cargo or "").strip().upper()
     tipo_normalizado = (idtipoproduto or "").strip().upper()
@@ -281,6 +289,109 @@ async def cancelar_ingresso(
             0,
             lote.qtvendidalote - int(item.qtitvenda or 1),
         )
+    itens_ativos = (
+        db.query(func.count(ItVenda.itvenda_id))
+        .filter(
+            ItVenda.venda_id == venda.venda_id,
+            ItVenda.sititvenda != "CANCELADO",
+        )
+        .scalar()
+        or 0
+    )
+    if itens_ativos == 0:
+        venda.sitvenda = "CANCELADA"
+        pagamento.sitpagvenda = "CANCELADO"
+    db.commit()
+    return {
+        "ok": True,
+        "cancelado": True,
+        "itvenda_id": item.itvenda_id,
+        "valor_reembolso": valor_reembolso,
+    }
+
+
+@router.post("/itvenda/{itvenda_id}/cancelar-produto")
+async def cancelar_produto(
+    itvenda_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    if payload.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    resultado = (
+        db.query(ItVenda, Venda, PagVenda)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(PagVenda, PagVenda.venda_id == Venda.venda_id)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .with_for_update()
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
+
+    item, venda, pagamento = resultado
+    if str(venda.cliente_id) != str(payload.get("sub")):
+        raise HTTPException(status_code=403, detail="Este produto pertence a outro cliente.")
+    if (item.tipoitem or "").upper() != "PRODUTO":
+        raise HTTPException(status_code=400, detail="O item informado não é um produto.")
+    if item.sititvenda == "CANCELADO":
+        return {"ok": True, "cancelado": True, "itvenda_id": item.itvenda_id}
+    if pagamento.sitpagvenda != "PAGO":
+        raise HTTPException(status_code=409, detail="O pagamento da venda não está confirmado.")
+    if item.sititvenda == "CANCELAMENTO_SOLICITADO":
+        raise HTTPException(status_code=409, detail="Cancelamento já está sendo processado.")
+    if (item.identregaitvenda or "NAO").upper() == "SIM":
+        raise HTTPException(status_code=409, detail="Produto já retirado não pode ser cancelado.")
+    if not _cancelamento_produto_permitido(venda.dtcriacao):
+        raise HTTPException(
+            status_code=409,
+            detail="Compra do produto não pode ser cancelada. Compra realizada a mais de 7 dias.",
+        )
+
+    payment_id = str(pagamento.idtransacaopagvenda or "").strip()
+    if not payment_id:
+        raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
+
+    api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
+    valor_reembolso = round(
+        float(item.vrunititvenda or 0) * int(item.qtitvenda or 1)
+        + float(item.vrtaxaitvenda or 0),
+        2,
+    )
+    item.sititvenda = "CANCELAMENTO_SOLICITADO"
+    db.commit()
+
+    try:
+        estorno = await estornar_pagamento_asaas(
+            payment_id=payment_id,
+            valor=valor_reembolso,
+            descricao=f"Cancelamento produto Clubbar item {item.itvenda_id}",
+            api_key=api_key_estorno,
+        )
+    except HTTPException as exc:
+        db.rollback()
+        if exc.status_code < 500:
+            item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+            if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
+                item.sititvenda = "ATIVO"
+                db.commit()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "O Asaas ainda não confirmou o cancelamento. A solicitação foi "
+                "mantida em processamento para evitar reembolso duplicado."
+            ),
+        ) from exc
+
+    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+    item.sititvenda = "CANCELADO"
+    item.dtcancelamento = datetime.now()
+    item.vrreembolso = valor_reembolso
+    item.idreembolso = str(estorno.get("id") or "")
     itens_ativos = (
         db.query(func.count(ItVenda.itvenda_id))
         .filter(
