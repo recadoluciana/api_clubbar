@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.cliente import Cliente
 from app.models.coraduvida import CoraDuvida
 from app.models.coramensagem import CoraMensagem
+from app.services.cora_ai_service import responder_com_ia
 
 
 router = APIRouter(prefix="/cora", tags=["Cora"])
@@ -80,7 +81,7 @@ def _normalizar(texto: str) -> set[str]:
     }
 
 
-def _resposta_pronta(db: Session, mensagem: str) -> tuple[CoraDuvida | None, str]:
+def _resposta_pronta(db: Session, mensagem: str) -> tuple[CoraDuvida | None, str | None]:
     palavras = _normalizar(mensagem)
     melhor = None
     melhor_pontuacao = 0
@@ -90,12 +91,15 @@ def _resposta_pronta(db: Session, mensagem: str) -> tuple[CoraDuvida | None, str
         if pontuacao > melhor_pontuacao:
             melhor = duvida
             melhor_pontuacao = pontuacao
-    if melhor and melhor_pontuacao >= 1:
+    # Uma única palavra genérica (por exemplo, "cancelar") não é suficiente
+    # para escolher uma resposta pronta, pois pode apontar para assuntos
+    # diferentes. Nesses casos, a Cora usa a análise contextual da IA.
+    if melhor and (
+        melhor_pontuacao >= 2
+        or (len(_normalizar(melhor.pergunta)) == 1 and melhor_pontuacao == 1)
+    ):
         return melhor, melhor.resposta
-    return None, (
-        "Recebi sua mensagem. Se a resposta não estiver nas dúvidas frequentes, "
-        "o atendimento Clubbar poderá acompanhar sua solicitação."
-    )
+    return None, None
 
 
 @router.get("/duvidas")
@@ -142,7 +146,7 @@ def listar_mensagens(
 
 
 @router.post("/mensagens", status_code=201)
-def enviar_mensagem(
+async def enviar_mensagem(
     dados: MensagemIn,
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
@@ -153,6 +157,49 @@ def enviar_mensagem(
         cliente_id=cliente.cliente_id, origem="CLIENTE", mensagem=texto, lida="N"
     )
     duvida, resposta = _resposta_pronta(db, texto)
+    encaminhar_atendimento = duvida is None
+    if duvida is None:
+        duvidas_ativas = (
+            db.query(CoraDuvida)
+            .filter(CoraDuvida.sitduvida == "ATIVA")
+            .order_by(CoraDuvida.idordem, CoraDuvida.pergunta)
+            .all()
+        )
+        mensagens_recentes = (
+            db.query(CoraMensagem)
+            .filter(CoraMensagem.cliente_id == cliente.cliente_id)
+            .order_by(
+                CoraMensagem.dtcriacao.desc(),
+                CoraMensagem.coramensagem_id.desc(),
+            )
+            .limit(6)
+            .all()
+        )
+        resultado_ia = await responder_com_ia(
+            pergunta=texto,
+            duvidas_frequentes=[
+                (item.pergunta, item.resposta) for item in duvidas_ativas
+            ],
+            historico=[
+                (
+                    item.origem.value
+                    if hasattr(item.origem, "value")
+                    else str(item.origem),
+                    item.mensagem,
+                )
+                for item in reversed(mensagens_recentes)
+            ],
+            cliente_id=cliente.cliente_id,
+        )
+        if resultado_ia:
+            resposta = resultado_ia.resposta
+            encaminhar_atendimento = resultado_ia.encaminhar_atendimento
+        else:
+            resposta = (
+                "Recebi sua mensagem. Não encontrei uma resposta segura nas "
+                "dúvidas frequentes, então o atendimento Clubbar poderá "
+                "acompanhar sua solicitação."
+            )
     retorno = CoraMensagem(
         cliente_id=cliente.cliente_id,
         coraduvida_id=duvida.coraduvida_id if duvida else None,
@@ -160,7 +207,7 @@ def enviar_mensagem(
         mensagem=resposta,
         lida="N",
     )
-    if duvida:
+    if duvida or not encaminhar_atendimento:
         pergunta.lida = "S"
     db.add_all([pergunta, retorno])
     db.commit()

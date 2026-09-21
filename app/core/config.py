@@ -33,6 +33,8 @@ JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
 
 APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna").strip()
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "").strip()
 ASAAS_SANDBOX_PAYER_API_KEY = os.getenv("ASAAS_SANDBOX_PAYER_API_KEY", "").strip()
 ASAAS_WEBHOOK_TOKEN = os.getenv("ASAAS_WEBHOOK_TOKEN", "").strip()
