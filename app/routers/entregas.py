@@ -354,9 +354,10 @@ async def cancelar_produto(
         raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
 
     api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
+    # Para produtos, a taxa do Clubbar é comercial e não é cobrada do
+    # consumidor. Portanto, o estorno é somente o valor pago pelo produto.
     valor_reembolso = round(
-        float(item.vrunititvenda or 0) * int(item.qtitvenda or 1)
-        + float(item.vrtaxaitvenda or 0),
+        float(item.vrunititvenda or 0) * int(item.qtitvenda or 1),
         2,
     )
     item.sititvenda = "CANCELAMENTO_SOLICITADO"
