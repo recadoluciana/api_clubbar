@@ -5,6 +5,7 @@ import uuid
 import shutil
 import traceback
 import json
+from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.loja import Loja
@@ -20,10 +21,51 @@ from app.models.lojaestilomusical import LojaEstiloMusical
 from app.models.organizacaoestilomusical import OrganizacaoEstiloMusical
 from app.services.cashback_service import obter_ou_criar_config
 from app.models.titularfinanceiro import TitularFinanceiro
+from app.models.cancelamentoparceria import CancelamentoParceria
+from app.models.venda import Venda
+from app.models.itvenda import ItVenda
+from app.models.eventolote import EventoLote
+from app.models.evento import Evento
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
+
+
+def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
+    itens = (db.query(ItVenda, Venda, Evento)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+        .filter(Venda.loja_id == loja_id, Venda.sitvenda == 'PAGA', ItVenda.sititvenda == 'ATIVO')
+        .all())
+    agora = datetime.now()
+    return [{'itvenda_id': i.itvenda_id, 'tipo': i.tipoitem, 'quantidade': i.qtitvenda,
+             'motivo': 'Produto ainda não retirado' if i.tipoitem == 'PRODUTO' else 'Ingresso de evento ainda não realizado'}
+            for i, _, e in itens if (i.tipoitem == 'PRODUTO' and i.identregaitvenda != 'SIM') or (i.tipoitem == 'INGRESSO' and (e is None or e.dtinicioevento >= agora))]
+
+
+@router.get('/{loja_id}/cancelamento-parceria')
+def consultar_cancelamento_parceria(loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja: raise HTTPException(404, 'Loja não encontrada')
+    validar_permissao_mutacao_loja(payload, organizacao_id=loja.organizacao_id, loja_id=loja_id)
+    pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
+    return {'solicitado': bool(pedido), 'aviso_previo_ate': pedido.dtavisoate if pedido else None, 'pendencias': _pendencias_cancelamento(db, loja_id)}
+
+
+@router.post('/{loja_id}/cancelamento-parceria')
+def solicitar_cancelamento_parceria(loja_id: int, body: dict, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja: raise HTTPException(404, 'Loja não encontrada')
+    validar_permissao_mutacao_loja(payload, organizacao_id=loja.organizacao_id, loja_id=loja_id)
+    justificativa = str(body.get('justificativa') or '').strip()
+    if not justificativa: raise HTTPException(422, 'Conte o que saiu errado para registrar o cancelamento.')
+    pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
+    if not pedido:
+        pedido = CancelamentoParceria(loja_id=loja_id, justificativa=justificativa, dtavisoate=datetime.now() + timedelta(days=30))
+        db.add(pedido); db.commit(); db.refresh(pedido)
+    return {'mensagem': 'Intenção de cancelamento registrada.', 'aviso_previo_ate': pedido.dtavisoate, 'pendencias': _pendencias_cancelamento(db, loja_id)}
 
 
 def estilos_da_loja(db: Session, loja_id: int) -> list[dict]:
@@ -858,6 +900,12 @@ def inativar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = D
     validar_permissao_mutacao_loja(
         payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
     )
+    pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
+    pendencias = _pendencias_cancelamento(db, loja_id)
+    if pendencias:
+        raise HTTPException(409, 'Este estabelecimento não pode ser inativado pois possui tickets não retirados ou ingressos para shows que ainda não aconteceram.')
+    if not pedido or pedido.dtavisoate > datetime.now():
+        raise HTTPException(409, 'Este estabelecimento não pode ser inativado: ainda não passaram 30 dias da solicitação de cancelamento da parceria.')
 
     loja.sitloja = "INATIVA"
     db.commit()
