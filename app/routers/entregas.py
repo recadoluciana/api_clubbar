@@ -88,6 +88,22 @@ def _estornos_do_split_clubbar(
     return []
 
 
+def _saldo_disponivel_para_estorno(
+    pagamento_asaas: dict,
+    valor_original_fallback: float,
+) -> float:
+    """Calcula quanto ainda pode ser devolvido na cobrança do Asaas."""
+    valor_original = float(
+        pagamento_asaas.get("value") or valor_original_fallback or 0
+    )
+    valor_ja_estornado = 0.0
+    for estorno in pagamento_asaas.get("refunds") or []:
+        if str(estorno.get("status") or "").upper() == "CANCELLED":
+            continue
+        valor_ja_estornado += float(estorno.get("value") or 0)
+    return round(max(0, valor_original - valor_ja_estornado), 2)
+
+
 def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> None:
     cargo_normalizado = (cargo or "").strip().upper()
     tipo_normalizado = (idtipoproduto or "").strip().upper()
@@ -393,7 +409,7 @@ async def cancelar_produto(
     api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
     # Para produtos, a taxa do Clubbar é comercial e não é cobrada do
     # consumidor. Portanto, o estorno é somente o valor pago pelo produto.
-    valor_reembolso = round(
+    valor_produto = round(
         float(item.vrunititvenda or 0) * int(item.qtitvenda or 1),
         2,
     )
@@ -407,6 +423,20 @@ async def cancelar_produto(
         or 0
     )
     pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
+    saldo_disponivel = _saldo_disponivel_para_estorno(
+        pagamento_asaas,
+        float(venda.totalvenda or 0),
+    )
+    # Vendas antigas podem ter recebido um estorno acima do valor do primeiro
+    # item porque a taxa comercial foi somada por engano. Nesses casos, o
+    # ultimo item recebe exatamente o saldo restante da cobrança. A soma dos
+    # estornos continua igual ao total originalmente pago pelo cliente.
+    valor_reembolso = min(valor_produto, saldo_disponivel)
+    if valor_reembolso <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta compra já teve todo o valor pago devolvido.",
+        )
     split_refunds = _estornos_do_split_clubbar(
         pagamento_asaas,
         float(taxas_de_itens_cancelados) + float(item.vrtaxaitvenda or 0),
