@@ -26,6 +26,7 @@ from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.eventolote import EventoLote
 from app.models.evento import Evento
+from app.models.cliente import Cliente
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
 
@@ -33,27 +34,47 @@ router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 
 def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
-    itens = (db.query(ItVenda, Venda, Evento, Produto)
+    itens = (db.query(ItVenda, Venda, Evento, Produto, Cliente)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .filter(Venda.loja_id == loja_id, Venda.sitvenda == 'PAGA', ItVenda.sititvenda == 'ATIVO')
         .all())
     agora = datetime.now()
-    return [
-        {
-            'itvenda_id': i.itvenda_id,
-            'tipo': i.tipoitem,
-            'quantidade': i.qtitvenda,
+    hoje = agora.date()
+    pendencias = []
+    for item, venda, evento, produto, cliente in itens:
+        produto_pendente = (
+            item.tipoitem == 'PRODUTO'
+            and item.identregaitvenda != 'SIM'
+            and (item.dtexpiraitvenda is None or item.dtexpiraitvenda >= hoje)
+        )
+        ingresso_pendente = (
+            item.tipoitem == 'INGRESSO'
+            and item.identregaitvenda != 'SIM'
+            and (evento is None or evento.dtinicioevento >= agora)
+        )
+        if not (produto_pendente or ingresso_pendente):
+            continue
+
+        pendencias.append({
+            'itvenda_id': item.itvenda_id,
+            'tipo': item.tipoitem,
+            'quantidade': item.qtitvenda,
             'nome': produto.nmproduto if produto else (evento.nmtituloevento if evento else 'Ingresso'),
+            'data_compra': venda.dtcriacao,
+            'nome_cliente': cliente.nmcliente if cliente else 'Cliente não informado',
+            'email_cliente': cliente.emailcliente if cliente else None,
+            'telefone_cliente': cliente.nrtelcliente if cliente else None,
+            'validade_produto': item.dtexpiraitvenda if item.tipoitem == 'PRODUTO' else None,
             'data_evento': evento.dtinicioevento if evento else None,
-            'motivo': 'Produto ainda não retirado' if i.tipoitem == 'PRODUTO' else 'Ingresso de evento ainda não realizado',
-        }
-        for i, _, evento, produto in itens
-        if (i.tipoitem == 'PRODUTO' and i.identregaitvenda != 'SIM')
-        or (i.tipoitem == 'INGRESSO' and (evento is None or evento.dtinicioevento >= agora))
-    ]
+            'local_evento': evento.nmlocalevento if evento else None,
+            'endereco_evento': evento.dsendlocevento if evento else None,
+            'motivo': 'Produto ainda não retirado' if item.tipoitem == 'PRODUTO' else 'Ingresso ainda não utilizado',
+        })
+    return pendencias
 
 
 @router.get('/{loja_id}/cancelamento-parceria')
@@ -77,6 +98,18 @@ def solicitar_cancelamento_parceria(loja_id: int, body: dict, db: Session = Depe
         pedido = CancelamentoParceria(loja_id=loja_id, justificativa=justificativa, dtavisoate=datetime.now() + timedelta(days=30))
         db.add(pedido); db.commit(); db.refresh(pedido)
     return {'mensagem': 'Intenção de cancelamento registrada.', 'aviso_previo_ate': pedido.dtavisoate, 'pendencias': _pendencias_cancelamento(db, loja_id)}
+
+
+@router.delete('/{loja_id}/cancelamento-parceria')
+def retirar_cancelamento_parceria(loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+    if not loja: raise HTTPException(404, 'Loja não encontrada')
+    validar_permissao_mutacao_loja(payload, organizacao_id=loja.organizacao_id, loja_id=loja_id)
+    pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
+    if not pedido: raise HTTPException(404, 'Não há solicitação de cancelamento para este estabelecimento.')
+    db.delete(pedido)
+    db.commit()
+    return {'mensagem': 'Solicitação de cancelamento de parceria retirada.'}
 
 
 def estilos_da_loja(db: Session, loja_id: int) -> list[dict]:
