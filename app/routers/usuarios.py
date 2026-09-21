@@ -223,7 +223,7 @@ def atualizar_usuario_por_organizacao(
     is_superadmin_alvo = usuario.dscargo.strip().upper() == "SUPERADMIN"
     is_proprio_superadmin = (
         is_superadmin_alvo
-        and str(usuario_logado.get("cargo") or "").strip().upper() == "SUPERADMIN"
+        and str(usuario_logado.get("dscargo") or "").strip().upper() == "SUPERADMIN"
         and int(usuario_logado.get("sub") or 0) == usuario.usuario_id
     )
     if is_superadmin_alvo and not is_proprio_superadmin:
