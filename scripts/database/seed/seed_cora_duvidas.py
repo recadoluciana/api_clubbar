@@ -26,6 +26,7 @@ DUVIDAS = [
     (8, "Quais formas de pagamento são aceitas?", "As formas disponíveis aparecem ao finalizar cada compra e podem variar conforme o estabelecimento e o tipo de venda."),
     (9, "Paguei e a compra não apareceu. O que faço?", "Atualize a Carteira e confira novamente após alguns instantes. Se continuar sem aparecer, envie uma mensagem para a Cora com os dados da compra."),
     (10, "Como falar com o atendimento?", "Digite sua mensagem no campo abaixo. A Cora responderá dúvidas conhecidas e registrará as demais solicitações para acompanhamento."),
+    (11, "Como cancelar a compra de um produto?", "Na Carteira, abra o produto e toque em Cancelar compra. O cancelamento pode ser solicitado até 7 dias após a data da compra, desde que o produto ainda não tenha sido retirado. Quando permitido, o reembolso é solicitado pelo mesmo meio de pagamento."),
 ]
 
 
