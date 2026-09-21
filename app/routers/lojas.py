@@ -28,6 +28,7 @@ from app.models.eventolote import EventoLote
 from app.models.evento import Evento
 from app.models.cliente import Cliente
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
+from app.services.email_service import enviar_notificacao_cancelamento_parceria_suporte
 from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
@@ -97,6 +98,16 @@ def solicitar_cancelamento_parceria(loja_id: int, body: dict, db: Session = Depe
     if not pedido:
         pedido = CancelamentoParceria(loja_id=loja_id, justificativa=justificativa, dtavisoate=datetime.now() + timedelta(days=30))
         db.add(pedido); db.commit(); db.refresh(pedido)
+        parceiro = db.query(Organizacao).filter(Organizacao.organizacao_id == loja.organizacao_id).first()
+        try:
+            enviar_notificacao_cancelamento_parceria_suporte(
+                estabelecimento=loja.nmloja,
+                parceiro=parceiro.nmorganizacao if parceiro else 'Parceiro não informado',
+                data_hora=pedido.dtsolicitacao.strftime('%d/%m/%Y às %H:%M'),
+                justificativa=pedido.justificativa,
+            )
+        except Exception as erro:
+            print(f'[CANCELAMENTO PARCERIA] Não foi possível avisar o suporte: {erro}')
     return {'mensagem': 'Intenção de cancelamento registrada.', 'aviso_previo_ate': pedido.dtavisoate, 'pendencias': _pendencias_cancelamento(db, loja_id)}
 
 
@@ -107,8 +118,20 @@ def retirar_cancelamento_parceria(loja_id: int, db: Session = Depends(get_db), p
     validar_permissao_mutacao_loja(payload, organizacao_id=loja.organizacao_id, loja_id=loja_id)
     pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
     if not pedido: raise HTTPException(404, 'Não há solicitação de cancelamento para este estabelecimento.')
+    justificativa = pedido.justificativa
     db.delete(pedido)
     db.commit()
+    parceiro = db.query(Organizacao).filter(Organizacao.organizacao_id == loja.organizacao_id).first()
+    try:
+        enviar_notificacao_cancelamento_parceria_suporte(
+            estabelecimento=loja.nmloja,
+            parceiro=parceiro.nmorganizacao if parceiro else 'Parceiro não informado',
+            data_hora=datetime.now().strftime('%d/%m/%Y às %H:%M'),
+            justificativa=justificativa,
+            retirada=True,
+        )
+    except Exception as erro:
+        print(f'[CANCELAMENTO PARCERIA] Não foi possível avisar o suporte: {erro}')
     return {'mensagem': 'Solicitação de cancelamento de parceria retirada.'}
 
 

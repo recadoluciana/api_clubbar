@@ -226,6 +226,45 @@ def enviar_notificacao_interesse_suporte(
             conteudo_html=conteudo,
         ),
     )
+
+
+def enviar_notificacao_cancelamento_parceria_suporte(
+    *,
+    estabelecimento: str,
+    parceiro: str,
+    data_hora: str,
+    justificativa: str,
+    retirada: bool = False,
+) -> None:
+    """Avisa o suporte sobre a solicitação ou retirada de cancelamento."""
+    acao = (
+        'retirou o pedido de cancelamento de parceria'
+        if retirada
+        else 'solicitou o cancelamento de parceria com o Clubbar'
+    )
+    conteudo = f"""
+    <p>O estabelecimento <b>{escape(estabelecimento)}</b> do parceiro
+    <b>{escape(parceiro)}</b> {acao}.</p>
+    <div style='margin:16px 0;padding:16px;background:#f6f6f6;border-radius:12px'>
+      <b>Estabelecimento:</b> {escape(estabelecimento)}<br>
+      <b>Parceiro:</b> {escape(parceiro)}<br>
+      <b>Data e hora:</b> {escape(data_hora)}<br>
+      <b>Motivo informado:</b><br>{escape(justificativa).replace(chr(10), '<br>')}
+    </div>
+    """
+    _enviar_email(
+        'suporte@clubbar.com.br',
+        'Pedido de cancelamento de parceria retirado'
+        if retirada
+        else 'Novo pedido de cancelamento de parceria',
+        template_email_clubbar(
+            titulo='Atualização de cancelamento de parceria',
+            subtitulo='Acompanhe a movimentação informada pelo parceiro.',
+            conteudo_html=conteudo,
+        ),
+    )
+
+
 def enviar_email_codigo(destinatario: str, codigo: str):
     if not BREVO_API_KEY:
         raise HTTPException(
