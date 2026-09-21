@@ -691,15 +691,19 @@ async def estornar_pagamento_asaas(
     valor: float,
     descricao: str,
     api_key: str,
+    split_refunds: list[dict] | None = None,
 ) -> dict:
+    dados = {
+        'value': round(float(valor), 2),
+        'description': descricao[:255],
+    }
+    if split_refunds:
+        dados['splitRefunds'] = split_refunds
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f'{ASAAS_BASE_URL}/payments/{payment_id}/refund',
             headers=_headers(api_key),
-            json={
-                'value': round(float(valor), 2),
-                'description': descricao[:255],
-            },
+            json=dados,
         )
     data = {}
     try:
@@ -709,6 +713,25 @@ async def estornar_pagamento_asaas(
     if response.status_code not in (200, 201):
         detalhe = response.text
         erros = data.get('errors') or []
+        if erros:
+            detalhe = erros[0].get('description') or detalhe
+        raise HTTPException(response.status_code, detalhe)
+    return data
+
+
+async def consultar_pagamento_asaas(payment_id: str, api_key: str) -> dict:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(
+            f'{ASAAS_BASE_URL}/payments/{payment_id}',
+            headers=_headers(api_key),
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+    if response.status_code != 200:
+        detalhe = response.text
+        erros = data.get('errors') or [] if isinstance(data, dict) else []
         if erros:
             detalhe = erros[0].get('description') or detalhe
         raise HTTPException(response.status_code, detalhe)

@@ -19,8 +19,9 @@ from app.models.usuario import Usuario
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.pagvenda import PagVenda
-from app.services.asaas_service import estornar_pagamento_asaas
+from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
+from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
 router = APIRouter(prefix="/entregas", tags=["entregas"])
@@ -49,6 +50,27 @@ def _cancelamento_produto_permitido(
 ) -> bool:
     """Produtos podem ser cancelados até o sétimo dia, por data civil."""
     return (hoje or _hoje_brasil()) <= data_compra.date() + timedelta(days=7)
+
+
+def _estornos_do_split_clubbar(
+    pagamento_asaas: dict,
+    valor_taxa: float,
+) -> list[dict]:
+    """Devolve ao Clubbar a parte do split que compõe este item."""
+    if valor_taxa <= 0 or not ASAAS_CLUBBAR_WALLET_ID:
+        return []
+    splits = pagamento_asaas.get("split") or pagamento_asaas.get("splits") or []
+    if not isinstance(splits, list):
+        return []
+    for split in splits:
+        if not isinstance(split, dict):
+            continue
+        if str(split.get("walletId") or split.get("wallet_id") or "") != ASAAS_CLUBBAR_WALLET_ID:
+            continue
+        split_id = str(split.get("id") or "").strip()
+        if split_id:
+            return [{"id": split_id, "value": round(valor_taxa, 2)}]
+    return []
 
 
 def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> None:
@@ -360,6 +382,11 @@ async def cancelar_produto(
         float(item.vrunititvenda or 0) * int(item.qtitvenda or 1),
         2,
     )
+    pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
+    split_refunds = _estornos_do_split_clubbar(
+        pagamento_asaas,
+        float(item.vrtaxaitvenda or 0),
+    )
     item.sititvenda = "CANCELAMENTO_SOLICITADO"
     db.commit()
 
@@ -369,6 +396,7 @@ async def cancelar_produto(
             valor=valor_reembolso,
             descricao=f"Cancelamento produto Clubbar item {item.itvenda_id}",
             api_key=api_key_estorno,
+            split_refunds=split_refunds,
         )
     except HTTPException as exc:
         db.rollback()
