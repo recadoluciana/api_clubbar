@@ -33,16 +33,27 @@ router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 
 def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
-    itens = (db.query(ItVenda, Venda, Evento)
+    itens = (db.query(ItVenda, Venda, Evento, Produto)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .filter(Venda.loja_id == loja_id, Venda.sitvenda == 'PAGA', ItVenda.sititvenda == 'ATIVO')
         .all())
     agora = datetime.now()
-    return [{'itvenda_id': i.itvenda_id, 'tipo': i.tipoitem, 'quantidade': i.qtitvenda,
-             'motivo': 'Produto ainda não retirado' if i.tipoitem == 'PRODUTO' else 'Ingresso de evento ainda não realizado'}
-            for i, _, e in itens if (i.tipoitem == 'PRODUTO' and i.identregaitvenda != 'SIM') or (i.tipoitem == 'INGRESSO' and (e is None or e.dtinicioevento >= agora))]
+    return [
+        {
+            'itvenda_id': i.itvenda_id,
+            'tipo': i.tipoitem,
+            'quantidade': i.qtitvenda,
+            'nome': produto.nmproduto if produto else (evento.nmtituloevento if evento else 'Ingresso'),
+            'data_evento': evento.dtinicioevento if evento else None,
+            'motivo': 'Produto ainda não retirado' if i.tipoitem == 'PRODUTO' else 'Ingresso de evento ainda não realizado',
+        }
+        for i, _, evento, produto in itens
+        if (i.tipoitem == 'PRODUTO' and i.identregaitvenda != 'SIM')
+        or (i.tipoitem == 'INGRESSO' and (evento is None or evento.dtinicioevento >= agora))
+    ]
 
 
 @router.get('/{loja_id}/cancelamento-parceria')
