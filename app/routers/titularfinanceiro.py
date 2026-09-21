@@ -302,22 +302,7 @@ async def _sincronizar_dados_comerciais_asaas(
                 status_code=422,
                 detail="A razão social informada não está entre as denominações disponíveis no Asaas.",
             )
-    # O endpoint do Asaas substitui o cadastro comercial inteiro. Em algumas
-    # subcontas recém-vinculadas, a primeira atualização pode ser aceita antes
-    # de a alteração ficar disponível para consulta; por isso confirmamos o
-    # retorno e repetimos a mesma atualização uma única vez quando necessário.
-    atualizado = await _asaas("POST", "/myAccount/commercialInfo/", api_key, payload)
-    email_esperado = str(dados.email).strip().casefold()
-    email_retorno = str(atualizado.get("email") or "").strip().casefold()
-    if email_retorno != email_esperado:
-        atualizado = await _asaas("POST", "/myAccount/commercialInfo/", api_key, payload)
-        confirmacao = await _asaas("GET", "/myAccount/commercialInfo/", api_key)
-        email_retorno = str(confirmacao.get("email") or atualizado.get("email") or "").strip().casefold()
-    if email_retorno != email_esperado:
-        raise HTTPException(
-            status_code=502,
-            detail="O Asaas não confirmou a atualização do e-mail da subconta. Tente novamente em alguns instantes.",
-        )
+    await _asaas("POST", "/myAccount/commercialInfo/", api_key, payload)
     titular.status_asaas = "PENDENTE_DOCUMENTOS"
 
 
