@@ -19,6 +19,7 @@ from app.models.usuario import Usuario
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
+from app.models.eventosetor import EventoSetor
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
 from app.models.pagvenda import PagVenda
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
@@ -206,12 +207,14 @@ def listar_itens_nao_entregues(
             Venda.loja_id,
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
             EventoLotePreco.tipopreco.label("tipoprecoingresso"),
+            EventoSetor.nmsetor.label("nmsetoringresso"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
         .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
@@ -275,7 +278,7 @@ def listar_itens_nao_entregues(
             "tipopreco": row.tipoprecoingresso,
             "tipobeneficio": row.tipobeneficio,
             "tipo_ingresso": _descricao_tipo_ingresso(
-                None,
+                row.nmsetoringresso,
                 row.nmprecoingresso,
                 row.tipoprecoingresso,
                 row.tipobeneficio,
