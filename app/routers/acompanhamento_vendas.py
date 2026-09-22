@@ -161,26 +161,83 @@ def detalhe_vendas_evento(
     valor = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda * ItVenda.vrunititvenda), else_=0)), 0)
     rows = db.query(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
+        EventoLote.qttotallote, EventoLote.usarcapacidaderestante,
+        EventoLote.eventosetor_id,
         EventoLotePreco.tipopreco, EventoLotePreco.vrpreco,
-        EventoSetor.nmsetor, quantidade.label("quantidade"), valor.label("valor"),
+        EventoSetor.nmsetor, EventoSetor.qtcapacidade,
+        quantidade.label("quantidade"), valor.label("valor"),
     ).join(EventoLotePreco, EventoLotePreco.lote_id == EventoLote.lote_id).outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id).outerjoin(
         ItVenda, (ItVenda.lotepreco_id == EventoLotePreco.lotepreco_id) & (ItVenda.sititvenda == "ATIVO")
     ).outerjoin(Venda, (Venda.venda_id == ItVenda.venda_id) & (Venda.sitvenda == "PAGA")).filter(
         EventoLote.evento_id == evento_id
     ).group_by(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
-        EventoLotePreco.tipopreco, EventoLotePreco.vrpreco, EventoSetor.nmsetor,
+        EventoLote.qttotallote, EventoLote.usarcapacidaderestante,
+        EventoLote.eventosetor_id,
+        EventoLotePreco.tipopreco, EventoLotePreco.vrpreco,
+        EventoSetor.nmsetor, EventoSetor.qtcapacidade,
     ).order_by(EventoLote.nrlote, EventoSetor.nmsetor, EventoLotePreco.nrordem).all()
-    lotes = [{
-        "lote_id": int(row.lote_id), "nrlote": int(row.nrlote), "nmlote": row.nmlote,
-        "setor": row.nmsetor or "Setor único", "tipo": row.tipopreco,
-        "valor_unitario": _dinheiro(row.vrpreco),
-        "quantidade_vendida": int(row.quantidade or 0), "valor_total": _dinheiro(row.valor),
-    } for row in rows]
+
+    vendidos_por_lote: dict[int, int] = {}
+    vendidos_por_setor: dict[int, int] = {}
+    for row in rows:
+        lote_id = int(row.lote_id)
+        vendidos_por_lote[lote_id] = (
+            vendidos_por_lote.get(lote_id, 0) + int(row.quantidade or 0)
+        )
+        if row.eventosetor_id is not None:
+            setor_id = int(row.eventosetor_id)
+            vendidos_por_setor[setor_id] = (
+                vendidos_por_setor.get(setor_id, 0) + int(row.quantidade or 0)
+            )
+
+    capacidade_total = int(
+        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(
+            EventoSetor.evento_id == evento_id,
+            EventoSetor.sitsetor == "ATIVO",
+        ).scalar()
+        or 0
+    )
+
+    def _capacidade_e_restante(row) -> tuple[int | None, int | None]:
+        vendidos_lote = vendidos_por_lote.get(int(row.lote_id), 0)
+        if row.qttotallote is not None:
+            capacidade = int(row.qttotallote)
+            return capacidade, max(capacidade - vendidos_lote, 0)
+        if row.eventosetor_id is not None and row.qtcapacidade is not None:
+            setor_id = int(row.eventosetor_id)
+            restante = max(
+                int(row.qtcapacidade) - vendidos_por_setor.get(setor_id, 0), 0
+            )
+            return vendidos_lote + restante, restante
+        return None, None
+
+    lotes = []
+    for row in rows:
+        capacidade_lote, quantidade_restante = _capacidade_e_restante(row)
+        lotes.append({
+            "lote_id": int(row.lote_id), "nrlote": int(row.nrlote),
+            "nmlote": row.nmlote, "setor": row.nmsetor or "Setor único",
+            "tipo": row.tipopreco, "valor_unitario": _dinheiro(row.vrpreco),
+            "quantidade_vendida": int(row.quantidade or 0),
+            "quantidade_vendida_lote": vendidos_por_lote.get(int(row.lote_id), 0),
+            "capacidade_lote": capacidade_lote,
+            "quantidade_restante": quantidade_restante,
+            "valor_total": _dinheiro(row.valor),
+        })
+    quantidade_total = sum(item["quantidade_vendida"] for item in lotes)
+    quantidade_restante = max(capacidade_total - quantidade_total, 0)
+    percentual_ocupacao = (
+        round(min(quantidade_total / capacidade_total * 100, 100), 2)
+        if capacidade_total > 0 else 0.0
+    )
     return {
         "evento_id": evento.evento_id, "nmtituloevento": evento.nmtituloevento,
         "dtinicioevento": evento.dtinicioevento,
-        "quantidade_vendida": sum(item["quantidade_vendida"] for item in lotes),
+        "quantidade_vendida": quantidade_total,
+        "capacidade_total": capacidade_total,
+        "quantidade_restante": quantidade_restante,
+        "percentual_ocupacao": percentual_ocupacao,
         "valor_total": _dinheiro(sum(Decimal(str(item["valor_total"])) for item in lotes)),
         "lotes": lotes,
     }
