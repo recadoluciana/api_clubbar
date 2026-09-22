@@ -151,6 +151,6 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
             inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)
             db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=inicio_atracao+timedelta(minutes=padrao.nrminutoduracao)))
         if dados.capacidade > int(getattr(loja,"qtcpdloja",0) or 0): raise HTTPException(422,"A capacidade da sessão não pode ultrapassar a capacidade do estabelecimento.")
-        criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=loja.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=Decimal(str(dados.preco_inteira)) if dados.preco_inteira is not None else x.vrprecolote,capacidade=dados.capacidade)
+        criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=loja.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=Decimal(str(dados.preco_inteira)) if dados.preco_inteira is not None else x.vrprecolote,capacidade=dados.capacidade,nome_setor=dados.nome_setor_inicial)
         ids.append(evento.evento_id)
     db.commit();return {"sessoes_criadas":len(ids),"evento_ids":ids}
