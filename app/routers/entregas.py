@@ -18,6 +18,8 @@ from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
+from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
 from app.models.pagvenda import PagVenda
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
@@ -137,6 +139,36 @@ def _dados_visuais_ingresso(db: Session, lote_id: int | None) -> tuple[str, str]
     return resultado.nmtituloevento or "Ingresso", resultado.urlbannerevento or ""
 
 
+def _descricao_tipo_ingresso(
+    nome_setor: str | None,
+    nome_preco: str | None,
+    tipo_preco: str | None,
+    tipo_beneficio: str | None,
+) -> str:
+    """Descrição legível da modalidade adquirida, inclusive meia-entrada."""
+    modalidade = (tipo_preco or "").upper()
+    beneficio = (tipo_beneficio or "").upper()
+    nomes_modalidade = {
+        "INTEIRA": "Inteira",
+        "MEIA_LEGAL": "Meia-entrada",
+        "MEIA_IDOSO": "Meia-entrada",
+    }
+    nomes_beneficio = {
+        "ESTUDANTE": "Estudante",
+        "JOVEM_BAIXA_RENDA": "Jovem de baixa renda",
+        "PCD": "Pessoa com deficiência",
+        "ACOMPANHANTE_PCD": "Acompanhante PCD",
+        "IDOSO": "Pessoa idosa",
+    }
+    partes = [parte for parte in [nome_setor, nome_preco or nomes_modalidade.get(modalidade, "Ingresso")] if parte]
+    descricao = " • ".join(partes)
+    if modalidade.startswith("MEIA") and beneficio:
+        nome_beneficio = nomes_beneficio.get(beneficio, beneficio.replace("_", " ").title())
+        if nome_beneficio.lower() not in descricao.lower():
+            descricao = f"{descricao} • {nome_beneficio}"
+    return descricao
+
+
 @router.get("/pendentes")
 def listar_itens_nao_entregues(
     cliente_id: int = Query(...),
@@ -169,14 +201,18 @@ def listar_itens_nao_entregues(
             ItVenda.dtexpiraitvenda,
             ItVenda.nmparticipante,
             ItVenda.cpfparticipante,
+            ItVenda.tipobeneficio,
             Venda.dtcriacao,
             Venda.loja_id,
+            EventoLotePreco.nmpreco.label("nmprecoingresso"),
+            EventoLotePreco.tipopreco.label("tipoprecoingresso"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
         .filter(Venda.sitvenda == "PAGA")
@@ -236,6 +272,14 @@ def listar_itens_nao_entregues(
             "nmcliente" : row.nmcliente,
             "nmparticipante": row.nmparticipante,
             "cpfparticipante": row.cpfparticipante,
+            "tipopreco": row.tipoprecoingresso,
+            "tipobeneficio": row.tipobeneficio,
+            "tipo_ingresso": _descricao_tipo_ingresso(
+                None,
+                row.nmprecoingresso,
+                row.tipoprecoingresso,
+                row.tipobeneficio,
+            ) if row.idtipoproduto == "I" else None,
         }
         for row in itens
     ]
@@ -800,11 +844,15 @@ def listar_lojas_com_retirada_pendente(
 @router.put("/itvenda/{itvenda_id}/participante")
 def alterar_participante_itvenda(
     itvenda_id: int,
-    payload: AlterarParticipanteIn,
+    dados: AlterarParticipanteIn,
+    usuario: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    nome = payload.nmparticipante.strip()
-    cpf = "".join(ch for ch in payload.cpfparticipante if ch.isdigit())
+    if usuario.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    nome = dados.nmparticipante.strip()
+    cpf = "".join(ch for ch in dados.cpfparticipante if ch.isdigit())
 
     if not nome:
         raise HTTPException(status_code=400, detail="Nome do participante obrigatório")
@@ -812,10 +860,57 @@ def alterar_participante_itvenda(
     if len(cpf) != 11:
         raise HTTPException(status_code=400, detail="CPF do participante inválido")
 
-    item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+    resultado = (
+        db.query(ItVenda, Venda, Evento, EventoLotePreco)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .with_for_update()
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Ingresso não encontrado.")
 
-    if not item:
-        raise HTTPException(status_code=404, detail="Item da venda não encontrado")
+    item, venda, evento, preco = resultado
+    if str(venda.cliente_id) != str(usuario.get("sub")):
+        raise HTTPException(status_code=403, detail="Este ingresso pertence a outro cliente.")
+    if (item.tipoitem or "").upper() != "INGRESSO":
+        raise HTTPException(status_code=400, detail="O item informado não é um ingresso.")
+    if item.sititvenda != "ATIVO" or (item.identregaitvenda or "NAO").upper() == "SIM":
+        raise HTTPException(status_code=409, detail="Ingresso utilizado ou indisponível não pode ser transferido.")
+    if not evento.dtinicioevento or datetime.now() > evento.dtinicioevento - timedelta(hours=48):
+        raise HTTPException(
+            status_code=409,
+            detail="A transferência só pode ser realizada até 48 horas antes do início do evento.",
+        )
+
+    tipo_preco = (preco.tipopreco if preco else "") or ""
+    eh_meia_entrada = tipo_preco.upper().startswith("MEIA")
+    if eh_meia_entrada and not dados.confirmar_meia_entrada:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Este ingresso é de meia-entrada. A transferência só pode ser feita "
+                "para quem também tem direito à meia-entrada e apresentará o comprovante na entrada."
+            ),
+        )
+
+    if item.nmparticipante == nome and item.cpfparticipante == cpf:
+        return {"ok": True, "alterado": False, "itvenda_id": item.itvenda_id}
+
+    db.add(ItVendaParticipanteHistorico(
+        itvenda_id=item.itvenda_id,
+        cliente_id=venda.cliente_id,
+        nmparticipanteanterior=item.nmparticipante,
+        cpfparticipanteanterior=item.cpfparticipante,
+        nmparticipantenovo=nome,
+        cpfparticipantenovo=cpf,
+        tipopreco=tipo_preco or None,
+        tipobeneficio=item.tipobeneficio,
+        confirmoumeiaentrada=eh_meia_entrada and dados.confirmar_meia_entrada,
+    ))
 
     item.nmparticipante = nome
     item.cpfparticipante = cpf
@@ -826,6 +921,7 @@ def alterar_participante_itvenda(
     return {
         "ok": True,
         "tipo": "itvenda",
+        "alterado": True,
         "itvenda_id": item.itvenda_id,
         "nmparticipante": item.nmparticipante,
         "cpfparticipante": item.cpfparticipante,

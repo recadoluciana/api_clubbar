@@ -19,7 +19,13 @@ def _loja(db,loja_id,payload,mutacao=False):
     if mutacao: validar_mutacao_loja(payload,item.organizacao_id,item.loja_id)
     return item
 def _conteudo(x): return {"loja_id":x.loja_id,"dsdetalhadaloja":x.dsdetalhadaloja,"fotos":x.fotos or [],"publicacoes":x.publicacoes or [],"videos":x.videos or [],"configuracoes":x.configuracoes or {}}
-def _politica(x): return {"loja_id":x.loja_id,"dspoliticaingresso":x.dspoliticaingresso,"urlmapaingressos":x.urlmapaingressos,"dsmapaingressos":x.dsmapaingressos,"dsorientacoesacesso":x.dsorientacoesacesso,"configuracoes":x.configuracoes or {}}
+def _configuracoes_politica(valor):
+    configuracoes = dict(valor or {})
+    # A transferência de ingresso não é opcional. O Decreto 13.108/2026
+    # exige procedimento gratuito na plataforma oficial.
+    configuracoes.pop("permite_transferencia", None)
+    return configuracoes
+def _politica(x): return {"loja_id":x.loja_id,"dspoliticaingresso":x.dspoliticaingresso,"urlmapaingressos":x.urlmapaingressos,"dsmapaingressos":x.dsmapaingressos,"dsorientacoesacesso":x.dsorientacoesacesso,"configuracoes":_configuracoes_politica(x.configuracoes) if x else {}}
 @router.get("/{loja_id}/conteudo")
 def obter_conteudo(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _loja(db,loja_id,payload);x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first();return _conteudo(x) if x else {"loja_id":loja_id,"dsdetalhadaloja":None,"fotos":[],"publicacoes":[],"videos":[],"configuracoes":{}}
@@ -51,7 +57,7 @@ def obter_politica(loja_id:int,payload=Depends(get_usuario_logado),db:Session=De
 @router.put("/{loja_id}/politica-ingressos")
 def salvar_politica(loja_id:int,dados:LojaPoliticaIngressoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _loja(db,loja_id,payload,True);x=db.query(LojaPoliticaIngresso).filter(LojaPoliticaIngresso.loja_id==loja_id).first() or LojaPoliticaIngresso(loja_id=loja_id)
-    for k,v in dados.model_dump().items():setattr(x,k,v)
+    for k,v in dados.model_dump().items():setattr(x,k,_configuracoes_politica(v) if k=="configuracoes" else v)
     db.add(x);db.commit();db.refresh(x);return _politica(x)
 @router.delete("/{loja_id}/politica-ingressos", status_code=204)
 def excluir_politica(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):

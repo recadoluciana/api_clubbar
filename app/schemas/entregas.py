@@ -9,3 +9,4 @@ class LojaRetiradaOut(BaseModel):
 class AlterarParticipanteIn(BaseModel):
     nmparticipante: str
     cpfparticipante: str
+    confirmar_meia_entrada: bool = False
