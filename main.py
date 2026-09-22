@@ -197,36 +197,36 @@ app.include_router(politicas.router)
 
 @app.on_event("startup")
 def garantir_politica_compra_inicial() -> None:
-    """Garante a estrutura e a primeira política em ambientes recém-publicados."""
+    """Garante uma política vigente de ingresso e outra de produto."""
     PoliticaCompra.__table__.create(bind=engine, checkfirst=True)
 
     db = SessionLocal()
     try:
-        existe_vigente = (
-            db.query(PoliticaCompra)
-            .filter(PoliticaCompra.sitpolitica == "VIGENTE")
-            .first()
+        politicas = (
+            ("INGRESSO", "Política de compra de ingresso", 7, 48, 1, 24),
+            ("PRODUTO", "Política de compra de produto", 7, None, None, None),
         )
-        if existe_vigente:
-            return
-
-        db.add(
-            PoliticaCompra(
+        for tipo, titulo, dias, horas_cancelamento, alteracoes, horas_alteracao in politicas:
+            existe_vigente = db.query(PoliticaCompra).filter(
+                PoliticaCompra.sitpolitica == "VIGENTE",
+                PoliticaCompra.tipopolitica == tipo,
+            ).first()
+            if existe_vigente:
+                continue
+            db.add(PoliticaCompra(
                 versao="1.0",
-                titulo="Política de Compra Clubbar",
-                conteudo=(
-                    "Ao realizar uma compra pelo Clubbar, você declara estar de acordo "
-                    "com as regras do estabelecimento e, quando houver, com as regras "
-                    "específicas do evento. Confira os dados antes de concluir o pagamento. "
-                    "Cancelamentos, retiradas e reembolsos seguem os prazos e as condições "
-                    "informados no momento da compra."
-                ),
+                tipopolitica=tipo,
+                titulo=titulo,
+                conteudo="Texto gerado a partir dos parâmetros da política.",
+                qtd_dias_cancelamento=dias,
+                qtd_horas_antecedencia_cancelamento=horas_cancelamento,
+                qtd_alteracoes_participante=alteracoes,
+                qtd_horas_antecedencia_alteracao=horas_alteracao,
                 sitpolitica="VIGENTE",
                 dtiniciovigencia=datetime.now(),
-            )
-        )
+            ))
         db.commit()
-        logger.info("Política de compra inicial criada.")
+        logger.info("Políticas de compra iniciais verificadas.")
     except Exception:
         db.rollback()
         logger.exception("Não foi possível preparar a política de compra inicial")
