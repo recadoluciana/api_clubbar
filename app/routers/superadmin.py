@@ -12,6 +12,7 @@ from app.models.itvenda import ItVenda
 from app.models.leadparceiro import LeadParceiro
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
+from app.models.cancelamentoparceria import CancelamentoParceria
 from app.models.estado import Estado
 from app.models.loja import Loja
 from app.models.organizacao import Organizacao
@@ -438,9 +439,19 @@ def listar_lojas_da_organizacao(
 ):
     _organizacao_existe(db, organizacao_id)
     lojas = (
-        db.query(Loja, Cidade.nmcidade, Estado.sgestado, Estado.nmestado)
+        db.query(
+            Loja,
+            Cidade.nmcidade,
+            Estado.sgestado,
+            Estado.nmestado,
+            CancelamentoParceria,
+        )
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .outerjoin(Estado, Estado.estado_id == Loja.estado_id)
+        .outerjoin(
+            CancelamentoParceria,
+            CancelamentoParceria.loja_id == Loja.loja_id,
+        )
         .filter(Loja.organizacao_id == organizacao_id)
         .order_by(Loja.nmloja.asc())
         .all()
@@ -495,8 +506,17 @@ def listar_lojas_da_organizacao(
             "vrtaxaminimaingresso": float(
                 loja.vrtaxaminimaingresso or 0
             ),
+            "cancelamento_parceria": (
+                {
+                    "dtsolicitacao": cancelamento.dtsolicitacao,
+                    "dtavisoate": cancelamento.dtavisoate,
+                    "motivo": cancelamento.justificativa,
+                }
+                if cancelamento is not None
+                else None
+            ),
         }
-        for loja, nmcidade, sgestado, nmestado in lojas
+        for loja, nmcidade, sgestado, nmestado, cancelamento in lojas
     ]
 
 
