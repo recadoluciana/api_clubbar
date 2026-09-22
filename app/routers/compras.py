@@ -154,6 +154,7 @@ def listar_compras(
             "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
             "qtitvenda": it.qtitvenda,
             "vrunititvenda": float(it.vrunititvenda),
+            "vrtaxaitvenda": float(it.vrtaxaitvenda) if it.vrtaxaitvenda is not None else 0.0,
             "identregaitvenda": it.identregaitvenda,
             "dtentregaitvenda": formatar_data_br(it.dtentregaitvenda),
             "userentregaitvenda": it.userentregaitvenda,
