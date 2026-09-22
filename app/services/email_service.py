@@ -1,4 +1,7 @@
 import os
+import smtplib
+from email.message import EmailMessage
+from email.utils import parseaddr
 from html import escape
 from urllib.parse import quote
 import httpx
@@ -10,6 +13,12 @@ from app.services.public_urls import url_partner_publico, url_site_publico
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
 BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Clubbar")
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "sim"}
 
 
 def _enviar_email(destinatario: str, assunto: str, html: str) -> None:
@@ -32,6 +41,28 @@ def _enviar_email(destinatario: str, assunto: str, html: str) -> None:
     )
     if response.status_code >= 400:
         raise HTTPException(status_code=502, detail="Não foi possível enviar o e-mail.")
+
+
+def _enviar_email_smtp(destinatario: str, assunto: str, html: str) -> None:
+    """Envia avisos operacionais diretamente pelo servidor de e-mail do Clubbar."""
+    if not all([SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
+        _enviar_email(destinatario, assunto, html)
+        return
+
+    nome_remetente, email_remetente = parseaddr(SMTP_FROM)
+    email_remetente = email_remetente or SMTP_USER
+    mensagem = EmailMessage()
+    mensagem['Subject'] = assunto
+    mensagem['From'] = f'{nome_remetente} <{email_remetente}>' if nome_remetente else email_remetente
+    mensagem['To'] = destinatario
+    mensagem.set_content('Este aviso do Clubbar contém uma versão em HTML.')
+    mensagem.add_alternative(html, subtype='html')
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as servidor:
+        if SMTP_USE_TLS:
+            servidor.starttls()
+        servidor.login(SMTP_USER, SMTP_PASSWORD)
+        servidor.send_message(mensagem)
 
 
 def enviar_convite_parceiro(
@@ -252,7 +283,7 @@ def enviar_notificacao_cancelamento_parceria_suporte(
       <b>Motivo informado:</b><br>{escape(justificativa).replace(chr(10), '<br>')}
     </div>
     """
-    _enviar_email(
+    _enviar_email_smtp(
         'suporte@clubbar.com.br',
         'Pedido de cancelamento de parceria retirado'
         if retirada
