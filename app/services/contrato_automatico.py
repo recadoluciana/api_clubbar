@@ -180,6 +180,12 @@ def atualizar_contrato_pendente(db, estabelecimento: LeadEstabelecimento):
             "Não foi possível atualizar o contrato pendente com os novos dados.",
         )
 
+    # Enquanto o instrumento estiver pendente, as condições comerciais do
+    # estabelecimento são a fonte de verdade do contrato que será assinado.
+    contrato.vrtaxaprod = estabelecimento.vrtaxaprod
+    contrato.vrtaxaing = estabelecimento.vrtaxaing
+    contrato.vrtaxaminimaingresso = estabelecimento.vrtaxaminimaingresso
+
     nome_contratante = (
         contrato.nmrazaosocial
         or "[Nome completo ou razão social a preencher]"

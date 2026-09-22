@@ -85,7 +85,11 @@ class LeadEstabelecimentoCreate(BaseModel):
 
 
 class LeadEstabelecimentoUpdate(LeadEstabelecimentoCreate):
-    pass
+    # As taxas podem ser negociadas por estabelecimento antes da assinatura.
+    # Elas são opcionais para manter compatibilidade com as edições do portal,
+    # que não alteram condições comerciais.
+    vrtaxaprod: float | None = Field(default=None, ge=0, le=100)
+    vrtaxaing: float | None = Field(default=None, ge=0, le=100)
 
 
 class LeadEstabelecimentoOut(BaseModel):
@@ -111,6 +115,7 @@ class LeadEstabelecimentoOut(BaseModel):
     status: StatusLeadEstabelecimentoSchema
     vrtaxaprod: float
     vrtaxaing: float
+    contrato_assinado: bool = False
     dtcriacao: datetime
     dtaceite: datetime | None = None
     dtconversao: datetime | None = None

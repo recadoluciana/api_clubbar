@@ -1,4 +1,7 @@
-from app.services.contrato_automatico import garantir_contrato
+from app.services.contrato_automatico import (
+    atualizar_contrato_pendente,
+    garantir_contrato,
+)
 from app.services.endereco_lead import validar_cep_lead
 import re
 import secrets
@@ -141,7 +144,17 @@ def _serializar_lead(
     }
 
 
-def _serializar_estabelecimento(item: LeadEstabelecimento) -> dict:
+def _serializar_estabelecimento(db: Session, item: LeadEstabelecimento) -> dict:
+    contrato_assinado = (
+        db.query(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id)
+        .filter(
+            LeadEstabelecimentoContrato.leadestabelecimento_id
+            == item.leadestabelecimento_id,
+            LeadEstabelecimentoContrato.status == "ACEITO",
+        )
+        .first()
+        is not None
+    )
     return {
         "leadestabelecimento_id": item.leadestabelecimento_id,
         "leadparceiro_id": item.leadparceiro_id,
@@ -166,6 +179,7 @@ def _serializar_estabelecimento(item: LeadEstabelecimento) -> dict:
         "vrtaxaprod": float(item.vrtaxaprod),
         "vrtaxaing": float(item.vrtaxaing),
         "vrtaxaminimaingresso": float(item.vrtaxaminimaingresso),
+        "contrato_assinado": contrato_assinado,
         "dtcriacao": item.dtcriacao,
         "dtaceite": item.dtaceite,
         "dtconversao": item.dtconversao,
@@ -179,7 +193,7 @@ def _carregar_estabelecimentos(db: Session, leadparceiro_id: int) -> list[dict]:
         .order_by(LeadEstabelecimento.leadestabelecimento_id.asc())
         .all()
     )
-    return [_serializar_estabelecimento(item) for item in itens]
+    return [_serializar_estabelecimento(db, item) for item in itens]
 
 
 def _buscar_lead_com_localidade(
@@ -315,7 +329,7 @@ def criar_interesse_parceiro(
 
         resposta["acesso_portal"] = acesso_portal
         resposta["estabelecimentos"] = [
-            _serializar_estabelecimento(item) for item in estabelecimentos
+            _serializar_estabelecimento(db, item) for item in estabelecimentos
         ]
         resposta["status"] = _status_agregado(estabelecimentos)
 
@@ -330,7 +344,7 @@ def criar_interesse_parceiro(
                 },
                 estabelecimentos=[
                     {
-                        **_serializar_estabelecimento(item),
+                        **_serializar_estabelecimento(db, item),
                         "cidade": cidade.nmcidade if cidade else "",
                         "estado": estado.sgestado if estado else "",
                     }
@@ -351,7 +365,7 @@ def criar_interesse_parceiro(
                     "email": lead.email,
                     "telefone": lead.telefone,
                 },
-                estabelecimentos=[_serializar_estabelecimento(item) for item in estabelecimentos],
+                estabelecimentos=[_serializar_estabelecimento(db, item) for item in estabelecimentos],
             )
         except Exception:
             traceback.print_exc()
@@ -489,7 +503,7 @@ def adicionar_estabelecimento(
     garantir_contrato(db, item)
     db.commit()
     db.refresh(item)
-    return _serializar_estabelecimento(item)
+    return _serializar_estabelecimento(db, item)
 
 
 @router.put(
@@ -515,6 +529,24 @@ def atualizar_estabelecimento(
     if not item:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
 
+    contrato_assinado = (
+        db.query(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id)
+        .filter(
+            LeadEstabelecimentoContrato.leadestabelecimento_id
+            == item.leadestabelecimento_id,
+            LeadEstabelecimentoContrato.status == "ACEITO",
+        )
+        .first()
+    )
+    if contrato_assinado:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Os dados contratuais não podem ser alterados após a assinatura "
+                "do contrato. Use uma retificação para alterar condições já assinadas."
+            ),
+        )
+
     cidade = db.query(Cidade).filter(Cidade.cidade_id == payload.cidade_id).first()
     if not cidade or cidade.estado_id != payload.estado_id:
         raise HTTPException(
@@ -522,11 +554,19 @@ def atualizar_estabelecimento(
             detail="Cidade e estado informados são incompatíveis.",
         )
 
-    for campo, valor in payload.model_dump().items():
+    dados = payload.model_dump()
+    taxa_produtos = dados.pop("vrtaxaprod", None)
+    taxa_ingressos = dados.pop("vrtaxaing", None)
+    for campo, valor in dados.items():
         setattr(item, campo, valor)
+    if taxa_produtos is not None:
+        item.vrtaxaprod = taxa_produtos
+    if taxa_ingressos is not None:
+        item.vrtaxaing = taxa_ingressos
+    atualizar_contrato_pendente(db, item)
     db.commit()
     db.refresh(item)
-    return _serializar_estabelecimento(item)
+    return _serializar_estabelecimento(db, item)
 
 
 @router.put(
