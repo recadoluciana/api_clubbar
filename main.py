@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
@@ -10,7 +11,8 @@ from sqlalchemy import text
 import app.models as app_models
 from app.core.config import APP_ENV, UPLOAD_DIR
 from app.core.responses import ClubbarJSONResponse
-from app.database import engine
+from app.database import SessionLocal, engine
+from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
 
@@ -191,6 +193,46 @@ app.include_router(cora.router)
 app.include_router(taxapadrao.router)
 app.include_router(manuais.router)
 app.include_router(politicas.router)
+
+
+@app.on_event("startup")
+def garantir_politica_compra_inicial() -> None:
+    """Garante a estrutura e a primeira política em ambientes recém-publicados."""
+    PoliticaCompra.__table__.create(bind=engine, checkfirst=True)
+
+    db = SessionLocal()
+    try:
+        existe_vigente = (
+            db.query(PoliticaCompra)
+            .filter(PoliticaCompra.sitpolitica == "VIGENTE")
+            .first()
+        )
+        if existe_vigente:
+            return
+
+        db.add(
+            PoliticaCompra(
+                versao="1.0",
+                titulo="Política de Compra Clubbar",
+                conteudo=(
+                    "Ao realizar uma compra pelo Clubbar, você declara estar de acordo "
+                    "com as regras do estabelecimento e, quando houver, com as regras "
+                    "específicas do evento. Confira os dados antes de concluir o pagamento. "
+                    "Cancelamentos, retiradas e reembolsos seguem os prazos e as condições "
+                    "informados no momento da compra."
+                ),
+                sitpolitica="VIGENTE",
+                dtiniciovigencia=datetime.now(),
+            )
+        )
+        db.commit()
+        logger.info("Política de compra inicial criada.")
+    except Exception:
+        db.rollback()
+        logger.exception("Não foi possível preparar a política de compra inicial")
+        raise
+    finally:
+        db.close()
 
 @app.get("/health")
 def health():
