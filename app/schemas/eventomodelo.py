@@ -6,6 +6,7 @@ class AgendarEventoModeloIn(BaseModel):
     dtinicio: datetime
     dtfim: datetime | None = None
     capacidade: int = Field(gt=0)
+    nome_setor_inicial: str = Field(default="Pista", min_length=1, max_length=80)
     preco_inteira: float | None = Field(default=None, ge=0)
     local: str | None = Field(default=None, max_length=120)
     endereco: str | None = Field(default=None, max_length=200)
@@ -20,6 +21,9 @@ class AgendarEventoModeloIn(BaseModel):
         if self.recorrencia == "UNICA": self.repeticoes = 1
         if self.dtfim is not None and self.dtfim <= self.dtinicio:
             raise ValueError("O fim deve ser posterior ao início.")
+        self.nome_setor_inicial = self.nome_setor_inicial.strip()
+        if not self.nome_setor_inicial:
+            raise ValueError("Informe o nome do primeiro setor.")
         return self
 
 
