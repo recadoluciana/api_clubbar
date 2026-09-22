@@ -25,7 +25,9 @@ from app.models.cancelamentoparceria import CancelamentoParceria
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.evento import Evento
+from app.models.eventosetor import EventoSetor
 from app.models.cliente import Cliente
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.services.email_service import enviar_notificacao_cancelamento_parceria_suporte
@@ -35,10 +37,20 @@ router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
 
 def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
-    itens = (db.query(ItVenda, Venda, Evento, Produto, Cliente)
+    itens = (db.query(
+        ItVenda, Venda, Evento, Produto, Cliente, EventoSetor, EventoLotePreco,
+    )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(
+            EventoSetor,
+            EventoSetor.eventosetor_id == EventoLote.eventosetor_id,
+        )
+        .outerjoin(
+            EventoLotePreco,
+            EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id,
+        )
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .filter(Venda.loja_id == loja_id, Venda.sitvenda == 'PAGA', ItVenda.sititvenda == 'ATIVO')
@@ -46,7 +58,7 @@ def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
     agora = datetime.now()
     hoje = agora.date()
     pendencias = []
-    for item, venda, evento, produto, cliente in itens:
+    for item, venda, evento, produto, cliente, setor, preco in itens:
         produto_pendente = (
             item.tipoitem == 'PRODUTO'
             and item.identregaitvenda != 'SIM'
@@ -73,6 +85,14 @@ def _pendencias_cancelamento(db: Session, loja_id: int) -> list[dict]:
             'data_evento': evento.dtinicioevento if evento else None,
             'local_evento': evento.nmlocalevento if evento else None,
             'endereco_evento': evento.dsendlocevento if evento else None,
+            'nome_participante': item.nmparticipante if item.tipoitem == 'INGRESSO' else None,
+            'cpf_participante': item.cpfparticipante if item.tipoitem == 'INGRESSO' else None,
+            'tipo_ingresso': ' • '.join(
+                parte for parte in [
+                    setor.nmsetor if setor else None,
+                    preco.nmpreco if preco else None,
+                ] if parte
+            ) or None,
             'motivo': 'Produto ainda não retirado' if item.tipoitem == 'PRODUTO' else 'Ingresso ainda não utilizado',
         })
     return pendencias
