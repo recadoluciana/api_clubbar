@@ -21,6 +21,7 @@ from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
+from app.models.politicacompra import PoliticaCompra
 from app.models.pagvenda import PagVenda
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
@@ -35,24 +36,31 @@ def _hoje_brasil() -> date:
     return datetime.now(_FUSO_BRASIL).date()
 
 
+def _politica_vigente(db: Session, tipo: str) -> PoliticaCompra | None:
+    return db.query(PoliticaCompra).filter(
+        PoliticaCompra.sitpolitica == "VIGENTE",
+        PoliticaCompra.tipopolitica == tipo,
+    ).order_by(PoliticaCompra.politicacompra_id.desc()).first()
+
+
 def _cancelamento_ingresso_permitido(
     data_compra: datetime,
     data_evento: datetime,
-    agora: datetime | None = None,
+    dias: int = 7, horas: int = 48, agora: datetime | None = None,
 ) -> bool:
     momento_atual = agora or datetime.now()
     return (
-        momento_atual <= data_compra + timedelta(days=7)
-        and momento_atual <= data_evento - timedelta(hours=48)
+        momento_atual <= data_compra + timedelta(days=dias)
+        and momento_atual <= data_evento - timedelta(hours=horas)
     )
 
 
 def _cancelamento_produto_permitido(
     data_compra: datetime,
-    hoje: date | None = None,
+    dias: int = 7, hoje: date | None = None,
 ) -> bool:
     """Produtos podem ser cancelados até o sétimo dia, por data civil."""
-    return (hoje or _hoje_brasil()) <= data_compra.date() + timedelta(days=7)
+    return (hoje or _hoje_brasil()) <= data_compra.date() + timedelta(days=dias)
 
 
 def _estornos_do_split_clubbar(
@@ -324,15 +332,20 @@ async def cancelar_ingresso(
     if (item.identregaitvenda or "NAO").upper() == "SIM":
         raise HTTPException(status_code=409, detail="Ingresso já utilizado não pode ser cancelado.")
 
+    politica = _politica_vigente(db, "INGRESSO")
+    dias_cancelamento = int(getattr(politica, "qtd_dias_cancelamento", None) or 7)
+    horas_cancelamento = int(getattr(politica, "qtd_horas_antecedencia_cancelamento", None) or 48)
     if not _cancelamento_ingresso_permitido(
         venda.dtcriacao,
         evento.dtinicioevento,
+        dias_cancelamento,
+        horas_cancelamento,
     ):
         raise HTTPException(
             status_code=409,
             detail=(
                 "Cancelamento não permitido. O ingresso só pode ser cancelado "
-                "em até 7 dias após a compra e com no mínimo 48 horas de "
+                f"em até {dias_cancelamento} dias após a compra e com no mínimo {horas_cancelamento} horas de "
                 "antecedência do início do evento."
             ),
         )
@@ -443,10 +456,15 @@ async def cancelar_produto(
         raise HTTPException(status_code=409, detail="Cancelamento já está sendo processado.")
     if (item.identregaitvenda or "NAO").upper() == "SIM":
         raise HTTPException(status_code=409, detail="Produto já retirado não pode ser cancelado.")
-    if not _cancelamento_produto_permitido(venda.dtcriacao):
+    politica = _politica_vigente(db, "PRODUTO")
+    dias_cancelamento = int(getattr(politica, "qtd_dias_cancelamento", None) or 7)
+    if not _cancelamento_produto_permitido(venda.dtcriacao, dias_cancelamento):
         raise HTTPException(
             status_code=409,
-            detail="Compra do produto não pode ser cancelada. Compra realizada a mais de 7 dias.",
+            detail=(
+                "Compra do produto não pode ser cancelada. Compra realizada a mais de "
+                f"{dias_cancelamento} dias."
+            ),
         )
 
     payment_id = str(pagamento.idtransacaopagvenda or "").strip()
@@ -883,10 +901,22 @@ def alterar_participante_itvenda(
         raise HTTPException(status_code=400, detail="O item informado não é um ingresso.")
     if item.sititvenda != "ATIVO" or (item.identregaitvenda or "NAO").upper() == "SIM":
         raise HTTPException(status_code=409, detail="Ingresso utilizado ou indisponível não pode ser transferido.")
-    if not evento.dtinicioevento or datetime.now() > evento.dtinicioevento - timedelta(hours=48):
+    politica = _politica_vigente(db, "INGRESSO")
+    horas_transferencia = int(getattr(politica, "qtd_horas_antecedencia_alteracao", None) or 24)
+    maximo_transferencias = int(getattr(politica, "qtd_alteracoes_participante", None) or 1)
+    if not evento.dtinicioevento or datetime.now() > evento.dtinicioevento - timedelta(hours=horas_transferencia):
         raise HTTPException(
             status_code=409,
-            detail="A transferência só pode ser realizada até 48 horas antes do início do evento.",
+            detail=f"A transferência só pode ser realizada até {horas_transferencia} horas antes do início do evento.",
+        )
+
+    transferencias_realizadas = db.query(func.count(ItVendaParticipanteHistorico.historico_id)).filter(
+        ItVendaParticipanteHistorico.itvenda_id == item.itvenda_id
+    ).scalar() or 0
+    if transferencias_realizadas >= maximo_transferencias:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Este ingresso já atingiu o limite de {maximo_transferencias} alteração(ões) de participante.",
         )
 
     tipo_preco = (preco.tipopreco if preco else "") or ""
