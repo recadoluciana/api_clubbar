@@ -23,6 +23,7 @@ from app.models.eventolote import EventoLote
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
+from app.models.lojapoliticaingresso import LojaPoliticaIngresso
 from app.models.venda import Venda
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
@@ -253,6 +254,9 @@ def get_evento_por_id(
     endereco_evento = evento_obj.dsendlocevento or endloja
     numero_endereco_evento = None if evento_obj.dsendlocevento else nrendloja
     local_evento    = evento_obj.nmlocalevento or nmloja
+    politica_loja = db.query(LojaPoliticaIngresso).filter(
+        LojaPoliticaIngresso.loja_id == evento_obj.loja_id
+    ).first()
 
     return {
         "evento_id": evento_obj.evento_id,
@@ -266,6 +270,10 @@ def get_evento_por_id(
         "nrendlocevento": numero_endereco_evento,
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
         "dspoliticacancelamento": evento_obj.dspoliticacancelamento,
+        "politica_loja": {
+            "dspoliticaingresso": politica_loja.dspoliticaingresso,
+            "dsorientacoesacesso": politica_loja.dsorientacoesacesso,
+        } if politica_loja else None,
         "urlbannerevento": imagem_evento(db, evento_obj),
         "statusevento": getattr(evento_obj, "statusevento", None),
         "nmloja": nmloja,

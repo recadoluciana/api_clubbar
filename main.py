@@ -59,6 +59,7 @@ from app.routers import acompanhamento_vendas
 from app.routers import cora
 from app.routers import taxapadrao
 from app.routers import manuais
+from app.routers import politicas
 
 
 app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
@@ -189,6 +190,7 @@ app.include_router(acompanhamento_vendas.router)
 app.include_router(cora.router)
 app.include_router(taxapadrao.router)
 app.include_router(manuais.router)
+app.include_router(politicas.router)
 
 @app.get("/health")
 def health():
