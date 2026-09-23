@@ -15,6 +15,7 @@ from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
+from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
@@ -114,6 +115,7 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
+        await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(db, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, api_key=api_key_loja)
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
         cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_split_clubbar(taxa_clubbar), due_date=datetime.now().date().isoformat())
@@ -134,6 +136,7 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         cliente = db.query(Cliente).filter(Cliente.cliente_id == reserva.cliente_id).first()
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
+        await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
         permite_parcelamento = float(reserva.vrtotal) >= 100
