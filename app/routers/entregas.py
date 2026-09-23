@@ -25,6 +25,7 @@ from app.models.politicacompra import PoliticaCompra
 from app.models.pagvenda import PagVenda
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
+from app.services.cashback_service import cancelar_cashback_da_venda
 from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
@@ -573,6 +574,7 @@ async def cancelar_produto(
     if itens_ativos == 0:
         venda.sitvenda = "CANCELADA"
         pagamento.sitpagvenda = "CANCELADO"
+        cancelar_cashback_da_venda(db, venda.venda_id)
     db.commit()
     return {
         "ok": True,

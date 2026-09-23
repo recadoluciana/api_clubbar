@@ -22,7 +22,7 @@ class CashbackConfigIn(BaseModel):
     pccashback: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     vrmincompra: Decimal = Field(default=Decimal("0"), ge=0)
     vrmaxcashback: Decimal | None = Field(default=None, ge=0)
-    nrdiapliberacao: int = Field(default=7, ge=0)
+    nrdiapliberacao: int = Field(default=7, ge=7)
     nrdiavalidade: int = Field(default=90, ge=1)
     permiteusoparcial: str = "S"
     pcmaxusocompra: Decimal = Field(default=Decimal("30"), gt=0, le=100)

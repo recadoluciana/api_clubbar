@@ -20,11 +20,11 @@ def dinheiro(valor) -> Decimal:
     return Decimal(str(valor or 0)).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
 
 
-def calcular_liberacao_cashback(dias_liberacao, *, agora: datetime | None = None) -> tuple[datetime, bool]:
-    """Retorna a data de liberação e se o crédito deve ficar disponível agora."""
-    dias = int(dias_liberacao or 0)
+def calcular_liberacao_cashback(dias_liberacao, *, agora: datetime | None = None) -> datetime:
+    """Garante o prazo mínimo de sete dias antes de liberar o crédito."""
+    dias = max(7, int(dias_liberacao if dias_liberacao is not None else 7))
     referencia = agora or datetime.now()
-    return referencia + timedelta(days=dias), dias == 0
+    return referencia + timedelta(days=dias)
 
 
 def obter_ou_criar_config(db: Session, organizacao_id: int, loja_id: int, *, ativo: bool = False, percentual=0) -> CashbackConfig:
@@ -136,16 +136,14 @@ def gerar_cashback_venda(db: Session, venda_id: int) -> CashbackMovimento | None
     valor = sum(((dinheiro(item.vrunititvenda) * int(item.qtitvenda or 1)) * dinheiro(produto.pccashback if produto.pccashback is not None else config.pccashback) / Decimal("100") for item, produto in itens), Decimal("0")).quantize(CENTAVOS)
     if config.vrmaxcashback is not None: valor = min(valor, dinheiro(config.vrmaxcashback))
     if valor <= 0: return None
-    liberacao, disponivel_imediatamente = calcular_liberacao_cashback(
-        config.nrdiapliberacao
-    )
+    liberacao = calcular_liberacao_cashback(config.nrdiapliberacao)
     movimento = CashbackMovimento(
         cliente_id=venda.cliente_id,
         organizacao_id=venda.organizacao_id,
         loja_id=venda.loja_id,
         venda_origem_id=venda_id,
         tipomovimento="CREDITO",
-        sitcashback="DISPONIVEL" if disponivel_imediatamente else "PENDENTE",
+        sitcashback="PENDENTE",
         pcaplicado=config.pccashback,
         vrbase=base,
         vrcashback=valor,
@@ -155,10 +153,7 @@ def gerar_cashback_venda(db: Session, venda_id: int) -> CashbackMovimento | None
     )
     db.add(movimento)
     saldo = obter_ou_criar_saldo(db, venda.cliente_id, venda.organizacao_id, venda.loja_id, bloquear=True)
-    if disponivel_imediatamente:
-        saldo.vrdisponivel = dinheiro(saldo.vrdisponivel) + valor
-    else:
-        saldo.vrpendente = dinheiro(saldo.vrpendente) + valor
+    saldo.vrpendente = dinheiro(saldo.vrpendente) + valor
     return movimento
 
 
