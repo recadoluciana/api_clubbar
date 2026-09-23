@@ -59,7 +59,7 @@ A criação ou aprovação da subconta e a liberação para publicar vendas pode
 As partes tratarão dados pessoais apenas para as finalidades da parceria e observarão a legislação aplicável de proteção de dados. Documentos e selfies exigidos para validação financeira serão enviados diretamente ao ambiente seguro do meio de pagamento quando aplicável.
 
 11. SUSPENSÃO E ENCERRAMENTO
-O Clubbar poderá suspender o acesso em caso de fraude, risco operacional, obrigação legal, inadimplência ou descumprimento contratual. Este contrato vigora por prazo indeterminado e pode ser encerrado por qualquer parte, sem prejuízo das obrigações já constituídas.
+O Clubbar poderá suspender o acesso em caso de fraude, risco operacional, obrigação legal, inadimplência ou descumprimento contratual. Este contrato vigora por prazo indeterminado e pode ser encerrado por qualquer parte, sem prejuízo das obrigações já constituídas. Com aviso prévio de 30 dias.
 
 12. MANUTENÇÕES CORRETIVAS
 São manutenções corretivas aquelas destinadas a corrigir erros ou falhas nas funcionalidades existentes dos aplicativos e da plataforma Clubbar. O ESTABELECIMENTO PARCEIRO poderá relatar essas ocorrências pelos canais de suporte, fornecendo as informações necessárias à análise. O Clubbar analisará os relatos e corrigirá as falhas confirmadas sob sua responsabilidade, sem cobrança adicional pela correção, em prazo razoável e tecnicamente viável, considerando a gravidade, o impacto, a complexidade, as dependências de terceiros e a capacidade operacional da empresa. O parceiro será informado sobre o andamento e, quando possível, sobre a previsão de solução, respeitados os prazos legais aplicáveis.
