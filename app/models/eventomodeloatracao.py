@@ -21,7 +21,6 @@ class EventoModeloAtracao(Base):
         index=True,
     )
     ordem = Column(Integer, nullable=False, default=1)
-    nrminutoinicio = Column(Integer, nullable=False, default=0)
     nrminutoduracao = Column(Integer, nullable=False, default=120)
 
     atracao = relationship("Atracao")

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 import app.models as app_models
 from app.core.config import APP_ENV, UPLOAD_DIR
@@ -263,6 +263,46 @@ def garantir_aviso_previo_no_contrato_padrao() -> None:
         logger.exception("Não foi possível atualizar o aviso prévio do contrato padrão")
     finally:
         db.close()
+
+
+@app.on_event("startup")
+def remover_inicio_relativo_das_atracoes_padrao() -> None:
+    """Remove a coluna obsoleta após a publicação da programação sequencial."""
+    try:
+        inspector = inspect(engine)
+        if "eventomodeloatracao" not in inspector.get_table_names():
+            return
+        colunas = {
+            coluna["name"]
+            for coluna in inspector.get_columns("eventomodeloatracao")
+        }
+        if "nrminutoinicio" not in colunas:
+            return
+
+        verificacoes = inspector.get_check_constraints("eventomodeloatracao")
+        with engine.begin() as conexao:
+            for verificacao in verificacoes:
+                expressao = (verificacao.get("sqltext") or "").lower()
+                nome = verificacao.get("name")
+                if nome and "nrminutoinicio" in expressao:
+                    nome_seguro = nome.replace("`", "``")
+                    conexao.execute(
+                        text(
+                            "ALTER TABLE eventomodeloatracao "
+                            f"DROP CHECK `{nome_seguro}`"
+                        )
+                    )
+            conexao.execute(
+                text(
+                    "ALTER TABLE eventomodeloatracao "
+                    "DROP COLUMN nrminutoinicio"
+                )
+            )
+        logger.info("Campo de início relativo removido das atrações padrão.")
+    except Exception:
+        logger.exception(
+            "Não foi possível remover o campo de início relativo das atrações padrão"
+        )
 
 @app.get("/health")
 def health():
