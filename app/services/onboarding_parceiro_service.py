@@ -16,5 +16,9 @@ def validar_publicacao_loja(db: Session, loja_id: int) -> None:
     if not titular or titular.status_asaas != 'APROVADO':
         raise HTTPException(
             status_code=409,
-            detail='Este estabelecimento está temporariamente indisponível para compras. Tente novamente mais tarde.',
+            detail=(
+                'ASAAS_PENDENTE: este estabelecimento ainda não pode receber compras porque '
+                'a conta de recebimentos no Asaas não foi criada ou ainda não está aprovada. '
+                'No Clubbar Partner, acesse Titular financeiro para concluir o cadastro.'
+            ),
         )
