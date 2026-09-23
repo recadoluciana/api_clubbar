@@ -22,6 +22,8 @@ from app.models.cliente import Cliente
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.implantacao_service import reconciliar_cobranca_implantacao
 from app.services.asaas_service import buscar_customer_asaas
+from app.services.asaas_split_service import obter_conta_asaas_da_loja
+from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
 from app.core.config import (
     ASAAS_API_KEY,
     ASAAS_WEBHOOK_TOKEN,
@@ -169,13 +171,6 @@ async def asaas_webhook(
             "status": cobranca_implantacao.status,
         }
 
-    print('[ASAAS WEBHOOK][NAO PROCESSADO]', body.get('event'))
-    return {
-        'ok': True,
-        'ignored': True,
-        'reason': 'Confirmacao realizada somente por retorno ou consulta',
-    }
-
     try:
         evento = str(body.get("event") or "").upper()
 
@@ -242,7 +237,24 @@ async def asaas_webhook(
                 "externalReference": external_reference,
             }
 
-        carrinho_id = int(registro_checkout.carrinho_id)
+        carrinho_id = (
+            int(registro_checkout.carrinho_id)
+            if registro_checkout.carrinho_id is not None
+            else None
+        )
+        reserva_ingresso_id = (
+            int(registro_checkout.reserva_ingresso_id)
+            if registro_checkout.reserva_ingresso_id is not None
+            else None
+        )
+        if carrinho_id is None and reserva_ingresso_id is None:
+            return {
+                "ok": True,
+                "ignored": True,
+                "msg": "Webhook sem compra vinculada",
+                "event": evento,
+                "payment_id": payment_id,
+            }
         referencia_registrada = str(registro_checkout.external_reference or "").strip()
         if external_reference and referencia_registrada and external_reference != referencia_registrada:
             return {
@@ -256,7 +268,9 @@ async def asaas_webhook(
 
         external_reference = referencia_registrada or external_reference
 
-        pix_direto = bool(registro_checkout.pix_qr_code_id)
+        pix_direto = bool(
+            registro_checkout.payment_id or registro_checkout.pix_qr_code_id
+        )
         if not evento_confirma_pagamento_asaas(
             evento,
             status,
@@ -275,6 +289,7 @@ async def asaas_webhook(
                 "event": evento,
                 "status": status,
                 "carrinho_id": carrinho_id,
+                "reserva_ingresso_id": reserva_ingresso_id,
             }
 
         valor_recebido = Decimal(str(payment.get("value") or 0)).quantize(Decimal("0.01"))
@@ -285,60 +300,79 @@ async def asaas_webhook(
                 detail="Valor recebido pelo Asaas diverge da venda",
             )
 
-        print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
-
-        validar_confirmacao_asaas_checkout(
-            db,
-            checkout=registro_checkout,
-            pagamento=payment,
-            origem_confirmacao='WEBHOOK',
-        )
-        if not registro_checkout.dsorigemconfirmacao:
-            registro_checkout.dsorigemconfirmacao = 'WEBHOOK'
-            registro_checkout.dtconfirmacao = datetime.now()
-
-        possui_snapshot = db.query(CheckoutAsaasItem).filter(
-            CheckoutAsaasItem.checkout_asaas_id
-            == registro_checkout.checkout_asaas_id
-        ).first() is not None
-        if possui_snapshot:
-            resultado = await criar_venda_paga_por_checkout_snapshot(
+        if reserva_ingresso_id is not None:
+            print("[ASAAS WEBHOOK] confirmando reserva:", reserva_ingresso_id)
+            resultado = finalizar_reserva_paga(
                 db,
-                checkout_asaas_id=registro_checkout.checkout_asaas_id,
-                origem_confirmacao='WEBHOOK',
-                gateway="ASAAS",
+                reserva_id=reserva_ingresso_id,
+                checkout_id=registro_checkout.checkout_asaas_id,
                 pagamento=payment,
             )
         else:
-            resultado = await criar_venda_paga_por_carrinho_gateway(
+            print("[ASAAS WEBHOOK] criando venda carrinho:", carrinho_id)
+            validar_confirmacao_asaas_checkout(
                 db,
-                carrinho_id=carrinho_id,
-                gateway="ASAAS",
+                checkout=registro_checkout,
                 pagamento=payment,
-                metodo_pagamento=None,
+                origem_confirmacao='WEBHOOK',
             )
+            possui_snapshot = db.query(CheckoutAsaasItem).filter(
+                CheckoutAsaasItem.checkout_asaas_id
+                == registro_checkout.checkout_asaas_id
+            ).first() is not None
+            if possui_snapshot:
+                resultado = await criar_venda_paga_por_checkout_snapshot(
+                    db,
+                    checkout_asaas_id=registro_checkout.checkout_asaas_id,
+                    origem_confirmacao='WEBHOOK',
+                    gateway="ASAAS",
+                    pagamento=payment,
+                )
+            else:
+                resultado = await criar_venda_paga_por_carrinho_gateway(
+                    db,
+                    carrinho_id=carrinho_id,
+                    gateway="ASAAS",
+                    pagamento=payment,
+                    metodo_pagamento=None,
+                )
         venda_id = resultado.get("venda_id")
         if venda_id:
             registro_checkout.venda_id = int(venda_id)
 
         customer_id = payment.get("customer")
 
-        if customer_id and registro_checkout and ASAAS_API_KEY:
-            customer = await buscar_customer_asaas(str(customer_id), ASAAS_API_KEY)
-            registrar_pagador_asaas(db, registro_checkout, customer, payment_id)
-
-            cliente = (
-                db.query(Cliente)
-                .filter(Cliente.cliente_id == registro_checkout.cliente_id)
-                .first()
-            )
-
-            if cliente:
-                atualizar_cliente_com_customer_asaas(db, cliente, customer)
+        if customer_id and registro_checkout:
+            try:
+                api_key_pagador = ASAAS_API_KEY
+                if registro_checkout.asaas_wallet_loja:
+                    api_key_pagador, _ = obter_conta_asaas_da_loja(
+                        db, registro_checkout.loja_id
+                    )
+                if api_key_pagador:
+                    customer = await buscar_customer_asaas(
+                        str(customer_id), api_key_pagador
+                    )
+                    registrar_pagador_asaas(
+                        db, registro_checkout, customer, payment_id
+                    )
+                    cliente = (
+                        db.query(Cliente)
+                        .filter(
+                            Cliente.cliente_id == registro_checkout.cliente_id
+                        )
+                        .first()
+                    )
+                    if cliente:
+                        atualizar_cliente_com_customer_asaas(db, cliente, customer)
+            except Exception as exc:
+                print("[ASAAS WEBHOOK] Pagador não sincronizado:", repr(exc))
         if registro_checkout:
             registro_checkout.status = "PAID"
             if payment_id:
                 registro_checkout.payment_id = str(payment_id)
+            registro_checkout.dsorigemconfirmacao = "WEBHOOK"
+            registro_checkout.dtconfirmacao = datetime.now()
 
         db.commit()
 
@@ -348,6 +382,7 @@ async def asaas_webhook(
             "event": evento,
             "status": status,
             "carrinho_id": carrinho_id,
+            "reserva_ingresso_id": reserva_ingresso_id,
             "checkout_id": checkout_id,
             "payment_id": payment_id,
             "resultado": resultado,

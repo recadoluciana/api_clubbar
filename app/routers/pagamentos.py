@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
 from app.schemas.pagamentos import PagarNovoIn
 
 from app.models.carrinho import Carrinho
@@ -49,6 +50,8 @@ from app.services.asaas_service import (
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
+from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
+from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 
@@ -362,6 +365,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
         )
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
+        await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(
             db, cliente_id=payload.cliente_id, loja_id=payload.loja_id,
             api_key=api_key_loja,
@@ -412,7 +416,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
             'pix_qr_code_id': None,
             'pix_copia_cola': qr['payload'],
             'encoded_image': qr.get('encodedImage'),
-            'expiration_date': (agora + timedelta(minutes=5)).isoformat(),
+            'expiration_date': iso_utc(registro.pix_expiration_date),
             'valor_total': valor_cobrado,
             'valor_original': valor_total,
             'cashback_utilizado': float(valor_cashback),
@@ -485,6 +489,7 @@ async def pagar_asaas(
             raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado")
 
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
+        await garantir_webhook_pagamentos_asaas(api_key_loja)
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
             itens_recalculados
@@ -781,3 +786,57 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
         if pago
         else 0.0,
     }
+
+
+@router.post("/asaas/reconciliar-pendentes")
+async def reconciliar_pagamentos_pendentes_asaas(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    """Confere compras pagas enquanto o aplicativo estava fechado."""
+    if payload.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente")
+    try:
+        cliente_id = int(payload.get("sub"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=403, detail="Cliente inválido") from exc
+
+    pendentes = (
+        db.query(CheckoutAsaas)
+        .filter(
+            CheckoutAsaas.cliente_id == cliente_id,
+            CheckoutAsaas.venda_id.is_(None),
+            CheckoutAsaas.status.notin_(["PAID", "CANCELLED", "CANCELED", "EXPIRED"]),
+        )
+        .order_by(CheckoutAsaas.checkout_asaas_id.asc())
+        .limit(20)
+        .all()
+    )
+    confirmados = []
+    for checkout in pendentes:
+        try:
+            if checkout.reserva_ingresso_id:
+                from app.routers.reservas_ingressos import status_reserva
+
+                resultado = await status_reserva(
+                    int(checkout.reserva_ingresso_id), cliente_id, db
+                )
+                status_pagamento = str(
+                    resultado.get("status_pagamento") or ""
+                ).upper()
+            else:
+                resultado = await status_checkout_asaas(checkout.checkout_id, db)
+                status_pagamento = str(resultado.get("status") or "").upper()
+            if status_pagamento == "PAGO":
+                confirmados.append(
+                    {
+                        "pagamento_id": checkout.checkout_id,
+                        "venda_id": resultado.get("venda_id"),
+                    }
+                )
+        except HTTPException as exc:
+            # Uma tentativa pendente não pode impedir a reconciliação das demais.
+            db.rollback()
+            print("[ASAAS RECONCILIACAO] Pendente não conciliado:", exc.detail)
+
+    return {"ok": True, "pagamentos_confirmados": confirmados}
