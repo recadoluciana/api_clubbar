@@ -37,7 +37,7 @@ def imagem_evento_modelo(db: Session, modelo: EventoModelo) -> str | None:
             Atracao.urlbanneratracao.isnot(None),
             Atracao.urlbanneratracao != "",
         )
-        .order_by(EventoModeloAtracao.ordem, EventoModeloAtracao.nrminutoinicio)
+        .order_by(EventoModeloAtracao.ordem)
         .first()
     )
     return resultado[0] if resultado else None

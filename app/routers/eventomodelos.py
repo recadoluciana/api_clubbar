@@ -39,7 +39,6 @@ def _atracao_item(x):
         "eventomodelo_id": x.eventomodelo_id,
         "atracao_id": x.atracao_id,
         "ordem": x.ordem,
-        "nrminutoinicio": x.nrminutoinicio,
         "nrminutoduracao": x.nrminutoduracao,
         "atracao": {"atracao_id": x.atracao.atracao_id, "nmatracao": x.atracao.nmatracao},
     }
@@ -48,21 +47,16 @@ def _validar_atracao_modelo(db, modelo, dados, ignorar_id=None):
     atracao = db.query(Atracao).filter(Atracao.atracao_id == dados["atracao_id"], Atracao.organizacao_id == modelo.organizacao_id).first()
     if not atracao:
         raise HTTPException(404, "Atração não encontrada.")
-    inicio = dados["nrminutoinicio"]
-    fim = inicio + dados["nrminutoduracao"]
     existentes = db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodelo_id == modelo.eventomodelo_id)
     if ignorar_id is not None:
         existentes = existentes.filter(EventoModeloAtracao.eventomodeloatracao_id != ignorar_id)
-    for item in existentes.all():
-        if inicio < item.nrminutoinicio + item.nrminutoduracao and fim > item.nrminutoinicio:
-            raise HTTPException(409, "Já existe uma atração padrão nesse horário.")
     if existentes.filter(EventoModeloAtracao.ordem == dados["ordem"]).first():
         raise HTTPException(409, "Já existe uma atração com esta ordem.")
 
 @router.get("/{modelo_id}/atracoes")
 def listar_atracoes_modelo(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     modelo=_modelo(db,modelo_id,_org(payload));validar_gerenciamento_organizacao(payload,modelo.organizacao_id)
-    itens=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem,EventoModeloAtracao.nrminutoinicio).all()
+    itens=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodelo_id==modelo_id).order_by(EventoModeloAtracao.ordem).all()
     return [_atracao_item(x) for x in itens]
 
 @router.get("/{modelo_id}/atracoes-disponiveis")
@@ -84,7 +78,7 @@ def atualizar_atracao_modelo(item_id:int,dados:EventoModeloAtracaoUpdate,payload
     item=db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodeloatracao_id==item_id).first()
     if not item: raise HTTPException(404,"Atração padrão não encontrada.")
     modelo=_modelo(db,item.eventomodelo_id,_org(payload));validar_gerenciamento_organizacao(payload,modelo.organizacao_id)
-    valores={"atracao_id":item.atracao_id,"ordem":item.ordem,"nrminutoinicio":item.nrminutoinicio,"nrminutoduracao":item.nrminutoduracao}
+    valores={"atracao_id":item.atracao_id,"ordem":item.ordem,"nrminutoduracao":item.nrminutoduracao}
     valores.update(dados.model_dump(exclude_none=True));_validar_atracao_modelo(db,modelo,valores,item_id)
     for chave,valor in valores.items():setattr(item,chave,valor)
     db.commit();item=db.query(EventoModeloAtracao).options(joinedload(EventoModeloAtracao.atracao)).filter(EventoModeloAtracao.eventomodeloatracao_id==item_id).first();return _atracao_item(item)
@@ -147,9 +141,11 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
         evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,nmlocalevento=dados.local or x.nmlocalevento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
         db.add(evento);db.flush()
+        inicio_atracao = inicio
         for padrao in atracoes_padrao:
-            inicio_atracao=inicio+timedelta(minutes=padrao.nrminutoinicio)
-            db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=inicio_atracao+timedelta(minutes=padrao.nrminutoduracao)))
+            fim_atracao = inicio_atracao + timedelta(minutes=padrao.nrminutoduracao)
+            db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=fim_atracao))
+            inicio_atracao = fim_atracao
         if dados.capacidade > int(getattr(loja,"qtcpdloja",0) or 0): raise HTTPException(422,"A capacidade da sessão não pode ultrapassar a capacidade do estabelecimento.")
         criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=loja.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=Decimal(str(dados.preco_inteira)) if dados.preco_inteira is not None else x.vrprecolote,capacidade=dados.capacidade,nome_setor=dados.nome_setor_inicial)
         ids.append(evento.evento_id)

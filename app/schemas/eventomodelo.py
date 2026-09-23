@@ -30,12 +30,10 @@ class AgendarEventoModeloIn(BaseModel):
 class EventoModeloAtracaoIn(BaseModel):
     atracao_id: int
     ordem: int = Field(ge=1, le=100)
-    nrminutoinicio: int = Field(ge=0, le=10080)
     nrminutoduracao: int = Field(gt=0, le=1440)
 
 
 class EventoModeloAtracaoUpdate(BaseModel):
     atracao_id: int | None = None
     ordem: int | None = Field(default=None, ge=1, le=100)
-    nrminutoinicio: int | None = Field(default=None, ge=0, le=10080)
     nrminutoduracao: int | None = Field(default=None, gt=0, le=1440)
