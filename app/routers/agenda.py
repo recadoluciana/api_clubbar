@@ -1,7 +1,6 @@
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
@@ -127,13 +126,11 @@ def listar(loja_id:int,ano:int=Query(ge=2000,le=2200),mes:int=Query(ge=1,le=12),
     try: org=int(payload["organizacao_id"])
     except (KeyError,TypeError,ValueError): raise HTTPException(403,"Organização não identificada no login.")
     inicio=datetime(ano,mes,1); fim=datetime(ano+(mes==12),1 if mes==12 else mes+1,1)
-    eventos=(db.query(Evento).outerjoin(EventoAtracao,EventoAtracao.evento_id==Evento.evento_id).filter(
+    eventos=(db.query(Evento).filter(
         Evento.organizacao_id==org, Evento.loja_id==loja_id,
-        or_(
-            (Evento.dtinicioevento<fim) & or_(Evento.dtfimevento>=inicio,Evento.dtinicioevento>=inicio),
-            (EventoAtracao.dtinicioatracao>=inicio) & (EventoAtracao.dtinicioatracao<fim),
-        ),
-    ).distinct().order_by(Evento.dtinicioevento).all())
+        Evento.dtinicioevento>=inicio,
+        Evento.dtinicioevento<fim,
+    ).order_by(Evento.dtinicioevento).all())
     saida=[]
     for e in eventos:
         ps=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).filter(EventoAtracao.evento_id==e.evento_id).order_by(EventoAtracao.dtinicioatracao).all()
