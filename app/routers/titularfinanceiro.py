@@ -64,6 +64,11 @@ class TitularFinanceiroIn(BaseModel):
         return "".join(c for c in valor if c.isdigit())
 
 
+class DadosAtivacaoAsaasIn(BaseModel):
+    dtnascimento: date | None = None
+    vrfaturamentomensal: Decimal = Field(gt=0)
+
+
 def _validar_escopo(payload: dict, organizacao_id: int) -> None:
     validar_gerenciamento_organizacao(payload, organizacao_id)
     if int(payload.get("organizacao_id") or 0) != organizacao_id:
@@ -355,6 +360,36 @@ def reativar_titular(
     return _out(titular)
 
 
+@router.patch(
+    "/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/dados-ativacao-asaas"
+)
+def atualizar_dados_ativacao_asaas(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    dados: DadosAtivacaoAsaasIn,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    """Registra os dados obrigatórios antes de criar a subconta Asaas."""
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+        TitularFinanceiro.organizacao_id == organizacao_id,
+    ).first()
+    if not titular:
+        raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+    if titular.asaas_account_id:
+        raise HTTPException(409, "A subconta Asaas deste titular já foi criada")
+    if titular.tipotitular == "PF" and dados.dtnascimento is None:
+        raise HTTPException(422, "Data de nascimento é obrigatória para pessoa física")
+
+    titular.dtnascimento = dados.dtnascimento if titular.tipotitular == "PF" else None
+    titular.vrfaturamentomensal = dados.vrfaturamentomensal
+    db.commit()
+    db.refresh(titular)
+    return _out(titular)
+
+
 async def _localizar_subconta_existente(documento: str, email: str) -> dict | None:
     """Localiza com segurança uma subconta da conta-pai antes de criar outra."""
     por_documento = await _asaas(
@@ -564,6 +599,16 @@ async def ativar_recebimentos(
             sincronizar_integracao_asaas_da_loja(db, loja, titular)
         db.commit()
         return _out(titular)
+    if titular.tipotitular == "PF" and titular.dtnascimento is None:
+        raise HTTPException(
+            422,
+            "Informe a data de nascimento do titular financeiro antes de ativar a subconta Asaas.",
+        )
+    if not titular.vrfaturamentomensal or titular.vrfaturamentomensal <= 0:
+        raise HTTPException(
+            422,
+            "Informe a renda ou o faturamento mensal estimado antes de ativar a subconta Asaas.",
+        )
     documento = titular.cpfcnpj
     conta = await _localizar_subconta_existente(documento, titular.email)
     conta_reutilizada = conta is not None
