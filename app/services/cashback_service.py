@@ -20,6 +20,13 @@ def dinheiro(valor) -> Decimal:
     return Decimal(str(valor or 0)).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
 
 
+def calcular_liberacao_cashback(dias_liberacao, *, agora: datetime | None = None) -> tuple[datetime, bool]:
+    """Retorna a data de liberação e se o crédito deve ficar disponível agora."""
+    dias = int(dias_liberacao or 0)
+    referencia = agora or datetime.now()
+    return referencia + timedelta(days=dias), dias == 0
+
+
 def obter_ou_criar_config(db: Session, organizacao_id: int, loja_id: int, *, ativo: bool = False, percentual=0) -> CashbackConfig:
     config = db.query(CashbackConfig).filter(CashbackConfig.loja_id == loja_id).first()
     if not config:
@@ -129,11 +136,29 @@ def gerar_cashback_venda(db: Session, venda_id: int) -> CashbackMovimento | None
     valor = sum(((dinheiro(item.vrunititvenda) * int(item.qtitvenda or 1)) * dinheiro(produto.pccashback if produto.pccashback is not None else config.pccashback) / Decimal("100") for item, produto in itens), Decimal("0")).quantize(CENTAVOS)
     if config.vrmaxcashback is not None: valor = min(valor, dinheiro(config.vrmaxcashback))
     if valor <= 0: return None
-    agora = datetime.now(); liberacao = agora + timedelta(days=int(config.nrdiapliberacao or 7))
-    movimento = CashbackMovimento(cliente_id=venda.cliente_id, organizacao_id=venda.organizacao_id, loja_id=venda.loja_id, venda_origem_id=venda_id, tipomovimento="CREDITO", sitcashback="PENDENTE", pcaplicado=config.pccashback, vrbase=base, vrcashback=valor, descricao=f"Cashback da compra #{venda_id}", dtliberacao=liberacao, dtvalidade=liberacao + timedelta(days=int(config.nrdiavalidade or 90)))
+    liberacao, disponivel_imediatamente = calcular_liberacao_cashback(
+        config.nrdiapliberacao
+    )
+    movimento = CashbackMovimento(
+        cliente_id=venda.cliente_id,
+        organizacao_id=venda.organizacao_id,
+        loja_id=venda.loja_id,
+        venda_origem_id=venda_id,
+        tipomovimento="CREDITO",
+        sitcashback="DISPONIVEL" if disponivel_imediatamente else "PENDENTE",
+        pcaplicado=config.pccashback,
+        vrbase=base,
+        vrcashback=valor,
+        descricao=f"Cashback da compra #{venda_id}",
+        dtliberacao=liberacao,
+        dtvalidade=liberacao + timedelta(days=int(config.nrdiavalidade or 90)),
+    )
     db.add(movimento)
     saldo = obter_ou_criar_saldo(db, venda.cliente_id, venda.organizacao_id, venda.loja_id, bloquear=True)
-    saldo.vrpendente = dinheiro(saldo.vrpendente) + valor
+    if disponivel_imediatamente:
+        saldo.vrdisponivel = dinheiro(saldo.vrdisponivel) + valor
+    else:
+        saldo.vrpendente = dinheiro(saldo.vrpendente) + valor
     return movimento
 
 

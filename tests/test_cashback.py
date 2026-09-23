@@ -1,10 +1,11 @@
 import unittest
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from pydantic import ValidationError
 
 from app.schemas.produto import ProdutoCreate
-from app.services.cashback_service import dinheiro
+from app.services.cashback_service import calcular_liberacao_cashback, dinheiro
 
 
 class CashbackTest(unittest.TestCase):
@@ -19,6 +20,20 @@ class CashbackTest(unittest.TestCase):
 
     def test_arredonda_valores_monetarios_em_centavos(self):
         self.assertEqual(dinheiro("10.125"), Decimal("10.13"))
+
+    def test_libera_cashback_imediatamente_quando_prazo_e_zero(self):
+        agora = datetime(2026, 9, 23, 12, 0)
+        liberacao, disponivel = calcular_liberacao_cashback(0, agora=agora)
+
+        self.assertTrue(disponivel)
+        self.assertEqual(liberacao, agora)
+
+    def test_mantem_cashback_pendente_ate_o_prazo_configurado(self):
+        agora = datetime(2026, 9, 23, 12, 0)
+        liberacao, disponivel = calcular_liberacao_cashback(7, agora=agora)
+
+        self.assertFalse(disponivel)
+        self.assertEqual(liberacao, agora + timedelta(days=7))
 
     def test_produto_aceita_percentual_opcional(self):
         self.assertIsNone(self._produto().pccashback)

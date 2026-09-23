@@ -409,6 +409,7 @@ async def criar_venda_paga_por_checkout_snapshot(
             payload=pagamento,
             finalizar_carrinho=False,
         )
+        cashback_gerado = gerar_cashback_venda(db, int(venda_existente.venda_id))
         _finalizar_carrinho_pago(db, int(checkout.carrinho_id))
         checkout.venda_id = venda_existente.venda_id
         checkout.payment_id = payment_id or checkout.payment_id
@@ -425,6 +426,9 @@ async def criar_venda_paga_por_checkout_snapshot(
             'metodo_pagamento': metodo,
             'payment_id': payment_id,
             'resultado': resultado,
+            'cashback_gerado': float(cashback_gerado.vrcashback or 0)
+            if cashback_gerado
+            else 0.0,
         }
 
     venda = Venda(
@@ -479,6 +483,7 @@ async def criar_venda_paga_por_checkout_snapshot(
         payload=pagamento,
         finalizar_carrinho=True,
     )
+    cashback_gerado = gerar_cashback_venda(db, int(venda.venda_id))
     checkout.venda_id = venda.venda_id
     checkout.payment_id = payment_id or checkout.payment_id
     checkout.dsorigemconfirmacao = origem_confirmacao.upper()
@@ -493,4 +498,7 @@ async def criar_venda_paga_por_checkout_snapshot(
         "metodo_pagamento": metodo,
         "payment_id": payment_id,
         "resultado": resultado,
+        "cashback_gerado": float(cashback_gerado.vrcashback or 0)
+        if cashback_gerado
+        else 0.0,
     }
