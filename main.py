@@ -12,6 +12,7 @@ import app.models as app_models
 from app.core.config import APP_ENV, UPLOAD_DIR
 from app.core.responses import ClubbarJSONResponse
 from app.database import SessionLocal, engine
+from app.models.contratopadrao import ContratoPadrao
 from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
@@ -231,6 +232,35 @@ def garantir_politica_compra_inicial() -> None:
         db.rollback()
         logger.exception("Não foi possível preparar a política de compra inicial")
         raise
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def garantir_aviso_previo_no_contrato_padrao() -> None:
+    """Inclui a redação aprovada na cláusula 11 dos modelos ainda vigentes."""
+    texto_anterior = (
+        "Este contrato vigora por prazo indeterminado e pode ser encerrado por "
+        "qualquer parte, sem prejuízo das obrigações já constituídas."
+    )
+    texto_atualizado = f"{texto_anterior} Com aviso prévio de 30 dias."
+    db = SessionLocal()
+    try:
+        contratos = db.query(ContratoPadrao).filter(
+            ContratoPadrao.sitcontrato == "ATIVO",
+            ContratoPadrao.conteudomodelo.contains(texto_anterior),
+            ~ContratoPadrao.conteudomodelo.contains("Com aviso prévio de 30 dias."),
+        ).all()
+        for contrato in contratos:
+            contrato.conteudomodelo = contrato.conteudomodelo.replace(
+                texto_anterior, texto_atualizado
+            )
+        if contratos:
+            db.commit()
+            logger.info("Aviso prévio de 30 dias incluído no contrato padrão ativo.")
+    except Exception:
+        db.rollback()
+        logger.exception("Não foi possível atualizar o aviso prévio do contrato padrão")
     finally:
         db.close()
 
