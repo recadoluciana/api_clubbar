@@ -44,6 +44,7 @@ from app.services.asaas_service import (
     criar_cobranca_pix_asaas,
     obter_ou_criar_customer_asaas_loja,
     buscar_pagamento_confirmado_por_id,
+    confirmar_pagamento_sandbox_asaas,
     cancelar_pagamento_asaas,
     cancelar_checkout_asaas,
     excluir_qrcode_pix_estatico_asaas,
@@ -645,6 +646,24 @@ async def consultar_status_checkout_asaas(
     if not checkout:
         raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
     exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    return await status_checkout_asaas(checkout_id, db)
+
+
+@router.post("/asaas/sandbox/confirmar/{checkout_id}")
+async def confirmar_checkout_sandbox_asaas(
+    checkout_id: str,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Rota autenticada para homologar PIX sem movimentar dinheiro real."""
+    checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_id == checkout_id).first()
+    if not checkout:
+        raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
+    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    if not checkout.payment_id:
+        raise HTTPException(status_code=422, detail="Esta tentativa não possui cobrança PIX")
+    api_key_loja, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
+    await confirmar_pagamento_sandbox_asaas(checkout.payment_id, api_key_loja)
     return await status_checkout_asaas(checkout_id, db)
 
 
