@@ -664,6 +664,10 @@ async def confirmar_checkout_sandbox_asaas(
         raise HTTPException(status_code=422, detail="Esta tentativa não possui cobrança PIX")
     api_key_loja, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
     await confirmar_pagamento_sandbox_asaas(checkout.payment_id, api_key_loja)
+    # A confirmação pode acionar o webhook antes desta resposta. Recarrega o
+    # registro para não confundir uma venda já concluída com uma tentativa
+    # substituída.
+    db.refresh(checkout)
     return await status_checkout_asaas(checkout_id, db)
 
 
