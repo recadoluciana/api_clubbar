@@ -11,6 +11,7 @@ from app.models.itcarrinho import ItCarrinho
 from app.models.loja import Loja
 from app.models.pagvenda import PagVenda
 from app.models.venda import Venda
+from app.models.cashback_movimento import CashbackMovimento
 from app.services.venda_gateway_service import criar_venda_paga_por_checkout_snapshot
 
 
@@ -59,6 +60,8 @@ class _Db:
             return _Query(self.loja)
         if model is Venda:
             return _Query(self.venda)
+        if model is CashbackMovimento:
+            return _Query(None)
         raise AssertionError(f"Consulta inesperada: {model}")
 
     def add(self, objeto):
