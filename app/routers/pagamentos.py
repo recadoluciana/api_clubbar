@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
+from app.core.cliente_auth import exigir_cliente_autenticado
 from app.schemas.pagamentos import PagarNovoIn
 
 from app.models.carrinho import Carrinho
@@ -339,7 +340,10 @@ def _salvar_snapshot_checkout(
 
 
 @router.post('/pix')
-async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db)):
+async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if payload.usuario_id is not None or payload.origem_checkout != "CLIENT":
+        raise HTTPException(status_code=403, detail="Origem de pagamento inválida")
     try:
         carrinho = get_carrinho(
             db, payload.cliente_id, payload.loja_id, payload.usuario_id
@@ -437,6 +441,17 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db))
 
 
 @router.post("/pagar-asaas")
+async def pagar_asaas_cliente(
+    payload: PagarNovoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if payload.usuario_id is not None or payload.origem_checkout != "CLIENT":
+        raise HTTPException(status_code=403, detail="Origem de pagamento inválida")
+    return await pagar_asaas(payload, db)
+
+
 async def pagar_asaas(
     payload: PagarNovoIn,
     db: Session = Depends(get_db),
@@ -595,7 +610,9 @@ async def pagamento_pendente(
     organizacao_id: int,
     loja_id: int,
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
+    exigir_cliente_autenticado(usuario, cliente_id)
     venda = (
         db.query(Venda)
         .filter(
@@ -619,6 +636,18 @@ async def pagamento_pendente(
 
 
 @router.get("/asaas/status/{checkout_id}")
+async def consultar_status_checkout_asaas(
+    checkout_id: str,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_id == checkout_id).first()
+    if not checkout:
+        raise HTTPException(status_code=404, detail="Checkout Asaas nao encontrado")
+    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    return await status_checkout_asaas(checkout_id, db)
+
+
 async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db)):
     checkout_consultado = (
         db.query(CheckoutAsaas)

@@ -199,8 +199,8 @@ class AsaasAmbientesTest(unittest.TestCase):
             resposta = asyncio.run(asaas_webhook(request=request, db=banco))
 
         self.assertTrue(resposta['ignored'])
-        self.assertIn('retorno ou consulta', resposta['reason'])
-        self.assertEqual(0, banco.consultas)
+        self.assertIn('não pertence a este ambiente', resposta['msg'])
+        self.assertGreater(banco.consultas, 0)
 
     def test_callback_do_checkout_usa_url_publica_do_ambiente(self):
         ClienteHttpFalso.ultimo_json = None

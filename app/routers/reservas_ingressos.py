@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.core.security import get_usuario_logado
+from app.core.cliente_auth import exigir_cliente_autenticado
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.checkout_asaas import CheckoutAsaas
@@ -43,7 +45,8 @@ def _saida(reserva: ReservaIngresso) -> dict:
 
 
 @router.post("")
-def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db)):
+def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
         reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, lotepreco_id=payload.lotepreco_id, tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
         db.commit()
@@ -58,10 +61,11 @@ def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{reserva_id}/participantes")
-def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate, db: Session = Depends(get_db)):
+def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
     if not reserva:
         raise HTTPException(404, "Reserva não encontrada")
+    exigir_cliente_autenticado(usuario, reserva.cliente_id)
     if reserva.sitreserva not in {"PREENCHENDO", "AGUARDANDO_PAGAMENTO"} or reserva.dtexpiracao <= datetime.now():
         reserva.sitreserva = "EXPIRADA"
         db.commit()
@@ -87,7 +91,8 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
 
 
 @router.delete("/{reserva_id}")
-def cancelar_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get_db)):
+def cancelar_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, cliente_id)
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id, ReservaIngresso.cliente_id == cliente_id).with_for_update().first()
     if not reserva:
         raise HTTPException(404, "Reserva não encontrada")
@@ -110,7 +115,8 @@ def _reserva_para_pagamento(db: Session, reserva_id: int, cliente_id: int) -> Re
 
 
 @router.post("/{reserva_id}/pix")
-async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db)):
+async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
@@ -131,7 +137,8 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
 
 
 @router.post("/{reserva_id}/checkout")
-async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db)):
+async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         cliente = db.query(Cliente).filter(Cliente.cliente_id == reserva.cliente_id).first()
@@ -151,6 +158,16 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
 
 
 @router.get("/{reserva_id}/status")
+async def consultar_status_reserva(
+    reserva_id: int,
+    cliente_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    exigir_cliente_autenticado(usuario, cliente_id)
+    return await status_reserva(reserva_id, cliente_id, db)
+
+
 async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get_db)):
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id, ReservaIngresso.cliente_id == cliente_id).first()
     if not reserva:
