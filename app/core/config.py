@@ -28,11 +28,16 @@ if not DATABASE_URL:
         )
 
 
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
+APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+JWT_SECRET = os.getenv("JWT_SECRET", "").strip()
+if APP_ENV in {"production", "prod"} and (
+    len(JWT_SECRET) < 32 or JWT_SECRET == "change-me"
+):
+    raise RuntimeError("JWT_SECRET seguro é obrigatório em produção")
+if not JWT_SECRET:
+    JWT_SECRET = "change-me"
 JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
-
-APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna").strip()
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "").strip()
