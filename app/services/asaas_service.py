@@ -310,6 +310,24 @@ async def buscar_pagamento_confirmado_por_id(payment_id: str, api_key: str) -> d
     } else None
 
 
+async def confirmar_pagamento_sandbox_asaas(payment_id: str, api_key: str) -> dict:
+    """Confirma uma cobrança somente no ambiente de homologação do Asaas."""
+    if "api-sandbox.asaas.com" not in ASAAS_BASE_URL:
+        raise HTTPException(404, "Confirmação de teste disponível somente no Sandbox")
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            f"{ASAAS_BASE_URL}/sandbox/payment/{payment_id}/confirm",
+            headers=_headers(api_key),
+        )
+    try:
+        data = response.json()
+    except Exception:
+        data = {"raw": response.text}
+    if response.status_code >= 400:
+        raise HTTPException(response.status_code, data)
+    return data
+
+
 async def cancelar_pagamento_asaas(payment_id: str, api_key: str) -> None:
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.delete(
