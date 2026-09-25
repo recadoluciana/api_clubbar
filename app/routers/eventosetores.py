@@ -32,11 +32,13 @@ def _item(x):
 def _atualizar_nomes_lotes_padrao(lotes, nome_anterior: str, nome_novo: str):
     """Mantém o nome automático do lote sincronizado com o setor.
 
-    Nomes que o parceiro escreveu manualmente não são alterados.
+    Só nomes no formato automático "Lote N - ..." são sincronizados.
     """
     for lote in lotes:
         nome_padrao_anterior = f"Lote {lote.nrlote} - {nome_anterior}"
-        if (lote.nmlote or "").strip() == nome_padrao_anterior:
+        prefixo_padrao = f"Lote {lote.nrlote} - "
+        nome_lote = (lote.nmlote or "").strip()
+        if nome_lote == nome_padrao_anterior or nome_lote.startswith(prefixo_padrao):
             lote.nmlote = f"Lote {lote.nrlote} - {nome_novo}"
 
 @router.get("/{evento_id}/setores")
@@ -72,8 +74,7 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     if dados.qtcapacidade < minimo_seguro:
         raise HTTPException(422, f"A capacidade não pode ser menor que {minimo_seguro}, pois há lotes, vendas ou reservas neste setor")
     for k,v in dados.model_dump().items():setattr(x,k,v)
-    if nome_anterior != nome_novo:
-        _atualizar_nomes_lotes_padrao(lotes, nome_anterior, nome_novo)
+    _atualizar_nomes_lotes_padrao(lotes, nome_anterior, nome_novo)
     db.commit();db.refresh(x);return _item(x)
 
 @router.delete("/setores/{setor_id}",status_code=204)
