@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from app.routers.eventolotes import _validar_programacao_vendas, atualizar_lote_evento
+from app.routers.eventosetores import _atualizar_nomes_lotes_padrao
 from app.schemas.eventolote import EventoLoteUpdate
 
 
@@ -175,6 +176,23 @@ class ProgramacaoDeVendasTest(unittest.TestCase):
             )
 
         self.assertEqual(422, erro.exception.status_code)
+
+
+class NomeDeSetorNoLoteTest(unittest.TestCase):
+    def test_renomeia_apenas_lotes_com_nome_padrao(self):
+        lote_padrao = Registro()
+        lote_padrao.nrlote = 1
+        lote_padrao.nmlote = "Lote 1 - Pista"
+        lote_personalizado = Registro()
+        lote_personalizado.nrlote = 2
+        lote_personalizado.nmlote = "Último lote promocional"
+
+        _atualizar_nomes_lotes_padrao(
+            [lote_padrao, lote_personalizado], "Pista", "Pista A"
+        )
+
+        self.assertEqual("Lote 1 - Pista A", lote_padrao.nmlote)
+        self.assertEqual("Último lote promocional", lote_personalizado.nmlote)
 
 
 if __name__ == "__main__":
