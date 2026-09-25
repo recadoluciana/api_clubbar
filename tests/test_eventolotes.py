@@ -194,6 +194,15 @@ class NomeDeSetorNoLoteTest(unittest.TestCase):
         self.assertEqual("Lote 1 - Pista A", lote_padrao.nmlote)
         self.assertEqual("Último lote promocional", lote_personalizado.nmlote)
 
+    def test_corrige_nome_automatico_gerado_antes_da_sincronizacao(self):
+        lote = Registro()
+        lote.nrlote = 1
+        lote.nmlote = "Lote 1 - Pista"
+
+        _atualizar_nomes_lotes_padrao([lote], "Pista A", "Pista A")
+
+        self.assertEqual("Lote 1 - Pista A", lote.nmlote)
+
 
 if __name__ == "__main__":
     unittest.main()
