@@ -86,10 +86,15 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
     if preco.tipopreco == "MEIA_IDOSO" and beneficio != "IDOSO":
         raise HTTPException(422, "Selecione o benefício Pessoa idosa")
     agora = datetime.now()
-    if lote.statuslote != "ATIVO" or (lote.dtiniciovenda and agora < lote.dtiniciovenda) or (lote.dtfimvenda and agora > lote.dtfimvenda):
-        # O próximo lote pode abrir antes da data quando o anterior esgotar.
-        if lote_atual_do_setor(db, lote, agora) is not lote:
-            raise HTTPException(409, "Este lote não está disponível para venda")
+    # A sequência define qual lote será o próximo, mas nunca antecipa a janela
+    # configurada pelo parceiro. Esta checagem é feita no servidor para que o
+    # Client não seja a fonte de verdade do estoque nem do horário de venda.
+    if lote.statuslote != "ATIVO":
+        raise HTTPException(409, "Este lote não está disponível para venda")
+    if lote.dtiniciovenda and agora < lote.dtiniciovenda:
+        raise HTTPException(409, "As vendas deste lote ainda não começaram")
+    if lote.dtfimvenda and agora > lote.dtfimvenda:
+        raise HTTPException(409, "As vendas deste lote foram encerradas")
     expirar_reservas(db)
     if lote_atual_do_setor(db, lote, agora) is not lote:
         raise HTTPException(409, "Outro lote está vigente para este setor")
@@ -110,7 +115,7 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
     if preco.aplicacotalegal:
         usada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id).filter(ReservaIngresso.evento_id == lote.evento_id, EventoLotePreco.aplicacotalegal.is_(True), ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA"))).scalar() or 0)
         if usada + quantidade > int(capacidade_evento * 0.40):
-            raise HTTPException(409, "A cota de meia-entrada deste lote foi esgotada")
+            raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")
     minimo = Decimal(str(loja.vrtaxaminimaingresso or 0)) if loja else Decimal("0")
