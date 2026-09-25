@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
-from app.routers.eventolotes import atualizar_lote_evento
+from app.routers.eventolotes import _validar_programacao_vendas, atualizar_lote_evento
 from app.schemas.eventolote import EventoLoteUpdate
 
 
@@ -127,6 +127,54 @@ class AtualizarLoteTest(unittest.TestCase):
 
         self.assertEqual("Lote 2 - Pista", lote.nmlote)
         self.assertEqual(1, banco.commits)
+
+
+class ProgramacaoDeVendasTest(unittest.TestCase):
+    def _evento(self):
+        evento = Registro()
+        evento.evento_id = 3
+        evento.dtinicioevento = datetime(2026, 10, 1, 20, 0)
+        return evento
+
+    def _setor(self):
+        setor = Registro()
+        setor.eventosetor_id = 10
+        return setor
+
+    def _lote_anterior(self):
+        lote = Registro()
+        lote.lote_id = 5
+        lote.nrlote = 1
+        lote.dtiniciovenda = datetime(2026, 9, 21, 18, 0)
+        lote.dtfimvenda = datetime(2026, 9, 25, 15, 10)
+        return lote
+
+    def test_proximo_lote_inicia_um_minuto_apos_o_anterior(self):
+        banco = BancoFalso([[self._lote_anterior()]])
+
+        _validar_programacao_vendas(
+            banco,
+            evento=self._evento(),
+            setor=self._setor(),
+            nrlote=2,
+            dtinicio=datetime(2026, 9, 25, 15, 11),
+            dtfim=datetime(2026, 10, 1, 19, 59),
+        )
+
+    def test_proximo_lote_nao_pode_deixar_intervalo_sem_venda(self):
+        banco = BancoFalso([[self._lote_anterior()]])
+
+        with self.assertRaises(HTTPException) as erro:
+            _validar_programacao_vendas(
+                banco,
+                evento=self._evento(),
+                setor=self._setor(),
+                nrlote=2,
+                dtinicio=datetime(2026, 9, 25, 15, 12),
+                dtfim=datetime(2026, 10, 1, 19, 59),
+            )
+
+        self.assertEqual(422, erro.exception.status_code)
 
 
 if __name__ == "__main__":

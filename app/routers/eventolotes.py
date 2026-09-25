@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -100,6 +100,62 @@ def _validar_configuracao_setor(
             )
 
 
+def _validar_programacao_vendas(
+    db: Session,
+    *,
+    evento: Evento,
+    setor: EventoSetor,
+    nrlote: int,
+    dtinicio: datetime | None,
+    dtfim: datetime | None,
+    ignorar_lote_id: int | None = None,
+) -> None:
+    """Garante uma sequência de venda sem sobreposição nem intervalos.
+
+    O fim é inclusivo na venda (a regra de reserva encerra somente depois do
+    horário final). Por isso o lote seguinte deve começar exatamente um minuto
+    depois do anterior.
+    """
+    if dtinicio is None or dtfim is None:
+        raise HTTPException(422, "Informe o início e o fim das vendas do lote")
+    if dtfim <= dtinicio:
+        raise HTTPException(422, "O fim das vendas deve ser posterior ao início")
+    if evento.dtinicioevento and dtfim > evento.dtinicioevento:
+        raise HTTPException(422, "O fim das vendas não pode ser após o início do evento")
+
+    lotes = db.query(EventoLote).filter(
+        EventoLote.evento_id == evento.evento_id,
+        EventoLote.eventosetor_id == setor.eventosetor_id,
+    ).all()
+    outros = [item for item in lotes if item.lote_id != ignorar_lote_id]
+
+    if nrlote > 1:
+        anterior = next((item for item in outros if item.nrlote == nrlote - 1), None)
+        if anterior is None:
+            raise HTTPException(422, f"Cadastre primeiro o Lote {nrlote - 1} deste setor")
+        if anterior.dtfimvenda is None:
+            raise HTTPException(422, f"Informe o fim das vendas do Lote {nrlote - 1}")
+        inicio_esperado = anterior.dtfimvenda.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if dtinicio.replace(second=0, microsecond=0) != inicio_esperado:
+            esperado = inicio_esperado.strftime("%d/%m/%Y às %H:%M")
+            raise HTTPException(
+                422,
+                f"O Lote {nrlote} deve iniciar em {esperado}, um minuto após o lote anterior",
+            )
+
+    proximo = next((item for item in outros if item.nrlote == nrlote + 1), None)
+    if proximo is not None:
+        if proximo.dtiniciovenda is None:
+            raise HTTPException(422, f"Informe o início das vendas do Lote {nrlote + 1}")
+        inicio_proximo_esperado = dtfim.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        if proximo.dtiniciovenda.replace(second=0, microsecond=0) != inicio_proximo_esperado:
+            esperado = inicio_proximo_esperado.strftime("%d/%m/%Y às %H:%M")
+            raise HTTPException(
+                422,
+                f"O Lote {nrlote + 1} deve iniciar em {esperado} para manter a venda contínua",
+            )
+
+
 def _saida_lote(db: Session, lote: EventoLote) -> dict:
     vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, lote.evento_id)
     reservas_ativas = (
@@ -185,6 +241,14 @@ def criar_lote_evento(
             nrlote=data.nrlote,
             qttotallote=data.qttotallote,
             usarcapacidaderestante=data.usarcapacidaderestante,
+        )
+        _validar_programacao_vendas(
+            db,
+            evento=evento,
+            setor=setor,
+            nrlote=data.nrlote,
+            dtinicio=data.dtiniciovenda,
+            dtfim=data.dtfimvenda,
         )
 
         novo = EventoLote(
@@ -310,6 +374,32 @@ def atualizar_lote_evento(
 
         if data.statuslote is not None:
             lote.statuslote = data.statuslote
+
+        # A programação é conferida sempre que o setor, a sequência ou os
+        # horários mudam. Alterações independentes, como nome ou status, não
+        # precisam consultar novamente a agenda comercial.
+        alterou_horario = (
+            data.dtiniciovenda is not None or data.dtfimvenda is not None
+        )
+        if alterou_programacao or alterou_horario:
+            setor_programacao = db.query(EventoSetor).filter(
+                EventoSetor.eventosetor_id == lote.eventosetor_id,
+                EventoSetor.evento_id == lote.evento_id,
+            ).first()
+            evento_programacao = db.query(Evento).filter(
+                Evento.evento_id == lote.evento_id,
+            ).first()
+            if not setor_programacao or not evento_programacao:
+                raise HTTPException(422, "Setor do lote não encontrado")
+            _validar_programacao_vendas(
+                db,
+                evento=evento_programacao,
+                setor=setor_programacao,
+                nrlote=lote.nrlote,
+                dtinicio=lote.dtiniciovenda,
+                dtfim=lote.dtfimvenda,
+                ignorar_lote_id=lote_id,
+            )
 
         db.commit()
         db.refresh(lote)
