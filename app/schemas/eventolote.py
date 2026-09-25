@@ -36,6 +36,8 @@ class EventoLoteCreate(BaseModel):
             raise ValueError("Informe o limite comercial do lote")
         if self.usarcapacidaderestante:
             self.qttotallote = None
+        if self.dtiniciovenda and self.dtfimvenda and self.dtfimvenda <= self.dtiniciovenda:
+            raise ValueError("O fim das vendas deve ser posterior ao início")
         return self
 
 class EventoLoteUpdate(BaseModel):
@@ -48,6 +50,12 @@ class EventoLoteUpdate(BaseModel):
     dtfimvenda: datetime | None = None
     statuslote: Literal["ATIVO", "ESGOTADO", "ENCERRADO", "INATIVO"] | None = None
     precos: list[EventoLotePrecoIn] | None = None
+
+    @model_validator(mode="after")
+    def validar_periodo_informado(self):
+        if self.dtiniciovenda and self.dtfimvenda and self.dtfimvenda <= self.dtiniciovenda:
+            raise ValueError("O fim das vendas deve ser posterior ao início")
+        return self
 
 class EventoLotePrecoOut(EventoLotePrecoIn):
     lotepreco_id: int
@@ -71,4 +79,5 @@ class EventoLoteOut(BaseModel):
     precos: list[EventoLotePrecoOut]
     cotalegal: int = 0
     qtvendidacotalegal: int = 0
+    qtreservadacotalegal: int = 0
     class Config: from_attributes = True

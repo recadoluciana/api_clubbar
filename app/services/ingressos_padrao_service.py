@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
 from app.models.eventolote import EventoLote
@@ -22,7 +22,9 @@ def criar_lote_setor_com_precos(
     nome_setor = nome_setor.strip()
     setor = EventoSetor(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, nmsetor=nome_setor, dssetor=f"Setor {nome_setor} do evento", qtcapacidade=int(capacidade), nrordem=1, sitsetor="ATIVO")
     db.add(setor); db.flush()
-    lote = EventoLote(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, eventosetor_id=setor.eventosetor_id, nrlote=1, nmlote=f"Lote 1 - {nome_setor}", qttotallote=None, usarcapacidaderestante="S", qtvendidalote=0, dtiniciovenda=datetime.now(), dtfimvenda=inicio_evento + timedelta(hours=2), statuslote="ATIVO")
+    # Ingressos não devem continuar à venda depois do início do evento. O
+    # parceiro pode ajustar esta janela posteriormente ao criar novos lotes.
+    lote = EventoLote(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, eventosetor_id=setor.eventosetor_id, nrlote=1, nmlote=f"Lote 1 - {nome_setor}", qttotallote=None, usarcapacidaderestante="S", qtvendidalote=0, dtiniciovenda=datetime.now(), dtfimvenda=inicio_evento, statuslote="ATIVO")
     db.add(lote); db.flush()
     db.add_all([
         EventoLotePreco(lote_id=lote.lote_id, nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=valor, aplicacotalegal=False, exigecomprovante=False, nrordem=1),
