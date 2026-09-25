@@ -71,7 +71,7 @@ def _aplicar_estilos(db,a,valor):
     a.dsestilomusical=", ".join(sorted(e.nmestilomusical for e in estilos)) or None
 
 def _prog(p):
-    return {"eventoatracao_id":p.eventoatracao_id,"evento_id":p.evento_id,"atracao_id":p.atracao_id,"dtinicioatracao":p.dtinicioatracao,"dtfimatracao":p.dtfimatracao,"atracao":_item(p.atracao)}
+    return {"eventoatracao_id":p.eventoatracao_id,"evento_id":p.evento_id,"atracao_id":p.atracao_id,"dtinicioatracao":p.dtinicioatracao,"dtfimatracao":p.dtfimatracao,"nrminutoduracao":p.nrminutoduracao,"atracao":_item(p.atracao)}
 
 @router.get("/atracoes")
 def listar(payload=Depends(get_usuario_logado), db:Session=Depends(get_db)):
@@ -218,6 +218,13 @@ def _validar_horario_programacao(db, evento_id, inicio, fim, ignorar_id=None):
             "Já existe uma atração programada nesse horário. Escolha outro período.",
         )
 
+
+def _duracao_em_minutos(inicio, fim):
+    duracao = int((fim - inicio).total_seconds() // 60)
+    if duracao <= 0:
+        raise HTTPException(422, "A duração da atração deve ser de pelo menos um minuto.")
+    return duracao
+
 @router.get("/eventos/{evento_id}/atracoes")
 def listar_programacao(evento_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _evento(db,evento_id,_org(payload))
@@ -229,7 +236,7 @@ def adicionar(evento_id:int,dados:EventoAtracaoIn,payload=Depends(get_usuario_lo
     org=_org(payload); evento=_evento(db,evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
     if not db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     _validar_horario_programacao(db,evento_id,dados.dtinicioatracao,dados.dtfimatracao)
-    p=EventoAtracao(evento_id=evento_id,**dados.model_dump()); db.add(p); db.commit()
+    p=EventoAtracao(evento_id=evento_id,**dados.model_dump(),nrminutoduracao=_duracao_em_minutos(dados.dtinicioatracao,dados.dtfimatracao)); db.add(p); db.commit()
     p=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).filter(EventoAtracao.eventoatracao_id==p.eventoatracao_id).first(); return _prog(p)
 
 @router.put("/eventos/atracoes/{programacao_id}")
@@ -243,6 +250,7 @@ def editar_programacao(programacao_id:int,dados:EventoAtracaoUpdate,payload=Depe
     if fim<=inicio: raise HTTPException(422,"O fim da atração deve ser posterior ao início.")
     _validar_horario_programacao(db,p.evento_id,inicio,fim,p.eventoatracao_id)
     for k,v in vals.items(): setattr(p,k,v)
+    p.nrminutoduracao=_duracao_em_minutos(inicio,fim)
     db.commit(); db.refresh(p); return _prog(p)
 
 @router.delete("/eventos/atracoes/{programacao_id}")

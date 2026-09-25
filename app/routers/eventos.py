@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 import os
 import uuid
@@ -32,6 +32,26 @@ from app.services.evento_imagem_service import imagem_evento
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
 STATUS_EVENTO_VALIDOS = {"RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO"}
+
+
+def deslocar_programacao_atracoes(programacoes, deslocamento: timedelta) -> None:
+    """Desloca a grade sem alterar a duração planejada de cada atração."""
+    for programacao in programacoes:
+        duracao_minutos = int(programacao.nrminutoduracao or 0)
+        if duracao_minutos <= 0:
+            duracao_minutos = max(
+                1,
+                int(
+                    (programacao.dtfimatracao - programacao.dtinicioatracao)
+                    .total_seconds()
+                    // 60
+                ),
+            )
+            programacao.nrminutoduracao = duracao_minutos
+        programacao.dtinicioatracao += deslocamento
+        programacao.dtfimatracao = programacao.dtinicioatracao + timedelta(
+            minutes=duracao_minutos
+        )
 
 
 def normalizar_status_evento(valor: str) -> str:
@@ -297,6 +317,7 @@ def get_evento_por_id(
                 "urlbanneratracao": atracao.urlbanneratracao,
                 "dtinicioatracao": programacao.dtinicioatracao,
                 "dtfimatracao": programacao.dtfimatracao,
+                "nrminutoduracao": programacao.nrminutoduracao,
             }
             for programacao, atracao in atracoes
         ],
@@ -426,8 +447,20 @@ def atualizar_evento(
         if dspoliticacancelamento is not None:
             evento.dspoliticacancelamento = dspoliticacancelamento
 
+        deslocamento_atracoes = None
         if dtinicioevento is not None:
-            evento.dtinicioevento = datetime.fromisoformat(dtinicioevento)
+            novo_inicio = datetime.fromisoformat(dtinicioevento)
+            deslocamento_atracoes = novo_inicio - evento.dtinicioevento
+            evento.dtinicioevento = novo_inicio
+
+        if deslocamento_atracoes and deslocamento_atracoes.total_seconds() != 0:
+            programacoes = (
+                db.query(EventoAtracao)
+                .filter(EventoAtracao.evento_id == evento.evento_id)
+                .order_by(EventoAtracao.dtinicioatracao)
+                .all()
+            )
+            deslocar_programacao_atracoes(programacoes, deslocamento_atracoes)
 
         if dtfimevento is not None:
             evento.dtfimevento = datetime.fromisoformat(dtfimevento) if dtfimevento else None
