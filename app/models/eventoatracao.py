@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -10,6 +10,7 @@ class EventoAtracao(Base):
     atracao_id = Column(BigInteger, ForeignKey("atracao.atracao_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
     dtinicioatracao = Column(DateTime, nullable=False)
     dtfimatracao = Column(DateTime, nullable=False)
+    nrminutoduracao = Column(Integer, nullable=False, default=120)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
     dtultatu = Column(DateTime, onupdate=func.now())
     evento = relationship("Evento", back_populates="atracoes")

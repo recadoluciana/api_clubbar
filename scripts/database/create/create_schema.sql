@@ -1509,6 +1509,7 @@ CREATE TABLE eventoatracao (
   atracao_id          BIGINT NOT NULL,
   dtinicioatracao     DATETIME NOT NULL,
   dtfimatracao        DATETIME NOT NULL,
+  nrminutoduracao     INT NOT NULL DEFAULT 120,
   dtcriacao           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu            DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
@@ -1524,6 +1525,9 @@ CREATE TABLE eventoatracao (
 
   CONSTRAINT chk_eventoatracao_periodo
     CHECK (dtfimatracao > dtinicioatracao),
+
+  CONSTRAINT chk_eventoatracao_duracao
+    CHECK (nrminutoduracao > 0),
 
   CONSTRAINT uq_eventoatracao_evento_atracao_inicio
     UNIQUE (evento_id, atracao_id, dtinicioatracao),

@@ -106,7 +106,8 @@ def criar_evento_rapido(dados: EventoRapidoAgendaIn, payload=Depends(get_usuario
     )
     try:
         db.add(evento); db.flush()
-        programacao=EventoAtracao(evento_id=evento.evento_id,atracao_id=atracao.atracao_id,dtinicioatracao=dados.dtinicioatracao,dtfimatracao=dados.dtfimatracao)
+        duracao_minutos = int((dados.dtfimatracao - dados.dtinicioatracao).total_seconds() // 60)
+        programacao=EventoAtracao(evento_id=evento.evento_id,atracao_id=atracao.atracao_id,dtinicioatracao=dados.dtinicioatracao,dtfimatracao=dados.dtfimatracao,nrminutoduracao=max(1, duracao_minutos))
         lote = criar_ingressos_pista_inteira_meia(
             db,
             organizacao_id=org,
@@ -134,5 +135,5 @@ def listar(loja_id:int,ano:int=Query(ge=2000,le=2200),mes:int=Query(ge=1,le=12),
     saida=[]
     for e in eventos:
         ps=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).filter(EventoAtracao.evento_id==e.evento_id).order_by(EventoAtracao.dtinicioatracao).all()
-        saida.append({"evento_id":e.evento_id,"organizacao_id":e.organizacao_id,"loja_id":e.loja_id,"nmtituloevento":e.nmtituloevento,"dspoliticacancelamento":e.dspoliticacancelamento,"dtinicioevento":e.dtinicioevento,"dtfimevento":e.dtfimevento,"statusevento":e.statusevento,"urlbannerevento":imagem_evento(db, e),"atracoes":[{"eventoatracao_id":p.eventoatracao_id,"atracao_id":p.atracao_id,"dtinicioatracao":p.dtinicioatracao,"dtfimatracao":p.dtfimatracao,"atracao":{"atracao_id":p.atracao.atracao_id,"organizacao_id":p.atracao.organizacao_id,"nmatracao":p.atracao.nmatracao,"dsestilomusical":p.atracao.dsestilomusical,"estilos":[{"estilomusical_id":x.organizacaoestilomusical_id,"nmestilomusical":x.nmestilomusical} for x in p.atracao.estilos],"urlbanneratracao":p.atracao.urlbanneratracao,"dsatracao":p.atracao.dsatracao}} for p in ps]})
+        saida.append({"evento_id":e.evento_id,"organizacao_id":e.organizacao_id,"loja_id":e.loja_id,"nmtituloevento":e.nmtituloevento,"dspoliticacancelamento":e.dspoliticacancelamento,"dtinicioevento":e.dtinicioevento,"dtfimevento":e.dtfimevento,"statusevento":e.statusevento,"urlbannerevento":imagem_evento(db, e),"atracoes":[{"eventoatracao_id":p.eventoatracao_id,"atracao_id":p.atracao_id,"dtinicioatracao":p.dtinicioatracao,"dtfimatracao":p.dtfimatracao,"nrminutoduracao":p.nrminutoduracao,"atracao":{"atracao_id":p.atracao.atracao_id,"organizacao_id":p.atracao.organizacao_id,"nmatracao":p.atracao.nmatracao,"dsestilomusical":p.atracao.dsestilomusical,"estilos":[{"estilomusical_id":x.organizacaoestilomusical_id,"nmestilomusical":x.nmestilomusical} for x in p.atracao.estilos],"urlbanneratracao":p.atracao.urlbanneratracao,"dsatracao":p.atracao.dsatracao}} for p in ps]})
     return saida
