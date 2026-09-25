@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
@@ -8,6 +9,7 @@ from app.database import get_db
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventosetor import EventoSetor
+from app.models.reserva_ingresso import ReservaIngresso
 
 router = APIRouter(prefix="/eventos", tags=["Setores de eventos"])
 
@@ -44,6 +46,19 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     x=db.query(EventoSetor).filter(EventoSetor.eventosetor_id==setor_id).first()
     if not x: raise HTTPException(404,"Setor não encontrado")
     _evento(db,x.evento_id,usuario)
+    lotes = db.query(EventoLote).filter(EventoLote.eventosetor_id == setor_id).all()
+    capacidade_comercial = sum(int(lote.qttotallote or 0) for lote in lotes if lote.usarcapacidaderestante != "S")
+    vendidos = sum(int(lote.qtvendidalote or 0) for lote in lotes)
+    reservados = int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).filter(
+            ReservaIngresso.lote_id.in_([lote.lote_id for lote in lotes]),
+            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ).scalar()
+        if lotes else 0
+    )
+    minimo_seguro = max(capacidade_comercial, vendidos + reservados)
+    if dados.qtcapacidade < minimo_seguro:
+        raise HTTPException(422, f"A capacidade não pode ser menor que {minimo_seguro}, pois há lotes, vendas ou reservas neste setor")
     for k,v in dados.model_dump().items():setattr(x,k,v)
     db.commit();db.refresh(x);return _item(x)
 
