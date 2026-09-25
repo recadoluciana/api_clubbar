@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
+from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
@@ -116,6 +117,46 @@ def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: i
         usada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id).filter(ReservaIngresso.evento_id == lote.evento_id, EventoLotePreco.aplicacotalegal.is_(True), ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA"))).scalar() or 0)
         if usada + quantidade > int(capacidade_evento * 0.40):
             raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
+    elif preco.tipopreco == "INTEIRA":
+        # Até 48 h antes do evento (72 h para capacidades acima de 10 mil),
+        # a cota legal precisa continuar acessível em todos os canais. A venda
+        # de inteira não pode ocupar os lugares ainda reservados a ela.
+        evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()
+        horas_reserva = 72 if capacidade_evento > 10000 else 48
+        limite_reserva = (
+            evento.dtinicioevento - timedelta(hours=horas_reserva)
+            if evento and evento.dtinicioevento
+            else None
+        )
+        if limite_reserva and agora < limite_reserva:
+            usada_cota = int(
+                db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+                .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
+                .filter(
+                    ReservaIngresso.evento_id == lote.evento_id,
+                    EventoLotePreco.aplicacotalegal.is_(True),
+                    ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
+                )
+                .scalar()
+                or 0
+            )
+            ocupacao_sem_cota = int(
+                db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+                .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
+                .filter(
+                    ReservaIngresso.evento_id == lote.evento_id,
+                    EventoLotePreco.aplicacotalegal.is_(False),
+                    ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
+                )
+                .scalar()
+                or 0
+            )
+            maximo_sem_cota = capacidade_evento - max(0, int(capacidade_evento * 0.40) - usada_cota)
+            if ocupacao_sem_cota + quantidade > maximo_sem_cota:
+                raise HTTPException(
+                    409,
+                    "A reserva de meia-entrada ainda está protegida para este evento",
+                )
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")
     minimo = Decimal(str(loja.vrtaxaminimaingresso or 0)) if loja else Decimal("0")
