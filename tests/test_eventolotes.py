@@ -4,9 +4,9 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
-from app.routers.eventolotes import _validar_programacao_vendas, atualizar_lote_evento
+from app.routers.eventolotes import _validar_modalidades, _validar_programacao_vendas, atualizar_lote_evento
 from app.routers.eventosetores import _atualizar_nomes_lotes_padrao
-from app.schemas.eventolote import EventoLoteUpdate
+from app.schemas.eventolote import EventoLotePrecoIn, EventoLoteUpdate
 
 
 class QueryFalsa:
@@ -202,6 +202,24 @@ class NomeDeSetorNoLoteTest(unittest.TestCase):
         _atualizar_nomes_lotes_padrao([lote], "Pista A", "Pista A")
 
         self.assertEqual("Lote 1 - Pista A", lote.nmlote)
+
+
+class ModalidadesLegaisTest(unittest.TestCase):
+    def test_meia_nao_pode_custar_mais_que_metade_da_inteira(self):
+        with self.assertRaises(HTTPException) as erro:
+            _validar_modalidades([
+                EventoLotePrecoIn(nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=50),
+                EventoLotePrecoIn(nmpreco="Meia", tipopreco="MEIA_LEGAL", vrpreco=30),
+            ])
+
+        self.assertEqual(422, erro.exception.status_code)
+
+    def test_desconto_maior_que_cinquenta_por_cento_e_permitido(self):
+        _validar_modalidades([
+            EventoLotePrecoIn(nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=50),
+            EventoLotePrecoIn(nmpreco="Meia", tipopreco="MEIA_LEGAL", vrpreco=20),
+            EventoLotePrecoIn(nmpreco="Pessoa idosa", tipopreco="MEIA_IDOSO", vrpreco=25),
+        ])
 
 
 if __name__ == "__main__":

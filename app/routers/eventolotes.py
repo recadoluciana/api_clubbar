@@ -58,6 +58,17 @@ def _uso_cota_legal_evento(db: Session, evento_id: int) -> tuple[int, int]:
     return vendidos, reservados
 
 
+def _validar_modalidades(precos) -> None:
+    """Mantém as modalidades legais coerentes com a entrada inteira."""
+    inteira = next((preco for preco in precos if preco.tipopreco == "INTEIRA"), None)
+    if inteira is None:
+        raise HTTPException(422, "Informe a modalidade Inteira para configurar os demais preços")
+    limite_meia = float(inteira.vrpreco) / 2
+    for preco in precos:
+        if preco.tipopreco in ("MEIA_LEGAL", "MEIA_IDOSO") and float(preco.vrpreco) > limite_meia:
+            raise HTTPException(422, "A meia-entrada e o ingresso para pessoa idosa devem ter desconto de pelo menos 50% sobre a inteira")
+
+
 def _validar_configuracao_setor(
     db: Session,
     *,
@@ -234,6 +245,7 @@ def criar_lote_evento(
             if not setor: raise HTTPException(status_code=404, detail="Setor do evento não encontrado")
         if not setor:
             raise HTTPException(422, "Selecione o setor do lote")
+        _validar_modalidades(data.precos)
         _validar_configuracao_setor(
             db,
             evento_id=evento_id,
@@ -361,8 +373,9 @@ def atualizar_lote_evento(
             lote.usarcapacidaderestante = "S" if data.usarcapacidaderestante else "N"
             if data.usarcapacidaderestante: lote.qttotallote = None
         if data.precos is not None:
-            if int(lote.qtvendidalote or 0) > 0:
-                raise HTTPException(409, "Os preços de um lote com vendas não podem ser substituídos. Crie um novo lote.")
+            _validar_modalidades(data.precos)
+            if int(lote.qtvendidalote or 0) > 0 or quantidade_reservada(db, lote_id) > 0:
+                raise HTTPException(409, "Os preços de um lote com vendas ou reservas não podem ser substituídos. Crie um novo lote.")
             db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
             db.add_all([EventoLotePreco(lote_id=lote_id, **p.model_dump()) for p in data.precos])
 
