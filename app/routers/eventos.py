@@ -6,6 +6,7 @@ import shutil
 import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.models.evento import Evento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.eventolote import EventoLote
+from app.models.eventosetor import EventoSetor
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
@@ -32,6 +34,45 @@ from app.services.evento_imagem_service import imagem_evento
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
 STATUS_EVENTO_VALIDOS = {"RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO"}
+
+
+class CapacidadeEventoIn(BaseModel):
+    qtcapacidadeevento: int = Field(gt=0)
+
+
+def _resumo_capacidade_evento(db: Session, evento: Evento) -> dict:
+    capacidade_setores = int(
+        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
+        .filter(
+            EventoSetor.evento_id == evento.evento_id,
+            EventoSetor.sitsetor == "ATIVO",
+        )
+        .scalar()
+        or 0
+    )
+    capacidade_evento = (
+        int(evento.qtcapacidadeevento)
+        if evento.qtcapacidadeevento is not None
+        else None
+    )
+    return {
+        "evento_id": evento.evento_id,
+        "qtcapacidadeevento": capacidade_evento,
+        "qtcapacidade_setores": capacidade_setores,
+        "qtcapacidade_nao_distribuida": (
+            capacidade_evento - capacidade_setores
+            if capacidade_evento is not None
+            else None
+        ),
+    }
+
+
+def _evento_gerenciavel(db: Session, evento_id: int, usuario) -> Evento:
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado.")
+    validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    return evento
 
 
 def deslocar_programacao_atracoes(programacoes, deslocamento: timedelta) -> None:
@@ -92,6 +133,7 @@ def evento_to_out_br(
         "dspoliticacancelamento": ev.dspoliticacancelamento,
         "dtinicioevento": ev.dtinicioevento,
         "dtfimevento": ev.dtfimevento,
+        "qtcapacidadeevento": ev.qtcapacidadeevento,
         "nmlocalevento": ev.nmlocalevento,
         "dsendlocevento": ev.dsendlocevento,
         "urlbannerevento": imagem_evento(db, ev),
@@ -101,6 +143,44 @@ def evento_to_out_br(
         "urllogoloja": urllogoloja,
         "total_vendas_loja": total_vendas_loja,
     }
+
+
+@router.get("/{evento_id}/capacidade")
+def obter_capacidade_evento(
+    evento_id: int,
+    payload=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    return _resumo_capacidade_evento(db, _evento_gerenciavel(db, evento_id, payload))
+
+
+@router.put("/{evento_id}/capacidade")
+def atualizar_capacidade_evento(
+    evento_id: int,
+    dados: CapacidadeEventoIn,
+    payload=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    evento = _evento_gerenciavel(db, evento_id, payload)
+    capacidade_setores = int(
+        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
+        .filter(
+            EventoSetor.evento_id == evento.evento_id,
+            EventoSetor.sitsetor == "ATIVO",
+        )
+        .scalar()
+        or 0
+    )
+    if dados.qtcapacidadeevento < capacidade_setores:
+        raise HTTPException(
+            422,
+            "A capacidade total não pode ser menor que a soma dos setores ativos "
+            f"({capacidade_setores} pessoas).",
+        )
+    evento.qtcapacidadeevento = dados.qtcapacidadeevento
+    db.commit()
+    db.refresh(evento)
+    return _resumo_capacidade_evento(db, evento)
 
 
 def hoje_inicio_br() -> datetime:

@@ -1455,6 +1455,7 @@ CREATE TABLE evento (
   nmtituloevento         VARCHAR(120) NOT NULL,
   dtinicioevento         DATETIME NOT NULL,
   dtfimevento            DATETIME NULL,
+  qtcapacidadeevento     INT NULL,
   nmlocalevento          VARCHAR(120) NULL,
   dsendlocevento         VARCHAR(200) NULL,
   urlbannerevento        VARCHAR(255) NULL,
@@ -1483,7 +1484,9 @@ CREATE TABLE evento (
   CONSTRAINT fk_evento_modelo
     FOREIGN KEY (eventomodelo_id)
     REFERENCES eventomodelo(eventomodelo_id)
-    ON DELETE RESTRICT ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE,
+
+  CHECK (qtcapacidadeevento IS NULL OR qtcapacidadeevento > 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE eventodescricao (

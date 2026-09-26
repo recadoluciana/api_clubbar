@@ -29,6 +29,33 @@ def _evento(db, evento_id, usuario):
 def _item(x):
     return {"eventosetor_id":x.eventosetor_id,"organizacao_id":x.organizacao_id,"loja_id":x.loja_id,"evento_id":x.evento_id,"nmsetor":x.nmsetor,"dssetor":x.dssetor,"qtcapacidade":x.qtcapacidade,"nrordem":x.nrordem,"sitsetor":x.sitsetor}
 
+
+def _validar_teto_capacidade_evento(
+    db: Session,
+    evento: Evento,
+    capacidade_setor: int,
+    situacao_setor: str,
+    setor_id_atual: int | None = None,
+) -> None:
+    """Impede que a soma dos setores ultrapasse a lotação da ocorrência."""
+    if evento.qtcapacidadeevento is None:
+        return
+    outros_setores = db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(
+        EventoSetor.evento_id == evento.evento_id,
+        EventoSetor.sitsetor == "ATIVO",
+    )
+    if setor_id_atual is not None:
+        outros_setores = outros_setores.filter(EventoSetor.eventosetor_id != setor_id_atual)
+    total = int(outros_setores.scalar() or 0)
+    if situacao_setor.upper() == "ATIVO":
+        total += capacidade_setor
+    if total > int(evento.qtcapacidadeevento):
+        raise HTTPException(
+            422,
+            "A soma das capacidades dos setores não pode ultrapassar a capacidade "
+            f"total do evento ({evento.qtcapacidadeevento} pessoas).",
+        )
+
 def _atualizar_nomes_lotes_padrao(lotes, nome_anterior: str, nome_novo: str):
     """Mantém o nome automático do lote sincronizado com o setor.
 
@@ -50,6 +77,7 @@ def listar(evento_id:int,db:Session=Depends(get_db),usuario=Depends(get_usuario_
 def criar(evento_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends(get_usuario_logado)):
     evento=_evento(db,evento_id,usuario)
     if db.query(EventoSetor).filter(EventoSetor.evento_id==evento_id,EventoSetor.nmsetor==dados.nmsetor.strip()).first(): raise HTTPException(409,"Já existe um setor com esse nome")
+    _validar_teto_capacidade_evento(db, evento, dados.qtcapacidade, dados.sitsetor)
     x=EventoSetor(organizacao_id=evento.organizacao_id,loja_id=evento.loja_id,evento_id=evento_id,**dados.model_dump())
     db.add(x);db.commit();db.refresh(x);return _item(x)
 
@@ -57,7 +85,7 @@ def criar(evento_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
 def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends(get_usuario_logado)):
     x=db.query(EventoSetor).filter(EventoSetor.eventosetor_id==setor_id).first()
     if not x: raise HTTPException(404,"Setor não encontrado")
-    _evento(db,x.evento_id,usuario)
+    evento = _evento(db,x.evento_id,usuario)
     lotes = db.query(EventoLote).filter(EventoLote.eventosetor_id == setor_id).all()
     nome_anterior = x.nmsetor.strip()
     nome_novo = dados.nmsetor.strip()
@@ -73,6 +101,9 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     minimo_seguro = max(capacidade_comercial, vendidos + reservados)
     if dados.qtcapacidade < minimo_seguro:
         raise HTTPException(422, f"A capacidade não pode ser menor que {minimo_seguro}, pois há lotes, vendas ou reservas neste setor")
+    _validar_teto_capacidade_evento(
+        db, evento, dados.qtcapacidade, dados.sitsetor, x.eventosetor_id
+    )
     for k,v in dados.model_dump().items():setattr(x,k,v)
     _atualizar_nomes_lotes_padrao(lotes, nome_anterior, nome_novo)
     db.commit();db.refresh(x);return _item(x)
