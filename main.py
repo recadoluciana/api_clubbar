@@ -304,6 +304,58 @@ def remover_inicio_relativo_das_atracoes_padrao() -> None:
             "Não foi possível remover o campo de início relativo das atrações padrão"
         )
 
+
+@app.on_event("startup")
+def garantir_capacidade_evento_agendado() -> None:
+    """Aplica a migração obrigatória antes de expor o novo controle de lotação."""
+    try:
+        inspector = inspect(engine)
+        if "evento" not in inspector.get_table_names():
+            return
+        colunas = {coluna["name"] for coluna in inspector.get_columns("evento")}
+        with engine.begin() as conexao:
+            if "qtcapacidadeevento" not in colunas:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE evento "
+                        "ADD COLUMN qtcapacidadeevento INT NULL AFTER dtfimevento"
+                    )
+                )
+
+            verificacoes = {
+                verificacao.get("name")
+                for verificacao in inspect(engine).get_check_constraints("evento")
+            }
+            if "chk_evento_capacidade" not in verificacoes:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE evento "
+                        "ADD CONSTRAINT chk_evento_capacidade "
+                        "CHECK (qtcapacidadeevento IS NULL OR qtcapacidadeevento > 0)"
+                    )
+                )
+
+            conexao.execute(
+                text(
+                    """
+                    UPDATE evento e
+                    LEFT JOIN (
+                      SELECT evento_id, SUM(qtcapacidade) AS capacidade_setores
+                      FROM eventosetor
+                      WHERE sitsetor = 'ATIVO'
+                      GROUP BY evento_id
+                    ) setores ON setores.evento_id = e.evento_id
+                    SET e.qtcapacidadeevento = setores.capacidade_setores
+                    WHERE e.qtcapacidadeevento IS NULL
+                      AND COALESCE(setores.capacidade_setores, 0) > 0
+                    """
+                )
+            )
+        logger.info("Capacidade dos eventos agendados verificada.")
+    except Exception:
+        logger.exception("Não foi possível preparar a capacidade dos eventos agendados")
+        raise
+
 @app.get("/health")
 def health():
     banco_online = False

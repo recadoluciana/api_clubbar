@@ -14,6 +14,7 @@ class EventoOutBR(BaseModel):
 
     dtinicioevento: datetime
     dtfimevento: datetime | None = None
+    qtcapacidadeevento: int | None = None
 
     nmlocalevento: Optional[str] = None
     dsendlocevento: Optional[str] = None

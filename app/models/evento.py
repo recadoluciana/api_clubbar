@@ -1,5 +1,5 @@
 from sqlalchemy import (
-    Column, BigInteger, String, DateTime, Enum, ForeignKey
+    Column, BigInteger, String, DateTime, Enum, ForeignKey, Integer
 )
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -20,6 +20,9 @@ class Evento(Base):
     nmtituloevento = Column(String(120), nullable=False)
     dtinicioevento = Column(DateTime, nullable=False)
     dtfimevento = Column(DateTime, nullable=True)
+    # É a lotação autorizada para esta ocorrência na agenda, não para o
+    # evento padrão. Os setores e lotes são obrigados a respeitar esse teto.
+    qtcapacidadeevento = Column(Integer, nullable=True)
 
     nmlocalevento = Column(String(120), nullable=True)
     dsendlocevento = Column(String(200), nullable=True)
