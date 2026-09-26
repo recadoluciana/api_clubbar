@@ -1,69 +1,101 @@
-from sqlalchemy import (
-    Column,
-    BigInteger,
-    String,
-    Integer,
-    DateTime,
-    Enum,
-    DECIMAL,
-    ForeignKey,
-)
-from sqlalchemy.orm import relationship
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, literal, select
+from sqlalchemy.orm import column_property, relationship, synonym
 from sqlalchemy.sql import func
 
 from app.database import Base
+from app.models.eventoloteglobal import EventoLoteGlobal
 
 
 class EventoLote(Base):
-    __tablename__ = "eventolote"
+    """Configuração de um setor dentro de um lote global.
+
+    O nome da classe é mantido apenas para compatibilidade com o checkout e
+    relatórios. A tabela física não é a estrutura antiga ``eventolote``.
+    """
+
+    __tablename__ = "eventolotesetor"
 
     lote_id = Column(BigInteger, primary_key=True, autoincrement=True)
 
-    organizacao_id = Column(BigInteger, nullable=False)
-    loja_id = Column(BigInteger, nullable=False)
-
-    evento_id = Column(
+    loteglobal_id = Column(
         BigInteger,
-        ForeignKey("evento.evento_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        ForeignKey("eventoloteglobal.loteglobal_id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
     eventosetor_id = Column(
         BigInteger,
         ForeignKey("eventosetor.eventosetor_id", ondelete="RESTRICT", onupdate="CASCADE"),
-        nullable=True,
-    )
-    nrlote = Column(Integer, nullable=False, server_default="1")
-    nmlote = Column(String(80), nullable=False)
-
-    qttotallote = Column(Integer, nullable=True)
-    usarcapacidaderestante = Column(String(1), nullable=False, server_default="N")
-    qtvendidalote = Column(Integer, nullable=True)
-
-    dtiniciovenda = Column(DateTime, nullable=True)
-    dtfimvenda = Column(DateTime, nullable=True)
-
-    statuslote = Column(
-        Enum("ATIVO", "ESGOTADO", "ENCERRADO", "INATIVO", name="eventolote_statuslote"),
         nullable=False,
-        server_default="ATIVO",
+        index=True,
     )
+    qtlimite = Column(Integer, nullable=False)
+    qtvendidalote = Column(Integer, nullable=False, server_default="0")
+    situacao = Column(String(10), nullable=False, server_default="ATIVO")
+    dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
+    dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
-    dtcriacao = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now()
-    )
-
-    dtultatu = Column(
-        DateTime,
-        nullable=True,
-        server_default=func.now(),
-        onupdate=func.now()
-    )
-
-    evento = relationship("Evento")
+    lote_global = relationship("EventoLoteGlobal", back_populates="configuracoes_setor")
     setor = relationship("EventoSetor")
-    precos = relationship("EventoLotePreco", cascade="all, delete-orphan", order_by="EventoLotePreco.nrordem")
+    precos = relationship(
+        "EventoLotePreco",
+        cascade="all, delete-orphan",
+        order_by="EventoLotePreco.nrordem",
+    )
+
+    # Projeções somente de leitura para os pontos ainda compartilhados por
+    # checkout, reservas e relatórios. Os dados continuam normalizados no
+    # lote global; não há duplicação dessas colunas em eventolotesetor.
+    organizacao_id = column_property(
+        select(EventoLoteGlobal.organizacao_id)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    loja_id = column_property(
+        select(EventoLoteGlobal.loja_id)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    evento_id = column_property(
+        select(EventoLoteGlobal.evento_id)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    nrlote = column_property(
+        select(EventoLoteGlobal.nrlote)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    nmlote = column_property(
+        select(EventoLoteGlobal.nmlote)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    dtiniciovenda = column_property(
+        select(EventoLoteGlobal.dtiniciovenda)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    dtfimvenda = column_property(
+        select(EventoLoteGlobal.dtfimvenda)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    statuslote = column_property(
+        select(EventoLoteGlobal.situacao)
+        .where(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .correlate_except(EventoLoteGlobal)
+        .scalar_subquery()
+    )
+    qttotallote = synonym("qtlimite")
+    usarcapacidaderestante = column_property(literal("N"))
 
     @property
     def nmsetor(self):

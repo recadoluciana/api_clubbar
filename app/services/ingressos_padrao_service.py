@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 
@@ -22,9 +23,27 @@ def criar_lote_setor_com_precos(
     nome_setor = nome_setor.strip()
     setor = EventoSetor(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, nmsetor=nome_setor, dssetor=f"Setor {nome_setor} do evento", qtcapacidade=int(capacidade), nrordem=1, sitsetor="ATIVO")
     db.add(setor); db.flush()
-    # Ingressos não devem continuar à venda depois do início do evento. O
-    # parceiro pode ajustar esta janela posteriormente ao criar novos lotes.
-    lote = EventoLote(organizacao_id=organizacao_id, loja_id=loja_id, evento_id=evento_id, eventosetor_id=setor.eventosetor_id, nrlote=1, nmlote=f"Lote 1 - {nome_setor}", qttotallote=None, usarcapacidaderestante="S", qtvendidalote=0, dtiniciovenda=datetime.now(), dtfimvenda=inicio_evento, statuslote="ATIVO")
+    # O cadastro rápido também segue o modelo normalizado: um lote global e
+    # a configuração desse lote para o setor inicial.
+    lote_global = EventoLoteGlobal(
+        organizacao_id=organizacao_id,
+        loja_id=loja_id,
+        evento_id=evento_id,
+        nrlote=1,
+        nmlote="Lote 1",
+        dtiniciovenda=datetime.now(),
+        dtfimvenda=inicio_evento,
+        gatilhovirada="DATA",
+        situacao="ATIVO",
+    )
+    db.add(lote_global); db.flush()
+    lote = EventoLote(
+        loteglobal_id=lote_global.loteglobal_id,
+        eventosetor_id=setor.eventosetor_id,
+        qtlimite=int(capacidade),
+        qtvendidalote=0,
+        situacao="ATIVO",
+    )
     db.add(lote); db.flush()
     db.add_all([
         EventoLotePreco(lote_id=lote.lote_id, nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=valor, aplicacotalegal=False, exigecomprovante=False, nrordem=1),

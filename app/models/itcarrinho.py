@@ -18,6 +18,6 @@ class ItCarrinho(Base):
     dsobsitcar = Column(String(255), nullable=True)
     dtcriacao = Column(DateTime, server_default=func.current_timestamp(), nullable=False)
     dtultatu = Column(DateTime, onupdate=func.current_timestamp(), nullable=True)
-    lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=True)
+    lote_id = Column(BigInteger, ForeignKey("eventolotesetor.lote_id"), nullable=True)
     nmparticipante = Column(String(150), nullable=True)
     cpfparticipante = Column(String(11), nullable=True)

@@ -356,6 +356,167 @@ def garantir_capacidade_evento_agendado() -> None:
         logger.exception("Não foi possível preparar a capacidade dos eventos agendados")
         raise
 
+
+@app.on_event("startup")
+def reconstruir_lotes_globais() -> None:
+    """Substitui o modelo legado de lote por lote global + setor.
+
+    Esta implantação foi deliberadamente aprovada sem migração de dados: os
+    registros de reservas e vendas de ingresso anteriores são descartados,
+    preservando produtos e os demais dados operacionais da plataforma.
+    """
+    try:
+        inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        novas_tabelas = {"eventoloteglobal", "eventolotesetor", "eventolotesetorpreco"}
+        if novas_tabelas.issubset(tabelas):
+            return
+        if not ({"eventolote", "eventolotepreco"} & tabelas) and not (novas_tabelas & tabelas):
+            return
+
+        def ident(nome: str) -> str:
+            return "`" + nome.replace("`", "``") + "`"
+
+        with engine.begin() as conexao:
+            conexao.execute(text("SET FOREIGN_KEY_CHECKS = 0"))
+            try:
+                # Reservas, checkouts e vendas exclusivamente de ingresso não
+                # pertencem ao novo modelo. Itens de produtos não são tocados.
+                if "checkout_asaas_item" in tabelas:
+                    conexao.execute(text("DELETE FROM checkout_asaas_item WHERE lote_id IS NOT NULL"))
+                if "checkout_asaas_pagador" in tabelas and "checkout_asaas" in tabelas:
+                    conexao.execute(text(
+                        "DELETE pagador FROM checkout_asaas_pagador pagador "
+                        "INNER JOIN checkout_asaas checkout_ ON "
+                        "checkout_.checkout_asaas_id = pagador.checkout_asaas_id "
+                        "WHERE checkout_.reserva_ingresso_id IS NOT NULL"
+                    ))
+                if "checkout_asaas" in tabelas:
+                    conexao.execute(text("DELETE FROM checkout_asaas WHERE reserva_ingresso_id IS NOT NULL"))
+                if "reserva_ingresso_participante" in tabelas:
+                    conexao.execute(text("DELETE FROM reserva_ingresso_participante"))
+                if "reserva_ingresso" in tabelas:
+                    conexao.execute(text("DELETE FROM reserva_ingresso"))
+                if "itvendaparticipantehistorico" in tabelas and "itvenda" in tabelas:
+                    conexao.execute(text(
+                        "DELETE historico FROM itvendaparticipantehistorico historico "
+                        "INNER JOIN itvenda item ON item.itvenda_id = historico.itvenda_id "
+                        "WHERE item.tipoitem = 'INGRESSO'"
+                    ))
+                if "pagvenda" in tabelas and "venda" in tabelas:
+                    conexao.execute(text(
+                        "DELETE pagamento FROM pagvenda pagamento "
+                        "INNER JOIN venda venda_ ON venda_.venda_id = pagamento.venda_id "
+                        "WHERE venda_.tipovenda = 'INGRESSO'"
+                    ))
+                if "itvenda" in tabelas:
+                    conexao.execute(text("DELETE FROM itvenda WHERE tipoitem = 'INGRESSO'"))
+                if "venda" in tabelas:
+                    conexao.execute(text("DELETE FROM venda WHERE tipovenda = 'INGRESSO'"))
+
+                # Remove qualquer chave estrangeira ainda apontando para as
+                # tabelas antigas (ou uma tentativa parcial da nova estrutura)
+                # antes de apagá-las.
+                for tabela in tabelas:
+                    for chave in inspector.get_foreign_keys(tabela):
+                        if chave.get("referred_table") not in {
+                            "eventolote", "eventolotepreco", "eventoloteglobal",
+                            "eventolotesetor", "eventolotesetorpreco",
+                        }:
+                            continue
+                        nome = chave.get("name")
+                        if nome:
+                            conexao.execute(text(
+                                f"ALTER TABLE {ident(tabela)} DROP FOREIGN KEY {ident(nome)}"
+                            ))
+
+                conexao.execute(text("DROP TABLE IF EXISTS eventolotesetorpreco"))
+                conexao.execute(text("DROP TABLE IF EXISTS eventolotesetor"))
+                conexao.execute(text("DROP TABLE IF EXISTS eventoloteglobal"))
+                conexao.execute(text("DROP TABLE IF EXISTS eventolotepreco"))
+                conexao.execute(text("DROP TABLE IF EXISTS eventolote"))
+                conexao.execute(text("""
+                    CREATE TABLE eventoloteglobal (
+                      loteglobal_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                      organizacao_id BIGINT NOT NULL,
+                      loja_id BIGINT NOT NULL,
+                      evento_id BIGINT NOT NULL,
+                      nrlote INT NOT NULL,
+                      nmlote VARCHAR(80) NOT NULL,
+                      dtiniciovenda DATETIME NULL,
+                      dtfimvenda DATETIME NULL,
+                      gatilhovirada ENUM('DATA','ESGOTAMENTO','HIBRIDO') NOT NULL DEFAULT 'HIBRIDO',
+                      situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+                      dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+                      UNIQUE KEY uk_eventoloteglobal_evento_numero (evento_id, nrlote),
+                      INDEX idx_eventoloteglobal_evento (evento_id, situacao, nrlote),
+                      CONSTRAINT fk_eventoloteglobal_evento FOREIGN KEY (evento_id)
+                        REFERENCES evento(evento_id) ON DELETE CASCADE ON UPDATE CASCADE,
+                      CONSTRAINT fk_eventoloteglobal_loja FOREIGN KEY (loja_id)
+                        REFERENCES loja(loja_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+                      CHECK (dtfimvenda IS NULL OR dtiniciovenda IS NULL OR dtfimvenda > dtiniciovenda)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """))
+                conexao.execute(text("""
+                    CREATE TABLE eventolotesetor (
+                      lote_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                      loteglobal_id BIGINT NOT NULL,
+                      eventosetor_id BIGINT NOT NULL,
+                      qtlimite INT NOT NULL,
+                      qtvendidalote INT NOT NULL DEFAULT 0,
+                      situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+                      dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+                      UNIQUE KEY uk_eventolotesetor_global_setor (loteglobal_id, eventosetor_id),
+                      INDEX idx_eventolotesetor_setor (eventosetor_id, situacao),
+                      CONSTRAINT fk_eventolotesetor_global FOREIGN KEY (loteglobal_id)
+                        REFERENCES eventoloteglobal(loteglobal_id) ON DELETE CASCADE,
+                      CONSTRAINT fk_eventolotesetor_setor FOREIGN KEY (eventosetor_id)
+                        REFERENCES eventosetor(eventosetor_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+                      CHECK (qtlimite > 0), CHECK (qtvendidalote >= 0), CHECK (qtvendidalote <= qtlimite)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """))
+                conexao.execute(text("""
+                    CREATE TABLE eventolotesetorpreco (
+                      lotepreco_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                      lote_id BIGINT NOT NULL,
+                      nmpreco VARCHAR(100) NOT NULL,
+                      tipopreco VARCHAR(30) NOT NULL,
+                      vrpreco DECIMAL(10,2) NOT NULL,
+                      aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE,
+                      exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE,
+                      situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+                      nrordem INT NOT NULL DEFAULT 1,
+                      dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+                      UNIQUE KEY uk_eventolotesetorpreco_tipo (lote_id, tipopreco),
+                      CONSTRAINT fk_eventolotesetorpreco_lote FOREIGN KEY (lote_id)
+                        REFERENCES eventolotesetor(lote_id) ON DELETE CASCADE,
+                      CHECK (vrpreco >= 0)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """))
+
+                for tabela, coluna, referencia, nome in (
+                    ("itvenda", "lote_id", "eventolotesetor(lote_id)", "fk_itvenda_lote"),
+                    ("itvenda", "lotepreco_id", "eventolotesetorpreco(lotepreco_id)", "fk_itvenda_lotepreco"),
+                    ("itcarrinho", "lote_id", "eventolotesetor(lote_id)", "fk_itcarrinho_lote"),
+                    ("reserva_ingresso", "lote_id", "eventolotesetor(lote_id)", "fk_reserva_lote"),
+                    ("reserva_ingresso", "lotepreco_id", "eventolotesetorpreco(lotepreco_id)", "fk_reserva_lotepreco"),
+                    ("checkout_asaas_item", "lote_id", "eventolotesetor(lote_id)", "fk_checkout_asaas_item_lote"),
+                ):
+                    if tabela in tabelas:
+                        conexao.execute(text(
+                            f"ALTER TABLE {ident(tabela)} ADD CONSTRAINT {ident(nome)} "
+                            f"FOREIGN KEY ({ident(coluna)}) REFERENCES {referencia}"
+                        ))
+            finally:
+                conexao.execute(text("SET FOREIGN_KEY_CHECKS = 1"))
+        logger.warning("Modelo legado de lotes substituído pelo modelo global por setor.")
+    except Exception:
+        logger.exception("Não foi possível reconstruir o modelo de lotes globais")
+        raise
+
 @app.get("/health")
 def health():
     banco_online = False
