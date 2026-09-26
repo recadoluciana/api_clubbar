@@ -14,7 +14,7 @@ class CheckoutAsaasItem(Base):
         index=True,
     )
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=True)
-    lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id"), nullable=True)
+    lote_id = Column(BigInteger, ForeignKey("eventolotesetor.lote_id"), nullable=True)
     idtipoproduto = Column(String(1), nullable=False, server_default="P")
     nmproduto = Column(String(150), nullable=False)
     quantidade = Column(Integer, nullable=False)

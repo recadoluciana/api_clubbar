@@ -21,6 +21,7 @@ from app.models.evento import Evento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventosetor import EventoSetor
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
@@ -610,8 +611,8 @@ def deletar_evento(
 
         # A exclusão representa apenas esta ocorrência da agenda. O modelo e
         # as demais datas recorrentes permanecem intactos.
-        for lote in db.query(EventoLote).filter(EventoLote.evento_id == evento_id).all():
-            db.delete(lote)
+        for lote_global in db.query(EventoLoteGlobal).filter(EventoLoteGlobal.evento_id == evento_id).all():
+            db.delete(lote_global)
         db.flush()
         db.delete(evento)
         db.commit()

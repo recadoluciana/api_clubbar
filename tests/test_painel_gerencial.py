@@ -142,7 +142,7 @@ class PainelGerencialTest(unittest.TestCase):
         self.assertIn("loja.loja_id", filtros)
         self.assertIn("venda.loja_id", filtros)
         self.assertIn("venda.loja_id", filtros)
-        self.assertIn("eventolote.loja_id", filtros)
+        self.assertIn("eventoloteglobal.loja_id", filtros)
 
     def test_cargo_sem_loja_no_jwt_recebe_403(self):
         banco = BancoFalso([])

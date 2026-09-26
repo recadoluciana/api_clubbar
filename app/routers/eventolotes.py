@@ -1,30 +1,43 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from sqlalchemy import func
-import traceback
+from sqlalchemy.orm import Session, joinedload
 
-from app.database import get_db
-from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
+from app.core.security import get_usuario_logado
+from app.database import get_db
 from app.models.evento import Evento
-from app.models.loja import Loja
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
-from app.schemas.eventolote import EventoLoteCreate, EventoLoteUpdate, EventoLoteOut
-from app.models.venda import Venda
 from app.models.itvenda import ItVenda
+from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
-from app.services.reserva_ingresso_service import capacidade_restante_setor, quantidade_reservada
+from app.schemas.eventolote import (
+    EventoLoteGlobalCreate,
+    EventoLoteGlobalUpdate,
+    EventoLoteSetorUpdate,
+)
+from app.services.reserva_ingresso_service import (
+    capacidade_restante_setor,
+    lote_global_ativo,
+    quantidade_disponivel_configuracao,
+    quantidade_reservada,
+)
+
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
+STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 
-def _capacidade_total_evento(db: Session, evento_id: int) -> int:
+
+def _capacidade_total_evento(db: Session, evento: Evento) -> int:
+    if evento.qtcapacidadeevento:
+        return int(evento.qtcapacidadeevento)
     return int(
         db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
-        .filter(EventoSetor.evento_id == evento_id, EventoSetor.sitsetor == "ATIVO")
+        .filter(EventoSetor.evento_id == evento.evento_id, EventoSetor.sitsetor == "ATIVO")
         .scalar()
         or 0
     )
@@ -48,9 +61,9 @@ def _uso_cota_legal_evento(db: Session, evento_id: int) -> tuple[int, int]:
         .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
         .filter(
             ReservaIngresso.evento_id == evento_id,
-            EventoLotePreco.aplicacotalegal.is_(True),
-            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
             ReservaIngresso.dtexpiracao > datetime.now(),
+            EventoLotePreco.aplicacotalegal.is_(True),
         )
         .scalar()
         or 0
@@ -58,462 +71,349 @@ def _uso_cota_legal_evento(db: Session, evento_id: int) -> tuple[int, int]:
     return vendidos, reservados
 
 
-def _validar_modalidades(precos) -> None:
-    """Mantém as modalidades legais coerentes com a entrada inteira."""
-    inteira = next((preco for preco in precos if preco.tipopreco == "INTEIRA"), None)
-    if inteira is None:
-        raise HTTPException(422, "Informe a modalidade Inteira para configurar os demais preços")
-    limite_meia = float(inteira.vrpreco) / 2
-    for preco in precos:
-        if preco.tipopreco in ("MEIA_LEGAL", "MEIA_IDOSO") and float(preco.vrpreco) > limite_meia:
-            raise HTTPException(422, "A meia-entrada e o ingresso para pessoa idosa devem ter desconto de pelo menos 50% sobre a inteira")
-
-
-def _validar_configuracao_setor(
-    db: Session,
-    *,
-    evento_id: int,
-    setor: EventoSetor,
-    nrlote: int,
-    qttotallote: int | None,
-    usarcapacidaderestante: bool,
-    ignorar_lote_id: int | None = None,
-) -> None:
-    """Mantém a programação comercial coerente dentro de cada setor."""
-    lotes = db.query(EventoLote).filter(
-        EventoLote.evento_id == evento_id,
-        EventoLote.eventosetor_id == setor.eventosetor_id,
-    ).all()
-    outros = [item for item in lotes if item.lote_id != ignorar_lote_id]
-
-    if any(item.nrlote == nrlote for item in outros):
-        raise HTTPException(409, "Já existe este número de lote no setor")
-
-    restante_existente = next(
-        (item for item in outros if item.usarcapacidaderestante == "S"), None
+def _carregar_global(db: Session, loteglobal_id: int) -> EventoLoteGlobal | None:
+    return (
+        db.query(EventoLoteGlobal)
+        .options(
+            joinedload(EventoLoteGlobal.configuracoes_setor).joinedload(EventoLote.setor),
+            joinedload(EventoLoteGlobal.configuracoes_setor).joinedload(EventoLote.precos),
+        )
+        .filter(EventoLoteGlobal.loteglobal_id == loteglobal_id)
+        .first()
     )
-    if usarcapacidaderestante:
-        if restante_existente:
-            raise HTTPException(409, "Já existe um lote configurado para usar a capacidade restante neste setor")
-        if any(item.nrlote > nrlote for item in outros):
-            raise HTTPException(422, "O lote de capacidade restante deve ser o último do setor")
-    elif restante_existente:
-        raise HTTPException(409, "O lote de capacidade restante deve ser sempre o último")
-
-    if not usarcapacidaderestante:
-        if qttotallote is None:
-            raise HTTPException(422, "Informe o limite comercial do lote")
-        total_fixo = sum(int(item.qttotallote or 0) for item in outros if item.usarcapacidaderestante != "S")
-        if total_fixo + qttotallote > int(setor.qtcapacidade):
-            raise HTTPException(
-                422,
-                "A soma dos lotes deste setor não pode ultrapassar sua capacidade",
-            )
 
 
-def _validar_programacao_vendas(
+def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
+    vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, evento.evento_id)
+    reservados = quantidade_reservada(db, lote.lote_id)
+    setor = lote.setor
+    global_ = lote.lote_global
+    disponibilidade = quantidade_disponivel_configuracao(db, lote)
+    return {
+        "lote_id": lote.lote_id,
+        "loteglobal_id": global_.loteglobal_id,
+        "organizacao_id": global_.organizacao_id,
+        "loja_id": global_.loja_id,
+        "evento_id": global_.evento_id,
+        "nmlote": global_.nmlote,
+        "nrlote": global_.nrlote,
+        "eventosetor_id": lote.eventosetor_id,
+        "nmsetor": setor.nmsetor if setor else None,
+        "qttotallote": int(lote.qtlimite),
+        "qtlimite": int(lote.qtlimite),
+        "qtvendidalote": int(lote.qtvendidalote or 0),
+        "qtreservadalote": reservados,
+        "qtdisponivel": disponibilidade,
+        "qtcapacidade_setor": int(setor.qtcapacidade) if setor else None,
+        "qtcapacidaderestante": (
+            capacidade_restante_setor(db, evento.evento_id, setor.eventosetor_id, int(setor.qtcapacidade))
+            if setor else None
+        ),
+        "dtiniciovenda": global_.dtiniciovenda,
+        "dtfimvenda": global_.dtfimvenda,
+        "gatilhovirada": global_.gatilhovirada,
+        "statuslote": global_.situacao if lote.situacao == "ATIVO" else "INATIVO",
+        "cotalegal": int(_capacidade_total_evento(db, evento) * 0.40),
+        "qtvendidacotalegal": vendidos_cota,
+        "qtreservadacotalegal": reservados_cota,
+        "precos": [
+            {
+                "lotepreco_id": preco.lotepreco_id,
+                "nmpreco": preco.nmpreco,
+                "tipopreco": preco.tipopreco,
+                "vrpreco": float(preco.vrpreco),
+                "aplicacotalegal": bool(preco.aplicacotalegal),
+                "exigecomprovante": bool(preco.exigecomprovante),
+                "situacao": preco.situacao,
+                "nrordem": int(preco.nrordem),
+            }
+            for preco in lote.precos
+        ],
+    }
+
+
+def _saida_global(db: Session, global_: EventoLoteGlobal, evento: Evento) -> dict:
+    configuracoes = sorted(
+        global_.configuracoes_setor,
+        key=lambda item: ((item.setor.nrordem if item.setor else 999999), item.lote_id),
+    )
+    return {
+        "loteglobal_id": global_.loteglobal_id,
+        "evento_id": global_.evento_id,
+        "organizacao_id": global_.organizacao_id,
+        "loja_id": global_.loja_id,
+        "nrlote": global_.nrlote,
+        "nmlote": global_.nmlote,
+        "dtiniciovenda": global_.dtiniciovenda,
+        "dtfimvenda": global_.dtfimvenda,
+        "gatilhovirada": global_.gatilhovirada,
+        "situacao": global_.situacao,
+        "disponivel_globalmente": lote_global_ativo(db, evento.evento_id) == global_,
+        "setores": [_saida_configuracao(db, item, evento) for item in configuracoes],
+    }
+
+
+def _validar_setores_do_lote(
     db: Session,
     *,
     evento: Evento,
-    setor: EventoSetor,
-    nrlote: int,
-    dtinicio: datetime | None,
-    dtfim: datetime | None,
-    ignorar_lote_id: int | None = None,
+    configuracoes: list,
+    ignorar_loteglobal_id: int | None = None,
 ) -> None:
-    """Garante uma sequência de venda sem sobreposição nem intervalos.
-
-    O fim é inclusivo na venda (a regra de reserva encerra somente depois do
-    horário final). Por isso o lote seguinte deve começar exatamente um minuto
-    depois do anterior.
-    """
-    if dtinicio is None or dtfim is None:
-        raise HTTPException(422, "Informe o início e o fim das vendas do lote")
-    if dtfim <= dtinicio:
-        raise HTTPException(422, "O fim das vendas deve ser posterior ao início")
-    if evento.dtinicioevento and dtfim > evento.dtinicioevento:
-        raise HTTPException(422, "O fim das vendas não pode ser após o início do evento")
-
-    lotes = db.query(EventoLote).filter(
-        EventoLote.evento_id == evento.evento_id,
-        EventoLote.eventosetor_id == setor.eventosetor_id,
-    ).all()
-    outros = [item for item in lotes if item.lote_id != ignorar_lote_id]
-
-    if nrlote > 1:
-        anterior = next((item for item in outros if item.nrlote == nrlote - 1), None)
-        if anterior is None:
-            raise HTTPException(422, f"Cadastre primeiro o Lote {nrlote - 1} deste setor")
-        if anterior.dtfimvenda is None:
-            raise HTTPException(422, f"Informe o fim das vendas do Lote {nrlote - 1}")
-        inicio_esperado = anterior.dtfimvenda.replace(second=0, microsecond=0) + timedelta(minutes=1)
-        if dtinicio.replace(second=0, microsecond=0) != inicio_esperado:
-            esperado = inicio_esperado.strftime("%d/%m/%Y às %H:%M")
-            raise HTTPException(
-                422,
-                f"O Lote {nrlote} deve iniciar em {esperado}, um minuto após o lote anterior",
-            )
-
-    proximo = next((item for item in outros if item.nrlote == nrlote + 1), None)
-    if proximo is not None:
-        if proximo.dtiniciovenda is None:
-            raise HTTPException(422, f"Informe o início das vendas do Lote {nrlote + 1}")
-        inicio_proximo_esperado = dtfim.replace(second=0, microsecond=0) + timedelta(minutes=1)
-        if proximo.dtiniciovenda.replace(second=0, microsecond=0) != inicio_proximo_esperado:
-            esperado = inicio_proximo_esperado.strftime("%d/%m/%Y às %H:%M")
-            raise HTTPException(
-                422,
-                f"O Lote {nrlote + 1} deve iniciar em {esperado} para manter a venda contínua",
-            )
-
-
-def _saida_lote(db: Session, lote: EventoLote) -> dict:
-    vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, lote.evento_id)
-    reservas_ativas = (
-        ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
-        ReservaIngresso.dtexpiracao > datetime.now(),
+    ativos = (
+        db.query(EventoSetor)
+        .filter(EventoSetor.evento_id == evento.evento_id, EventoSetor.sitsetor == "ATIVO")
+        .all()
     )
-    reservados_lote = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).filter(ReservaIngresso.lote_id == lote.lote_id, *reservas_ativas).scalar() or 0)
-    capacidade_setor = int(lote.setor.qtcapacidade) if lote.setor else None
-    capacidade_restante = None
-    if lote.usarcapacidaderestante == "S" and capacidade_setor is not None:
-        capacidade_restante = capacidade_restante_setor(db, lote.evento_id, lote.eventosetor_id, capacidade_setor)
-    return {"lote_id": lote.lote_id, "organizacao_id": lote.organizacao_id, "loja_id": lote.loja_id, "evento_id": lote.evento_id, "nmlote": lote.nmlote, "eventosetor_id": lote.eventosetor_id, "nmsetor": lote.nmsetor, "nrlote": lote.nrlote, "qttotallote": lote.qttotallote, "usarcapacidaderestante": lote.usarcapacidaderestante == "S", "qtvendidalote": lote.qtvendidalote or 0, "qtreservadalote": reservados_lote, "qtcapacidade_setor": capacidade_setor, "qtcapacidaderestante": capacidade_restante, "dtiniciovenda": lote.dtiniciovenda, "dtfimvenda": lote.dtfimvenda, "statuslote": lote.statuslote, "dtcriacao": lote.dtcriacao, "dtultatu": lote.dtultatu, "cotalegal": int(_capacidade_total_evento(db, lote.evento_id) * .40), "qtvendidacotalegal": vendidos_cota, "qtreservadacotalegal": reservados_cota, "precos": [{"lotepreco_id": p.lotepreco_id, "nmpreco": p.nmpreco, "tipopreco": p.tipopreco, "vrpreco": float(p.vrpreco), "aplicacotalegal": bool(p.aplicacotalegal), "exigecomprovante": bool(p.exigecomprovante), "situacao": p.situacao, "nrordem": p.nrordem} for p in lote.precos]}
+    ids_ativos = {setor.eventosetor_id for setor in ativos}
+    por_setor = {item.eventosetor_id: item for item in configuracoes}
+    if len(por_setor) != len(configuracoes):
+        raise HTTPException(422, "Cada setor pode ser configurado apenas uma vez no lote global")
+    if set(por_setor) != ids_ativos:
+        faltantes = [setor.nmsetor for setor in ativos if setor.eventosetor_id not in por_setor]
+        extras = set(por_setor) - ids_ativos
+        detalhe = []
+        if faltantes:
+            detalhe.append("faltam: " + ", ".join(faltantes))
+        if extras:
+            detalhe.append("setores inválidos informados")
+        raise HTTPException(422, "Todo lote global deve configurar todos os setores ativos (" + "; ".join(detalhe) + ")")
+
+    for setor in ativos:
+        limite_novo = int(por_setor[setor.eventosetor_id].qtlimite)
+        usados = int(
+            db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
+            .join(EventoLoteGlobal, EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id)
+            .filter(
+                EventoLote.eventosetor_id == setor.eventosetor_id,
+                EventoLoteGlobal.evento_id == evento.evento_id,
+                EventoLoteGlobal.situacao == "ATIVO",
+                EventoLote.situacao == "ATIVO",
+            )
+            .scalar()
+            or 0
+        )
+        if ignorar_loteglobal_id is not None:
+            usados -= int(
+                db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
+                .filter(
+                    EventoLote.eventosetor_id == setor.eventosetor_id,
+                    EventoLote.loteglobal_id == ignorar_loteglobal_id,
+                )
+                .scalar()
+                or 0
+            )
+        if usados + limite_novo > int(setor.qtcapacidade):
+            raise HTTPException(
+                422,
+                f"O total de todos os lotes para {setor.nmsetor} não pode superar a capacidade de {setor.qtcapacidade} pessoas",
+            )
 
 
 @router.get("/{evento_id}/lotes")
-def listar_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
-
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .filter(EventoLote.statuslote == "ATIVO")
-        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
-        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc())
-        .all()
-    )
-
-    from app.services.reserva_ingresso_service import lote_atual_do_setor, expirar_reservas
-    expirar_reservas(db)
-    atuais = [lote for lote in lotes if lote_atual_do_setor(db, lote, datetime.now()) is lote]
-    return [_saida_lote(db, lote) for lote in atuais]
+def listar_lotes_disponiveis(evento_id: int, db: Session = Depends(get_db)):
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado")
+    atual = lote_global_ativo(db, evento_id)
+    if not atual:
+        return []
+    global_ = _carregar_global(db, atual.loteglobal_id)
+    return [
+        _saida_configuracao(db, configuracao, evento)
+        for configuracao in global_.configuracoes_setor
+        if configuracao.situacao == "ATIVO" and quantidade_disponivel_configuracao(db, configuracao) > 0
+    ]
 
 
 @router.get("/{evento_id}/lotes_todos")
-def listar_todos_lotes_evento(
-    evento_id: int,
-    db: Session = Depends(get_db),
-):
+def listar_todos_lotes_evento(evento_id: int, db: Session = Depends(get_db)):
     evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
-
     if not evento:
-        raise HTTPException(status_code=404, detail="Evento não encontrado")
-
-    lotes = (
-        db.query(EventoLote)
-        .filter(EventoLote.evento_id == evento_id)
-        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
-        .order_by(EventoLote.nrlote.asc(), EventoSetor.nrordem.asc())
+        raise HTTPException(404, "Evento não encontrado")
+    globais = (
+        db.query(EventoLoteGlobal)
+        .filter(EventoLoteGlobal.evento_id == evento_id)
+        .order_by(EventoLoteGlobal.nrlote)
         .all()
     )
+    resultado = []
+    for global_ in globais:
+        carregado = _carregar_global(db, global_.loteglobal_id)
+        resultado.extend(_saida_configuracao(db, item, evento) for item in carregado.configuracoes_setor)
+    return resultado
 
-    return [_saida_lote(db, lote) for lote in lotes]
+
+@router.get("/{evento_id}/lotes-globais")
+def listar_lotes_globais(evento_id: int, db: Session = Depends(get_db)):
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado")
+    globais = (
+        db.query(EventoLoteGlobal)
+        .filter(EventoLoteGlobal.evento_id == evento_id)
+        .order_by(EventoLoteGlobal.nrlote)
+        .all()
+    )
+    return [_saida_global(db, _carregar_global(db, item.loteglobal_id), evento) for item in globais]
 
 
-@router.post("/{evento_id}/lotes")
-def criar_lote_evento(
+@router.post("/{evento_id}/lotes", status_code=201)
+def criar_lote_global(
     evento_id: int,
-    data: EventoLoteCreate,
+    data: EventoLoteGlobalCreate,
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    try:
-        evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
-        if not evento:
-            raise HTTPException(status_code=404, detail="Evento não encontrado")
-        validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado")
+    validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
+    if not loja or data.organizacao_id != evento.organizacao_id or data.loja_id != evento.loja_id:
+        raise HTTPException(422, "Organização ou loja divergente do evento")
 
-        loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
-        if not loja:
-            raise HTTPException(status_code=404, detail="Loja não encontrada")
-        setor = None
-        if data.eventosetor_id is not None:
-            setor = db.query(EventoSetor).filter(EventoSetor.eventosetor_id == data.eventosetor_id, EventoSetor.evento_id == evento_id).first()
-            if not setor: raise HTTPException(status_code=404, detail="Setor do evento não encontrado")
-        if not setor:
-            raise HTTPException(422, "Selecione o setor do lote")
-        _validar_modalidades(data.precos)
-        _validar_configuracao_setor(
-            db,
-            evento_id=evento_id,
-            setor=setor,
-            nrlote=data.nrlote,
-            qttotallote=data.qttotallote,
-            usarcapacidaderestante=data.usarcapacidaderestante,
+    proximo_numero = int(
+        db.query(func.coalesce(func.max(EventoLoteGlobal.nrlote), 0))
+        .filter(EventoLoteGlobal.evento_id == evento_id)
+        .scalar()
+        or 0
+    ) + 1
+    numero = data.nrlote or proximo_numero
+    if numero != proximo_numero:
+        raise HTTPException(422, f"O próximo lote global deve ser o Lote {proximo_numero}")
+    if numero == 1 and data.dtiniciovenda is None:
+        raise HTTPException(422, "Informe o início das vendas do Lote 1")
+    if numero > 1 and data.dtiniciovenda is not None:
+        raise HTTPException(
+            422,
+            "Somente o Lote 1 tem início próprio. Os demais começam automaticamente na virada do lote anterior.",
         )
-        _validar_programacao_vendas(
-            db,
-            evento=evento,
-            setor=setor,
-            nrlote=data.nrlote,
-            dtinicio=data.dtiniciovenda,
-            dtfim=data.dtfimvenda,
-        )
+    if data.gatilhovirada in {"DATA", "HIBRIDO"} and data.dtfimvenda is None:
+        raise HTTPException(422, "Informe o fim das vendas para a virada programada")
+    _validar_setores_do_lote(db, evento=evento, configuracoes=data.setores)
 
-        novo = EventoLote(
-            organizacao_id=data.organizacao_id,
-            loja_id=data.loja_id,
-            evento_id=evento_id,
-            eventosetor_id=data.eventosetor_id,
-            nrlote=data.nrlote,
-            nmlote=data.nmlote,
-            qttotallote=data.qttotallote,
-            usarcapacidaderestante="S" if data.usarcapacidaderestante else "N",
+    global_ = EventoLoteGlobal(
+        organizacao_id=evento.organizacao_id,
+        loja_id=evento.loja_id,
+        evento_id=evento_id,
+        nrlote=numero,
+        nmlote=(data.nmlote or f"Lote {numero}").strip(),
+        dtiniciovenda=data.dtiniciovenda if numero == 1 else None,
+        dtfimvenda=data.dtfimvenda,
+        gatilhovirada=data.gatilhovirada,
+        situacao="ATIVO",
+    )
+    db.add(global_)
+    db.flush()
+    for setor_dados in data.setores:
+        configuracao = EventoLote(
+            loteglobal_id=global_.loteglobal_id,
+            eventosetor_id=setor_dados.eventosetor_id,
+            qtlimite=setor_dados.qtlimite,
             qtvendidalote=0,
-            dtiniciovenda=data.dtiniciovenda,
-            dtfimvenda=data.dtfimvenda,
-            statuslote=data.statuslote if data.statuslote else "ATIVO",
+            situacao="ATIVO",
         )
-
-        db.add(novo)
+        db.add(configuracao)
         db.flush()
-        db.add_all([EventoLotePreco(lote_id=novo.lote_id, **p.model_dump()) for p in data.precos])
-        db.commit()
-        db.refresh(novo)
+        db.add_all(EventoLotePreco(lote_id=configuracao.lote_id, **preco.model_dump()) for preco in setor_dados.precos)
+    db.commit()
+    return {"mensagem": "Lote global cadastrado com sucesso", "loteglobal_id": global_.loteglobal_id}
 
-        return {
-            "mensagem": "Lote cadastrado com sucesso",
-            "lote_id": novo.lote_id,
-        }
 
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        db.rollback()
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao criar lote: {str(e)}")
+@router.put("/lotes-globais/{loteglobal_id}")
+def atualizar_lote_global(
+    loteglobal_id: int,
+    data: EventoLoteGlobalUpdate,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    global_ = _carregar_global(db, loteglobal_id)
+    if not global_:
+        raise HTTPException(404, "Lote global não encontrado")
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    if global_.nrlote != 1 and data.dtiniciovenda is not None:
+        raise HTTPException(
+            422,
+            "Somente o Lote 1 tem início próprio. Os demais começam automaticamente na virada do lote anterior.",
+        )
+    for campo in ("nmlote", "dtfimvenda", "gatilhovirada", "situacao"):
+        valor = getattr(data, campo)
+        if valor is not None:
+            setattr(global_, campo, valor)
+    if global_.nrlote == 1 and data.dtiniciovenda is not None:
+        global_.dtiniciovenda = data.dtiniciovenda
+    if global_.dtiniciovenda and global_.dtfimvenda and global_.dtfimvenda <= global_.dtiniciovenda:
+        raise HTTPException(422, "O fim das vendas deve ser posterior ao início")
+    db.commit()
+    return {"mensagem": "Lote global atualizado com sucesso"}
 
 
 @router.put("/lotes/{lote_id}")
-def atualizar_lote_evento(
+def atualizar_configuracao_setor(
     lote_id: int,
-    data: EventoLoteUpdate,
+    data: EventoLoteSetorUpdate,
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    try:
-        lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
-
-        if not lote:
-            raise HTTPException(status_code=404, detail="Lote não encontrado")
-        validar_mutacao_loja(usuario, lote.organizacao_id, lote.loja_id)
-
-        # Valida a configuração final antes de alterá-la. Isso impede que uma
-        # edição crie números repetidos, dois lotes de capacidade restante ou
-        # uma soma de lotes acima da lotação do setor.
-        alterou_programacao = bool(
-            {"eventosetor_id", "nrlote", "qttotallote", "usarcapacidaderestante"}
-            & data.model_fields_set
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+    if not lote:
+        raise HTTPException(404, "Configuração do setor não encontrada")
+    global_ = _carregar_global(db, lote.loteglobal_id)
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    if data.qtlimite is not None:
+        setor = lote.setor
+        usado_em_outros = int(
+            db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
+            .filter(EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.lote_id != lote.lote_id)
+            .scalar()
+            or 0
         )
-        novo_setor_id = (
-            data.eventosetor_id
-            if "eventosetor_id" in data.model_fields_set
-            else lote.eventosetor_id
-        )
-        novo_setor = None
-        if alterou_programacao:
-            if novo_setor_id is None:
-                if lote.eventosetor_id is not None:
-                    raise HTTPException(422, "Selecione o setor do lote")
-            else:
-                novo_setor = db.query(EventoSetor).filter(
-                    EventoSetor.eventosetor_id == novo_setor_id,
-                    EventoSetor.evento_id == lote.evento_id,
-                ).first()
-                if not novo_setor:
-                    raise HTTPException(status_code=404, detail="Setor do evento não encontrado")
-                if (
-                    novo_setor_id != lote.eventosetor_id
-                    and (int(lote.qtvendidalote or 0) > 0 or quantidade_reservada(db, lote_id) > 0)
-                ):
-                    raise HTTPException(409, "Não é possível mover para outro setor um lote com vendas ou reservas")
-                novo_resto = (
-                    data.usarcapacidaderestante
-                    if data.usarcapacidaderestante is not None
-                    else lote.usarcapacidaderestante == "S"
-                )
-                novo_total = None if novo_resto else (
-                    data.qttotallote if data.qttotallote is not None else lote.qttotallote
-                )
-                if novo_total is not None and novo_total < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote_id):
-                    raise HTTPException(422, "A capacidade não pode ser menor que as vendas e reservas atuais")
-                _validar_configuracao_setor(
-                    db,
-                    evento_id=lote.evento_id,
-                    setor=novo_setor,
-                    nrlote=data.nrlote if data.nrlote is not None else lote.nrlote,
-                    qttotallote=novo_total,
-                    usarcapacidaderestante=novo_resto,
-                    ignorar_lote_id=lote_id,
-                )
-
-        if data.nmlote is not None:
-            lote.nmlote = data.nmlote
-        if "eventosetor_id" in data.model_fields_set:
-            lote.eventosetor_id = data.eventosetor_id
-        if data.nrlote is not None: lote.nrlote = data.nrlote
-
-        if data.qttotallote is not None:
-            lote.qttotallote = data.qttotallote
-        if data.usarcapacidaderestante is not None:
-            lote.usarcapacidaderestante = "S" if data.usarcapacidaderestante else "N"
-            if data.usarcapacidaderestante: lote.qttotallote = None
-        if data.precos is not None:
-            _validar_modalidades(data.precos)
-            if int(lote.qtvendidalote or 0) > 0 or quantidade_reservada(db, lote_id) > 0:
-                raise HTTPException(409, "Os preços de um lote com vendas ou reservas não podem ser substituídos. Crie um novo lote.")
-            db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
-            db.add_all([EventoLotePreco(lote_id=lote_id, **p.model_dump()) for p in data.precos])
-
-        if data.dtiniciovenda is not None:
-            lote.dtiniciovenda = data.dtiniciovenda
-
-        if data.dtfimvenda is not None:
-            lote.dtfimvenda = data.dtfimvenda
-
-        if data.statuslote is not None:
-            lote.statuslote = data.statuslote
-
-        # A programação é conferida sempre que o setor, a sequência ou os
-        # horários mudam. Alterações independentes, como nome ou status, não
-        # precisam consultar novamente a agenda comercial.
-        alterou_horario = (
-            data.dtiniciovenda is not None or data.dtfimvenda is not None
-        )
-        if alterou_programacao or alterou_horario:
-            setor_programacao = db.query(EventoSetor).filter(
-                EventoSetor.eventosetor_id == lote.eventosetor_id,
-                EventoSetor.evento_id == lote.evento_id,
-            ).first()
-            evento_programacao = db.query(Evento).filter(
-                Evento.evento_id == lote.evento_id,
-            ).first()
-            if not setor_programacao or not evento_programacao:
-                raise HTTPException(422, "Setor do lote não encontrado")
-            _validar_programacao_vendas(
-                db,
-                evento=evento_programacao,
-                setor=setor_programacao,
-                nrlote=lote.nrlote,
-                dtinicio=lote.dtiniciovenda,
-                dtfim=lote.dtfimvenda,
-                ignorar_lote_id=lote_id,
-            )
-
-        db.commit()
-        db.refresh(lote)
-
-        return {
-            "mensagem": "Lote atualizado com sucesso",
-            "lote": {
-                "lote_id": lote.lote_id,
-                "organizacao_id": lote.organizacao_id,
-                "loja_id": lote.loja_id,
-                "evento_id": lote.evento_id,
-                "nmlote": lote.nmlote,
-                "eventosetor_id": getattr(lote, "eventosetor_id", None),
-                "nmsetor": getattr(lote, "nmsetor", None),
-                "nrlote": getattr(lote, "nrlote", 1),
-                "qttotallote": lote.qttotallote,
-                "qtvendidalote": lote.qtvendidalote,
-                "dtiniciovenda": lote.dtiniciovenda,
-                "dtfimvenda": lote.dtfimvenda,
-                "statuslote": lote.statuslote,
-                "dtcriacao": lote.dtcriacao,
-                "dtultatu": lote.dtultatu,
-            }
-        }
-
-    except HTTPException:
-        db.rollback()
-        raise
-
-    except Exception as e:
-        db.rollback()
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao atualizar lote: {str(e)}")
+        if usado_em_outros + data.qtlimite > int(setor.qtcapacidade):
+            raise HTTPException(422, "A soma dos lotes não pode ultrapassar a capacidade do setor")
+        if data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
+            raise HTTPException(422, "O limite não pode ficar abaixo das vendas e reservas existentes")
+        lote.qtlimite = data.qtlimite
+    if data.situacao is not None:
+        lote.situacao = data.situacao
+    if data.precos is not None:
+        if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
+            raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
+        db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
+        db.add_all(EventoLotePreco(lote_id=lote_id, **preco.model_dump()) for preco in data.precos)
+    db.commit()
+    return {"mensagem": "Setor do lote atualizado com sucesso"}
 
 
-@router.delete("/lotes/{lote_id}")
-def deletar_lote_evento(
-    lote_id: int,
+@router.delete("/lotes-globais/{loteglobal_id}")
+def excluir_lote_global(
+    loteglobal_id: int,
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    try:
-        lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
-
-        if not lote:
-            raise HTTPException(status_code=404, detail="Lote não encontrado")
-        validar_mutacao_loja(usuario, lote.organizacao_id, lote.loja_id)
-
-        if int(lote.qtvendidalote or 0) > 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Não é possível excluir o lote, pois já existem vendas vinculadas"
-            )
-
-        db.delete(lote)
-        db.commit()
-
-        return {"mensagem": "Lote deletado com sucesso"}
-
-    except HTTPException:
-        raise
-
-    except Exception as e:
-        db.rollback()
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro ao deletar lote: {str(e)}")
+    global_ = _carregar_global(db, loteglobal_id)
+    if not global_:
+        raise HTTPException(404, "Lote global não encontrado")
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    if any(item.qtvendidalote or quantidade_reservada(db, item.lote_id) for item in global_.configuracoes_setor):
+        raise HTTPException(409, "Não é possível excluir um lote global com vendas ou reservas")
+    db.delete(global_)
+    db.commit()
+    return {"mensagem": "Lote global excluído com sucesso"}
 
 
 @router.get("/lotes/{lote_id}/quantidade-vendida")
-def quantidade_vendida_lote(
-    lote_id: int,
-    db: Session = Depends(get_db),
-):
+def quantidade_vendida_lote(lote_id: int, db: Session = Depends(get_db)):
     lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
-
     if not lote:
-        raise HTTPException(status_code=404, detail="Lote não encontrado")
-
-    qtd_vendida = (
-        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
-        .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .filter(ItVenda.lote_id == lote_id)
-        .filter(Venda.sitvenda == "PAGA")
-        .scalar() or 0
-    )
-
-    from app.services.reserva_ingresso_service import expirar_reservas, quantidade_reservada
-    expirar_reservas(db, lote_id)
-    qtd_reservada = quantidade_reservada(db, lote_id)
-    if qtd_reservada:
-        db.commit()
-    sem_limite = lote.qttotallote is None
-    qtd_total = None if sem_limite else int(lote.qttotallote)
-    qtd_disponivel = None if sem_limite else max(qtd_total - qtd_vendida - qtd_reservada, 0)
-
+        raise HTTPException(404, "Configuração do setor não encontrada")
+    reservada = quantidade_reservada(db, lote_id)
     return {
         "lote_id": lote_id,
-        "qt_total": qtd_total,
-        "qt_vendida": qtd_vendida,
-        "qt_reservada": qtd_reservada,
-        "qt_disponivel": qtd_disponivel,
-        "sem_limite": sem_limite,
-        "esgotado": False if sem_limite else qtd_disponivel <= 0,
+        "qt_total": int(lote.qtlimite),
+        "qt_vendida": int(lote.qtvendidalote or 0),
+        "qt_reservada": reservada,
+        "qt_disponivel": quantidade_disponivel_configuracao(db, lote),
+        "sem_limite": False,
+        "esgotado": quantidade_disponivel_configuracao(db, lote) <= 0,
     }

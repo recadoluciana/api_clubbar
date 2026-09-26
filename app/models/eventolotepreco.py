@@ -5,10 +5,10 @@ from app.database import Base
 
 
 class EventoLotePreco(Base):
-    __tablename__ = "eventolotepreco"
+    __tablename__ = "eventolotesetorpreco"
 
     lotepreco_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    lote_id = Column(BigInteger, ForeignKey("eventolote.lote_id", ondelete="CASCADE"), nullable=False, index=True)
+    lote_id = Column(BigInteger, ForeignKey("eventolotesetor.lote_id", ondelete="CASCADE"), nullable=False, index=True)
     nmpreco = Column(String(100), nullable=False)
     tipopreco = Column(String(30), nullable=False, server_default="INTEIRA")
     vrpreco = Column(Numeric(10, 2), nullable=False)

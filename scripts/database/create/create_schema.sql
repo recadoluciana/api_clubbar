@@ -1560,55 +1560,43 @@ CREATE TABLE eventosetor (
   CHECK (qtcapacidade > 0), CHECK (nrordem > 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE eventolote (
-  lote_id          BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id   BIGINT NOT NULL,
-  loja_id          BIGINT NOT NULL,
-  evento_id        BIGINT NOT NULL,
-  eventosetor_id   BIGINT NULL,
-  nrlote           INT NOT NULL DEFAULT 1,
-  nmlote           VARCHAR(80) NOT NULL,
-  qttotallote      INT NULL,
-  usarcapacidaderestante CHAR(1) NOT NULL DEFAULT 'N',
-  qtvendidalote    INT NULL,
-  dtiniciovenda    DATETIME NULL,
-  dtfimvenda       DATETIME NULL,
-  statuslote       ENUM('ATIVO','ESGOTADO','ENCERRADO','INATIVO') NOT NULL DEFAULT 'ATIVO',
-  dtcriacao        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu         DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-
-  UNIQUE KEY uk_lote_org_loja_id (
-    organizacao_id,
-    loja_id,
-    lote_id
-  ),
-
-  UNIQUE KEY uk_lote_evento_nome (
-    evento_id,
-    nmlote
-  ),
-
-  CONSTRAINT fk_lote_evento
-    FOREIGN KEY (organizacao_id, loja_id, evento_id)
-    REFERENCES evento(organizacao_id, loja_id, evento_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_eventolote_setor
-    FOREIGN KEY (eventosetor_id) REFERENCES eventosetor(eventosetor_id)
-    ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT chk_lote_quantidades
-    CHECK (
-      (qttotallote IS NULL OR qttotallote >= 0)
-      AND (qtvendidalote IS NULL OR qtvendidalote >= 0)
-      AND (
-        qttotallote IS NULL
-        OR qtvendidalote IS NULL
-        OR qtvendidalote <= qttotallote
-      )
-    )
-
+CREATE TABLE eventoloteglobal (
+  loteglobal_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  loja_id BIGINT NOT NULL,
+  evento_id BIGINT NOT NULL,
+  nrlote INT NOT NULL,
+  nmlote VARCHAR(80) NOT NULL,
+  dtiniciovenda DATETIME NULL,
+  dtfimvenda DATETIME NULL,
+  gatilhovirada ENUM('DATA','ESGOTAMENTO','HIBRIDO') NOT NULL DEFAULT 'HIBRIDO',
+  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_eventoloteglobal_evento_numero (evento_id, nrlote),
+  INDEX idx_eventoloteglobal_evento (evento_id, situacao, nrlote),
+  FOREIGN KEY (evento_id) REFERENCES evento(evento_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CHECK (dtfimvenda IS NULL OR dtiniciovenda IS NULL OR dtfimvenda > dtiniciovenda)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE TABLE eventolotepreco (
+CREATE TABLE eventolotesetor (
+  lote_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  loteglobal_id BIGINT NOT NULL,
+  eventosetor_id BIGINT NOT NULL,
+  qtlimite INT NOT NULL,
+  qtvendidalote INT NOT NULL DEFAULT 0,
+  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_eventolotesetor_global_setor (loteglobal_id, eventosetor_id),
+  INDEX idx_eventolotesetor_setor (eventosetor_id, situacao),
+  FOREIGN KEY (loteglobal_id) REFERENCES eventoloteglobal(loteglobal_id) ON DELETE CASCADE,
+  FOREIGN KEY (eventosetor_id) REFERENCES eventosetor(eventosetor_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CHECK (qtlimite > 0), CHECK (qtvendidalote >= 0), CHECK (qtvendidalote <= qtlimite)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE eventolotesetorpreco (
   lotepreco_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   lote_id BIGINT NOT NULL,
   nmpreco VARCHAR(100) NOT NULL,
@@ -1620,33 +1608,26 @@ CREATE TABLE eventolotepreco (
   nrordem INT NOT NULL DEFAULT 1,
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_lotepreco_tipo (lote_id, tipopreco),
-  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id) ON DELETE CASCADE,
+  UNIQUE KEY uk_eventolotesetorpreco_tipo (lote_id, tipopreco),
+  FOREIGN KEY (lote_id) REFERENCES eventolotesetor(lote_id) ON DELETE CASCADE,
   CHECK (vrpreco >= 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
-CREATE INDEX idx_lote_evento_status
-  ON eventolote(evento_id, statuslote);
-
-CREATE INDEX idx_lote_loja_evento
-  ON eventolote(organizacao_id, loja_id, evento_id);
-
-
 ALTER TABLE itvenda
   ADD CONSTRAINT fk_itvenda_lote
-  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
+  FOREIGN KEY (lote_id) REFERENCES eventolotesetor(lote_id)
   ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_lote
-  FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
+  FOREIGN KEY (lote_id) REFERENCES eventolotesetor(lote_id)
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
 ALTER TABLE reserva_ingresso ADD CONSTRAINT fk_reserva_lotepreco
-  FOREIGN KEY (lotepreco_id) REFERENCES eventolotepreco(lotepreco_id);
+  FOREIGN KEY (lotepreco_id) REFERENCES eventolotesetorpreco(lotepreco_id);
 
 ALTER TABLE itvenda ADD CONSTRAINT fk_itvenda_lotepreco
-  FOREIGN KEY (lotepreco_id) REFERENCES eventolotepreco(lotepreco_id);
+  FOREIGN KEY (lotepreco_id) REFERENCES eventolotesetorpreco(lotepreco_id);
 
 ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_evento
@@ -1732,7 +1713,7 @@ CREATE TABLE IF NOT EXISTS checkout_asaas_item (
     FOREIGN KEY (produto_id) REFERENCES produto(produto_id)
     ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_checkout_asaas_item_lote
-    FOREIGN KEY (lote_id) REFERENCES eventolote(lote_id)
+    FOREIGN KEY (lote_id) REFERENCES eventolotesetor(lote_id)
     ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

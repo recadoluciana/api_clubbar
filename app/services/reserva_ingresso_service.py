@@ -5,48 +5,18 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.models.evento import Evento
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
-from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
-
-
-def capacidade_restante_setor(db: Session, evento_id: int, setor_id: int, capacidade: int) -> int:
-    vendidos = int(
-        db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0))
-        .filter(EventoLote.evento_id == evento_id, EventoLote.eventosetor_id == setor_id)
-        .scalar() or 0
-    )
-    reservados = int(
-        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
-        .join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id)
-        .filter(
-            EventoLote.evento_id == evento_id,
-            EventoLote.eventosetor_id == setor_id,
-            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
-            ReservaIngresso.dtexpiracao > datetime.now(),
-        )
-        .scalar() or 0
-    )
-    return max(0, capacidade - vendidos - reservados)
-
-def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> EventoLote | None:
-    lotes = db.query(EventoLote).filter(EventoLote.evento_id == lote.evento_id, EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.statuslote.in_(("ATIVO", "ESGOTADO", "ENCERRADO"))).order_by(EventoLote.nrlote, EventoLote.lote_id).all()
-    if not lotes: return None
-    for item in lotes:
-        reservada = quantidade_reservada(db, item.lote_id)
-        esgotado = item.qttotallote is not None and int(item.qtvendidalote or 0) + reservada >= int(item.qttotallote)
-        encerrado = item.dtfimvenda is not None and agora > item.dtfimvenda
-        if item.statuslote != "ATIVO" or esgotado or encerrado:
-            continue
-        return item
-    return None
+BENEFICIOS_COTA = {"ESTUDANTE", "JOVEM_BAIXA_RENDA", "PCD", "ACOMPANHANTE_PCD"}
 
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
@@ -72,103 +42,207 @@ def quantidade_reservada(db: Session, lote_id: int) -> int:
     )
 
 
-BENEFICIOS_COTA = {"ESTUDANTE", "JOVEM_BAIXA_RENDA", "PCD", "ACOMPANHANTE_PCD"}
+def quantidade_disponivel_configuracao(db: Session, lote: EventoLote) -> int:
+    return max(
+        0,
+        int(lote.qtlimite) - int(lote.qtvendidalote or 0) - quantidade_reservada(db, lote.lote_id),
+    )
 
-def criar_reserva(db: Session, *, cliente_id: int, lote_id: int, lotepreco_id: int, tipo_beneficio: str | None, quantidade: int) -> ReservaIngresso:
+
+def capacidade_restante_setor(db: Session, evento_id: int, setor_id: int, capacidade: int) -> int:
+    vendidos = int(
+        db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0))
+        .filter(EventoLote.evento_id == evento_id, EventoLote.eventosetor_id == setor_id)
+        .scalar()
+        or 0
+    )
+    reservados = int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id)
+        .filter(
+            EventoLote.evento_id == evento_id,
+            EventoLote.eventosetor_id == setor_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > datetime.now(),
+        )
+        .scalar()
+        or 0
+    )
+    return max(0, capacidade - vendidos - reservados)
+
+
+def _lote_global_esgotado(db: Session, lote_global: EventoLoteGlobal) -> bool:
+    configuracoes = [
+        configuracao
+        for configuracao in lote_global.configuracoes_setor
+        if configuracao.situacao == "ATIVO" and configuracao.setor and configuracao.setor.sitsetor == "ATIVO"
+    ]
+    return bool(configuracoes) and all(
+        quantidade_disponivel_configuracao(db, configuracao) <= 0
+        for configuracao in configuracoes
+    )
+
+
+def lote_global_ativo(
+    db: Session, evento_id: int, agora: datetime | None = None
+) -> EventoLoteGlobal | None:
+    """Resolve o único lote comercial vigente para todos os setores."""
+    agora = agora or datetime.now()
+    lotes = (
+        db.query(EventoLoteGlobal)
+        .filter(EventoLoteGlobal.evento_id == evento_id, EventoLoteGlobal.situacao == "ATIVO")
+        .order_by(EventoLoteGlobal.nrlote, EventoLoteGlobal.loteglobal_id)
+        .all()
+    )
+    for indice, lote in enumerate(lotes):
+        # Só o primeiro lote tem início próprio. Nos demais, a abertura é a
+        # virada do anterior, que mantém a venda sem uma janela vazia.
+        if indice == 0 and lote.dtiniciovenda and agora < lote.dtiniciovenda:
+            return None
+        encerrou_por_data = lote.dtfimvenda is not None and agora >= lote.dtfimvenda
+        encerrou_por_estoque = _lote_global_esgotado(db, lote)
+        gatilho = lote.gatilhovirada
+        encerrado = (
+            (gatilho == "DATA" and encerrou_por_data)
+            or (gatilho == "ESGOTAMENTO" and encerrou_por_estoque)
+            or (gatilho == "HIBRIDO" and (encerrou_por_data or encerrou_por_estoque))
+        )
+        if not encerrado:
+            return lote
+    return None
+
+
+def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> EventoLote | None:
+    if lote.situacao != "ATIVO" or not lote.lote_global or lote.lote_global.situacao != "ATIVO":
+        return None
+    atual = lote_global_ativo(db, lote.lote_global.evento_id, agora)
+    if atual is None or atual.loteglobal_id != lote.loteglobal_id:
+        return None
+    if quantidade_disponivel_configuracao(db, lote) <= 0:
+        return None
+    return lote
+
+
+def _capacidade_evento(db: Session, evento: Evento) -> int:
+    if evento.qtcapacidadeevento:
+        return int(evento.qtcapacidadeevento)
+    return int(
+        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
+        .filter(EventoSetor.evento_id == evento.evento_id, EventoSetor.sitsetor == "ATIVO")
+        .scalar()
+        or 0
+    )
+
+
+def criar_reserva(
+    db: Session,
+    *,
+    cliente_id: int,
+    lote_id: int,
+    lotepreco_id: int,
+    tipo_beneficio: str | None,
+    quantidade: int,
+) -> ReservaIngresso:
     lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).with_for_update().first()
     if not lote:
-        raise HTTPException(404, "Lote não encontrado")
-    preco = db.query(EventoLotePreco).filter(EventoLotePreco.lotepreco_id == lotepreco_id, EventoLotePreco.lote_id == lote_id, EventoLotePreco.situacao == "ATIVO").first()
+        raise HTTPException(404, "Configuração de setor não encontrada")
+    preco = (
+        db.query(EventoLotePreco)
+        .filter(
+            EventoLotePreco.lotepreco_id == lotepreco_id,
+            EventoLotePreco.lote_id == lote_id,
+            EventoLotePreco.situacao == "ATIVO",
+        )
+        .first()
+    )
     if not preco:
         raise HTTPException(404, "Modalidade de preço não encontrada")
+
     beneficio = (tipo_beneficio or "").strip().upper() or None
     if preco.tipopreco == "MEIA_LEGAL" and beneficio not in BENEFICIOS_COTA:
         raise HTTPException(422, "Informe um benefício válido para a meia-entrada legal")
     if preco.tipopreco == "MEIA_IDOSO" and beneficio != "IDOSO":
         raise HTTPException(422, "Selecione o benefício Pessoa idosa")
+
     agora = datetime.now()
-    # A sequência define qual lote será o próximo, mas nunca antecipa a janela
-    # configurada pelo parceiro. Esta checagem é feita no servidor para que o
-    # Client não seja a fonte de verdade do estoque nem do horário de venda.
-    if lote.statuslote != "ATIVO":
-        raise HTTPException(409, "Este lote não está disponível para venda")
-    if lote.dtiniciovenda and agora < lote.dtiniciovenda:
-        raise HTTPException(409, "As vendas deste lote ainda não começaram")
-    if lote.dtfimvenda and agora > lote.dtfimvenda:
-        raise HTTPException(409, "As vendas deste lote foram encerradas")
     expirar_reservas(db)
-    if lote_atual_do_setor(db, lote, agora) is not lote:
-        raise HTTPException(409, "Outro lote está vigente para este setor")
-    reservada_lote = quantidade_reservada(db, lote_id)
-    if lote.qttotallote is not None and int(lote.qtvendidalote or 0) + reservada_lote + quantidade > int(lote.qttotallote):
-        raise HTTPException(409, "O limite comercial deste lote foi atingido")
-    reservada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id).filter(EventoLote.evento_id == lote.evento_id, ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE), ReservaIngresso.dtexpiracao > datetime.now()).scalar() or 0)
-    vendida = int(db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0)).filter(EventoLote.evento_id == lote.evento_id).scalar() or 0)
-    capacidade_evento = int(db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(EventoSetor.evento_id == lote.evento_id, EventoSetor.sitsetor == "ATIVO").scalar() or 0)
-    if capacidade_evento <= 0 or vendida + reservada + quantidade > capacidade_evento:
-        raise HTTPException(409, "A capacidade total do evento foi atingida")
-    if lote.eventosetor_id is not None:
-        setor = db.query(EventoSetor).filter(EventoSetor.eventosetor_id == lote.eventosetor_id, EventoSetor.evento_id == lote.evento_id).with_for_update().first()
-        if not setor or setor.sitsetor != "ATIVO":
-            raise HTTPException(409, "Setor indisponível para venda")
-        if quantidade > capacidade_restante_setor(db, lote.evento_id, lote.eventosetor_id, int(setor.qtcapacidade)):
-            raise HTTPException(409, "A capacidade do setor foi atingida")
-    if preco.aplicacotalegal:
-        usada = int(db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id).filter(ReservaIngresso.evento_id == lote.evento_id, EventoLotePreco.aplicacotalegal.is_(True), ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA"))).scalar() or 0)
-        if usada + quantidade > int(capacidade_evento * 0.40):
-            raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
-    elif preco.tipopreco == "INTEIRA":
-        # Até 48 h antes do evento (72 h para capacidades acima de 10 mil),
-        # a cota legal precisa continuar acessível em todos os canais. A venda
-        # de inteira não pode ocupar os lugares ainda reservados a ela.
-        evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()
-        horas_reserva = 72 if capacidade_evento > 10000 else 48
-        limite_reserva = (
-            evento.dtinicioevento - timedelta(hours=horas_reserva)
-            if evento and evento.dtinicioevento
-            else None
+    if lote_atual_do_setor(db, lote, agora) is None:
+        raise HTTPException(409, "Este setor não está disponível no lote global vigente")
+    if quantidade > quantidade_disponivel_configuracao(db, lote):
+        raise HTTPException(409, "O limite deste setor no lote vigente foi atingido")
+
+    evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado")
+    capacidade_evento = _capacidade_evento(db, evento)
+    reservada_evento = int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .filter(
+            ReservaIngresso.evento_id == evento.evento_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > agora,
         )
-        if limite_reserva and agora < limite_reserva:
-            usada_cota = int(
-                db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
-                .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
-                .filter(
-                    ReservaIngresso.evento_id == lote.evento_id,
-                    EventoLotePreco.aplicacotalegal.is_(True),
-                    ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
-                )
-                .scalar()
-                or 0
+        .scalar()
+        or 0
+    )
+    vendida_evento = int(
+        db.query(func.coalesce(func.sum(EventoLote.qtvendidalote), 0))
+        .filter(EventoLote.evento_id == evento.evento_id)
+        .scalar()
+        or 0
+    )
+    if capacidade_evento <= 0 or vendida_evento + reservada_evento + quantidade > capacidade_evento:
+        raise HTTPException(409, "A capacidade total do evento foi atingida")
+
+    setor = (
+        db.query(EventoSetor)
+        .filter(EventoSetor.eventosetor_id == lote.eventosetor_id, EventoSetor.evento_id == evento.evento_id)
+        .with_for_update()
+        .first()
+    )
+    if not setor or setor.sitsetor != "ATIVO":
+        raise HTTPException(409, "Setor indisponível para venda")
+    if quantidade > capacidade_restante_setor(db, evento.evento_id, setor.eventosetor_id, int(setor.qtcapacidade)):
+        raise HTTPException(409, "A capacidade do setor foi atingida")
+
+    # A cota é global ao evento; a modalidade apenas informa se consome essa
+    # cota. A porcentagem oficial continuará em uma regra do evento, quando
+    # esta for exposta ao parceiro.
+    if preco.aplicacotalegal:
+        usada_cota = int(
+            db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+            .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
+            .filter(
+                ReservaIngresso.evento_id == evento.evento_id,
+                EventoLotePreco.aplicacotalegal.is_(True),
+                ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
             )
-            ocupacao_sem_cota = int(
-                db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
-                .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
-                .filter(
-                    ReservaIngresso.evento_id == lote.evento_id,
-                    EventoLotePreco.aplicacotalegal.is_(False),
-                    ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
-                )
-                .scalar()
-                or 0
-            )
-            maximo_sem_cota = capacidade_evento - max(0, int(capacidade_evento * 0.40) - usada_cota)
-            if ocupacao_sem_cota + quantidade > maximo_sem_cota:
-                raise HTTPException(
-                    409,
-                    "A reserva de meia-entrada ainda está protegida para este evento",
-                )
+            .scalar()
+            or 0
+        )
+        if usada_cota + quantidade > int(capacidade_evento * 0.40):
+            raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
+
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")
     minimo = Decimal(str(loja.vrtaxaminimaingresso or 0)) if loja else Decimal("0")
     unitario = Decimal(str(preco.vrpreco or 0)).quantize(Decimal("0.01"))
     taxa_unitaria = calcular_taxa_ingresso_unitaria(unitario, percentual, minimo)
     reserva = ReservaIngresso(
-        organizacao_id=lote.organizacao_id, loja_id=lote.loja_id, cliente_id=cliente_id,
-        evento_id=lote.evento_id, lote_id=lote.lote_id, lotepreco_id=preco.lotepreco_id, tipobeneficio=beneficio,
-        qtreservada=quantidade, vrunitario=unitario, pctaxa=percentual,
+        organizacao_id=lote.organizacao_id,
+        loja_id=lote.loja_id,
+        cliente_id=cliente_id,
+        evento_id=evento.evento_id,
+        lote_id=lote.lote_id,
+        lotepreco_id=preco.lotepreco_id,
+        tipobeneficio=beneficio,
+        qtreservada=quantidade,
+        vrunitario=unitario,
+        pctaxa=percentual,
         vrtaxa=taxa_unitaria,
         vrtotal=((unitario + taxa_unitaria) * quantidade).quantize(Decimal("0.01")),
-        sitreserva="PREENCHENDO", dtexpiracao=agora + timedelta(minutes=5),
+        sitreserva="PREENCHENDO",
+        dtexpiracao=agora + timedelta(minutes=5),
     )
     db.add(reserva)
     db.flush()
