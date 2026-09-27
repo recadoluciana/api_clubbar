@@ -37,6 +37,10 @@ class PoliticaCompraIn(BaseModel):
         return self
 
 
+class TextoRascunhoIn(BaseModel):
+    conteudo: str = Field(min_length=1, max_length=12000)
+
+
 def _tipo(valor: str | None) -> str:
     tipo = (valor or "INGRESSO").upper().strip()
     if tipo not in {"INGRESSO", "PRODUTO"}:
@@ -164,6 +168,26 @@ def criar_politica_compra(
     if not item.conteudo:
         item.conteudo = _conteudo_dinamico(item)
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _out(item)
+
+
+@router.patch("/compra/{politicacompra_id}/rascunho")
+def alterar_texto_rascunho_politica_compra(
+    politicacompra_id: int,
+    dados: TextoRascunhoIn,
+    operador: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    item = db.query(PoliticaCompra).filter(PoliticaCompra.politicacompra_id == politicacompra_id).first()
+    if not item:
+        raise HTTPException(404, "Política não encontrada.")
+    if item.sitpolitica != "RASCUNHO":
+        raise HTTPException(409, "Somente uma política em rascunho pode ser alterada.")
+
+    item.conteudo = dados.conteudo.strip()
+    item.operador_id = int(operador.get("sub") or 0) or None
     db.commit()
     db.refresh(item)
     return _out(item)
