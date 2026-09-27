@@ -15,6 +15,7 @@ router = APIRouter(prefix="/politicas", tags=["Políticas Clubbar"])
 class PoliticaCompraIn(BaseModel):
     versao: str = Field(min_length=1, max_length=30)
     titulo: str = Field(min_length=3, max_length=160)
+    conteudo: str | None = Field(default=None, max_length=12000)
     tipopolitica: str
     qtd_dias_cancelamento: int = Field(ge=0, le=365)
     qtd_horas_antecedencia_cancelamento: int | None = Field(default=None, ge=0, le=8760)
@@ -83,13 +84,21 @@ def _conteudo_dinamico(item: PoliticaCompra) -> str:
     )
 
 
+def _conteudo(item: PoliticaCompra) -> str:
+    """Mantém as versões legadas legíveis e preserva o texto das novas."""
+    conteudo = (item.conteudo or "").strip()
+    if conteudo and conteudo != "Texto gerado a partir dos parâmetros da política.":
+        return conteudo
+    return _conteudo_dinamico(item)
+
+
 def _out(item: PoliticaCompra) -> dict:
     return {
         "politicacompra_id": item.politicacompra_id,
         "versao": item.versao,
         "tipopolitica": item.tipopolitica,
         "titulo": item.titulo,
-        "conteudo": _conteudo_dinamico(item),
+        "conteudo": _conteudo(item),
         "sitpolitica": item.sitpolitica,
         "qtd_dias_cancelamento": item.qtd_dias_cancelamento,
         "qtd_horas_antecedencia_cancelamento": item.qtd_horas_antecedencia_cancelamento,
@@ -144,7 +153,7 @@ def criar_politica_compra(
         versao=versao,
         tipopolitica=dados.tipopolitica,
         titulo=dados.titulo.strip(),
-        conteudo="Texto gerado a partir dos parâmetros da política.",
+        conteudo=(dados.conteudo or "").strip(),
         qtd_dias_cancelamento=dados.qtd_dias_cancelamento,
         qtd_horas_antecedencia_cancelamento=dados.qtd_horas_antecedencia_cancelamento if dados.tipopolitica == "INGRESSO" else None,
         qtd_alteracoes_participante=dados.qtd_alteracoes_participante if dados.tipopolitica == "INGRESSO" else None,
@@ -152,6 +161,8 @@ def criar_politica_compra(
         sitpolitica="RASCUNHO",
         operador_id=int(operador.get("sub") or 0) or None,
     )
+    if not item.conteudo:
+        item.conteudo = _conteudo_dinamico(item)
     db.add(item)
     db.commit()
     db.refresh(item)
