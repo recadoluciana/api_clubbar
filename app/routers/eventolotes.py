@@ -169,18 +169,18 @@ def _validar_setores_do_lote(
     por_setor = {item.eventosetor_id: item for item in configuracoes}
     if len(por_setor) != len(configuracoes):
         raise HTTPException(422, "Cada setor pode ser configurado apenas uma vez no lote global")
-    if set(por_setor) != ids_ativos:
-        faltantes = [setor.nmsetor for setor in ativos if setor.eventosetor_id not in por_setor]
-        extras = set(por_setor) - ids_ativos
-        detalhe = []
-        if faltantes:
-            detalhe.append("faltam: " + ", ".join(faltantes))
-        if extras:
-            detalhe.append("setores inválidos informados")
-        raise HTTPException(422, "Todo lote global deve configurar todos os setores ativos (" + "; ".join(detalhe) + ")")
+    extras = set(por_setor) - ids_ativos
+    if extras:
+        raise HTTPException(422, "Há setores inválidos informados neste lote global")
 
+    # Um lote global é uma etapa única de vendas, mas nem todo setor precisa
+    # participar dela. Os setores ausentes ficam indisponíveis até serem
+    # incluídos em outra etapa global.
     for setor in ativos:
-        limite_novo = int(por_setor[setor.eventosetor_id].qtlimite)
+        dados_setor = por_setor.get(setor.eventosetor_id)
+        if dados_setor is None:
+            continue
+        limite_novo = int(dados_setor.qtlimite)
         # Lotes globais são etapas sequenciais de preço. A quantidade de uma
         # etapa não é somada à das anteriores; todos compartilham o estoque do
         # setor e as vendas anteriores são descontadas no checkout.
@@ -358,6 +358,30 @@ def atualizar_configuracao_setor(
         db.add_all(EventoLotePreco(lote_id=lote_id, **preco.model_dump()) for preco in data.precos)
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
+
+
+@router.delete("/lotes/{lote_id}")
+def excluir_setor_do_lote(
+    lote_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+    if not lote:
+        raise HTTPException(404, "Setor do lote não encontrado")
+    global_ = _carregar_global(db, lote.loteglobal_id)
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    if len(global_.configuracoes_setor) <= 1:
+        raise HTTPException(409, "Este é o único setor do lote. Exclua o lote global inteiro.")
+    tem_vendas = db.query(ItVenda.itvenda_id).filter(ItVenda.lote_id == lote_id).first()
+    tem_reservas = db.query(ReservaIngresso.reserva_ingresso_id).filter(
+        ReservaIngresso.lote_id == lote_id
+    ).first()
+    if tem_vendas or tem_reservas:
+        raise HTTPException(409, "Não é possível excluir um setor do lote com vendas ou reservas")
+    db.delete(lote)
+    db.commit()
+    return {"mensagem": "Setor removido do lote global com sucesso"}
 
 
 @router.delete("/lotes-globais/{loteglobal_id}")
