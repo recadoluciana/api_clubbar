@@ -48,6 +48,7 @@ from app.services.asaas_service import (
     cancelar_pagamento_asaas,
     cancelar_checkout_asaas,
     excluir_qrcode_pix_estatico_asaas,
+    validar_endereco_cobranca_para_cartao,
 )
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
@@ -56,6 +57,11 @@ from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
+
+
+def _exigir_valor_positivo(valor: float) -> None:
+    if Decimal(str(valor)) <= 0:
+        raise HTTPException(422, "O valor do pagamento deve ser maior que zero.")
 
 
 def _valor_cashback_gerado(db: Session, venda_id: int | None) -> float:
@@ -365,6 +371,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
         valor_taxa = round(sum(float(item.get("vrtaxaitvenda") or 0) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados), 2)
         valor_cashback, debitos_cashback = reservar_uso(db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id, loja_id=payload.loja_id, total_produtos=valor_total, valor_solicitado=payload.valor_cashback) if payload.usar_cashback else (Decimal("0"), [])
         valor_cobrado = round(float(Decimal(str(valor_total)) - valor_cashback), 2)
+        _exigir_valor_positivo(valor_cobrado)
         valor_taxa = round(valor_taxa * (valor_cobrado / valor_total), 2) if valor_total else 0
         external_reference = (
             f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
@@ -504,6 +511,8 @@ async def pagar_asaas(
         if not cliente:
             raise HTTPException(status_code=404, detail="Cliente nÃ£o encontrado")
 
+        validar_endereco_cobranca_para_cartao(cliente)
+
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
@@ -512,6 +521,7 @@ async def pagar_asaas(
         )
         valor_cashback, debitos_cashback = reservar_uso(db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id, loja_id=payload.loja_id, total_produtos=valor_total_com_taxa, valor_solicitado=payload.valor_cashback) if payload.usar_cashback else (Decimal("0"), [])
         valor_cobrado = round(float(Decimal(str(valor_total_com_taxa)) - valor_cashback), 2)
+        _exigir_valor_positivo(valor_cobrado)
         taxa_produtos = round(sum(float(item.get("vrtaxaitvenda") or 0) * int(item.get("qtitcarrinho") or 1) for item in itens_recalculados), 2)
         valor_taxa_clubbar = round(taxa_produtos * (valor_cobrado / valor_total_com_taxa), 2) if valor_total_com_taxa else 0
         if valor_cashback > 0:

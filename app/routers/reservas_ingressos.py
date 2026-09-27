@@ -13,7 +13,7 @@ from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva
-from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas
+from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
@@ -142,6 +142,9 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         cliente = db.query(Cliente).filter(Cliente.cliente_id == reserva.cliente_id).first()
+        if not cliente:
+            raise HTTPException(404, "Cliente não encontrado")
+        validar_endereco_cobranca_para_cartao(cliente)
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"

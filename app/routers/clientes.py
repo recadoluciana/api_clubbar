@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.cliente import Cliente
-from app.schemas.cliente import AlterarSenhaClienteRequest, ClientePerfilUpdate
+from app.schemas.cliente import (
+    AlterarSenhaClienteRequest,
+    ClienteEnderecoCobrancaUpdate,
+    ClientePerfilUpdate,
+)
 from app.core.security import get_usuario_logado, verificar_senha, hash_senha
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
@@ -186,3 +190,35 @@ def atualizar_perfil_cliente(
         "ufcliente": cli.ufcliente,
         "idcidadeibge": cli.idcidadeibge,
     }
+
+
+@router.put("/me/endereco-cobranca")
+def atualizar_endereco_cobranca(
+    payload: ClienteEnderecoCobrancaUpdate,
+    usuario=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    if usuario.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
+
+    cliente_id = int(usuario.get("sub") or 0)
+    cli = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cli:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    if cli.sitcliente != "ATIVO":
+        raise HTTPException(status_code=403, detail="Cliente inativo")
+
+    cep = ''.join(filter(str.isdigit, payload.cepcliente or ''))
+    if len(cep) != 8:
+        raise HTTPException(status_code=422, detail="Informe um CEP válido.")
+
+    cli.endcliente = payload.endcliente.strip()
+    cli.nrendcliente = payload.nrendcliente.strip()
+    cli.complcliente = payload.complcliente.strip() if payload.complcliente else None
+    cli.bairrocliente = payload.bairrocliente.strip()
+    cli.cepcliente = cep
+    cli.cidadecliente = payload.cidadecliente.strip()
+    cli.ufcliente = payload.ufcliente.strip().upper()
+    db.commit()
+
+    return {"message": "Endereço de cobrança salvo com sucesso"}
