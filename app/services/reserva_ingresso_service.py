@@ -43,10 +43,27 @@ def quantidade_reservada(db: Session, lote_id: int) -> int:
 
 
 def quantidade_disponivel_configuracao(db: Session, lote: EventoLote) -> int:
-    return max(
+    """Estoque disponível na etapa comercial, sem exceder o setor.
+
+    Cada lote global é uma faixa de preço/tempo, não uma nova capacidade
+    física. Portanto, o limite configurado no lote indica quanto aquele setor
+    pode oferecer *naquela etapa*; as vendas e reservas de etapas anteriores
+    continuam consumindo o mesmo estoque do setor.
+    """
+    disponivel_no_lote = max(
         0,
         int(lote.qtlimite) - int(lote.qtvendidalote or 0) - quantidade_reservada(db, lote.lote_id),
     )
+    setor = lote.setor
+    if not setor:
+        return disponivel_no_lote
+    disponivel_no_setor = capacidade_restante_setor(
+        db,
+        int(lote.evento_id),
+        int(setor.eventosetor_id),
+        int(setor.qtcapacidade),
+    )
+    return min(disponivel_no_lote, disponivel_no_setor)
 
 
 def capacidade_restante_setor(db: Session, evento_id: int, setor_id: int, capacidade: int) -> int:
