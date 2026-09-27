@@ -77,7 +77,6 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     lotes = db.query(EventoLote).filter(EventoLote.eventosetor_id == setor_id).all()
     # O nome do lote é global e não contém mais o nome do setor. Renomear um
     # setor, portanto, não altera nenhuma etapa comercial.
-    capacidade_comercial = sum(int(lote.qttotallote or 0) for lote in lotes if lote.usarcapacidaderestante != "S")
     vendidos = sum(int(lote.qtvendidalote or 0) for lote in lotes)
     reservados = int(
         db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0)).filter(
@@ -86,7 +85,10 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
         ).scalar()
         if lotes else 0
     )
-    minimo_seguro = max(capacidade_comercial, vendidos + reservados)
+    # Os lotes globais são etapas de venda sequenciais. A capacidade física do
+    # setor só precisa cobrir o que já foi vendido ou está reservado; os
+    # limites configurados em lotes futuros reutilizam esse mesmo estoque.
+    minimo_seguro = vendidos + reservados
     # A edição do nome ou da descrição não pode ser bloqueada por uma
     # configuração comercial criada anteriormente. O limite só é validado
     # quando o parceiro efetivamente tenta reduzir a capacidade do setor.

@@ -181,32 +181,13 @@ def _validar_setores_do_lote(
 
     for setor in ativos:
         limite_novo = int(por_setor[setor.eventosetor_id].qtlimite)
-        usados = int(
-            db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
-            .join(EventoLoteGlobal, EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id)
-            .filter(
-                EventoLote.eventosetor_id == setor.eventosetor_id,
-                EventoLoteGlobal.evento_id == evento.evento_id,
-                EventoLoteGlobal.situacao == "ATIVO",
-                EventoLote.situacao == "ATIVO",
-            )
-            .scalar()
-            or 0
-        )
-        if ignorar_loteglobal_id is not None:
-            usados -= int(
-                db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
-                .filter(
-                    EventoLote.eventosetor_id == setor.eventosetor_id,
-                    EventoLote.loteglobal_id == ignorar_loteglobal_id,
-                )
-                .scalar()
-                or 0
-            )
-        if usados + limite_novo > int(setor.qtcapacidade):
+        # Lotes globais são etapas sequenciais de preço. A quantidade de uma
+        # etapa não é somada à das anteriores; todos compartilham o estoque do
+        # setor e as vendas anteriores são descontadas no checkout.
+        if limite_novo > int(setor.qtcapacidade):
             raise HTTPException(
                 422,
-                f"O total de todos os lotes para {setor.nmsetor} não pode superar a capacidade de {setor.qtcapacidade} pessoas",
+                f"A quantidade de {setor.nmsetor} neste lote não pode superar a capacidade de {setor.qtcapacidade} pessoas",
             )
 
 
@@ -363,14 +344,8 @@ def atualizar_configuracao_setor(
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
     if data.qtlimite is not None:
         setor = lote.setor
-        usado_em_outros = int(
-            db.query(func.coalesce(func.sum(EventoLote.qtlimite), 0))
-            .filter(EventoLote.eventosetor_id == lote.eventosetor_id, EventoLote.lote_id != lote.lote_id)
-            .scalar()
-            or 0
-        )
-        if usado_em_outros + data.qtlimite > int(setor.qtcapacidade):
-            raise HTTPException(422, "A soma dos lotes não pode ultrapassar a capacidade do setor")
+        if data.qtlimite > int(setor.qtcapacidade):
+            raise HTTPException(422, "A quantidade deste lote não pode ultrapassar a capacidade do setor")
         if data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
             raise HTTPException(422, "O limite não pode ficar abaixo das vendas e reservas existentes")
         lote.qtlimite = data.qtlimite
