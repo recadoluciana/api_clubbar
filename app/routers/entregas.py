@@ -421,11 +421,18 @@ async def cancelar_ingresso(
         venda.sitvenda = "CANCELADA"
         pagamento.sitpagvenda = "CANCELADO"
     db.commit()
+    cortesia = not _exige_estorno_asaas(valor_reembolso)
     return {
         "ok": True,
         "cancelado": True,
         "itvenda_id": item.itvenda_id,
         "valor_reembolso": valor_reembolso,
+        "cortesia": cortesia,
+        "mensagem": (
+            "Ingresso de cortesia cancelado."
+            if cortesia
+            else "Ingresso cancelado. O reembolso deste item foi solicitado com sucesso."
+        ),
     }
 
 
