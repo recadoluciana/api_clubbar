@@ -204,7 +204,10 @@ def listar_lotes_disponiveis(evento_id: int, db: Session = Depends(get_db)):
     return [
         _saida_configuracao(db, configuracao, evento)
         for configuracao in global_.configuracoes_setor
-        if configuracao.situacao == "ATIVO" and quantidade_disponivel_configuracao(db, configuracao) > 0
+        # A configuração continua visível mesmo sem disponibilidade para que o
+        # cliente veja o setor e sua situação de esgotado. O checkout segue
+        # bloqueado pela quantidade disponível.
+        if configuracao.situacao == "ATIVO"
     ]
 
 
