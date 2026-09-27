@@ -1,11 +1,14 @@
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from pydantic import ValidationError
 
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
+from app.routers.eventolotes import _validar_setores_do_lote
 from app.schemas.eventolote import EventoLoteGlobalCreate, EventoLotePrecoIn, EventoLoteSetorIn
 
 
@@ -43,6 +46,21 @@ class ModeloLoteGlobalTest(unittest.TestCase):
                     )
                 ],
             )
+
+    def test_lote_global_pode_incluir_apenas_alguns_setores(self):
+        db = MagicMock()
+        db.query().filter().all.return_value = [
+            SimpleNamespace(eventosetor_id=1, nmsetor="Pista", qtcapacidade=100),
+            SimpleNamespace(eventosetor_id=2, nmsetor="Camarote", qtcapacidade=30),
+        ]
+        evento = SimpleNamespace(evento_id=10)
+        configuracoes = [SimpleNamespace(eventosetor_id=1, qtlimite=80)]
+
+        _validar_setores_do_lote(
+            db,
+            evento=evento,
+            configuracoes=configuracoes,
+        )
 
 
 if __name__ == "__main__":
