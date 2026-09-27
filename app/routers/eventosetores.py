@@ -87,7 +87,10 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
         if lotes else 0
     )
     minimo_seguro = max(capacidade_comercial, vendidos + reservados)
-    if dados.qtcapacidade < minimo_seguro:
+    # A edição do nome ou da descrição não pode ser bloqueada por uma
+    # configuração comercial criada anteriormente. O limite só é validado
+    # quando o parceiro efetivamente tenta reduzir a capacidade do setor.
+    if dados.qtcapacidade != int(x.qtcapacidade) and dados.qtcapacidade < minimo_seguro:
         raise HTTPException(422, f"A capacidade não pode ser menor que {minimo_seguro}, pois há lotes, vendas ou reservas neste setor")
     _validar_teto_capacidade_evento(
         db, evento, dados.qtcapacidade, dados.sitsetor, x.eventosetor_id
