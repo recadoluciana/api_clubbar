@@ -48,6 +48,11 @@ def _tipo(valor: str | None) -> str:
     return tipo
 
 
+def _normalizar_conteudo(conteudo: str | None) -> str:
+    """Conserva parágrafos mesmo quando o texto vem de navegador ou celular."""
+    return (conteudo or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 def _conteudo_dinamico(item: PoliticaCompra) -> str:
     dias = int(item.qtd_dias_cancelamento or 7)
     if item.tipopolitica == "PRODUTO":
@@ -90,7 +95,7 @@ def _conteudo_dinamico(item: PoliticaCompra) -> str:
 
 def _conteudo(item: PoliticaCompra) -> str:
     """Mantém as versões legadas legíveis e preserva o texto das novas."""
-    conteudo = (item.conteudo or "").strip()
+    conteudo = _normalizar_conteudo(item.conteudo)
     if conteudo and conteudo != "Texto gerado a partir dos parâmetros da política.":
         return conteudo
     return _conteudo_dinamico(item)
@@ -157,7 +162,7 @@ def criar_politica_compra(
         versao=versao,
         tipopolitica=dados.tipopolitica,
         titulo=dados.titulo.strip(),
-        conteudo=(dados.conteudo or "").strip(),
+        conteudo=_normalizar_conteudo(dados.conteudo),
         qtd_dias_cancelamento=dados.qtd_dias_cancelamento,
         qtd_horas_antecedencia_cancelamento=dados.qtd_horas_antecedencia_cancelamento if dados.tipopolitica == "INGRESSO" else None,
         qtd_alteracoes_participante=dados.qtd_alteracoes_participante if dados.tipopolitica == "INGRESSO" else None,
@@ -186,7 +191,7 @@ def alterar_texto_rascunho_politica_compra(
     if item.sitpolitica != "RASCUNHO":
         raise HTTPException(409, "Somente uma política em rascunho pode ser alterada.")
 
-    item.conteudo = dados.conteudo.strip()
+    item.conteudo = _normalizar_conteudo(dados.conteudo)
     item.operador_id = int(operador.get("sub") or 0) or None
     db.commit()
     db.refresh(item)
