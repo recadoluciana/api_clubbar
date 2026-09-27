@@ -18,6 +18,7 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.schemas.eventolote import (
     EventoLoteGlobalCreate,
     EventoLoteGlobalUpdate,
+    EventoLoteSetorIn,
     EventoLoteSetorUpdate,
 )
 from app.services.reserva_ingresso_service import (
@@ -328,6 +329,52 @@ def atualizar_lote_global(
         raise HTTPException(422, "O fim das vendas deve ser posterior ao início")
     db.commit()
     return {"mensagem": "Lote global atualizado com sucesso"}
+
+
+@router.post("/lotes-globais/{loteglobal_id}/setores", status_code=201)
+def adicionar_setor_ao_lote_global(
+    loteglobal_id: int,
+    data: EventoLoteSetorIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    global_ = _carregar_global(db, loteglobal_id)
+    if not global_:
+        raise HTTPException(404, "Lote global não encontrado")
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    setor = (
+        db.query(EventoSetor)
+        .filter(
+            EventoSetor.eventosetor_id == data.eventosetor_id,
+            EventoSetor.evento_id == global_.evento_id,
+            EventoSetor.sitsetor == "ATIVO",
+        )
+        .first()
+    )
+    if not setor:
+        raise HTTPException(422, "O setor informado não está ativo neste evento")
+    if any(item.eventosetor_id == setor.eventosetor_id for item in global_.configuracoes_setor):
+        raise HTTPException(409, "Este setor já participa deste lote global")
+    if data.qtlimite > int(setor.qtcapacidade):
+        raise HTTPException(
+            422,
+            f"A quantidade deste lote não pode superar a capacidade de {setor.qtcapacidade} pessoas do setor",
+        )
+    configuracao = EventoLote(
+        loteglobal_id=global_.loteglobal_id,
+        eventosetor_id=setor.eventosetor_id,
+        qtlimite=data.qtlimite,
+        qtvendidalote=0,
+        situacao="ATIVO",
+    )
+    db.add(configuracao)
+    db.flush()
+    db.add_all(
+        EventoLotePreco(lote_id=configuracao.lote_id, **preco.model_dump())
+        for preco in data.precos
+    )
+    db.commit()
+    return {"mensagem": "Setor adicionado ao lote global com sucesso", "lote_id": configuracao.lote_id}
 
 
 @router.put("/lotes/{lote_id}")
