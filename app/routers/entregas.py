@@ -64,6 +64,11 @@ def _cancelamento_produto_permitido(
     return (hoje or _hoje_brasil()) <= data_compra.date() + timedelta(days=dias)
 
 
+def _exige_estorno_asaas(valor_reembolso: float) -> bool:
+    """Cobranças gratuitas não existem no Asaas e não devem ser estornadas."""
+    return round(float(valor_reembolso or 0), 2) > 0
+
+
 def _estornos_do_split_clubbar(
     pagamento_asaas: dict,
     valor_taxas_canceladas: float,
@@ -350,54 +355,54 @@ async def cancelar_ingresso(
                 "antecedência do início do evento."
             ),
         )
-    payment_id = str(pagamento.idtransacaopagvenda or "").strip()
-    if not payment_id:
-        raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
-
-    # As vendas com split são cobradas pela subconta do estabelecimento.
-    # O estorno precisa ser solicitado com a chave da mesma conta que criou
-    # a cobrança; a chave principal do Clubbar não possui acesso ao pagamento.
-    api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
-
     valor_reembolso = round(
         float(item.vrunititvenda or 0) * int(item.qtitvenda or 1)
         + float(item.vrtaxaitvenda or 0),
         2,
     )
-    item.sititvenda = "CANCELAMENTO_SOLICITADO"
-    db.commit()
+    estorno = {}
+    if _exige_estorno_asaas(valor_reembolso):
+        payment_id = str(pagamento.idtransacaopagvenda or "").strip()
+        if not payment_id:
+            raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
 
-    try:
-        estorno = await estornar_pagamento_asaas(
-            payment_id=payment_id,
-            valor=valor_reembolso,
-            descricao=f"Cancelamento ingresso Clubbar item {item.itvenda_id}",
-            api_key=api_key_estorno,
-        )
-    except HTTPException as exc:
-        db.rollback()
-        if exc.status_code < 500:
-            item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
-            if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
-                item.sititvenda = "ATIVO"
-                db.commit()
-        raise
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "O Asaas ainda não confirmou o cancelamento. A solicitação foi "
-                "mantida em processamento para evitar reembolso duplicado."
-            ),
-        ) from exc
+        # As vendas com split são cobradas pela subconta do estabelecimento.
+        # O estorno precisa ser solicitado com a chave da mesma conta que criou
+        # a cobrança; a chave principal do Clubbar não possui acesso ao pagamento.
+        api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
+        item.sititvenda = "CANCELAMENTO_SOLICITADO"
+        db.commit()
+        try:
+            estorno = await estornar_pagamento_asaas(
+                payment_id=payment_id,
+                valor=valor_reembolso,
+                descricao=f"Cancelamento ingresso Clubbar item {item.itvenda_id}",
+                api_key=api_key_estorno,
+            )
+        except HTTPException as exc:
+            db.rollback()
+            if exc.status_code < 500:
+                item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
+                if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
+                    item.sititvenda = "ATIVO"
+                    db.commit()
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "O Asaas ainda não confirmou o cancelamento. A solicitação foi "
+                    "mantida em processamento para evitar reembolso duplicado."
+                ),
+            ) from exc
 
     item = db.query(ItVenda).filter(ItVenda.itvenda_id == itvenda_id).first()
     lote = db.query(EventoLote).filter(EventoLote.lote_id == item.lote_id).first()
     item.sititvenda = "CANCELADO"
     item.dtcancelamento = datetime.now()
     item.vrreembolso = valor_reembolso
-    item.idreembolso = str(estorno.get("id") or "")
+    item.idreembolso = str(estorno.get("id") or "") or None
     if lote and lote.qtvendidalote:
         lote.qtvendidalote = max(
             0,

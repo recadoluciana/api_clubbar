@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime
 
-from app.routers.entregas import _cancelamento_ingresso_permitido
+from app.routers.entregas import _cancelamento_ingresso_permitido, _exige_estorno_asaas
 
 
 class CancelamentoIngressoTest(unittest.TestCase):
@@ -31,6 +31,11 @@ class CancelamentoIngressoTest(unittest.TestCase):
                 agora=datetime(2026, 8, 24, 22, 1),
             )
         )
+
+    def test_ingresso_gratuito_nao_exige_estorno_no_asaas(self):
+        self.assertFalse(_exige_estorno_asaas(0))
+        self.assertFalse(_exige_estorno_asaas(0.004))
+        self.assertTrue(_exige_estorno_asaas(0.01))
 
 
 if __name__ == "__main__":
