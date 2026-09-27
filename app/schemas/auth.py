@@ -8,13 +8,13 @@ class ClienteRegister(BaseModel):
     senhahashcli: str = Field(min_length=6, max_length=72)
     nrtelcliente: Optional[str] = None
     nrcpfcliente: str = Field(min_length=11, max_length=15)
-    endcliente: str = Field(min_length=2, max_length=150)
-    nrendcliente: str = Field(min_length=1, max_length=20)
+    endcliente: Optional[str] = Field(default=None, max_length=150)
+    nrendcliente: Optional[str] = Field(default=None, max_length=20)
     complcliente: Optional[str] = Field(default=None, max_length=80)
-    bairrocliente: str = Field(min_length=2, max_length=80)
-    cepcliente: str = Field(min_length=8, max_length=10)
-    cidadecliente: str = Field(min_length=2, max_length=100)
-    ufcliente: str = Field(min_length=2, max_length=2)
+    bairrocliente: Optional[str] = Field(default=None, max_length=80)
+    cepcliente: Optional[str] = Field(default=None, max_length=10)
+    cidadecliente: Optional[str] = Field(default=None, max_length=100)
+    ufcliente: Optional[str] = Field(default=None, max_length=2)
 
 class ClienteLogin(BaseModel):
     email: EmailStr

@@ -67,19 +67,22 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
             detail="Já existe um cliente cadastrado com este CPF."
         )
 
+    endereco = (data.endcliente or "").strip()
+    numero = (data.nrendcliente or "").strip()
+    bairro = (data.bairrocliente or "").strip()
+    cidade = (data.cidadecliente or "").strip()
+    uf = (data.ufcliente or "").strip().upper()
     cep = ''.join(filter(str.isdigit, data.cepcliente or ""))
-    if len(cep) != 8:
-        raise HTTPException(status_code=422, detail="Informe um CEP válido.")
+    endereco_informado = any((endereco, numero, bairro, cidade, uf, cep))
 
-    endereco = data.endcliente.strip()
-    numero = data.nrendcliente.strip()
-    bairro = data.bairrocliente.strip()
-    cidade = data.cidadecliente.strip()
-    uf = data.ufcliente.strip().upper()
-    if not all((endereco, numero, bairro, cidade)) or len(uf) != 2:
+    if endereco_informado and (
+        not all((endereco, numero, bairro, cidade))
+        or len(uf) != 2
+        or len(cep) != 8
+    ):
         raise HTTPException(
             status_code=422,
-            detail="Informe o endereço completo do cliente.",
+            detail="Informe o endereço completo ou deixe todos os campos de endereço em branco.",
         )
 
     cli = Cliente(
@@ -88,13 +91,13 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
         senhahashcli=hash_senha(data.senhahashcli),
         nrtelcliente=telefone or None,
         nrcpfcliente=cpf,
-        endcliente=endereco,
-        nrendcliente=numero,
+        endcliente=endereco or None,
+        nrendcliente=numero or None,
         complcliente=(data.complcliente or "").strip() or None,
-        bairrocliente=bairro,
-        cepcliente=cep,
-        cidadecliente=cidade,
-        ufcliente=uf,
+        bairrocliente=bairro or None,
+        cepcliente=cep or None,
+        cidadecliente=cidade or None,
+        ufcliente=uf or None,
     )
 
     db.add(cli)

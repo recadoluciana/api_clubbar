@@ -15,6 +15,16 @@ class ClientePerfilUpdate(BaseModel):
     ufcliente: Optional[str] = Field(default=None, max_length=2)
     idcidadeibge: Optional[int] = None
 
+
+class ClienteEnderecoCobrancaUpdate(BaseModel):
+    endcliente: str = Field(min_length=2, max_length=150)
+    nrendcliente: str = Field(min_length=1, max_length=20)
+    complcliente: Optional[str] = Field(default=None, max_length=80)
+    bairrocliente: str = Field(min_length=2, max_length=80)
+    cepcliente: str = Field(min_length=8, max_length=10)
+    cidadecliente: str = Field(min_length=2, max_length=100)
+    ufcliente: str = Field(min_length=2, max_length=2)
+
 class AlterarSenhaClienteRequest(BaseModel):
     senha_atual: str = Field(min_length=1)
     nova_senha: str = Field(min_length=6, max_length=100)

@@ -425,6 +425,28 @@ def somente_numeros(valor: str | None) -> str | None:
     return numeros or None
 
 
+def validar_endereco_cobranca_para_cartao(cliente: Cliente) -> None:
+    """Garante que o endereço só seja exigido na etapa de cartão."""
+    cep = somente_numeros(cliente.cepcliente)
+    campos_ausentes = [
+        nome
+        for nome, valor in {
+            "logradouro": cliente.endcliente,
+            "número": cliente.nrendcliente,
+            "bairro": cliente.bairrocliente,
+            "cidade": cliente.cidadecliente,
+            "UF": cliente.ufcliente,
+            "CEP": cep if cep and len(cep) == 8 else None,
+        }.items()
+        if not (valor or "").strip()
+    ]
+    if campos_ausentes:
+        raise HTTPException(
+            422,
+            "Para pagar com cartão, informe e salve o endereço completo em Dados pessoais.",
+        )
+
+
 async def criar_checkout_asaas(
     *,
     valor: float,
