@@ -469,6 +469,7 @@ async def criar_checkout_asaas(
     billing_types: list[str] | None = None,
     origem_checkout: str = "CLIENT",
     max_installment_count: int = 1,
+    minutes_to_expire: int = 10,
 ):
     nome_limpo = (nome_cliente or "").strip()
 
@@ -518,7 +519,7 @@ async def criar_checkout_asaas(
     body = {
         "billingTypes": billing_types or ["PIX", "CREDIT_CARD"],
         "chargeTypes": ["DETACHED", "INSTALLMENT"] if max_installment_count > 1 else ["DETACHED"],
-        "minutesToExpire": 10,
+        "minutesToExpire": max(10, min(int(minutes_to_expire), 1440)),
         "externalReference": external_reference,
         "callback": {
             "successUrl": f"{url_api_publica}/asaas/retorno?{origem_parametro}&acao=sucesso&origem={origem_normalizada}",

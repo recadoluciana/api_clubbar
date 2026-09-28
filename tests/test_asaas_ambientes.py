@@ -226,6 +226,28 @@ class AsaasAmbientesTest(unittest.TestCase):
         self.assertNotIn("api.clubbar.com.br", callback["successUrl"])
         self.assertNotIn("splits", ClienteHttpFalso.ultimo_json)
 
+    def test_checkout_respeita_prazo_informado(self):
+        ClienteHttpFalso.ultimo_json = None
+        with (
+            patch(
+                "app.services.asaas_service.PUBLIC_API_BASE_URL",
+                "https://api-dev.exemplo.com",
+            ),
+            patch("app.services.asaas_service.httpx.AsyncClient", ClienteHttpFalso),
+        ):
+            asyncio.run(
+                criar_checkout_asaas(
+                    valor=10,
+                    descricao="Teste",
+                    external_reference="CLUBBAR-development-CARRINHO-42-token",
+                    carrinho_id=42,
+                    api_key="chave-teste",
+                    minutes_to_expire=15,
+                )
+            )
+
+        self.assertEqual(15, ClienteHttpFalso.ultimo_json["minutesToExpire"])
+
     def test_checkout_pix_do_partner_configura_qrcode_e_retorno_corretos(self):
         ClienteHttpFalso.ultimo_json = None
         with (
