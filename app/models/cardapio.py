@@ -81,6 +81,14 @@ class CardapioItem(Base):
     cardapioversaocategoria_id = Column(BigInteger, ForeignKey("cardapioversaocategoria.cardapioversaocategoria_id", ondelete="CASCADE"), nullable=False)
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False)
     vrpreco = Column(Numeric(10, 2), nullable=False)
+    tipodesconto = Column(
+        Enum("NENHUM", "PERCENTUAL", "VALOR", name="enum_tipodesconto_cardapioitem"),
+        nullable=False,
+        server_default="NENHUM",
+    )
+    vrdesconto = Column(Numeric(10, 2), nullable=False, server_default="0.00")
+    dtinidesconto = Column(DateTime, nullable=True)
+    dtfimdesconto = Column(DateTime, nullable=True)
     sititem = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
     idorditem = Column(Integer, nullable=False, server_default="1")
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))

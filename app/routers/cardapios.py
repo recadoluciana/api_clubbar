@@ -79,8 +79,26 @@ class AssociarCardapioIn(BaseModel):
 class ItemIn(BaseModel):
     produto_id: int
     vrpreco: Decimal = Field(ge=0)
+    tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
+    vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
+    dtinidesconto: datetime | None = None
+    dtfimdesconto: datetime | None = None
     sititem: Literal["ATIVO", "INATIVO"] = "ATIVO"
     idorditem: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def validar_desconto(self):
+        if self.tipodesconto == "NENHUM":
+            self.vrdesconto = Decimal("0")
+            self.dtinidesconto = None
+            self.dtfimdesconto = None
+        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
+            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
+        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrpreco:
+            raise ValueError("O desconto não pode superar o preço do produto.")
+        if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
+            raise ValueError("O fim do desconto deve ser posterior ao início.")
+        return self
 
 
 class CategoriaVersaoIn(BaseModel):
@@ -160,14 +178,15 @@ def _saida_cardapio(db: Session, item: Cardapio) -> dict:
     }
 
 
-def _preco_final_item(preco: Decimal, produto: Produto, agora: datetime) -> tuple[Decimal, bool]:
-    tipo = produto.tipodesconto or "NENHUM"
-    desconto = Decimal(produto.vrdesconto or 0)
+def _preco_final_item(item: CardapioItem, agora: datetime) -> tuple[Decimal, bool]:
+    preco = Decimal(item.vrpreco)
+    tipo = item.tipodesconto or "NENHUM"
+    desconto = Decimal(item.vrdesconto or 0)
     ativo = (
         tipo != "NENHUM"
         and desconto > 0
-        and (produto.dtinidesconto is None or agora >= produto.dtinidesconto)
-        and (produto.dtfimdesconto is None or agora <= produto.dtfimdesconto)
+        and (item.dtinidesconto is None or agora >= item.dtinidesconto)
+        and (item.dtfimdesconto is None or agora <= item.dtfimdesconto)
     )
     if ativo and tipo == "PERCENTUAL":
         final = preco * (Decimal("1") - desconto / Decimal("100"))
@@ -208,10 +227,10 @@ def _conteudo(
         itens = consulta_itens.order_by(CardapioItem.idorditem).all()
         produtos = []
         for ci, produto in itens:
-            tipo = produto.tipodesconto or "NENHUM"
-            desconto = Decimal(produto.vrdesconto or 0)
             preco = Decimal(ci.vrpreco)
-            final, ativo = _preco_final_item(preco, produto, agora)
+            tipo = ci.tipodesconto or "NENHUM"
+            desconto = Decimal(ci.vrdesconto or 0)
+            final, ativo = _preco_final_item(ci, agora)
             produtos.append({
                 "cardapioitem_id": ci.cardapioitem_id,
                 "produto_id": produto.produto_id,
@@ -232,8 +251,8 @@ def _conteudo(
                 "vrdesconto": float(desconto),
                 "descontoativo": ativo,
                 "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
-                "dtinidesconto": produto.dtinidesconto,
-                "dtfimdesconto": produto.dtfimdesconto,
+                "dtinidesconto": ci.dtinidesconto,
+                "dtfimdesconto": ci.dtfimdesconto,
                 "dtcriacao": produto.dtcriacao,
                 "dtultatu": produto.dtultatu,
                 "idorditem": ci.idorditem,
@@ -507,7 +526,7 @@ def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) 
         db.add(categoria_versao); db.flush()
         produtos = db.query(CardapioModeloProduto, Produto).join(Produto, Produto.produto_id == CardapioModeloProduto.produto_id).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, Produto.organizacao_id == loja.organizacao_id).order_by(CardapioModeloProduto.idorditem).all()
         for vinculo, produto in produtos:
-            db.add(CardapioItem(cardapioversao_id=versao.cardapioversao_id, cardapioversaocategoria_id=categoria_versao.cardapioversaocategoria_id, produto_id=produto.produto_id, vrpreco=produto.vrprecoprod, idorditem=vinculo.idorditem))
+            db.add(CardapioItem(cardapioversao_id=versao.cardapioversao_id, cardapioversaocategoria_id=categoria_versao.cardapioversaocategoria_id, produto_id=produto.produto_id, vrpreco=produto.vrprecoprod, tipodesconto=produto.tipodesconto, vrdesconto=produto.vrdesconto, dtinidesconto=produto.dtinidesconto, dtfimdesconto=produto.dtfimdesconto, idorditem=vinculo.idorditem))
     db.commit(); db.refresh(item)
     return item
 
@@ -541,7 +560,7 @@ def nova_versao(cardapio_id: int, payload=Depends(get_usuario_logado), db: Sessi
             nc = CardapioVersaoCategoria(cardapioversao_id=nova.cardapioversao_id, categoria_id=cat.categoria_id, idordcategoria=cat.idordcategoria)
             db.add(nc); db.flush(); mapa[cat.cardapioversaocategoria_id] = nc.cardapioversaocategoria_id
         for item in db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == origem.cardapioversao_id).all():
-            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, sititem=item.sititem, idorditem=item.idorditem))
     db.commit(); db.refresh(nova)
     return _conteudo(db, nova, cardapio, incluir_inativos=True)
 
@@ -572,7 +591,7 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
         vinculo = CardapioVersaoCategoria(cardapioversao_id=versao_id, categoria_id=categoria.categoria_id, idordcategoria=categoria.idordcategoria)
         db.add(vinculo); db.flush()
         for item in categoria.itens:
-            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, sititem=item.sititem, idorditem=item.idorditem))
     db.commit()
     return _conteudo(db, versao, cardapio, incluir_inativos=True)
 

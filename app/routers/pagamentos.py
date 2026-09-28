@@ -230,7 +230,14 @@ def _recalcular_itens_carrinho(
                 status_code=409,
                 detail=f"O produto '{produto.nmproduto}' não está mais disponível no cardápio publicado da loja. Remova-o e adicione novamente.",
             )
-        vrprecofinal, descontoativo = calcular_preco_final(produto, item_cardapio.vrpreco)
+        vrprecofinal, descontoativo = calcular_preco_final(
+            produto,
+            item_cardapio.vrpreco,
+            tipodesconto=item_cardapio.tipodesconto,
+            vrdesconto=item_cardapio.vrdesconto,
+            dtinidesconto=item_cardapio.dtinidesconto,
+            dtfimdesconto=item_cardapio.dtfimdesconto,
+        )
         vrunitario = round(float(vrprecofinal), 2)
         subtotal   = round(vrunitario * qt_prod, 2)
 
@@ -250,8 +257,8 @@ def _recalcular_itens_carrinho(
                 "vrunitario"     : vrunitario,
                 "subtotal"       : subtotal,
                 "total_com_taxa" : subtotal,
-                "tipodesconto"   : produto.tipodesconto or "NENHUM",
-                "vrdesconto"     : float(produto.vrdesconto or 0),
+                "tipodesconto"   : item_cardapio.tipodesconto or "NENHUM",
+                "vrdesconto"     : float(item_cardapio.vrdesconto or 0),
                 "descontoativo"  : descontoativo,
                 "dsobsitcar"     : it.get("dsobsitcar") or it.get("obs"),
                 "nmparticipante" : it.get("nmparticipante"),
