@@ -23,9 +23,15 @@ from app.models.loja import Loja
 from app.models.produto import Produto
 from app.services.precos_cardapio import atualizar_preco_nas_lojas
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
+from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(tags=["Cardápios"])
+
+
+def _agora_brasilia() -> datetime:
+    """Programações são cadastradas pelo parceiro no horário de Brasília."""
+    return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
 
 class CardapioIn(BaseModel):
@@ -233,7 +239,7 @@ def _conteudo(
         .all()
     )
     saida = []
-    agora = datetime.now()
+    agora = _agora_brasilia()
     for vinculo, categoria in categorias:
         consulta_itens = (
             db.query(CardapioItem, Produto)
@@ -673,7 +679,7 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():
         raise HTTPException(422, "Inclua pelo menos um produto antes de publicar.")
     versao.dtiniciovigencia, versao.dtfimvigencia = dados.dtinicio, dados.dtfim
-    agora = datetime.now()
+    agora = _agora_brasilia()
     db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao == "PUBLICADA").update({"statusversao": "SUBSTITUIDA"}, synchronize_session=False)
     versao.statusversao = "PROGRAMADA" if dados.dtinicio and dados.dtinicio > agora else "PUBLICADA"
     versao.dtpublicacao = agora
@@ -732,7 +738,7 @@ def _programacao_valida(item: CardapioProgramacao, agora: datetime) -> bool:
 @router.get("/lojas/{loja_id}/cardapio-publicado")
 def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
     _loja(db, loja_id)
-    agora = datetime.now()
+    agora = _agora_brasilia()
     cardapios = db.query(Cardapio).filter(Cardapio.loja_id == loja_id, Cardapio.sitcardapio == "ATIVO").order_by(Cardapio.prioridade.desc()).all()
     candidatos = []
     for cardapio in cardapios:
