@@ -876,6 +876,66 @@ def listar_lojas_com_retirada_pendente(
         for row in rows
     ]
 
+@router.get("/itvenda/{itvenda_id}/participante/elegibilidade")
+def validar_elegibilidade_alteracao_participante_itvenda(
+    itvenda_id: int,
+    usuario: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Verifica se o cliente pode transferir o ingresso antes de abrir o formulário."""
+    if usuario.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    resultado = (
+        db.query(ItVenda, Venda, Evento, EventoLotePreco)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .filter(ItVenda.itvenda_id == itvenda_id)
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Ingresso não encontrado.")
+
+    item, venda, evento, preco = resultado
+    if str(venda.cliente_id) != str(usuario.get("sub")):
+        raise HTTPException(status_code=403, detail="Este ingresso pertence a outro cliente.")
+    if (item.tipoitem or "").upper() != "INGRESSO":
+        raise HTTPException(status_code=400, detail="O item informado não é um ingresso.")
+    if item.sititvenda != "ATIVO" or (item.identregaitvenda or "NAO").upper() == "SIM":
+        raise HTTPException(status_code=409, detail="Ingresso utilizado ou indisponível não pode ser transferido.")
+
+    politica = _politica_vigente(db, "INGRESSO")
+    horas_transferencia = int(getattr(politica, "qtd_horas_antecedencia_alteracao", None) or 24)
+    maximo_transferencias = int(getattr(politica, "qtd_alteracoes_participante", None) or 1)
+    if not evento.dtinicioevento or datetime.now() > evento.dtinicioevento - timedelta(hours=horas_transferencia):
+        raise HTTPException(
+            status_code=409,
+            detail=f"A transferência só pode ser realizada até {horas_transferencia} horas antes do início do evento.",
+        )
+
+    transferencias_realizadas = db.query(
+        func.count(ItVendaParticipanteHistorico.historico_id),
+    ).filter(
+        ItVendaParticipanteHistorico.itvenda_id == item.itvenda_id,
+    ).scalar() or 0
+    if transferencias_realizadas >= maximo_transferencias:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Este ingresso já atingiu o limite de {maximo_transferencias} alteração(ões) de participante.",
+        )
+
+    tipo_preco = (preco.tipopreco if preco else "") or ""
+    return {
+        "elegivel": True,
+        "itvenda_id": item.itvenda_id,
+        "alteracoes_realizadas": transferencias_realizadas,
+        "limite_alteracoes": maximo_transferencias,
+        "eh_meia_entrada": tipo_preco.upper().startswith("MEIA"),
+    }
+
+
 @router.put("/itvenda/{itvenda_id}/participante")
 def alterar_participante_itvenda(
     itvenda_id: int,
