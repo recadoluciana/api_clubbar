@@ -17,6 +17,7 @@ from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 BENEFICIOS_COTA = {"ESTUDANTE", "JOVEM_BAIXA_RENDA", "PCD", "ACOMPANHANTE_PCD"}
+PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
 
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
@@ -259,7 +260,7 @@ def criar_reserva(
         vrtaxa=taxa_unitaria,
         vrtotal=((unitario + taxa_unitaria) * quantidade).quantize(Decimal("0.01")),
         sitreserva="PREENCHENDO",
-        dtexpiracao=agora + timedelta(minutes=5),
+        dtexpiracao=agora + PRAZO_RESERVA_INGRESSO,
     )
     db.add(reserva)
     db.flush()
