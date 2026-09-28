@@ -324,17 +324,7 @@ def atualizar_usuario_por_organizacao(
                 detail="O cargo do SUPERADMIN não pode ser alterado.",
             )
 
-        if usuario_id == 1:
-            if novo_cargo != usuario.dscargo:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        "O cargo do usuário principal "
-                        "não pode ser alterado."
-                    ),
-                )
-        else:
-            usuario.dscargo = novo_cargo
+        usuario.dscargo = novo_cargo
 
     _validar_vinculo_cargo_loja(usuario.dscargo, usuario.loja_id)
 
@@ -390,12 +380,6 @@ def deletar_usuario_por_organizacao(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuário não encontrado para esta organização.",
-        )
-
-    if usuario_id == 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O usuário principal do sistema não pode ser excluído.",
         )
 
     validar_escopo_loja_opcional(
