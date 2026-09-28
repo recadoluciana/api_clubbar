@@ -10,7 +10,7 @@ import traceback
 from app.database import get_db
 from app.models.categoria import Categoria
 from app.models.cardapio_padrao import CardapioModeloProduto, ProdutoCategoriaOrg
-from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao, CardapioVersaoCategoria
+from app.models.cardapio import Cardapio, CardapioItem, CardapioProgramacao, CardapioVersao, CardapioVersaoCategoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -21,6 +21,7 @@ from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.services.precos_cardapio import atualizar_preco_nas_lojas
+from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(tags=["Produtos"])
 
@@ -72,7 +73,7 @@ def calcular_preco_final(
     dtinidesconto=None,
     dtfimdesconto=None,
 ):
-    agora = datetime.now()
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
     tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
     vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)
@@ -107,6 +108,58 @@ def calcular_preco_final(
     return round(vrprecofinal, 2), True
 
 
+def _programacao_vigente(programacao: CardapioProgramacao, agora: datetime) -> bool:
+    if programacao.sitprogramacao != "ATIVA":
+        return False
+    if programacao.diasemana and programacao.diasemana != agora.isoweekday():
+        return False
+    if programacao.dtinicio and agora.date() < programacao.dtinicio:
+        return False
+    if programacao.dtfim and agora.date() > programacao.dtfim:
+        return False
+    if programacao.hrinicio and agora.time() < programacao.hrinicio:
+        return False
+    if programacao.hrfim and agora.time() > programacao.hrfim:
+        return False
+    return True
+
+
+def _itens_cardapio_em_exibicao(db: Session, loja_id: int, agora: datetime) -> dict[int, CardapioItem]:
+    cardapios = db.query(Cardapio).filter(
+        Cardapio.loja_id == loja_id,
+        Cardapio.sitcardapio == "ATIVO",
+    ).order_by(Cardapio.prioridade.desc()).all()
+    candidatos: list[tuple[Cardapio, CardapioVersao]] = []
+    for cardapio in cardapios:
+        programacoes = db.query(CardapioProgramacao).filter(
+            CardapioProgramacao.cardapio_id == cardapio.cardapio_id,
+        ).all()
+        if cardapio.tipocardapio != "PRINCIPAL" and not any(
+            _programacao_vigente(programacao, agora)
+            for programacao in programacoes
+        ):
+            continue
+        versao = db.query(CardapioVersao).filter(
+            CardapioVersao.cardapio_id == cardapio.cardapio_id,
+            CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+            func.coalesce(CardapioVersao.dtiniciovigencia, agora) <= agora,
+            (CardapioVersao.dtfimvigencia.is_(None)) |
+                (CardapioVersao.dtfimvigencia >= agora),
+        ).order_by(CardapioVersao.nrversao.desc()).first()
+        if versao:
+            candidatos.append((cardapio, versao))
+
+    if not candidatos:
+        return {}
+    sazonais = [item for item in candidatos if item[0].tipocardapio != "PRINCIPAL"]
+    _, versao = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
+    itens = db.query(CardapioItem).filter(
+        CardapioItem.cardapioversao_id == versao.cardapioversao_id,
+        CardapioItem.sititem == "ATIVO",
+    ).all()
+    return {item.produto_id: item for item in itens}
+
+
 @router.get("/produtos/mais-vendidos")
 def listar_produtos_mais_vendidos(
     limite: int = 10,
@@ -133,22 +186,38 @@ def listar_produtos_mais_vendidos(
         )
         .group_by(Produto.produto_id, Loja.loja_id, Loja.nmloja)
         .order_by(quantidade.desc(), Produto.nmproduto.asc())
-        .limit(limite)
         .all()
     )
 
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+    cardapios_por_loja: dict[int, dict[int, CardapioItem]] = {}
     resultado = []
     for produto, loja_id, nmloja, quantidade_vendida in rows:
-        vrprecofinal, descontoativo = calcular_preco_final(produto)
+        loja_id = int(loja_id)
+        itens_exibidos = cardapios_por_loja.get(loja_id)
+        if itens_exibidos is None:
+            itens_exibidos = _itens_cardapio_em_exibicao(db, loja_id, agora)
+            cardapios_por_loja[loja_id] = itens_exibidos
+        item_cardapio = itens_exibidos.get(produto.produto_id)
+        if item_cardapio is None:
+            continue
+        vrprecofinal, descontoativo = calcular_preco_final(
+            produto,
+            preco_base=item_cardapio.vrpreco,
+            tipodesconto=item_cardapio.tipodesconto,
+            vrdesconto=item_cardapio.vrdesconto,
+            dtinidesconto=item_cardapio.dtinidesconto,
+            dtfimdesconto=item_cardapio.dtfimdesconto,
+        )
         resultado.append(
             {
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
-                "loja_id": int(loja_id),
+                "loja_id": loja_id,
                 "nmloja": nmloja,
                 "nmproduto": produto.nmproduto,
                 "dsproduto": produto.dsproduto or "",
-                "vrprecoprod": float(produto.vrprecoprod),
+                "vrprecoprod": float(item_cardapio.vrpreco),
                 "vrprecofinal": vrprecofinal,
                 "descontoativo": descontoativo,
                 "urlfotoproduto": produto.urlfotoproduto,
@@ -156,7 +225,7 @@ def listar_produtos_mais_vendidos(
             }
         )
 
-    return resultado
+    return resultado[:limite]
 
 
 @router.delete("/produtos/{produto_id}")
