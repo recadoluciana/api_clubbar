@@ -2,9 +2,10 @@ import traceback
 import hmac
 from datetime import datetime
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -413,7 +414,7 @@ async def asaas_webhook(
         ) from e
 
 
-@router.get("/retorno", response_class=HTMLResponse)
+@router.get("/retorno")
 async def asaas_retorno(
     carrinho_id: int | None = None,
     reserva_ingresso_id: int | None = None,
@@ -478,102 +479,25 @@ async def asaas_retorno(
     ) or "/"
 
     if acao == "cancelado":
-        titulo = "Pagamento cancelado"
-        mensagem = (
-            "O pagamento foi cancelado. Você pode voltar ao Clubbar "
-            "e tentar novamente quando desejar."
-        )
-        icone = "↩"
-        cor = "#666666"
         retorno = "cancelado"
-
     elif acao == "expirado":
-        titulo = "Checkout expirado"
-        mensagem = (
-            "O tempo para pagamento expirou. "
-            "Volte ao Clubbar para gerar um novo pagamento."
-        )
-        icone = "⌛"
-        cor = "#d97706"
         retorno = "expirado"
-
     elif pago:
-        titulo = "Pagamento confirmado!"
-        mensagem = "Sua compra foi confirmada com sucesso."
-        icone = "✓"
-        cor = "#19a55a"
         retorno = "sucesso"
-
     else:
-        titulo = "Pagamento em processamento"
-        mensagem = (
-            "Recebemos o retorno do Asaas, mas a confirmação ainda pode levar "
-            "alguns segundos. Volte para o Clubbar e aguarde a atualização da sua compra."
-        )
-        icone = "!"
-        cor = "#d97706"
         retorno = "pendente"
 
-    return f"""
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>{titulo}</title>
-      <style>
-        body {{
-          margin: 0;
-          font-family: Arial, sans-serif;
-          background: #f6f6f6;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 100vh;
-        }}
-        .card {{
-          background: white;
-          padding: 28px;
-          border-radius: 22px;
-          max-width: 420px;
-          text-align: center;
-          box-shadow: 0 8px 24px rgba(0,0,0,.12);
-        }}
-        .icone {{
-          font-size: 56px;
-          color: {cor};
-          font-weight: bold;
-        }}
-        h1 {{
-          font-size: 24px;
-        }}
-        p {{
-          color: #555;
-          line-height: 1.5;
-        }}
-        a {{
-          display: inline-block;
-          margin-top: 18px;
-          background: #000;
-          color: #fff;
-          padding: 14px 22px;
-          border-radius: 14px;
-          text-decoration: none;
-          font-weight: bold;
-        }}
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <div class="icone">{icone}</div>
-        <h1>{titulo}</h1>
-        <p>{mensagem}</p>
-
-        <a href="{url_retorno}?pagamento={retorno}&gateway=asaas&checkout_id={checkout_id_retorno}">
-          Voltar para o Clubbar
-        </a>
-
-      </div>
-    </body>
-    </html>
-    """
+    # O Asaas redireciona o navegador para esta rota após o checkout. A tela
+    # intermediária da API podia reaparecer ao restaurar uma aba e confundia a
+    # navegação. Encaminhamos imediatamente para o app, que consulta o status
+    # autenticado do checkout antes de confirmar a compra ao cliente.
+    separador = "&" if "?" in url_retorno else "?"
+    parametros = urlencode({
+        "pagamento": retorno,
+        "gateway": "asaas",
+        "checkout_id": checkout_id_retorno,
+    })
+    return RedirectResponse(
+        url=f"{url_retorno}{separador}{parametros}",
+        status_code=303,
+    )
