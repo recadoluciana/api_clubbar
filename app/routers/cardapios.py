@@ -123,6 +123,22 @@ class ProgramacaoIn(BaseModel):
     hrinicio: time | None = None
     hrfim: time | None = None
 
+    @model_validator(mode="after")
+    def validar_intervalo(self):
+        if self.hrfim and not self.dtfim:
+            raise ValueError("Informe a data final ao definir o horário de encerramento.")
+        if self.dtfim and self.dtinicio and self.dtfim < self.dtinicio:
+            raise ValueError("A data final deve ser igual ou posterior à inicial.")
+        if (
+            self.dtinicio
+            and self.dtfim == self.dtinicio
+            and self.hrinicio
+            and self.hrfim
+            and self.hrfim <= self.hrinicio
+        ):
+            raise ValueError("O horário final deve ser posterior ao horário inicial.")
+        return self
+
 
 class ReajusteIn(BaseModel):
     categoria_id: int | None = None
@@ -168,6 +184,10 @@ def _versao(db: Session, versao_id: int, payload: dict | None = None) -> tuple[C
 
 def _saida_cardapio(db: Session, item: Cardapio) -> dict:
     versoes = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == item.cardapio_id).order_by(CardapioVersao.nrversao.desc()).all()
+    programacoes = db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapio_id == item.cardapio_id,
+        CardapioProgramacao.sitprogramacao == "ATIVA",
+    ).order_by(CardapioProgramacao.dtinicio.asc(), CardapioProgramacao.hrinicio.asc()).all()
     return {
         "cardapio_id": item.cardapio_id, "organizacao_id": item.organizacao_id,
         "loja_id": item.loja_id, "cardapiomodelo_id": item.cardapiomodelo_id,
@@ -175,6 +195,7 @@ def _saida_cardapio(db: Session, item: Cardapio) -> dict:
         "tipocardapio": item.tipocardapio, "prioridade": item.prioridade,
         "sitcardapio": item.sitcardapio,
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
+        "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
     }
 
 
@@ -601,8 +622,6 @@ def programar(cardapio_id: int, dados: ProgramacaoIn, payload=Depends(get_usuari
     cardapio = _cardapio(db, cardapio_id, payload)
     if cardapio.tipocardapio == "PRINCIPAL":
         raise HTTPException(422, "A programação de exibição é exclusiva para cardápios sazonais.")
-    if dados.dtfim and dados.dtinicio and dados.dtfim < dados.dtinicio:
-        raise HTTPException(422, "A data final deve ser igual ou posterior à inicial.")
     item = CardapioProgramacao(cardapio_id=cardapio_id, **dados.model_dump())
     db.add(item); db.commit(); db.refresh(item)
     return _saida_programacao(item)
