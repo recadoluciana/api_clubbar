@@ -257,17 +257,25 @@ class AsaasAmbientesTest(unittest.TestCase):
         checkout = SimpleNamespace(checkout_id="chk_1")
         banco = BancoSemCheckout([carrinho, checkout])
 
-        html = asyncio.run(
-            asaas_retorno(
-                carrinho_id=42,
-                acao="sucesso",
-                origem="PARTNER",
-                db=banco,
+        with patch(
+            "app.routers.asaas_webhook.PUBLIC_PARTNER_BASE_URL",
+            "https://partner.exemplo.com",
+        ):
+            resposta = asyncio.run(
+                asaas_retorno(
+                    carrinho_id=42,
+                    acao="sucesso",
+                    origem="PARTNER",
+                    db=banco,
+                )
             )
-        )
 
         self.assertEqual("ABERTO", carrinho.sitcarrinho)
-        self.assertIn("Pagamento em processamento", html)
+        self.assertEqual(303, resposta.status_code)
+        self.assertIn("pagamento=pendente", resposta.headers["location"])
+        self.assertTrue(
+            resposta.headers["location"].startswith("https://partner.exemplo.com?")
+        )
 
     def test_consulta_de_status_nao_aprova_pagamento(self):
         checkout = SimpleNamespace(checkout_id="chk_1", status="ACTIVE")
