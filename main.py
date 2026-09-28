@@ -197,6 +197,53 @@ app.include_router(politicas.router)
 
 
 @app.on_event("startup")
+def garantir_descontos_por_cardapio() -> None:
+    """Permite promoções diferentes para o mesmo produto em cada cardápio."""
+    try:
+        inspector = inspect(engine)
+        if "cardapioitem" not in inspector.get_table_names():
+            return
+        colunas = {coluna["name"] for coluna in inspector.get_columns("cardapioitem")}
+        migracao_inicial = "tipodesconto" not in colunas
+        with engine.begin() as conexao:
+            if "tipodesconto" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN tipodesconto "
+                    "ENUM('NENHUM','PERCENTUAL','VALOR') NOT NULL DEFAULT 'NENHUM' "
+                    "AFTER vrpreco"
+                ))
+            if "vrdesconto" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN vrdesconto DECIMAL(10,2) "
+                    "NOT NULL DEFAULT 0.00 AFTER tipodesconto"
+                ))
+            if "dtinidesconto" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN dtinidesconto DATETIME NULL "
+                    "AFTER vrdesconto"
+                ))
+            if "dtfimdesconto" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN dtfimdesconto DATETIME NULL "
+                    "AFTER dtinidesconto"
+                ))
+            if migracao_inicial:
+                conexao.execute(text(
+                    "UPDATE cardapioitem item "
+                    "INNER JOIN produto produto ON produto.produto_id = item.produto_id "
+                    "SET item.tipodesconto = produto.tipodesconto, "
+                    "item.vrdesconto = produto.vrdesconto, "
+                    "item.dtinidesconto = produto.dtinidesconto, "
+                    "item.dtfimdesconto = produto.dtfimdesconto "
+                    "WHERE produto.tipodesconto <> 'NENHUM'"
+                ))
+        logger.info("Descontos por item de cardápio verificados.")
+    except Exception:
+        logger.exception("Não foi possível preparar descontos por cardápio")
+        raise
+
+
+@app.on_event("startup")
 def garantir_politica_compra_inicial() -> None:
     """Garante uma política vigente de ingresso e outra de produto."""
     PoliticaCompra.__table__.create(bind=engine, checkfirst=True)

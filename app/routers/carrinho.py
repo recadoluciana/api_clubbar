@@ -194,15 +194,22 @@ def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
 
 from datetime import datetime
 
-def calcular_preco_final(produto: Produto):
+def calcular_preco_final(
+    produto: Produto,
+    *,
+    tipodesconto=None,
+    vrdesconto=None,
+    dtinidesconto=None,
+    dtfimdesconto=None,
+):
     agora = datetime.now()
 
-    tipodesconto = (produto.tipodesconto or "NENHUM").upper()
-    vrdesconto = float(produto.vrdesconto or 0)
+    tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
+    vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)
     vrprecoprod = float(produto.vrprecoprod or 0)
 
-    dtini = produto.dtinidesconto
-    dtfim = produto.dtfimdesconto
+    dtini = dtinidesconto if dtinidesconto is not None else produto.dtinidesconto
+    dtfim = dtfimdesconto if dtfimdesconto is not None else produto.dtfimdesconto
 
     desconto_ativo = False
 
@@ -274,10 +281,10 @@ def obter_itens_carrinho(
             Produto.dsproduto,
             CardapioItem.vrpreco.label("vrprecoprod"),
             Produto.urlfotoproduto,
-            Produto.tipodesconto,
-            Produto.vrdesconto,
-            Produto.dtinidesconto,
-            Produto.dtfimdesconto,
+            CardapioItem.tipodesconto,
+            CardapioItem.vrdesconto,
+            CardapioItem.dtinidesconto,
+            CardapioItem.dtfimdesconto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
             ItCarrinho.nmparticipante,
@@ -304,7 +311,13 @@ def obter_itens_carrinho(
         produto_tmp.dtinidesconto = i.dtinidesconto
         produto_tmp.dtfimdesconto = i.dtfimdesconto
 
-        vrprecofinal, descontoativo = calcular_preco_final(produto_tmp)
+        vrprecofinal, descontoativo = calcular_preco_final(
+            produto_tmp,
+            tipodesconto=i.tipodesconto,
+            vrdesconto=i.vrdesconto,
+            dtinidesconto=i.dtinidesconto,
+            dtfimdesconto=i.dtfimdesconto,
+        )
 
         qt = int(i.qtitcarrinho or 0)
         subtotal = float(vrprecofinal) * qt

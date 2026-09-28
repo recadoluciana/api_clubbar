@@ -63,15 +63,23 @@ def _parse_datetime(valor: str | None):
     )
 
 
-def calcular_preco_final(produto: Produto, preco_base=None):
+def calcular_preco_final(
+    produto: Produto,
+    preco_base=None,
+    *,
+    tipodesconto=None,
+    vrdesconto=None,
+    dtinidesconto=None,
+    dtfimdesconto=None,
+):
     agora = datetime.now()
 
-    tipodesconto = (produto.tipodesconto or "NENHUM").upper()
-    vrdesconto = float(produto.vrdesconto or 0)
+    tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
+    vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)
     vrprecoprod = float(preco_base if preco_base is not None else (produto.vrprecoprod or 0))
 
-    dtini = produto.dtinidesconto
-    dtfim = produto.dtfimdesconto
+    dtini = dtinidesconto if dtinidesconto is not None else produto.dtinidesconto
+    dtfim = dtfimdesconto if dtfimdesconto is not None else produto.dtfimdesconto
 
     desconto_ativo = False
 
@@ -361,7 +369,14 @@ def listar_produtos_por_loja(
                 existente["categorias"].append(categoria.nmcategoria)
                 existente["nmcategoria"] = ", ".join(existente["categorias"])
             continue
-        vrprecofinal, descontoativo = calcular_preco_final(produto, item.vrpreco)
+        vrprecofinal, descontoativo = calcular_preco_final(
+            produto,
+            item.vrpreco,
+            tipodesconto=item.tipodesconto,
+            vrdesconto=item.vrdesconto,
+            dtinidesconto=item.dtinidesconto,
+            dtfimdesconto=item.dtfimdesconto,
+        )
 
         registro = {
                 "produto_id": produto.produto_id,
@@ -376,10 +391,10 @@ def listar_produtos_por_loja(
                 "sitproduto": produto.sitproduto,
                 "nmcategoria": categoria.nmcategoria,
                 "urlfotoproduto": produto.urlfotoproduto,
-                "tipodesconto": produto.tipodesconto or "NENHUM",
-                "vrdesconto": float(produto.vrdesconto or 0),
-                "dtinidesconto": produto.dtinidesconto,
-                "dtfimdesconto": produto.dtfimdesconto,
+                "tipodesconto": item.tipodesconto or "NENHUM",
+                "vrdesconto": float(item.vrdesconto or 0),
+                "dtinidesconto": item.dtinidesconto,
+                "dtfimdesconto": item.dtfimdesconto,
                 "vrprecofinal": vrprecofinal,
                 "descontoativo": descontoativo,
                 "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
