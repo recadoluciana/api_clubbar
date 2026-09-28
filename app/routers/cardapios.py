@@ -1,5 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 import os
 import uuid
 
@@ -27,6 +28,7 @@ from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(tags=["Cardápios"])
+logger = logging.getLogger(__name__)
 
 
 def _agora_brasilia() -> datetime:
@@ -743,8 +745,20 @@ def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
     candidatos = []
     for cardapio in cardapios:
         programacoes = db.query(CardapioProgramacao).filter(CardapioProgramacao.cardapio_id == cardapio.cardapio_id).all()
-        if cardapio.tipocardapio != "PRINCIPAL" and not any(_programacao_valida(p, agora) for p in programacoes):
-            continue
+        if cardapio.tipocardapio != "PRINCIPAL":
+            vigentes = [p for p in programacoes if _programacao_valida(p, agora)]
+            if not vigentes:
+                logger.info(
+                    "Cardápio sazonal fora da vigência: loja=%s cardápio=%s agora=%s programações=%s",
+                    loja_id,
+                    cardapio.cardapio_id,
+                    agora,
+                    [
+                        (p.dtinicio, p.hrinicio, p.dtfim, p.hrfim, p.sitprogramacao)
+                        for p in programacoes
+                    ],
+                )
+                continue
         versao = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]), func.coalesce(CardapioVersao.dtiniciovigencia, agora) <= agora).filter((CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora)).order_by(CardapioVersao.nrversao.desc()).first()
         if versao: candidatos.append((cardapio, versao))
     if not candidatos:
