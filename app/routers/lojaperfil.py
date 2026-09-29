@@ -18,7 +18,7 @@ def _loja(db,loja_id,payload,mutacao=False):
     if not item: raise HTTPException(404,"Loja não encontrada.")
     if mutacao: validar_mutacao_loja(payload,item.organizacao_id,item.loja_id)
     return item
-def _conteudo(x): return {"loja_id":x.loja_id,"dsdetalhadaloja":x.dsdetalhadaloja,"fotos":x.fotos or [],"publicacoes":x.publicacoes or [],"videos":x.videos or [],"configuracoes":x.configuracoes or {}}
+def _conteudo(x): return {"loja_id":x.loja_id,"dsdetalhadaloja":x.dsdetalhadaloja,"fotos":x.fotos or [],"videos":x.videos or [],"configuracoes":x.configuracoes or {}}
 def _configuracoes_politica(valor):
     configuracoes = dict(valor or {})
     # A transferência de ingresso não é opcional. O Decreto 13.108/2026
@@ -28,13 +28,13 @@ def _configuracoes_politica(valor):
 def _politica(x): return {"loja_id":x.loja_id,"dspoliticaingresso":x.dspoliticaingresso,"urlmapaingressos":x.urlmapaingressos,"dsmapaingressos":x.dsmapaingressos,"dsorientacoesacesso":x.dsorientacoesacesso,"configuracoes":_configuracoes_politica(x.configuracoes) if x else {}}
 @router.get("/{loja_id}/conteudo")
 def obter_conteudo(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
-    _loja(db,loja_id,payload);x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first();return _conteudo(x) if x else {"loja_id":loja_id,"dsdetalhadaloja":None,"fotos":[],"publicacoes":[],"videos":[],"configuracoes":{}}
+    _loja(db,loja_id,payload);x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first();return _conteudo(x) if x else {"loja_id":loja_id,"dsdetalhadaloja":None,"fotos":[],"videos":[],"configuracoes":{}}
 @router.get("/{loja_id}/conteudo-publico")
 def obter_conteudo_publico(loja_id:int,db:Session=Depends(get_db)):
     loja=(db.query(Loja).join(Organizacao,Organizacao.organizacao_id==Loja.organizacao_id).filter(Loja.loja_id==loja_id,Loja.sitloja=="ATIVA",Organizacao.sitorganizacao=="ATIVA").first())
     if not loja:raise HTTPException(404,"Estabelecimento não encontrado ou inativo.")
     x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first()
-    return _conteudo(x) if x else {"loja_id":loja_id,"dsdetalhadaloja":None,"fotos":[],"publicacoes":[],"videos":[],"configuracoes":{}}
+    return _conteudo(x) if x else {"loja_id":loja_id,"dsdetalhadaloja":None,"fotos":[],"videos":[],"configuracoes":{}}
 @router.put("/{loja_id}/conteudo")
 def salvar_conteudo(loja_id:int,dados:LojaConteudoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _loja(db,loja_id,payload,True);x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first() or LojaConteudo(loja_id=loja_id)
