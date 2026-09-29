@@ -28,6 +28,8 @@ from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
 from app.models.lojapoliticaingresso import LojaPoliticaIngresso
 from app.models.venda import Venda
+from app.models.itvenda import ItVenda
+from app.models.usuario import Usuario
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
 from app.services.evento_imagem_service import imagem_evento
@@ -227,6 +229,104 @@ def filtro_evento_atual_ou_proximo(inicio_dia: datetime):
         Evento.dtinicioevento >= inicio_dia,
         Evento.dtfimevento >= inicio_dia,
     )
+
+
+def _ticketman_logado(db: Session, payload: dict) -> Usuario:
+    try:
+        usuario_id = int(payload.get("sub") or 0)
+    except (TypeError, ValueError):
+        usuario_id = 0
+    usuario = db.query(Usuario).filter(Usuario.usuario_id == usuario_id).first()
+    if usuario is None:
+        raise HTTPException(404, "Usuário não encontrado.")
+    if (usuario.dscargo or "").upper() != "TICKETMAN":
+        raise HTTPException(403, "Acesso exclusivo do Ticketman.")
+    if not usuario.loja_id:
+        raise HTTPException(403, "O Ticketman não está vinculado a um estabelecimento.")
+    return usuario
+
+
+def _endereco_loja(loja: Loja) -> str:
+    partes = [loja.endloja, loja.nrendeloja, loja.complementoloja, loja.dsbairroloja]
+    return ", ".join(str(parte).strip() for parte in partes if str(parte or "").strip())
+
+
+def _resumo_leitor_ingressos(db: Session, evento: Evento, loja: Loja) -> dict:
+    filtros = [
+        EventoLote.evento_id == evento.evento_id,
+        ItVenda.tipoitem == "INGRESSO",
+        ItVenda.sititvenda == "ATIVO",
+        Venda.sitvenda == "PAGA",
+    ]
+    vendidos = int(
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(*filtros)
+        .scalar()
+        or 0
+    )
+    validados = int(
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(*filtros)
+        .filter(ItVenda.identregaitvenda == "SIM")
+        .scalar()
+        or 0
+    )
+    local = (evento.nmlocalevento or "").strip() or loja.nmloja
+    endereco = (evento.dsendlocevento or "").strip() or _endereco_loja(loja)
+    return {
+        "evento_id": evento.evento_id,
+        "nmtituloevento": evento.nmtituloevento,
+        "dtinicioevento": evento.dtinicioevento,
+        "nmlocalevento": local,
+        "dsendlocevento": endereco,
+        "urlbannerevento": imagem_evento(db, evento),
+        "vendidos": vendidos,
+        "validados": validados,
+        "faltam": max(0, vendidos - validados),
+    }
+
+
+@router.get("/leitor-ingressos/hoje")
+def listar_eventos_do_dia_para_ticketman(
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    usuario = _ticketman_logado(db, payload)
+    hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
+    inicio = datetime.combine(hoje, time.min)
+    fim = inicio + timedelta(days=1)
+    eventos = (
+        db.query(Evento, Loja)
+        .join(Loja, Loja.loja_id == Evento.loja_id)
+        .filter(Evento.loja_id == usuario.loja_id)
+        .filter(Evento.statusevento == "ATIVO")
+        .filter(Evento.dtinicioevento >= inicio, Evento.dtinicioevento < fim)
+        .order_by(Evento.dtinicioevento.asc())
+        .all()
+    )
+    return [_resumo_leitor_ingressos(db, evento, loja) for evento, loja in eventos]
+
+
+@router.get("/{evento_id}/leitor-ingressos/resumo")
+def resumo_evento_para_ticketman(
+    evento_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    usuario = _ticketman_logado(db, payload)
+    resultado = (
+        db.query(Evento, Loja)
+        .join(Loja, Loja.loja_id == Evento.loja_id)
+        .filter(Evento.evento_id == evento_id, Evento.loja_id == usuario.loja_id)
+        .first()
+    )
+    if resultado is None:
+        raise HTTPException(404, "Evento não encontrado no estabelecimento.")
+    return _resumo_leitor_ingressos(db, *resultado)
 
 
 @router.get("/lojas/{loja_id}/proximos", response_model=list[EventoOutBR])

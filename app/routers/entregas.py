@@ -1230,6 +1230,7 @@ def buscar_item_por_token(
         "produto_id": item.produto_id,
         "idtipoproduto": "I" if item.tipoitem == "INGRESSO" else "P",
         "loja_id": loja.loja_id,
+        "evento_id": evento.evento_id if evento else None,
 
         "nmproduto": (
             produto.nmproduto
@@ -1274,6 +1275,7 @@ def buscar_item_por_token(
 def entregar_produto_por_token(
     token: str,
     usuario_id: int,
+    evento_id: int | None = Query(default=None, gt=0),
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
@@ -1376,6 +1378,11 @@ def entregar_produto_por_token(
         "I" if item.tipoitem == "INGRESSO" else "P",
     )
     _validar_data_do_ingresso(evento, item)
+    if evento_id is not None and (evento is None or evento.evento_id != evento_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Este ingresso pertence a outro evento. Selecione o evento correto antes de validar.",
+        )
 
     quantidade_atualizada = (
         db.query(ItVenda)
