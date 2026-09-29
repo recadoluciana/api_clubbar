@@ -1206,6 +1206,31 @@ def buscar_item_por_token(
         == "SIM"
     )
 
+    lote = preco = setor = None
+    if (item.tipoitem or "").upper() == "INGRESSO" and item.lote_id:
+        dados_ingresso = (
+            db.query(EventoLote, EventoLotePreco, EventoSetor)
+            .outerjoin(
+                EventoLotePreco,
+                EventoLotePreco.lotepreco_id == item.lotepreco_id,
+            )
+            .outerjoin(
+                EventoSetor,
+                EventoSetor.eventosetor_id == EventoLote.eventosetor_id,
+            )
+            .filter(EventoLote.lote_id == item.lote_id)
+            .first()
+        )
+        if dados_ingresso:
+            lote, preco, setor = dados_ingresso
+
+    endereco_estabelecimento = _formatar_endereco_estabelecimento(
+        loja.endloja,
+        loja.nrendeloja,
+        loja.complementoloja,
+        loja.dsbairroloja,
+    )
+
     return {
         "itvenda_id": item.itvenda_id,
         "produto_id": item.produto_id,
@@ -1225,6 +1250,17 @@ def buscar_item_por_token(
 
         "nmloja": loja.nmloja or "",
         "nmcliente": cliente.nmcliente or "",
+        "nmevento": evento.nmtituloevento if evento else nome_ingresso,
+        "dtinicioevento": evento.dtinicioevento.isoformat() if evento and evento.dtinicioevento else None,
+        "dtinicioevento_fmt": evento.dtinicioevento.strftime("%d/%m/%Y %H:%M") if evento and evento.dtinicioevento else "",
+        "nmlocalevento": (evento.nmlocalevento if evento else "") or loja.nmloja or "",
+        "dsendlocevento": (evento.dsendlocevento if evento else "") or endereco_estabelecimento,
+        "endereco_estabelecimento": endereco_estabelecimento,
+        "nmlote": lote.nmlote if lote else "",
+        "nrlote": lote.nrlote if lote else None,
+        "nmsetor": setor.nmsetor if setor else "",
+        "nmpreco": preco.nmpreco if preco else "",
+        "tipopreco": preco.tipopreco if preco else "",
 
         "qtitvenda": item.qtitvenda or 1,
         "dsobsitvenda": item.dsobsitvenda or "",
