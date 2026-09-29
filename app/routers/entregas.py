@@ -1203,6 +1203,7 @@ def buscar_item_por_token(
     if (item.tipoitem or "").upper() == "INGRESSO" and item.lote_id:
         dados_ingresso = (
             db.query(EventoLote, EventoLotePreco, EventoSetor)
+            .select_from(EventoLote)
             .outerjoin(
                 EventoLotePreco,
                 EventoLotePreco.lotepreco_id == item.lotepreco_id,
