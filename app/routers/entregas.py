@@ -1126,13 +1126,53 @@ def _usuario_barman_waiter(
     return usuario
 
 
+@router.get("/controle-bar/resumo")
+def resumo_controle_bar(
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Resume os produtos ativos da loja para o painel Barman/Waiter."""
+    usuario = _usuario_barman_waiter(usuario_id, payload, db)
+    resumo = (
+        db.query(
+            func.count(ItVenda.itvenda_id).label("vendidos"),
+            func.coalesce(
+                func.sum(case((ItVenda.identregaitvenda == "SIM", 1), else_=0)),
+                0,
+            ).label("validados"),
+            func.coalesce(
+                func.sum(case((ItVenda.idcontrolebar == "EM_PRODUCAO", 1), else_=0)),
+                0,
+            ).label("em_preparacao"),
+            func.coalesce(
+                func.sum(case((ItVenda.idcontrolebar == "ENTREGUE", 1), else_=0)),
+                0,
+            ).label("entregues"),
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            Venda.loja_id == usuario.loja_id,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .one()
+    )
+    return {
+        "vendidos": int(resumo.vendidos or 0),
+        "validados": int(resumo.validados or 0),
+        "em_preparacao": int(resumo.em_preparacao or 0),
+        "entregues": int(resumo.entregues or 0),
+    }
+
+
 @router.get("/controle-bar/em-producao")
 def listar_produtos_em_producao(
     usuario_id: int,
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    """Lista apenas produtos da loja que aguardam a entrega pelo bar."""
+    """Lista produtos em preparação que aguardam a entrega pelo bar."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
 
     itens = (
@@ -1174,7 +1214,7 @@ def atualizar_controle_bar(
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    """Move um produto para produção ou o marca como entregue pelo bar."""
+    """Move um produto para preparação ou o marca como entregue pelo bar."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
     situacao = dados.situacao.strip().upper()
     if situacao not in {"EM_PRODUCAO", "ENTREGUE"}:
@@ -1205,6 +1245,12 @@ def atualizar_controle_bar(
         raise HTTPException(status_code=409, detail="Este produto já foi entregue pelo bar.")
 
     item.idcontrolebar = situacao
+    # A leitura do QR valida o produto e o retira da carteira. A baixa legada
+    # continua disponível para seus demais usos, mas é atualizada neste fluxo.
+    item.identregaitvenda = "SIM"
+    item.dtentregaitvenda = datetime.now()
+    item.userentregaitvenda = usuario.usuario_id
+    item.nmuserentregaitvenda = usuario.nmusuario
     if situacao == "EM_PRODUCAO":
         item.nrmesa = (dados.nrmesa or "").strip() or None
         # A observação do pedido é armazenada no próprio campo já existente.
@@ -1222,7 +1268,7 @@ def atualizar_controle_bar(
         "nmproduto": produto.nmproduto if produto else "Produto Clubbar",
         "nmcliente": cliente.nmcliente or "Não informado",
         "msg": (
-            "Produto enviado para produção."
+            "Produto enviado para preparação."
             if situacao == "EM_PRODUCAO"
             else "Produto marcado como entregue."
         ),
