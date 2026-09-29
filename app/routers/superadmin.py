@@ -116,6 +116,10 @@ def dashboard_superadmin(
         or 0
     )
 
+    parceiros_cadastrados = (
+        db.query(func.count(Organizacao.organizacao_id)).scalar() or 0
+    )
+
     # =========================================================
     # ESTABELECIMENTOS
     # Considera todas as organizações da plataforma
@@ -306,7 +310,8 @@ def dashboard_superadmin(
         "lead_estabelecimentos_por_status": status_estabelecimentos,
 
         # Parceiros
-        "organizacoes": int(parceiros_ativos),
+        "organizacoes": int(parceiros_cadastrados),
+        "parceiros_cadastrados": int(parceiros_cadastrados),
         "parceiros_ativos": int(parceiros_ativos),
 
         # Estabelecimentos
