@@ -18,8 +18,13 @@ from app.routers.eventos import salvar_banner_evento
 from app.schemas.eventomodelo import AgendarEventoModeloIn, EventoModeloAtracaoIn, EventoModeloAtracaoUpdate
 from app.services.evento_imagem_service import imagem_evento_modelo
 from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
+from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(prefix="/eventos-modelos", tags=["Eventos padrão"])
+
+
+def _agora_brasilia() -> datetime:
+    return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
 def _org(payload):
     try: return int(payload["organizacao_id"])
@@ -132,6 +137,8 @@ def _somar_mes(data:datetime,meses:int):
 @router.post("/{modelo_id}/agendar",status_code=201)
 def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_mutacao_loja(payload,x.organizacao_id,dados.loja_id)
+    if dados.dtinicio <= _agora_brasilia():
+        raise HTTPException(422, "Informe uma data e hora futuras para o evento.")
     loja=db.query(Loja).filter(Loja.loja_id==dados.loja_id,Loja.organizacao_id==x.organizacao_id).first()
     if not loja: raise HTTPException(404,"Estabelecimento não encontrado.")
     duracao=(dados.dtfim-dados.dtinicio) if dados.dtfim else None; ids=[]

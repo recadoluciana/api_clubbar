@@ -5,6 +5,12 @@ from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
+from app.utils.datetime_utils import FUSO_BRASIL
+
+
+def _agora_brasilia() -> datetime:
+    """Retorna o horário comercial, sem fuso, usado nos eventos do Clubbar."""
+    return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
 def criar_lote_setor_com_precos(
     db: Session,
@@ -31,7 +37,10 @@ def criar_lote_setor_com_precos(
         evento_id=evento_id,
         nrlote=1,
         nmlote="Lote 1",
-        dtiniciovenda=datetime.now(),
+        # As datas de eventos são cadastradas no horário de Brasília. Usar o
+        # relógio UTC do servidor aqui fazia um evento às 01:00 parecer já
+        # encerrado logo após a meia-noite no Brasil.
+        dtiniciovenda=_agora_brasilia(),
         dtfimvenda=inicio_evento,
         gatilhovirada="DATA",
         situacao="ATIVO",
