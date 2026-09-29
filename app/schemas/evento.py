@@ -3,6 +3,13 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
+
+class AtracaoResumoOut(BaseModel):
+    atracao_id: int
+    nmatracao: str
+    urlbanneratracao: Optional[str] = None
+
+
 class EventoOutBR(BaseModel):
     evento_id: int
     organizacao_id: int
@@ -26,6 +33,7 @@ class EventoOutBR(BaseModel):
     nmcidade: Optional[str] = None
     urllogoloja: Optional[str] = None
     total_vendas_loja: int = 0
+    atracoes: list[AtracaoResumoOut] = []
 
 class ListaEventoIn(BaseModel):
     cidade_id: int

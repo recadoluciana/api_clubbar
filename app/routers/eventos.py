@@ -124,6 +124,7 @@ def evento_to_out_br(
     nmcidade: str | None = None,
     urllogoloja: str | None = None,
     total_vendas_loja: int = 0,
+    atracoes: list[dict] | None = None,
 ):
     return {
         "evento_id": ev.evento_id,
@@ -143,7 +144,38 @@ def evento_to_out_br(
         "nmcidade": nmcidade,
         "urllogoloja": urllogoloja,
         "total_vendas_loja": total_vendas_loja,
+        "atracoes": atracoes or [],
     }
+
+
+def atracoes_resumo_por_evento(
+    db: Session, evento_ids: list[int]
+) -> dict[int, list[dict]]:
+    """Agrupa as atrações dos cards sem executar uma consulta por evento."""
+    resultado = {evento_id: [] for evento_id in evento_ids}
+    if not evento_ids:
+        return resultado
+
+    programacoes = (
+        db.query(EventoAtracao, Atracao)
+        .join(Atracao, Atracao.atracao_id == EventoAtracao.atracao_id)
+        .filter(EventoAtracao.evento_id.in_(evento_ids))
+        .order_by(
+            EventoAtracao.evento_id.asc(),
+            EventoAtracao.dtinicioatracao.asc(),
+            EventoAtracao.eventoatracao_id.asc(),
+        )
+        .all()
+    )
+    for programacao, atracao in programacoes:
+        resultado.setdefault(programacao.evento_id, []).append(
+            {
+                "atracao_id": atracao.atracao_id,
+                "nmatracao": atracao.nmatracao,
+                "urlbanneratracao": atracao.urlbanneratracao,
+            }
+        )
+    return resultado
 
 
 @router.get("/{evento_id}/capacidade")
@@ -219,7 +251,15 @@ def listar_eventos_proximos(
         .all()
     )
 
-    return [evento_to_out_br(db, ev, nmloja, nmcidade) for ev, nmloja, nmcidade in eventos]
+    atracoes = atracoes_resumo_por_evento(
+        db, [ev.evento_id for ev, _, _ in eventos]
+    )
+    return [
+        evento_to_out_br(
+            db, ev, nmloja, nmcidade, atracoes=atracoes.get(ev.evento_id)
+        )
+        for ev, nmloja, nmcidade in eventos
+    ]
 
 
 @router.get("/proximos", response_model=list[EventoOutBR])
@@ -274,8 +314,19 @@ def listar_eventos_proximos_global(
         .all()
     )
 
+    atracoes = atracoes_resumo_por_evento(
+        db, [ev.evento_id for ev, *_ in eventos]
+    )
     return [
-        evento_to_out_br(db, ev, nmloja, nmcidade, urllogoloja, total_vendas_loja)
+        evento_to_out_br(
+            db,
+            ev,
+            nmloja,
+            nmcidade,
+            urllogoloja,
+            total_vendas_loja,
+            atracoes.get(ev.evento_id),
+        )
         for ev, nmloja, nmcidade, urllogoloja, total_vendas_loja in eventos
     ]
 
