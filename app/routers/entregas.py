@@ -1178,17 +1178,10 @@ def buscar_item_por_token(
 
     nome_ingresso, imagem_ingresso = _dados_visuais_ingresso(db, item.lote_id)
 
-    _validar_cargo_leitura_qr(
-        usuario.dscargo,
-        "I" if item.tipoitem == "INGRESSO" else "P",
-    )
-
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
 
-    _validar_data_do_ingresso(evento, item)
-
-    # Impede o usuário de visualizar produto de outra loja
+    # A identificação do tipo do QR só é mostrada para a própria loja.
     if venda.loja_id != usuario.loja_id:
         raise HTTPException(
             status_code=403,
@@ -1366,8 +1359,6 @@ def entregar_produto_por_token(
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
 
-    _validar_data_do_ingresso(evento, item)
-
     # Segurança obrigatória antes da baixa
     if venda.loja_id != usuario.loja_id:
         raise HTTPException(
@@ -1378,6 +1369,12 @@ def entregar_produto_por_token(
                 "o estabelecimento correto e tente novamente."
             ),
         )
+
+    _validar_cargo_leitura_qr(
+        usuario.dscargo,
+        "I" if item.tipoitem == "INGRESSO" else "P",
+    )
+    _validar_data_do_ingresso(evento, item)
 
     quantidade_atualizada = (
         db.query(ItVenda)
