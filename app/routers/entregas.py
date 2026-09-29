@@ -175,6 +175,22 @@ def _validar_data_do_ingresso(evento: Evento | None, item: ItVenda) -> None:
     )
 
 
+def _formatar_endereco_estabelecimento(
+    endereco: str | None,
+    numero: str | None,
+    complemento: str | None,
+    bairro: str | None,
+) -> str:
+    """Monta o endereço da loja para eventos sem local próprio."""
+    logradouro = " ".join(
+        parte.strip()
+        for parte in [endereco or "", numero or ""]
+        if parte and parte.strip()
+    )
+    partes = [logradouro, complemento or "", bairro or ""]
+    return ", ".join(parte.strip() for parte in partes if parte and parte.strip())
+
+
 def _descricao_tipo_ingresso(
     nome_setor: str | None,
     nome_preco: str | None,
@@ -230,6 +246,10 @@ def listar_itens_nao_entregues(
             Loja.nmloja,
             Loja.urllogoloja,
             Loja.dsinstaloja,
+            Loja.endloja,
+            Loja.nrendeloja,
+            Loja.complementoloja,
+            Loja.dsbairroloja,
             Cliente.nmcliente,
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
@@ -307,19 +327,31 @@ def listar_itens_nao_entregues(
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
-            "nmlocalevento": row.nmlocalevento,
-            "dsendlocevento": row.dsendlocevento,
+            "nmlocalevento": row.nmlocalevento or row.nmloja,
+            "dsendlocevento": row.dsendlocevento or _formatar_endereco_estabelecimento(
+                row.endloja,
+                row.nrendeloja,
+                row.complementoloja,
+                row.dsbairroloja,
+            ),
             "nmlote": row.nmlote,
             "nrlote": row.nrlote,
             "loja_id": row.loja_id,
             "nmloja" : row.nmloja,
             "urllogoloja": row.urllogoloja,
             "dsinstaloja": row.dsinstaloja,
+            "endereco_estabelecimento": _formatar_endereco_estabelecimento(
+                row.endloja,
+                row.nrendeloja,
+                row.complementoloja,
+                row.dsbairroloja,
+            ),
             "nmcliente" : row.nmcliente,
             "nmparticipante": row.nmparticipante,
             "cpfparticipante": row.cpfparticipante,
             "tipopreco": row.tipoprecoingresso,
             "nmpreco": row.nmprecoingresso,
+            "nmsetor": row.nmsetoringresso,
             "tipobeneficio": row.tipobeneficio,
             "tipo_ingresso": _descricao_tipo_ingresso(
                 row.nmsetoringresso,
