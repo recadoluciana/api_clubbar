@@ -1200,6 +1200,8 @@ CREATE TABLE itvenda (
   vrunititvenda         DECIMAL(10,2) NOT NULL,
   identregaitvenda      ENUM('SIM','NAO') NOT NULL DEFAULT 'NAO',
   dtentregaitvenda      DATETIME NULL,
+  idcontrolebar         ENUM('PENDENTE','EM_PRODUCAO','ENTREGUE') NOT NULL DEFAULT 'PENDENTE',
+  nrmesa                VARCHAR(50) NULL,
   dtexpiraitvenda       DATE NULL,
   userentregaitvenda    BIGINT NULL,
   nmuserentregaitvenda  VARCHAR(100) NULL,
