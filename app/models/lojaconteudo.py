@@ -8,7 +8,6 @@ class LojaConteudo(Base):
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False, unique=True)
     dsdetalhadaloja = Column(Text)
     fotos = Column(JSON)
-    publicacoes = Column(JSON)
     videos = Column(JSON)
     configuracoes = Column(JSON)
     dtcriacao = Column(DateTime, nullable=False, server_default=func.now())
