@@ -154,6 +154,27 @@ def _dados_visuais_ingresso(db: Session, lote_id: int | None) -> tuple[str, str]
     return resultado.nmtituloevento or "Ingresso", resultado.urlbannerevento or ""
 
 
+def _validar_data_do_ingresso(evento: Evento | None, item: ItVenda) -> None:
+    """Garante que o ingresso seja validado somente no dia do evento."""
+    if (item.tipoitem or "").upper() != "INGRESSO" or not evento:
+        return
+    if not evento.dtinicioevento:
+        return
+
+    data_evento = evento.dtinicioevento.date()
+    if data_evento == _hoje_brasil():
+        return
+
+    data_formatada = evento.dtinicioevento.strftime("%d/%m/%Y às %H:%M")
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            "Este ingresso é válido para o evento em "
+            f"{data_formatada}. A validação só pode ocorrer na data do evento."
+        ),
+    )
+
+
 def _descricao_tipo_ingresso(
     nome_setor: str | None,
     nome_preco: str | None,
@@ -254,6 +275,10 @@ def listar_itens_nao_entregues(
         .add_columns(
             Evento.nmtituloevento,
             Evento.dtinicioevento,
+            Evento.nmlocalevento,
+            Evento.dsendlocevento,
+            EventoLote.nmlote.label("nmlote"),
+            EventoLote.nrlote.label("nrlote"),
         )
     )
 
@@ -282,6 +307,10 @@ def listar_itens_nao_entregues(
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
+            "nmlocalevento": row.nmlocalevento,
+            "dsendlocevento": row.dsendlocevento,
+            "nmlote": row.nmlote,
+            "nrlote": row.nrlote,
             "loja_id": row.loja_id,
             "nmloja" : row.nmloja,
             "urllogoloja": row.urllogoloja,
@@ -290,6 +319,7 @@ def listar_itens_nao_entregues(
             "nmparticipante": row.nmparticipante,
             "cpfparticipante": row.cpfparticipante,
             "tipopreco": row.tipoprecoingresso,
+            "nmpreco": row.nmprecoingresso,
             "tipobeneficio": row.tipobeneficio,
             "tipo_ingresso": _descricao_tipo_ingresso(
                 row.nmsetoringresso,
@@ -1076,6 +1106,7 @@ def buscar_item_por_token(
             Venda,
             Loja,
             Cliente,
+            Evento,
         )
         .outerjoin(
             Produto,
@@ -1093,6 +1124,14 @@ def buscar_item_por_token(
             Cliente,
             Cliente.cliente_id == Venda.cliente_id,
         )
+        .outerjoin(
+            EventoLote,
+            EventoLote.lote_id == ItVenda.lote_id,
+        )
+        .outerjoin(
+            Evento,
+            Evento.evento_id == EventoLote.evento_id,
+        )
         .filter(ItVenda.qrtokenitvenda == token)
         .first()
     )
@@ -1103,7 +1142,7 @@ def buscar_item_por_token(
             detail="Item não encontrado ou QR Code inválido.",
         )
 
-    item, produto, venda, loja, cliente = resultado
+    item, produto, venda, loja, cliente, evento = resultado
 
     nome_ingresso, imagem_ingresso = _dados_visuais_ingresso(db, item.lote_id)
 
@@ -1114,6 +1153,8 @@ def buscar_item_por_token(
 
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
+
+    _validar_data_do_ingresso(evento, item)
 
     # Impede o usuário de visualizar produto de outra loja
     if venda.loja_id != usuario.loja_id:
@@ -1209,6 +1250,7 @@ def entregar_produto_por_token(
             Venda,
             Loja,
             Cliente,
+            Evento,
         )
         .outerjoin(
             Produto,
@@ -1226,6 +1268,14 @@ def entregar_produto_por_token(
             Cliente,
             Cliente.cliente_id == Venda.cliente_id,
         )
+        .outerjoin(
+            EventoLote,
+            EventoLote.lote_id == ItVenda.lote_id,
+        )
+        .outerjoin(
+            Evento,
+            Evento.evento_id == EventoLote.evento_id,
+        )
         .filter(ItVenda.qrtokenitvenda == token)
         .first()
     )
@@ -1236,7 +1286,7 @@ def entregar_produto_por_token(
             detail="Item não encontrado ou QR Code inválido.",
         )
 
-    item, produto, venda, loja, cliente = resultado
+    item, produto, venda, loja, cliente, evento = resultado
 
     nome_ingresso, imagem_ingresso = _dados_visuais_ingresso(db, item.lote_id)
 
@@ -1247,6 +1297,8 @@ def entregar_produto_por_token(
 
     if item.sititvenda != "ATIVO":
         raise HTTPException(status_code=409, detail="Este ingresso foi cancelado.")
+
+    _validar_data_do_ingresso(evento, item)
 
     # Segurança obrigatória antes da baixa
     if venda.loja_id != usuario.loja_id:
