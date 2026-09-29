@@ -77,6 +77,41 @@ class ItemPadraoIn(BaseModel):
         return self
 
 
+class ProdutoOrganizacaoIn(BaseModel):
+    atualizar_preco_lojas: bool = False
+    nmproduto: str = Field(min_length=2, max_length=100)
+    dsproduto: str | None = Field(default=None, max_length=255)
+    vrprecoprod: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
+    skuproduto: str | None = Field(default=None, max_length=100)
+    urlfotoproduto: str | None = Field(default=None, max_length=255)
+    tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
+    vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
+    pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
+    dtinidesconto: datetime | None = None
+    dtfimdesconto: datetime | None = None
+
+    @model_validator(mode="after")
+    def validar_valores(self):
+        self.nmproduto = self.nmproduto.strip()
+        self.dsproduto = (self.dsproduto or "").strip() or None
+        self.skuproduto = (self.skuproduto or "").strip() or None
+        self.urlfotoproduto = (self.urlfotoproduto or "").strip() or None
+        if len(self.nmproduto) < 2:
+            raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
+        if self.tipodesconto == "NENHUM":
+            self.vrdesconto = Decimal("0")
+            self.dtinidesconto = None
+            self.dtfimdesconto = None
+        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
+            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
+        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrprecoprod:
+            raise ValueError("O desconto não pode superar o preço do produto.")
+        if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
+            raise ValueError("O fim do desconto deve ser posterior ao início.")
+        return self
+
+
 class AssociarCardapioIn(BaseModel):
     cardapiomodelo_id: int
     prioridade: int = Field(default=0, ge=0, le=999)
@@ -449,7 +484,86 @@ def listar_produtos_organizacao(organizacao_id: int, payload=Depends(get_usuario
     if int(payload.get("organizacao_id") or 0) != organizacao_id:
         raise HTTPException(403, "A organização não pertence ao usuário.")
     produtos = db.query(Produto).filter(Produto.organizacao_id == organizacao_id).order_by(Produto.nmproduto).all()
-    return [{"produto_id": p.produto_id, "nmproduto": p.nmproduto, "dsproduto": p.dsproduto, "vrprecoprod": float(p.vrprecoprod), "sitproduto": p.sitproduto, "skuproduto": p.skuproduto, "urlfotoproduto": p.urlfotoproduto, "tipodesconto": p.tipodesconto, "vrdesconto": float(p.vrdesconto or 0), "pccashback": float(p.pccashback) if p.pccashback is not None else None, "dtinidesconto": p.dtinidesconto, "dtfimdesconto": p.dtfimdesconto} for p in produtos]
+    return [_saida_produto_organizacao(p) for p in produtos]
+
+
+def _saida_produto_organizacao(produto: Produto) -> dict:
+    return {
+        "produto_id": produto.produto_id,
+        "organizacao_id": produto.organizacao_id,
+        "nmproduto": produto.nmproduto,
+        "dsproduto": produto.dsproduto,
+        "vrprecoprod": float(produto.vrprecoprod),
+        "sitproduto": produto.sitproduto,
+        "skuproduto": produto.skuproduto,
+        "urlfotoproduto": produto.urlfotoproduto,
+        "tipodesconto": produto.tipodesconto,
+        "vrdesconto": float(produto.vrdesconto or 0),
+        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
+        "dtinidesconto": produto.dtinidesconto,
+        "dtfimdesconto": produto.dtfimdesconto,
+        "dtcriacao": produto.dtcriacao,
+        "dtultatu": produto.dtultatu,
+    }
+
+
+def _validar_organizacao_do_produto(organizacao_id: int, payload: dict) -> None:
+    validar_gerenciamento_organizacao(payload, organizacao_id)
+    if int(payload.get("organizacao_id") or 0) != organizacao_id:
+        raise HTTPException(403, "A organização não pertence ao usuário.")
+
+
+@router.post("/organizacoes/{organizacao_id}/produtos", status_code=201)
+def criar_produto_organizacao(organizacao_id: int, dados: ProdutoOrganizacaoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    existente = db.query(Produto).filter(
+        Produto.organizacao_id == organizacao_id,
+        func.lower(Produto.nmproduto) == dados.nmproduto.lower(),
+    ).first()
+    if existente:
+        raise HTTPException(409, "Este produto já existe na organização.")
+    campos = dados.model_dump(exclude={"atualizar_preco_lojas"})
+    produto = Produto(organizacao_id=organizacao_id, **campos)
+    db.add(produto)
+    db.commit()
+    db.refresh(produto)
+    return _saida_produto_organizacao(produto)
+
+
+@router.put("/organizacoes/{organizacao_id}/produtos/{produto_id}")
+def alterar_produto_organizacao(organizacao_id: int, produto_id: int, dados: ProdutoOrganizacaoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    produto = db.query(Produto).filter(
+        Produto.produto_id == produto_id,
+        Produto.organizacao_id == organizacao_id,
+    ).first()
+    if produto is None:
+        raise HTTPException(404, "Produto não encontrado na organização.")
+    preco_anterior = Decimal(produto.vrprecoprod)
+    for campo, valor in dados.model_dump(exclude={"atualizar_preco_lojas"}).items():
+        setattr(produto, campo, valor)
+    if dados.atualizar_preco_lojas and dados.vrprecoprod != preco_anterior:
+        atualizar_preco_nas_lojas(db, organizacao_id, produto.produto_id, dados.vrprecoprod)
+    db.commit()
+    db.refresh(produto)
+    return _saida_produto_organizacao(produto)
+
+
+@router.post("/organizacoes/{organizacao_id}/produtos/foto")
+async def enviar_foto_produto_organizacao(organizacao_id: int, foto: UploadFile = File(...), payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    extensoes = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    extensao = extensoes.get(foto.content_type or "")
+    if extensao is None:
+        raise HTTPException(422, "Escolha uma imagem JPG, PNG ou WebP.")
+    conteudo = await foto.read(5 * 1024 * 1024 + 1)
+    if not conteudo or len(conteudo) > 5 * 1024 * 1024:
+        raise HTTPException(422, "A foto deve ter até 5 MB.")
+    os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
+    nome = f"produto_{uuid.uuid4().hex}{extensao}"
+    with open(os.path.join(UPLOAD_PRODUTOS, nome), "wb") as arquivo:
+        arquivo.write(conteudo)
+    return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
 
 
 @router.post("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens", status_code=201)
