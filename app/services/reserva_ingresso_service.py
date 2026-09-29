@@ -13,11 +13,17 @@ from app.models.eventosetor import EventoSetor
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
+from app.utils.datetime_utils import FUSO_BRASIL
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 BENEFICIOS_COTA = {"ESTUDANTE", "JOVEM_BAIXA_RENDA", "PCD", "ACOMPANHANTE_PCD"}
 PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
+
+
+def _agora_brasilia() -> datetime:
+    """Datas comerciais dos lotes e dos eventos são informadas em Brasília."""
+    return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
@@ -105,7 +111,7 @@ def lote_global_ativo(
     db: Session, evento_id: int, agora: datetime | None = None
 ) -> EventoLoteGlobal | None:
     """Resolve o único lote comercial vigente para todos os setores."""
-    agora = agora or datetime.now()
+    agora = agora or _agora_brasilia()
     lotes = (
         db.query(EventoLoteGlobal)
         .filter(EventoLoteGlobal.evento_id == evento_id, EventoLoteGlobal.situacao == "ATIVO")
@@ -182,9 +188,12 @@ def criar_reserva(
     if preco.tipopreco == "MEIA_IDOSO" and beneficio != "IDOSO":
         raise HTTPException(422, "Selecione o benefício Pessoa idosa")
 
+    # Reservas expiram no relógio do servidor; já os períodos de venda dos
+    # lotes seguem a data/hora comercial informada pelo parceiro (Brasília).
     agora = datetime.now()
+    agora_vendas = _agora_brasilia()
     expirar_reservas(db)
-    if lote_atual_do_setor(db, lote, agora) is None:
+    if lote_atual_do_setor(db, lote, agora_vendas) is None:
         raise HTTPException(409, "Este setor não está disponível no lote global vigente")
     if quantidade > quantidade_disponivel_configuracao(db, lote):
         raise HTTPException(409, "O limite deste setor no lote vigente foi atingido")
