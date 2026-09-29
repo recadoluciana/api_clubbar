@@ -1,5 +1,6 @@
 # app/routers/entregas.py
 from fastapi import APIRouter, Depends, Query, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -31,6 +32,14 @@ from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+
+class AtualizarControleBarIn(BaseModel):
+    """Atualiza o fluxo operacional do bar sem tocar na retirada legada."""
+
+    situacao: str
+    nrmesa: str | None = Field(default=None, max_length=50)
+    observacao: str | None = Field(default=None, max_length=255)
 
 
 def _hoje_brasil() -> date:
@@ -1096,6 +1105,130 @@ def alterar_participante_itvenda(
         "cpfparticipante": item.cpfparticipante,
     }
 
+def _usuario_barman_waiter(
+    usuario_id: int,
+    payload: dict,
+    db: Session,
+) -> Usuario:
+    if str(payload.get("sub", "")) != str(usuario_id):
+        raise HTTPException(status_code=403, detail="Usuário autenticado inválido.")
+
+    usuario = db.query(Usuario).filter(Usuario.usuario_id == usuario_id).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário responsável não encontrado.")
+    if not usuario.loja_id:
+        raise HTTPException(
+            status_code=403,
+            detail="O usuário não está vinculado a uma loja.",
+        )
+
+    _validar_cargo_leitura_qr(usuario.dscargo, "P")
+    return usuario
+
+
+@router.get("/controle-bar/em-producao")
+def listar_produtos_em_producao(
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Lista apenas produtos da loja que aguardam a entrega pelo bar."""
+    usuario = _usuario_barman_waiter(usuario_id, payload, db)
+
+    itens = (
+        db.query(ItVenda, Produto, Cliente)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(
+            Venda.loja_id == usuario.loja_id,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+            ItVenda.idcontrolebar == "EM_PRODUCAO",
+        )
+        .order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc())
+        .all()
+    )
+
+    return {
+        "itens": [
+            {
+                "itvenda_id": item.itvenda_id,
+                "nmproduto": produto.nmproduto if produto else "Produto Clubbar",
+                "urlfotoproduto": produto.urlfotoproduto if produto else "",
+                "nrmesa": item.nrmesa or "",
+                "dsobsitvenda": item.dsobsitvenda or "",
+                "nmcliente": cliente.nmcliente or "Não informado",
+                "idcontrolebar": item.idcontrolebar or "PENDENTE",
+            }
+            for item, produto, cliente in itens
+        ]
+    }
+
+
+@router.post("/controle-bar/{itvenda_id}")
+def atualizar_controle_bar(
+    itvenda_id: int,
+    dados: AtualizarControleBarIn,
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Move um produto para produção ou o marca como entregue pelo bar."""
+    usuario = _usuario_barman_waiter(usuario_id, payload, db)
+    situacao = dados.situacao.strip().upper()
+    if situacao not in {"EM_PRODUCAO", "ENTREGUE"}:
+        raise HTTPException(status_code=400, detail="Situação de controle do bar inválida.")
+
+    resultado = (
+        db.query(ItVenda, Produto, Venda, Cliente)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(
+            ItVenda.itvenda_id == itvenda_id,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Produto não encontrado ou indisponível.")
+
+    item, produto, venda, cliente = resultado
+    if venda.loja_id != usuario.loja_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Este QR Code pertence a outro bar/casa noturna.",
+        )
+    if (item.idcontrolebar or "PENDENTE").upper() == "ENTREGUE":
+        raise HTTPException(status_code=409, detail="Este produto já foi entregue pelo bar.")
+
+    item.idcontrolebar = situacao
+    if situacao == "EM_PRODUCAO":
+        item.nrmesa = (dados.nrmesa or "").strip() or None
+        # A observação do pedido é armazenada no próprio campo já existente.
+        item.dsobsitvenda = (dados.observacao or "").strip() or None
+
+    db.commit()
+    db.refresh(item)
+
+    return {
+        "ok": True,
+        "itvenda_id": item.itvenda_id,
+        "idcontrolebar": item.idcontrolebar,
+        "nrmesa": item.nrmesa or "",
+        "dsobsitvenda": item.dsobsitvenda or "",
+        "nmproduto": produto.nmproduto if produto else "Produto Clubbar",
+        "nmcliente": cliente.nmcliente or "Não informado",
+        "msg": (
+            "Produto enviado para produção."
+            if situacao == "EM_PRODUCAO"
+            else "Produto marcado como entregue."
+        ),
+    }
+
+
 @router.get("/buscar-por-token/{token}")
 def buscar_item_por_token(
     token: str,
@@ -1263,6 +1396,8 @@ def buscar_item_por_token(
         "cpfparticipante": item.cpfparticipante or "",
 
         "identregaitvenda": item.identregaitvenda or "NAO",
+        "idcontrolebar": item.idcontrolebar or "PENDENTE",
+        "nrmesa": item.nrmesa or "",
         "dtentregaitvenda": (
             item.dtentregaitvenda.isoformat()
             if item.dtentregaitvenda

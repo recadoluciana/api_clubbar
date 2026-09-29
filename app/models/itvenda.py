@@ -24,6 +24,15 @@ class ItVenda(Base):
     identregaitvenda = Column(Enum("SIM", "NAO", name="identregaitvenda_enum"), nullable=False, server_default="NAO")
     dtentregaitvenda = Column(DateTime, nullable=True)
 
+    # Controle operacional do bar. Este fluxo é independente da baixa
+    # tradicional de retirada (identregaitvenda), que continua preservada.
+    idcontrolebar = Column(
+        Enum("PENDENTE", "EM_PRODUCAO", "ENTREGUE", name="idcontrolebar_enum"),
+        nullable=False,
+        server_default="PENDENTE",
+    )
+    nrmesa = Column(String(50), nullable=True)
+
     userentregaitvenda = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
     nmuserentregaitvenda = Column(String(100), nullable=True)
 
