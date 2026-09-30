@@ -33,6 +33,9 @@ from app.models.usuario import Usuario
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
 from app.services.evento_imagem_service import imagem_evento
+from app.services.evento_disponibilidade_service import (
+    validar_evento_unico_por_loja_data_local,
+)
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -661,6 +664,33 @@ def atualizar_evento(
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
 
+        nova_loja_id = loja_id if loja_id is not None else evento.loja_id
+        novo_inicio = (
+            datetime.fromisoformat(dtinicioevento)
+            if dtinicioevento is not None
+            else evento.dtinicioevento
+        )
+        novo_local = (
+            nmlocalevento if nmlocalevento is not None else evento.nmlocalevento
+        )
+        novo_status = (
+            normalizar_status_evento(statusevento)
+            if statusevento is not None
+            else evento.statusevento
+        )
+
+        if novo_status != "CANCELADO" and any(
+            valor is not None
+            for valor in (loja_id, dtinicioevento, nmlocalevento, statusevento)
+        ):
+            validar_evento_unico_por_loja_data_local(
+                db,
+                loja_id=nova_loja_id,
+                inicio=novo_inicio,
+                local=novo_local,
+                ignorar_evento_id=evento.evento_id,
+            )
+
         if organizacao_id is not None:
             evento.organizacao_id = organizacao_id
 
@@ -681,7 +711,6 @@ def atualizar_evento(
 
         deslocamento_atracoes = None
         if dtinicioevento is not None:
-            novo_inicio = datetime.fromisoformat(dtinicioevento)
             deslocamento_atracoes = novo_inicio - evento.dtinicioevento
             evento.dtinicioevento = novo_inicio
 
@@ -704,7 +733,7 @@ def atualizar_evento(
             evento.dsendlocevento = dsendlocevento
 
         if statusevento is not None:
-            evento.statusevento = normalizar_status_evento(statusevento)
+            evento.statusevento = novo_status
 
         if urlbannerevento is not None and urlbannerevento.filename:
             evento.urlbannerevento = salvar_banner_evento(urlbannerevento)
