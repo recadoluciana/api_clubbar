@@ -1132,7 +1132,7 @@ def resumo_controle_bar(
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    """Resume os produtos ativos da loja para o painel Barman/Waiter."""
+    """Resume os produtos não cancelados da loja para o painel Barman/Waiter."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
     resumo = (
         db.query(
@@ -1163,6 +1163,58 @@ def resumo_controle_bar(
         "validados": int(resumo.validados or 0),
         "em_preparacao": int(resumo.em_preparacao or 0),
         "entregues": int(resumo.entregues or 0),
+    }
+
+
+@router.get("/controle-bar/produtos/{filtro}")
+def listar_produtos_controle_bar(
+    filtro: str,
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Lista produtos da loja conforme o status exibido no painel do bar."""
+    usuario = _usuario_barman_waiter(usuario_id, payload, db)
+    filtro_normalizado = filtro.strip().upper()
+    filtros_validos = {"VENDIDOS", "VALIDADOS", "EM_PRODUCAO", "ENTREGUE"}
+    if filtro_normalizado not in filtros_validos:
+        raise HTTPException(status_code=400, detail="Filtro de produtos inválido.")
+
+    consulta = (
+        db.query(ItVenda, Produto, Cliente)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(
+            Venda.loja_id == usuario.loja_id,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+    )
+
+    if filtro_normalizado == "VALIDADOS":
+        consulta = consulta.filter(ItVenda.identregaitvenda == "SIM")
+    elif filtro_normalizado == "EM_PRODUCAO":
+        consulta = consulta.filter(ItVenda.idcontrolebar == "EM_PRODUCAO")
+    elif filtro_normalizado == "ENTREGUE":
+        consulta = consulta.filter(ItVenda.idcontrolebar == "ENTREGUE")
+
+    itens = consulta.order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc()).all()
+
+    return {
+        "itens": [
+            {
+                "itvenda_id": item.itvenda_id,
+                "nmproduto": produto.nmproduto if produto else "Produto Clubbar",
+                "urlfotoproduto": produto.urlfotoproduto if produto else "",
+                "nrmesa": item.nrmesa or "",
+                "dsobsitvenda": item.dsobsitvenda or "",
+                "nmcliente": cliente.nmcliente or "Não informado",
+                "identregaitvenda": item.identregaitvenda or "NAO",
+                "idcontrolebar": item.idcontrolebar or "PENDENTE",
+            }
+            for item, produto, cliente in itens
+        ]
     }
 
 
@@ -1565,6 +1617,15 @@ def entregar_produto_por_token(
             detail="Este ingresso pertence a outro evento. Selecione o evento correto antes de validar.",
         )
 
+    atualizacoes = {
+        ItVenda.identregaitvenda: "SIM",
+        ItVenda.dtentregaitvenda: datetime.now(),
+        ItVenda.userentregaitvenda: usuario.usuario_id,
+        ItVenda.nmuserentregaitvenda: usuario.nmusuario,
+    }
+    if item.tipoitem == "PRODUTO":
+        atualizacoes[ItVenda.idcontrolebar] = "ENTREGUE"
+
     quantidade_atualizada = (
         db.query(ItVenda)
         .filter(ItVenda.itvenda_id == item.itvenda_id)
@@ -1574,12 +1635,7 @@ def entregar_produto_por_token(
             | (ItVenda.identregaitvenda != "SIM")
         )
         .update(
-            {
-                ItVenda.identregaitvenda: "SIM",
-                ItVenda.dtentregaitvenda: datetime.now(),
-                ItVenda.userentregaitvenda: usuario.usuario_id,
-                ItVenda.nmuserentregaitvenda: usuario.nmusuario,
-            },
+            atualizacoes,
             synchronize_session=False,
         )
     )
