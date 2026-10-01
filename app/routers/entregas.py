@@ -1232,6 +1232,7 @@ def listar_produtos_controle_bar(
                 "urlfotoproduto": produto.urlfotoproduto if produto else "",
                 "dtcompra": item.dtcriacao,
                 "dtvalidade": item.dtexpiraitvenda,
+                "dtpreparacao": item.dtentregaitvenda,
                 "nrmesa": item.nrmesa or "",
                 "dsobsitvenda": item.dsobsitvenda or "",
                 "nmcliente": cliente.nmcliente or "Não informado",
