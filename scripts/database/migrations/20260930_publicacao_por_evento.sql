@@ -1,5 +1,5 @@
 -- A publicação deixa de ser controlada pela agenda inteira. Eventos que já
--- estavam em uma agenda publicada permanecem ativos; os demais voltam ao
+-- estavam em uma agenda publicada permanecem ativos e os demais voltam ao
 -- rascunho até serem publicados individualmente no Clubbar Partner.
 UPDATE evento AS evento
 INNER JOIN agendamensal AS agenda
