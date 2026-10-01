@@ -1226,7 +1226,14 @@ def listar_produtos_controle_bar(
     elif filtro_normalizado == "ENTREGUE":
         consulta = consulta.filter(ItVenda.idcontrolebar == "ENTREGUE")
 
-    itens = consulta.order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc()).all()
+    if filtro_normalizado == "EM_PRODUCAO":
+        # Quem entrou primeiro em preparação deve aparecer primeiro para o barman.
+        itens = consulta.order_by(
+            ItVenda.dtentregaitvenda.asc(),
+            ItVenda.itvenda_id.asc(),
+        ).all()
+    else:
+        itens = consulta.order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc()).all()
 
     return {
         "itens": [
@@ -1270,7 +1277,7 @@ def listar_produtos_em_producao(
             ItVenda.sititvenda == "ATIVO",
             ItVenda.idcontrolebar == "EM_PRODUCAO",
         )
-        .order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc())
+        .order_by(ItVenda.dtentregaitvenda.asc(), ItVenda.itvenda_id.asc())
         .all()
     )
 
