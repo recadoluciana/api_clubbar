@@ -47,13 +47,10 @@ def _hoje_brasil() -> date:
 
 
 def _produto_pendente_e_valido() -> list:
-    """Condições de um produto ainda disponível para preparo ou entrega."""
+    """Condições de retirada e validade de um produto ainda disponível."""
     return [
         ItVenda.identregaitvenda == "NAO",
-        or_(
-            ItVenda.dtexpiraitvenda.is_(None),
-            ItVenda.dtexpiraitvenda >= _hoje_brasil(),
-        ),
+        ItVenda.dtexpiraitvenda >= _hoje_brasil(),
     ]
 
 
@@ -1167,7 +1164,7 @@ def resumo_controle_bar(
             Venda.loja_id == usuario.loja_id,
             Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda == "ATIVO",
+            ItVenda.sititvenda != "CANCELADO",
         )
         .one()
     )
@@ -1206,7 +1203,7 @@ def listar_produtos_controle_bar(
             Venda.loja_id == usuario.loja_id,
             Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda == "ATIVO",
+            ItVenda.sititvenda != "CANCELADO",
         )
     )
 
