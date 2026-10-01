@@ -1227,8 +1227,11 @@ def listar_produtos_controle_bar(
         "itens": [
             {
                 "itvenda_id": item.itvenda_id,
+                "venda_id": item.venda_id,
                 "nmproduto": produto.nmproduto if produto else "Produto Clubbar",
                 "urlfotoproduto": produto.urlfotoproduto if produto else "",
+                "dtcompra": item.dtcriacao,
+                "dtvalidade": item.dtexpiraitvenda,
                 "nrmesa": item.nrmesa or "",
                 "dsobsitvenda": item.dsobsitvenda or "",
                 "nmcliente": cliente.nmcliente or "Não informado",
