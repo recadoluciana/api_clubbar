@@ -7,7 +7,7 @@ from sqlalchemy import func
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from app.utils.datetime_utils import formatar_data_br, iso_utc
-from sqlalchemy import or_, case
+from sqlalchemy import and_, or_, case
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
@@ -44,6 +44,17 @@ class AtualizarControleBarIn(BaseModel):
 
 def _hoje_brasil() -> date:
     return datetime.now(_FUSO_BRASIL).date()
+
+
+def _produto_pendente_e_valido() -> list:
+    """Condições de um produto ainda disponível para preparo ou entrega."""
+    return [
+        ItVenda.identregaitvenda == "NAO",
+        or_(
+            ItVenda.dtexpiraitvenda.is_(None),
+            ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+        ),
+    ]
 
 
 def _politica_vigente(db: Session, tipo: str) -> PoliticaCompra | None:
@@ -1132,37 +1143,37 @@ def resumo_controle_bar(
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    """Resume os produtos não cancelados da loja para o painel Barman/Waiter."""
+    """Resume os produtos pendentes e em preparação do painel Barman/Waiter."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
+    pendente_e_valido = _produto_pendente_e_valido()
     resumo = (
         db.query(
-            func.count(ItVenda.itvenda_id).label("vendidos"),
             func.coalesce(
-                func.sum(case((ItVenda.identregaitvenda == "SIM", 1), else_=0)),
+                func.sum(case((and_(*pendente_e_valido), 1), else_=0)),
                 0,
-            ).label("validados"),
+            ).label("pendentes"),
             func.coalesce(
-                func.sum(case((ItVenda.idcontrolebar == "EM_PRODUCAO", 1), else_=0)),
+                func.sum(
+                    case(
+                        (ItVenda.idcontrolebar == "EM_PRODUCAO", 1),
+                        else_=0,
+                    ),
+                ),
                 0,
             ).label("em_preparacao"),
-            func.coalesce(
-                func.sum(case((ItVenda.idcontrolebar == "ENTREGUE", 1), else_=0)),
-                0,
-            ).label("entregues"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .filter(
             Venda.loja_id == usuario.loja_id,
+            Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
         )
         .one()
     )
     return {
-        "vendidos": int(resumo.vendidos or 0),
-        "validados": int(resumo.validados or 0),
+        "pendentes": int(resumo.pendentes or 0),
         "em_preparacao": int(resumo.em_preparacao or 0),
-        "entregues": int(resumo.entregues or 0),
     }
 
 
@@ -1176,7 +1187,13 @@ def listar_produtos_controle_bar(
     """Lista produtos da loja conforme o status exibido no painel do bar."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
     filtro_normalizado = filtro.strip().upper()
-    filtros_validos = {"VENDIDOS", "VALIDADOS", "EM_PRODUCAO", "ENTREGUE"}
+    filtros_validos = {
+        "PENDENTES",
+        "VENDIDOS",
+        "VALIDADOS",
+        "EM_PRODUCAO",
+        "ENTREGUE",
+    }
     if filtro_normalizado not in filtros_validos:
         raise HTTPException(status_code=400, detail="Filtro de produtos inválido.")
 
@@ -1187,12 +1204,15 @@ def listar_produtos_controle_bar(
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .filter(
             Venda.loja_id == usuario.loja_id,
+            Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
         )
     )
 
-    if filtro_normalizado == "VALIDADOS":
+    if filtro_normalizado == "PENDENTES":
+        consulta = consulta.filter(*_produto_pendente_e_valido())
+    elif filtro_normalizado == "VALIDADOS":
         consulta = consulta.filter(ItVenda.identregaitvenda == "SIM")
     elif filtro_normalizado == "EM_PRODUCAO":
         consulta = consulta.filter(ItVenda.idcontrolebar == "EM_PRODUCAO")
@@ -1234,6 +1254,7 @@ def listar_produtos_em_producao(
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .filter(
             Venda.loja_id == usuario.loja_id,
+            Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
             ItVenda.idcontrolebar == "EM_PRODUCAO",
