@@ -50,7 +50,10 @@ def _produto_pendente_e_valido() -> list:
     """Condições de retirada e validade de um produto ainda disponível."""
     return [
         ItVenda.identregaitvenda == "NAO",
-        ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+        or_(
+            ItVenda.dtexpiraitvenda.is_(None),
+            ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+        ),
     ]
 
 
