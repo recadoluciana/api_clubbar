@@ -7,7 +7,7 @@ from sqlalchemy import func
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 from app.utils.datetime_utils import formatar_data_br, iso_utc
-from sqlalchemy import or_, case
+from sqlalchemy import and_, or_, case
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
@@ -44,6 +44,17 @@ class AtualizarControleBarIn(BaseModel):
 
 def _hoje_brasil() -> date:
     return datetime.now(_FUSO_BRASIL).date()
+
+
+def _produto_pendente_e_valido() -> list:
+    """Condições de retirada e validade de um produto ainda disponível."""
+    return [
+        ItVenda.identregaitvenda == "NAO",
+        or_(
+            ItVenda.dtexpiraitvenda.is_(None),
+            ItVenda.dtexpiraitvenda >= _hoje_brasil(),
+        ),
+    ]
 
 
 def _politica_vigente(db: Session, tipo: str) -> PoliticaCompra | None:
@@ -1134,33 +1145,36 @@ def resumo_controle_bar(
 ):
     """Resume os produtos pendentes e em preparação do painel Barman/Waiter."""
     usuario = _usuario_barman_waiter(usuario_id, payload, db)
-    pendentes = (
-        db.query(func.count(ItVenda.itvenda_id))
+    pendente_e_valido = _produto_pendente_e_valido()
+    resumo = (
+        db.query(
+            func.coalesce(
+                func.sum(case((and_(*pendente_e_valido), 1), else_=0)),
+                0,
+            ).label("pendentes"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ItVenda.idcontrolebar == "EM_PRODUCAO", 1),
+                        else_=0,
+                    ),
+                ),
+                0,
+            ).label("em_preparacao"),
+        )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .filter(
             Venda.loja_id == usuario.loja_id,
             Venda.tipovenda == "PRODUTO",
-            ItVenda.identregaitvenda == "NAO",
-        )
-        .scalar()
-        or 0
-    )
-    em_preparacao = (
-        db.query(func.count(ItVenda.itvenda_id))
-        .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .filter(
-            Venda.loja_id == usuario.loja_id,
             Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda == "ATIVO",
-            ItVenda.idcontrolebar == "EM_PRODUCAO",
+            ItVenda.sititvenda != "CANCELADO",
         )
-        .scalar()
-        or 0
+        .one()
     )
     return {
-        "pendentes": int(pendentes),
-        "em_preparacao": int(em_preparacao),
+        "pendentes": int(resumo.pendentes or 0),
+        "em_preparacao": int(resumo.em_preparacao or 0),
     }
 
 
@@ -1188,36 +1202,24 @@ def listar_produtos_controle_bar(
         db.query(ItVenda, Produto, Cliente)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
-        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
-        .filter(Venda.loja_id == usuario.loja_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(
+            Venda.loja_id == usuario.loja_id,
+            Venda.tipovenda == "PRODUTO",
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda != "CANCELADO",
+        )
     )
 
     if filtro_normalizado == "PENDENTES":
-        consulta = consulta.filter(
-            Venda.tipovenda == "PRODUTO",
-            ItVenda.identregaitvenda == "NAO",
-        )
+        consulta = consulta.filter(*_produto_pendente_e_valido())
     elif filtro_normalizado == "VALIDADOS":
-        consulta = consulta.filter(
-            Venda.sitvenda == "PAGA",
-            ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda != "CANCELADO",
-            ItVenda.identregaitvenda == "SIM",
-        )
+        consulta = consulta.filter(ItVenda.identregaitvenda == "SIM")
     elif filtro_normalizado == "EM_PRODUCAO":
-        consulta = consulta.filter(
-            Venda.sitvenda == "PAGA",
-            ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda == "ATIVO",
-            ItVenda.idcontrolebar == "EM_PRODUCAO",
-        )
+        consulta = consulta.filter(ItVenda.idcontrolebar == "EM_PRODUCAO")
     elif filtro_normalizado == "ENTREGUE":
-        consulta = consulta.filter(
-            Venda.sitvenda == "PAGA",
-            ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda != "CANCELADO",
-            ItVenda.idcontrolebar == "ENTREGUE",
-        )
+        consulta = consulta.filter(ItVenda.idcontrolebar == "ENTREGUE")
 
     itens = consulta.order_by(ItVenda.dtcriacao.asc(), ItVenda.itvenda_id.asc()).all()
 
