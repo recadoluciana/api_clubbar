@@ -56,9 +56,17 @@ def publicar(loja_id: int, ano: int, mes: int, dados: PublicacaoAgendaIn, payloa
         raise HTTPException(404, "Loja não encontrada.")
     validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
     item = _agenda(db, loja, ano, mes)
-    if not db.query(Evento).filter(Evento.agendamensal_id == item.agendamensal_id, Evento.statusevento != "CANCELADO").first():
+    eventos = db.query(Evento).filter(
+        Evento.agendamensal_id == item.agendamensal_id,
+        Evento.statusevento.notin_(["CANCELADO", "ENCERRADO"]),
+    ).all()
+    if not eventos:
         raise HTTPException(422, "Cadastre pelo menos um evento antes de publicar a agenda.")
     validar_publicacao_loja(db, loja_id)
+    # Compatibilidade com versões antigas do Partner. A interface atual
+    # publica evento a evento ou uma seleção deles.
+    for evento in eventos:
+        evento.statusevento = "ATIVO"
     item.statusagenda = "PUBLICADA"
     item.publicaraposaprovacao = "N"
     item.dtpublicacao = datetime.now()
@@ -73,6 +81,13 @@ def despublicar(loja_id: int, ano: int, mes: int, payload=Depends(get_usuario_lo
         raise HTTPException(404, "Loja não encontrada.")
     validar_mutacao_loja(payload, loja.organizacao_id, loja.loja_id)
     item = _agenda(db, loja, ano, mes)
+    # Compatibilidade com versões antigas do Partner. A interface atual
+    # retira a publicação de cada evento individualmente.
+    for evento in db.query(Evento).filter(
+        Evento.agendamensal_id == item.agendamensal_id,
+        Evento.statusevento == "ATIVO",
+    ).all():
+        evento.statusevento = "RASCUNHO"
     item.statusagenda = "INATIVA"
     item.publicaraposaprovacao = "N"
     db.commit()

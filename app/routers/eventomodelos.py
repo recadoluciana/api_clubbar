@@ -156,7 +156,7 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
             local=local_evento,
         )
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
-        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="ATIVO")
+        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
         db.add(evento);db.flush()
         inicio_atracao = inicio
         for padrao in atracoes_padrao:

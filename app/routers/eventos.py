@@ -15,7 +15,6 @@ from app.database import get_db
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
-from app.models.agendamensal import AgendaMensal
 from app.services.agenda_service import obter_ou_criar_agenda
 from app.models.evento import Evento
 from app.models.cidade import Cidade
@@ -44,6 +43,10 @@ STATUS_EVENTO_VALIDOS = {"RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO
 
 class CapacidadeEventoIn(BaseModel):
     qtcapacidadeevento: int = Field(gt=0)
+
+
+class PublicarEventosIn(BaseModel):
+    evento_ids: list[int] = Field(min_length=1)
 
 
 def _resumo_capacidade_evento(db: Session, evento: Evento) -> dict:
@@ -79,6 +82,46 @@ def _evento_gerenciavel(db: Session, evento_id: int, usuario) -> Evento:
         raise HTTPException(404, "Evento não encontrado.")
     validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
     return evento
+
+
+def _eventos_gerenciaveis(
+    db: Session,
+    evento_ids: list[int],
+    usuario: dict,
+) -> list[Evento]:
+    ids = list(dict.fromkeys(evento_ids))
+    eventos = db.query(Evento).filter(Evento.evento_id.in_(ids)).all()
+    encontrados = {evento.evento_id for evento in eventos}
+    ausentes = [evento_id for evento_id in ids if evento_id not in encontrados]
+    if ausentes:
+        raise HTTPException(404, "Um ou mais eventos não foram encontrados.")
+
+    for evento in eventos:
+        validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    return eventos
+
+
+def _publicar_eventos(db: Session, eventos: list[Evento]) -> int:
+    bloqueados = [
+        evento.nmtituloevento
+        for evento in eventos
+        if evento.statusevento in {"CANCELADO", "ENCERRADO"}
+    ]
+    if bloqueados:
+        raise HTTPException(
+            422,
+            "Não é possível publicar evento cancelado ou encerrado.",
+        )
+
+    for loja_id in {evento.loja_id for evento in eventos}:
+        validar_publicacao_loja(db, loja_id)
+
+    publicados = 0
+    for evento in eventos:
+        if evento.statusevento != "ATIVO":
+            evento.statusevento = "ATIVO"
+            publicados += 1
+    return publicados
 
 
 def deslocar_programacao_atracoes(programacoes, deslocamento: timedelta) -> None:
@@ -342,13 +385,11 @@ def listar_eventos_proximos(
     eventos = (
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
         .join(Loja, Loja.loja_id == Evento.loja_id)
-        .join(AgendaMensal, AgendaMensal.agendamensal_id == Evento.agendamensal_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.loja_id == loja_id)
         .filter(Evento.statusevento == "ATIVO")
-        .filter(AgendaMensal.statusagenda == "PUBLICADA")
         .filter(filtro_evento_atual_ou_proximo(hi))
         .order_by(Evento.dtinicioevento.asc())
         .all()
@@ -391,7 +432,6 @@ def listar_eventos_proximos_global(
             func.coalesce(vendas_por_loja.c.total_vendas, 0).label("total_vendas_loja"),
         )
         .join(Loja, Loja.loja_id == Evento.loja_id)
-        .join(AgendaMensal, AgendaMensal.agendamensal_id == Evento.agendamensal_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .outerjoin(vendas_por_loja, vendas_por_loja.c.loja_id == Loja.loja_id)
         .join(
@@ -400,7 +440,6 @@ def listar_eventos_proximos_global(
         )
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
-        .filter(AgendaMensal.statusagenda == "PUBLICADA")
         .filter(filtro_evento_atual_ou_proximo(hi))
     )
 
@@ -567,6 +606,65 @@ def get_evento_por_id(
             }
             for lista_lotes in lotes
         ],
+    }
+
+
+@router.post("/publicar")
+def publicar_eventos(
+    dados: PublicarEventosIn,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    eventos = _eventos_gerenciaveis(db, dados.evento_ids, payload)
+    publicados = _publicar_eventos(db, eventos)
+    db.commit()
+    return {
+        "evento_ids": [evento.evento_id for evento in eventos],
+        "mensagem": (
+            f"{publicados} evento(s) publicado(s)."
+            if publicados
+            else "Os eventos selecionados já estão publicados."
+        ),
+    }
+
+
+@router.post("/{evento_id}/publicar")
+def publicar_evento(
+    evento_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    evento = _evento_gerenciavel(db, evento_id, payload)
+    publicados = _publicar_eventos(db, [evento])
+    db.commit()
+    return {
+        "evento_id": evento.evento_id,
+        "statusevento": evento.statusevento,
+        "mensagem": (
+            "Evento publicado com sucesso."
+            if publicados
+            else "Este evento já está publicado."
+        ),
+    }
+
+
+@router.post("/{evento_id}/despublicar")
+def despublicar_evento(
+    evento_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    evento = _evento_gerenciavel(db, evento_id, payload)
+    if evento.statusevento == "ATIVO":
+        evento.statusevento = "RASCUNHO"
+        db.commit()
+        mensagem = "Publicação do evento retirada."
+    else:
+        mensagem = "Este evento já não está publicado."
+    return {
+        "evento_id": evento.evento_id,
+        "statusevento": evento.statusevento,
+        "mensagem": mensagem,
     }
 
 
