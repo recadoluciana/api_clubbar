@@ -1250,6 +1250,7 @@ def listar_produtos_controle_bar(
                 "nmcliente": cliente.nmcliente or "Não informado",
                 "identregaitvenda": item.identregaitvenda or "NAO",
                 "idcontrolebar": item.idcontrolebar or "PENDENTE",
+                "nmuserentregaitvenda": item.nmuserentregaitvenda or "",
             }
             for item, produto, cliente in itens
         ]
@@ -1291,6 +1292,8 @@ def listar_produtos_em_producao(
                 "dsobsitvenda": item.dsobsitvenda or "",
                 "nmcliente": cliente.nmcliente or "Não informado",
                 "idcontrolebar": item.idcontrolebar or "PENDENTE",
+                "dtpreparacao": item.dtentregaitvenda,
+                "nmuserentregaitvenda": item.nmuserentregaitvenda or "",
             }
             for item, produto, cliente in itens
         ]
