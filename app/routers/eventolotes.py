@@ -27,6 +27,7 @@ from app.services.reserva_ingresso_service import (
     quantidade_disponivel_configuracao,
     quantidade_reservada,
 )
+from app.services.evento_edicao_service import validar_evento_editavel
 
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
@@ -254,6 +255,7 @@ def criar_lote_global(
     if not evento:
         raise HTTPException(404, "Evento não encontrado")
     validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    validar_evento_editavel(evento)
     loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
     if not loja or data.organizacao_id != evento.organizacao_id or data.loja_id != evento.loja_id:
         raise HTTPException(422, "Organização ou loja divergente do evento")
@@ -317,6 +319,8 @@ def atualizar_lote_global(
     if not global_:
         raise HTTPException(404, "Lote global não encontrado")
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
     if global_.nrlote != 1 and data.dtiniciovenda is not None:
         raise HTTPException(
             422,
@@ -345,6 +349,8 @@ def adicionar_setor_ao_lote_global(
     if not global_:
         raise HTTPException(404, "Lote global não encontrado")
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
     setor = (
         db.query(EventoSetor)
         .filter(
@@ -392,6 +398,8 @@ def atualizar_configuracao_setor(
         raise HTTPException(404, "Configuração do setor não encontrada")
     global_ = _carregar_global(db, lote.loteglobal_id)
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
     if data.qtlimite is not None:
         setor = lote.setor
         if data.qtlimite > int(setor.qtcapacidade):
@@ -421,6 +429,8 @@ def excluir_setor_do_lote(
         raise HTTPException(404, "Setor do lote não encontrado")
     global_ = _carregar_global(db, lote.loteglobal_id)
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
     if len(global_.configuracoes_setor) <= 1:
         raise HTTPException(409, "Este é o único setor do lote. Exclua o lote global inteiro.")
     tem_vendas = db.query(ItVenda.itvenda_id).filter(ItVenda.lote_id == lote_id).first()
@@ -444,6 +454,8 @@ def excluir_lote_global(
     if not global_:
         raise HTTPException(404, "Lote global não encontrado")
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
     if any(item.qtvendidalote or quantidade_reservada(db, item.lote_id) for item in global_.configuracoes_setor):
         raise HTTPException(409, "Não é possível excluir um lote global com vendas ou reservas")
     db.delete(global_)
