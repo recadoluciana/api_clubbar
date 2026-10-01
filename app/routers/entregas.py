@@ -46,6 +46,11 @@ def _hoje_brasil() -> date:
     return datetime.now(_FUSO_BRASIL).date()
 
 
+def _agora_brasil() -> datetime:
+    """Horário de Brasília para colunas DateTime sem fuso no banco."""
+    return datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+
+
 def _produto_pendente_e_valido() -> list:
     """Condições de retirada e validade de um produto ainda disponível."""
     return [
@@ -705,7 +710,7 @@ def entregar_produto(
         .update(
             {
                 ItVenda.identregaitvenda: "SIM",
-                ItVenda.dtentregaitvenda: datetime.now(),
+                ItVenda.dtentregaitvenda: _agora_brasil(),
                 ItVenda.userentregaitvenda: usuario.usuario_id,
                 ItVenda.nmuserentregaitvenda: usuario.nmusuario,
             },
@@ -1327,7 +1332,7 @@ def atualizar_controle_bar(
     # A leitura do QR valida o produto e o retira da carteira. A baixa legada
     # continua disponível para seus demais usos, mas é atualizada neste fluxo.
     item.identregaitvenda = "SIM"
-    item.dtentregaitvenda = datetime.now()
+    item.dtentregaitvenda = _agora_brasil()
     item.userentregaitvenda = usuario.usuario_id
     item.nmuserentregaitvenda = usuario.nmusuario
     if situacao == "EM_PRODUCAO":
@@ -1646,7 +1651,7 @@ def entregar_produto_por_token(
 
     atualizacoes = {
         ItVenda.identregaitvenda: "SIM",
-        ItVenda.dtentregaitvenda: datetime.now(),
+        ItVenda.dtentregaitvenda: _agora_brasil(),
         ItVenda.userentregaitvenda: usuario.usuario_id,
         ItVenda.nmuserentregaitvenda: usuario.nmusuario,
     }
