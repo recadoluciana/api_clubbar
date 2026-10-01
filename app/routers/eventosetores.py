@@ -10,6 +10,7 @@ from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventosetor import EventoSetor
 from app.models.reserva_ingresso import ReservaIngresso
+from app.services.evento_edicao_service import validar_evento_editavel
 
 router = APIRouter(prefix="/eventos", tags=["Setores de eventos"])
 
@@ -64,6 +65,7 @@ def listar(evento_id:int,db:Session=Depends(get_db),usuario=Depends(get_usuario_
 @router.post("/{evento_id}/setores",status_code=201)
 def criar(evento_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends(get_usuario_logado)):
     evento=_evento(db,evento_id,usuario)
+    validar_evento_editavel(evento)
     if db.query(EventoSetor).filter(EventoSetor.evento_id==evento_id,EventoSetor.nmsetor==dados.nmsetor.strip()).first(): raise HTTPException(409,"Já existe um setor com esse nome")
     _validar_teto_capacidade_evento(db, evento, dados.qtcapacidade, dados.sitsetor)
     x=EventoSetor(organizacao_id=evento.organizacao_id,loja_id=evento.loja_id,evento_id=evento_id,**dados.model_dump())
@@ -74,6 +76,7 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     x=db.query(EventoSetor).filter(EventoSetor.eventosetor_id==setor_id).first()
     if not x: raise HTTPException(404,"Setor não encontrado")
     evento = _evento(db,x.evento_id,usuario)
+    validar_evento_editavel(evento)
     lotes = db.query(EventoLote).filter(EventoLote.eventosetor_id == setor_id).all()
     # O nome do lote é global e não contém mais o nome do setor. Renomear um
     # setor, portanto, não altera nenhuma etapa comercial.
@@ -104,6 +107,7 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
 def excluir(setor_id:int,db:Session=Depends(get_db),usuario=Depends(get_usuario_logado)):
     x=db.query(EventoSetor).filter(EventoSetor.eventosetor_id==setor_id).first()
     if not x: raise HTTPException(404,"Setor não encontrado")
-    _evento(db,x.evento_id,usuario)
+    evento = _evento(db,x.evento_id,usuario)
+    validar_evento_editavel(evento)
     if db.query(EventoLote).filter(EventoLote.eventosetor_id==setor_id).first():raise HTTPException(409,"O setor possui ingressos cadastrados")
     db.delete(x);db.commit()

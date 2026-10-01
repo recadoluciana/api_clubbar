@@ -35,6 +35,7 @@ from app.services.evento_imagem_service import imagem_evento
 from app.services.evento_disponibilidade_service import (
     validar_evento_unico_por_loja_data_local,
 )
+from app.services.evento_edicao_service import validar_evento_editavel
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -102,6 +103,8 @@ def _eventos_gerenciaveis(
 
 
 def _publicar_eventos(db: Session, eventos: list[Evento]) -> int:
+    for evento in eventos:
+        validar_evento_editavel(evento)
     bloqueados = [
         evento.nmtituloevento
         for evento in eventos
@@ -243,6 +246,7 @@ def atualizar_capacidade_evento(
     db: Session = Depends(get_db),
 ):
     evento = _evento_gerenciavel(db, evento_id, payload)
+    validar_evento_editavel(evento)
     capacidade_setores = int(
         db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
         .filter(
@@ -655,6 +659,7 @@ def despublicar_evento(
     db: Session = Depends(get_db),
 ):
     evento = _evento_gerenciavel(db, evento_id, payload)
+    validar_evento_editavel(evento)
     if evento.statusevento == "ATIVO":
         evento.statusevento = "RASCUNHO"
         db.commit()
@@ -761,6 +766,7 @@ def atualizar_evento(
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+        validar_evento_editavel(evento)
 
         nova_loja_id = loja_id if loja_id is not None else evento.loja_id
         novo_inicio = (
@@ -886,6 +892,7 @@ def deletar_evento(
         if not evento:
             raise HTTPException(status_code=404, detail="Evento não encontrado")
         validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+        validar_evento_editavel(evento)
 
         # A exclusão representa apenas esta ocorrência da agenda. O modelo e
         # as demais datas recorrentes permanecem intactos.

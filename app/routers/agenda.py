@@ -15,6 +15,7 @@ from app.services.agenda_service import obter_ou_criar_agenda
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.evento_imagem_service import imagem_evento
 from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
+from app.services.evento_edicao_service import validar_evento_editavel
 
 router=APIRouter(prefix="/agenda-mensal",tags=["Agenda mensal"])
 
@@ -62,6 +63,8 @@ def publicar(loja_id: int, ano: int, mes: int, dados: PublicacaoAgendaIn, payloa
     ).all()
     if not eventos:
         raise HTTPException(422, "Cadastre pelo menos um evento antes de publicar a agenda.")
+    for evento in eventos:
+        validar_evento_editavel(evento)
     validar_publicacao_loja(db, loja_id)
     # Compatibilidade com versões antigas do Partner. A interface atual
     # publica evento a evento ou uma seleção deles.
@@ -83,10 +86,13 @@ def despublicar(loja_id: int, ano: int, mes: int, payload=Depends(get_usuario_lo
     item = _agenda(db, loja, ano, mes)
     # Compatibilidade com versões antigas do Partner. A interface atual
     # retira a publicação de cada evento individualmente.
-    for evento in db.query(Evento).filter(
+    eventos = db.query(Evento).filter(
         Evento.agendamensal_id == item.agendamensal_id,
         Evento.statusevento == "ATIVO",
-    ).all():
+    ).all()
+    for evento in eventos:
+        validar_evento_editavel(evento)
+    for evento in eventos:
         evento.statusevento = "RASCUNHO"
     item.statusagenda = "INATIVA"
     item.publicaraposaprovacao = "N"

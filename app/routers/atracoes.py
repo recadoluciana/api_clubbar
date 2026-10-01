@@ -15,6 +15,7 @@ from app.models.eventomodeloatracao import EventoModeloAtracao
 from app.models.eventolote import EventoLote
 from app.schemas.atracao import EventoAtracaoIn, EventoAtracaoUpdate
 from app.schemas.estilomusical import EstiloMusicalIn, EstilosMusicaisImportacaoIn
+from app.services.evento_edicao_service import validar_evento_editavel
 
 router = APIRouter(tags=["Atrações"])
 
@@ -234,6 +235,7 @@ def listar_programacao(evento_id:int,payload=Depends(get_usuario_logado),db:Sess
 @router.post("/eventos/{evento_id}/atracoes", status_code=201)
 def adicionar(evento_id:int,dados:EventoAtracaoIn,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload); evento=_evento(db,evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
+    validar_evento_editavel(evento)
     if not db.query(Atracao).filter(Atracao.atracao_id==dados.atracao_id,Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     _validar_horario_programacao(db,evento_id,dados.dtinicioatracao,dados.dtfimatracao)
     p=EventoAtracao(evento_id=evento_id,**dados.model_dump(),nrminutoduracao=_duracao_em_minutos(dados.dtinicioatracao,dados.dtfimatracao)); db.add(p); db.commit()
@@ -244,6 +246,7 @@ def editar_programacao(programacao_id:int,dados:EventoAtracaoUpdate,payload=Depe
     org=_org(payload); p=db.query(EventoAtracao).options(joinedload(EventoAtracao.atracao)).join(Evento).filter(EventoAtracao.eventoatracao_id==programacao_id,Evento.organizacao_id==org).first()
     if not p: raise HTTPException(404,"Programação não encontrada.")
     evento=_evento(db,p.evento_id,org); validar_mutacao_loja(payload,org,evento.loja_id)
+    validar_evento_editavel(evento)
     vals=dados.model_dump(exclude_none=True)
     if "atracao_id" in vals and not db.query(Atracao).filter(Atracao.atracao_id==vals["atracao_id"],Atracao.organizacao_id==org).first(): raise HTTPException(404,"Atração não encontrada.")
     inicio=vals.get("dtinicioatracao",p.dtinicioatracao); fim=vals.get("dtfimatracao",p.dtfimatracao)
@@ -260,6 +263,7 @@ def remover(programacao_id:int,payload=Depends(get_usuario_logado),db:Session=De
     if not p: raise HTTPException(404,"Programação não encontrada.")
     evento = db.query(Evento).filter(Evento.evento_id == p.evento_id, Evento.organizacao_id == org).first()
     validar_mutacao_loja(payload,org,evento.loja_id)
+    validar_evento_editavel(evento)
     try:
         db.delete(p)
         db.commit()
