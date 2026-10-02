@@ -24,9 +24,8 @@ class EventoLoteGlobal(Base):
     )
     nrlote = Column(Integer, nullable=False)
     nmlote = Column(String(80), nullable=False)
-    # O primeiro lote possui início explícito. Os seguintes começam quando o
-    # anterior vira; o campo permanece para registrar uma abertura manual, se
-    # futuramente essa regra for necessária.
+    # Mantido para compatibilidade histórica. O início comercial é automático:
+    # o primeiro lote acompanha a publicação e os demais começam na virada.
     dtiniciovenda = Column(DateTime, nullable=True)
     dtfimvenda = Column(DateTime, nullable=True)
     gatilhovirada = Column(String(15), nullable=False, server_default="HIBRIDO")
