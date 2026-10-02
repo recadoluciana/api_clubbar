@@ -927,13 +927,17 @@ CREATE TABLE cardapiomodelo (
   cardapiomodelo_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
   nmcardapio VARCHAR(120) NOT NULL,
-  tipocardapio ENUM('PRINCIPAL','ESPECIAL','SAZONAL','EVENTO') NOT NULL DEFAULT 'PRINCIPAL',
+  tipocardapio ENUM('PRINCIPAL','ESPECIAL') NOT NULL DEFAULT 'PRINCIPAL',
+  principal_organizacao_id BIGINT GENERATED ALWAYS AS (
+    CASE WHEN tipocardapio = 'PRINCIPAL' THEN organizacao_id ELSE NULL END
+  ) STORED,
   sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_cardapiomodelo_organizacao FOREIGN KEY (organizacao_id)
     REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
   UNIQUE KEY uk_cardapiomodelo_org_nome (organizacao_id, nmcardapio),
+  UNIQUE KEY uk_cardapiomodelo_principal_org (principal_organizacao_id),
   KEY idx_cardapiomodelo_org_situacao (organizacao_id, sitcardapio)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -943,7 +947,10 @@ CREATE TABLE cardapio (
   loja_id BIGINT NOT NULL,
   cardapiomodelo_id BIGINT NOT NULL,
   nmcardapio VARCHAR(120) NOT NULL,
-  tipocardapio ENUM('PRINCIPAL','ESPECIAL','SAZONAL','EVENTO') NOT NULL DEFAULT 'PRINCIPAL',
+  tipocardapio ENUM('PRINCIPAL','ESPECIAL') NOT NULL DEFAULT 'PRINCIPAL',
+  principal_loja_id BIGINT GENERATED ALWAYS AS (
+    CASE WHEN tipocardapio = 'PRINCIPAL' THEN loja_id ELSE NULL END
+  ) STORED,
   prioridade INT NOT NULL DEFAULT 0,
   sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -953,6 +960,7 @@ CREATE TABLE cardapio (
   CONSTRAINT fk_cardapio_modelo FOREIGN KEY (cardapiomodelo_id)
     REFERENCES cardapiomodelo(cardapiomodelo_id) ON DELETE RESTRICT ON UPDATE CASCADE,
   UNIQUE KEY uk_cardapio_loja_modelo (loja_id, cardapiomodelo_id),
+  UNIQUE KEY uk_cardapio_principal_loja (principal_loja_id),
   KEY idx_cardapio_loja_situacao (loja_id, sitcardapio, prioridade)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -1097,7 +1105,8 @@ CREATE TABLE itcarrinho (
   carrinho_id      BIGINT NULL,
   reserva_ingresso_id BIGINT NULL,
   produto_id       BIGINT NOT NULL,
-  cardapioitem_id  BIGINT NOT NULL,
+  cardapioitem_id  BIGINT NULL,
+  vrunitario       DECIMAL(10,2) NOT NULL,
   lote_id          BIGINT NULL,
   qtitcarrinho     INT NOT NULL DEFAULT 1,
   dsobsitcar       VARCHAR(255) NULL,
@@ -1119,7 +1128,7 @@ CREATE TABLE itcarrinho (
   CONSTRAINT fk_itcarrinho_cardapioitem
     FOREIGN KEY (cardapioitem_id)
     REFERENCES cardapioitem(cardapioitem_id)
-    ON DELETE CASCADE ON UPDATE CASCADE,
+    ON DELETE SET NULL ON UPDATE CASCADE,
 
   CONSTRAINT chk_itcarrinho_qt
     CHECK (qtitcarrinho = 1)

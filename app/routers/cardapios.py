@@ -166,6 +166,8 @@ class ProgramacaoIn(BaseModel):
 
     @model_validator(mode="after")
     def validar_intervalo(self):
+        if not self.dtinicio or not self.hrinicio:
+            raise ValueError("Informe a data e o horário de início da exibição.")
         if self.hrfim and not self.dtfim:
             raise ValueError("Informe a data final ao definir o horário de encerramento.")
         if self.dtfim and self.dtinicio and self.dtfim < self.dtinicio:
@@ -356,11 +358,16 @@ def listar_padroes(organizacao_id: int, payload=Depends(get_usuario_logado), db:
 def criar_padrao(organizacao_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _validar_edicao_padrao(payload, organizacao_id)
     tipo = dados.tipocardapio.upper()
-    if tipo not in {"PRINCIPAL", "ESPECIAL", "SAZONAL", "EVENTO"}:
+    if tipo not in {"PRINCIPAL", "ESPECIAL"}:
         raise HTTPException(422, "Tipo de cardápio inválido.")
     nome = dados.nmcardapio.strip()
     if db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == organizacao_id, func.lower(CardapioModelo.nmcardapio) == nome.lower()).first():
         raise HTTPException(409, "Já existe um cardápio padrão com esse nome.")
+    if tipo == "PRINCIPAL" and db.query(CardapioModelo).filter(
+        CardapioModelo.organizacao_id == organizacao_id,
+        CardapioModelo.tipocardapio == "PRINCIPAL",
+    ).first():
+        raise HTTPException(409, "A organização já possui um cardápio principal. Crie os demais como especiais.")
     item = CardapioModelo(organizacao_id=organizacao_id, nmcardapio=nome, tipocardapio=tipo)
     db.add(item); db.commit(); db.refresh(item)
     return {"cardapiomodelo_id": item.cardapiomodelo_id, "organizacao_id": item.organizacao_id, "nmcardapio": item.nmcardapio, "tipocardapio": item.tipocardapio, "sitcardapio": item.sitcardapio}
@@ -657,6 +664,11 @@ def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) 
     existente = db.query(Cardapio).filter(Cardapio.loja_id == loja.loja_id, Cardapio.cardapiomodelo_id == modelo.cardapiomodelo_id).first()
     if existente:
         return existente
+    if modelo.tipocardapio == "PRINCIPAL" and db.query(Cardapio).filter(
+        Cardapio.loja_id == loja.loja_id,
+        Cardapio.tipocardapio == "PRINCIPAL",
+    ).first():
+        raise HTTPException(409, "Este estabelecimento já possui um cardápio principal. Use outro cardápio do tipo especial.")
     item = Cardapio(organizacao_id=loja.organizacao_id, loja_id=loja.loja_id, cardapiomodelo_id=modelo.cardapiomodelo_id, nmcardapio=modelo.nmcardapio, tipocardapio=modelo.tipocardapio, prioridade=prioridade)
     db.add(item); db.flush()
     versao = CardapioVersao(cardapio_id=item.cardapio_id, nrversao=1)
@@ -741,7 +753,7 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
 def programar(cardapio_id: int, dados: ProgramacaoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     cardapio = _cardapio(db, cardapio_id, payload)
     if cardapio.tipocardapio == "PRINCIPAL":
-        raise HTTPException(422, "A programação de exibição é exclusiva para cardápios sazonais.")
+        raise HTTPException(422, "O cardápio principal fica disponível continuamente e não utiliza programação.")
     item = CardapioProgramacao(cardapio_id=cardapio_id, **dados.model_dump())
     db.add(item); db.commit(); db.refresh(item)
     return _saida_programacao(item)
@@ -792,6 +804,11 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
         raise HTTPException(409, "Somente uma versão em rascunho pode ser publicada.")
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():
         raise HTTPException(422, "Inclua pelo menos um produto antes de publicar.")
+    if cardapio.tipocardapio == "ESPECIAL" and not db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapio_id == cardapio.cardapio_id,
+        CardapioProgramacao.sitprogramacao == "ATIVA",
+    ).first():
+        raise HTTPException(422, "Defina quando o cardápio especial será exibido antes de publicá-lo.")
     versao.dtiniciovigencia, versao.dtfimvigencia = dados.dtinicio, dados.dtfim
     agora = _agora_brasilia()
     db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao == "PUBLICADA").update({"statusversao": "SUBSTITUIDA"}, synchronize_session=False)
@@ -812,6 +829,28 @@ def retirar_publicacao(cardapio_id: int, payload=Depends(get_usuario_logado), db
     if not quantidade:
         raise HTTPException(409, "Este cardápio não possui uma publicação ativa.")
     return {"mensagem": "Publicação retirada. O cardápio não ficará disponível aos clientes."}
+
+
+@router.delete("/cardapios/{cardapio_id}", status_code=204)
+def excluir_cardapio(cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    cardapio = _cardapio(db, cardapio_id, payload)
+    versoes_ids = [
+        item[0]
+        for item in db.query(CardapioVersao.cardapioversao_id).filter(
+            CardapioVersao.cardapio_id == cardapio.cardapio_id,
+        ).all()
+    ]
+    if db.query(CardapioVersao).filter(
+        CardapioVersao.cardapio_id == cardapio.cardapio_id,
+        CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+    ).first():
+        raise HTTPException(409, "Retire a publicação antes de excluir este cardápio.")
+    if versoes_ids:
+        db.query(CardapioReajuste).filter(
+            CardapioReajuste.cardapioversao_id.in_(versoes_ids),
+        ).delete(synchronize_session=False)
+    db.delete(cardapio)
+    db.commit()
 
 
 @router.post("/cardapios/versoes/{versao_id}/reajustar")

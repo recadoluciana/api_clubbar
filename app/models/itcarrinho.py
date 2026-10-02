@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, BigInteger, Integer, String, DateTime, ForeignKey, Numeric
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -10,10 +10,11 @@ class ItCarrinho(Base):
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False, index=True)
     cardapioitem_id = Column(
         BigInteger,
-        ForeignKey("cardapioitem.cardapioitem_id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("cardapioitem.cardapioitem_id", ondelete="SET NULL"),
+        nullable=True,
         index=True,
     )
+    vrunitario = Column(Numeric(10, 2), nullable=False)
     qtitcarrinho = Column(Integer, nullable=False, default=1)
     dsobsitcar = Column(String(255), nullable=True)
     dtcriacao = Column(DateTime, server_default=func.current_timestamp(), nullable=False)
