@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,6 +12,9 @@ from app.core.permissoes_loja import (
     validar_gerenciamento_organizacao,
 )
 from app.models.loja import Loja
+from app.models.auditoria import Auditoria
+from app.models.itvenda import ItVenda
+from app.models.venda import Venda
 
 
 router = APIRouter(tags=["Usuários"])
@@ -392,8 +396,37 @@ def deletar_usuario_por_organizacao(
             detail="O usuário SUPERADMIN não pode ser excluído pelo cadastro de usuários.",
         )
 
-    db.delete(usuario)
-    db.commit()
+    # Mantém o histórico operacional e financeiro, removendo somente o
+    # vínculo com o cadastro que deixará de existir. Alguns bancos antigos
+    # ainda possuem essas chaves como RESTRICT, apesar de o modelo atual usar
+    # SET NULL.
+    db.query(ItVenda).filter(
+        ItVenda.userentregaitvenda == usuario_id
+    ).update(
+        {ItVenda.userentregaitvenda: None},
+        synchronize_session=False,
+    )
+    db.query(Venda).filter(Venda.usuario_id == usuario_id).update(
+        {Venda.usuario_id: None},
+        synchronize_session=False,
+    )
+    db.query(Auditoria).filter(Auditoria.usuario_id == usuario_id).update(
+        {Auditoria.usuario_id: None},
+        synchronize_session=False,
+    )
+
+    try:
+        db.delete(usuario)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este usuário possui histórico que impede sua exclusão. "
+                "Altere o status para inativo para bloquear o acesso."
+            ),
+        )
 
     return {
         "detail": "Usuário excluído com sucesso."
