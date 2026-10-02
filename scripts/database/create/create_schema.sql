@@ -1595,7 +1595,7 @@ CREATE TABLE eventolotesetor (
   lote_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   loteglobal_id BIGINT NOT NULL,
   eventosetor_id BIGINT NOT NULL,
-  qtlimite INT NOT NULL,
+  qtlimite INT NULL,
   qtvendidalote INT NOT NULL DEFAULT 0,
   situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -57,18 +57,29 @@ def quantidade_disponivel_configuracao(db: Session, lote: EventoLote) -> int:
     pode oferecer *naquela etapa*; as vendas e reservas de etapas anteriores
     continuam consumindo o mesmo estoque do setor.
     """
-    disponivel_no_lote = max(
-        0,
-        int(lote.qtlimite) - int(lote.qtvendidalote or 0) - quantidade_reservada(db, lote.lote_id),
-    )
     setor = lote.setor
     if not setor:
-        return disponivel_no_lote
+        if lote.qtlimite is None:
+            return 0
+        return max(
+            0,
+            int(lote.qtlimite)
+            - int(lote.qtvendidalote or 0)
+            - quantidade_reservada(db, lote.lote_id),
+        )
     disponivel_no_setor = capacidade_restante_setor(
         db,
         int(lote.evento_id),
         int(setor.eventosetor_id),
         int(setor.qtcapacidade),
+    )
+    if lote.qtlimite is None:
+        return disponivel_no_setor
+    disponivel_no_lote = max(
+        0,
+        int(lote.qtlimite)
+        - int(lote.qtvendidalote or 0)
+        - quantidade_reservada(db, lote.lote_id),
     )
     return min(disponivel_no_lote, disponivel_no_setor)
 

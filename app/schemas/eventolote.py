@@ -23,7 +23,7 @@ class EventoLotePrecoIn(BaseModel):
 
 class EventoLoteSetorIn(BaseModel):
     eventosetor_id: int
-    qtlimite: int = Field(gt=0)
+    qtlimite: int | None = Field(default=None, gt=0)
     precos: list[EventoLotePrecoIn] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -94,7 +94,7 @@ class EventoLoteOut(BaseModel):
     eventosetor_id: int
     nmsetor: str | None = None
     nrlote: int
-    qttotallote: int
+    qttotallote: int | None = None
     qtvendidalote: int = 0
     dtiniciovenda: datetime | None = None
     dtfimvenda: datetime | None = None
