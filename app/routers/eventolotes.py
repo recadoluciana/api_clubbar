@@ -456,6 +456,18 @@ def excluir_lote_global(
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
     evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
     validar_evento_editavel(evento)
+    quantidade_lotes = (
+        db.query(func.count(EventoLoteGlobal.loteglobal_id))
+        .filter(EventoLoteGlobal.evento_id == global_.evento_id)
+        .scalar()
+        or 0
+    )
+    if evento.statusevento == "ATIVO" and int(quantidade_lotes) <= 1:
+        raise HTTPException(
+            409,
+            "Não é possível excluir o último lote global de um evento publicado. "
+            "Retire a publicação do evento antes de excluir este lote.",
+        )
     if any(item.qtvendidalote or quantidade_reservada(db, item.lote_id) for item in global_.configuracoes_setor):
         raise HTTPException(409, "Não é possível excluir um lote global com vendas ou reservas")
     db.delete(global_)
