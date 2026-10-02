@@ -13,6 +13,13 @@ class EventoLotePrecoIn(BaseModel):
     situacao: Literal["ATIVO", "INATIVO"] = "ATIVO"
     nrordem: int = Field(default=1, ge=1)
 
+    @model_validator(mode="after")
+    def normalizar_regras_da_modalidade(self):
+        if self.tipopreco == "INTEIRA":
+            self.aplicacotalegal = False
+            self.exigecomprovante = False
+        return self
+
 
 class EventoLoteSetorIn(BaseModel):
     eventosetor_id: int
