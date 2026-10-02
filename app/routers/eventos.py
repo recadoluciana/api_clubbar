@@ -21,6 +21,7 @@ from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
@@ -36,6 +37,7 @@ from app.services.evento_disponibilidade_service import (
     validar_evento_unico_por_loja_data_local,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
+from app.services.onboarding_parceiro_service import validar_publicacao_loja
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -114,6 +116,47 @@ def _publicar_eventos(db: Session, eventos: list[Evento]) -> int:
         raise HTTPException(
             422,
             "Não é possível publicar evento cancelado ou encerrado.",
+        )
+
+    sem_lote = []
+    for evento in eventos:
+        lote_configurado = (
+            db.query(EventoLote.lote_id)
+            .join(
+                EventoLoteGlobal,
+                EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id,
+            )
+            .join(
+                EventoSetor,
+                EventoSetor.eventosetor_id == EventoLote.eventosetor_id,
+            )
+            .join(
+                EventoLotePreco,
+                EventoLotePreco.lote_id == EventoLote.lote_id,
+            )
+            .filter(
+                EventoLoteGlobal.evento_id == evento.evento_id,
+                EventoLoteGlobal.situacao == "ATIVO",
+                EventoLote.situacao == "ATIVO",
+                EventoSetor.sitsetor == "ATIVO",
+                EventoLote.qtlimite > 0,
+                EventoLotePreco.situacao == "ATIVO",
+            )
+            .first()
+        )
+        if lote_configurado is None:
+            sem_lote.append(evento.nmtituloevento)
+
+    if sem_lote:
+        if len(sem_lote) == 1:
+            detalhe = f"o evento '{sem_lote[0]}'"
+        else:
+            detalhe = "os eventos " + ", ".join(
+                f"'{nome}'" for nome in sem_lote
+            )
+        raise HTTPException(
+            422,
+            f"Cadastre ao menos um lote global ativo e configurado para venda antes de publicar {detalhe}.",
         )
 
     for loja_id in {evento.loja_id for evento in eventos}:
