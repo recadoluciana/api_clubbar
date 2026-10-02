@@ -12,9 +12,7 @@ from app.core.permissoes_loja import (
     validar_gerenciamento_organizacao,
 )
 from app.models.loja import Loja
-from app.models.auditoria import Auditoria
 from app.models.itvenda import ItVenda
-from app.models.venda import Venda
 
 
 router = APIRouter(tags=["Usuários"])
@@ -396,24 +394,20 @@ def deletar_usuario_por_organizacao(
             detail="O usuário SUPERADMIN não pode ser excluído pelo cadastro de usuários.",
         )
 
-    # Mantém o histórico operacional e financeiro, removendo somente o
-    # vínculo com o cadastro que deixará de existir. Alguns bancos antigos
-    # ainda possuem essas chaves como RESTRICT, apesar de o modelo atual usar
-    # SET NULL.
-    db.query(ItVenda).filter(
-        ItVenda.userentregaitvenda == usuario_id
-    ).update(
-        {ItVenda.userentregaitvenda: None},
-        synchronize_session=False,
+    possui_entregas = (
+        db.query(ItVenda.itvenda_id)
+        .filter(ItVenda.userentregaitvenda == usuario_id)
+        .first()
+        is not None
     )
-    db.query(Venda).filter(Venda.usuario_id == usuario_id).update(
-        {Venda.usuario_id: None},
-        synchronize_session=False,
-    )
-    db.query(Auditoria).filter(Auditoria.usuario_id == usuario_id).update(
-        {Auditoria.usuario_id: None},
-        synchronize_session=False,
-    )
+    if possui_entregas:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Este usuário não pode ser excluído porque possui entregas "
+                "registradas. Altere o status para inativo para bloquear o acesso."
+            ),
+        )
 
     try:
         db.delete(usuario)
@@ -423,7 +417,7 @@ def deletar_usuario_por_organizacao(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                "Este usuário possui histórico que impede sua exclusão. "
+                "Este usuário possui registros vinculados e não pode ser excluído. "
                 "Altere o status para inativo para bloquear o acesso."
             ),
         )

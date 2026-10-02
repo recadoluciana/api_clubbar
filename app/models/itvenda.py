@@ -33,7 +33,7 @@ class ItVenda(Base):
     )
     nrmesa = Column(String(50), nullable=True)
 
-    userentregaitvenda = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="SET NULL", onupdate="CASCADE"), nullable=True)
+    userentregaitvenda = Column(BigInteger, ForeignKey("usuario.usuario_id", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=True)
     nmuserentregaitvenda = Column(String(100), nullable=True)
 
     dsobsitvenda = Column(String(255), nullable=True)
