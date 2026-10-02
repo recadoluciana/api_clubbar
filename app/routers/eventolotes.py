@@ -101,6 +101,7 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "nrlote": global_.nrlote,
         "eventosetor_id": lote.eventosetor_id,
         "nmsetor": setor.nmsetor if setor else None,
+        "dssetor": setor.dssetor if setor else None,
         "qttotallote": int(lote.qtlimite),
         "qtlimite": int(lote.qtlimite),
         "qtvendidalote": int(lote.qtvendidalote or 0),
@@ -287,15 +288,11 @@ def criar_lote_global(
     numero = data.nrlote or proximo_numero
     if numero != proximo_numero:
         raise HTTPException(422, f"O próximo lote global deve ser o Lote {proximo_numero}")
-    if numero == 1 and data.dtiniciovenda is None:
-        raise HTTPException(422, "Informe o início das vendas do Lote 1")
     if numero > 1 and data.dtiniciovenda is not None:
         raise HTTPException(
             422,
             "Somente o Lote 1 tem início próprio. Os demais começam automaticamente na virada do lote anterior.",
         )
-    if data.gatilhovirada in {"DATA", "HIBRIDO"} and data.dtfimvenda is None:
-        raise HTTPException(422, "Informe o fim das vendas para a virada programada")
     _validar_setores_do_lote(db, evento=evento, configuracoes=data.setores)
 
     global_ = EventoLoteGlobal(
@@ -304,9 +301,9 @@ def criar_lote_global(
         evento_id=evento_id,
         nrlote=numero,
         nmlote=(data.nmlote or f"Lote {numero}").strip(),
-        dtiniciovenda=data.dtiniciovenda if numero == 1 else None,
+        dtiniciovenda=None,
         dtfimvenda=data.dtfimvenda,
-        gatilhovirada=data.gatilhovirada,
+        gatilhovirada="HIBRIDO",
         situacao="ATIVO",
     )
     db.add(global_)
@@ -344,12 +341,13 @@ def atualizar_lote_global(
             422,
             "Somente o Lote 1 tem início próprio. Os demais começam automaticamente na virada do lote anterior.",
         )
-    for campo in ("nmlote", "dtfimvenda", "gatilhovirada", "situacao"):
+    for campo in ("nmlote", "situacao"):
         valor = getattr(data, campo)
         if valor is not None:
             setattr(global_, campo, valor)
-    if global_.nrlote == 1 and data.dtiniciovenda is not None:
-        global_.dtiniciovenda = data.dtiniciovenda
+    if "dtfimvenda" in data.model_fields_set:
+        global_.dtfimvenda = data.dtfimvenda
+    global_.gatilhovirada = "HIBRIDO"
     if global_.dtiniciovenda and global_.dtfimvenda and global_.dtfimvenda <= global_.dtiniciovenda:
         raise HTTPException(422, "O fim das vendas deve ser posterior ao início")
     db.commit()
