@@ -223,10 +223,28 @@ def listar_todos_lotes_evento(evento_id: int, db: Session = Depends(get_db)):
         .order_by(EventoLoteGlobal.nrlote)
         .all()
     )
+    lote_atual = lote_global_ativo(db, evento_id)
+    numero_atual = lote_atual.nrlote if lote_atual else None
+    antes_do_inicio = bool(
+        not lote_atual
+        and globais
+        and globais[0].dtiniciovenda
+        and datetime.now() < globais[0].dtiniciovenda
+    )
     resultado = []
     for global_ in globais:
         carregado = _carregar_global(db, global_.loteglobal_id)
-        resultado.extend(_saida_configuracao(db, item, evento) for item in carregado.configuracoes_setor)
+        for item in carregado.configuracoes_setor:
+            saida = _saida_configuracao(db, item, evento)
+            if global_.situacao != "ATIVO" or item.situacao != "ATIVO":
+                saida["statuslote"] = "INATIVO"
+            elif numero_atual is not None and global_.nrlote < numero_atual:
+                saida["statuslote"] = "ENCERRADO"
+            elif numero_atual is not None and global_.nrlote > numero_atual:
+                saida["statuslote"] = "AGUARDANDO"
+            elif numero_atual is None:
+                saida["statuslote"] = "AGUARDANDO" if antes_do_inicio else "ENCERRADO"
+            resultado.append(saida)
     return resultado
 
 
