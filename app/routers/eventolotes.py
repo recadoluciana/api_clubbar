@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.permissoes_loja import validar_mutacao_loja
@@ -13,6 +14,7 @@ from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
+from app.models.itcarrinho import ItCarrinho
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 from app.schemas.eventolote import (
@@ -28,10 +30,48 @@ from app.services.reserva_ingresso_service import (
     quantidade_reservada,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
+from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
+
+
+def _limpar_referencias_temporarias_lote(db: Session, lote_id: int) -> None:
+    """Remove somente tentativas abandonadas que não representam uma venda."""
+    agora = datetime.now()
+    db.query(ReservaIngresso).filter(
+        ReservaIngresso.lote_id == lote_id,
+        ReservaIngresso.venda_id.is_(None),
+        or_(
+            ReservaIngresso.dtexpiracao <= agora,
+            ReservaIngresso.sitreserva.in_(("EXPIRADA", "CANCELADA")),
+        ),
+    ).delete(synchronize_session=False)
+    db.query(ItCarrinho).filter(ItCarrinho.lote_id == lote_id).delete(
+        synchronize_session=False
+    )
+
+
+def _validar_exclusao_configuracao_lote(db: Session, lote: EventoLote) -> None:
+    tem_vendas = db.query(ItVenda.itvenda_id).filter(ItVenda.lote_id == lote.lote_id).first()
+    tem_reserva_valida = (
+        db.query(ReservaIngresso.reserva_ingresso_id)
+        .filter(
+            ReservaIngresso.lote_id == lote.lote_id,
+            or_(
+                ReservaIngresso.venda_id.is_not(None),
+                ReservaIngresso.dtexpiracao > datetime.now(),
+            ),
+        )
+        .first()
+    )
+    if tem_vendas or tem_reserva_valida:
+        raise HTTPException(
+            409,
+            "Não é possível excluir este lote porque ele possui vendas ou reservas válidas.",
+        )
+    _limpar_referencias_temporarias_lote(db, lote.lote_id)
 
 
 def _capacidade_total_evento(db: Session, evento: Evento) -> int:
@@ -102,8 +142,9 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "eventosetor_id": lote.eventosetor_id,
         "nmsetor": setor.nmsetor if setor else None,
         "dssetor": setor.dssetor if setor else None,
-        "qttotallote": int(lote.qtlimite),
-        "qtlimite": int(lote.qtlimite),
+        "qttotallote": int(lote.qtlimite) if lote.qtlimite is not None else None,
+        "qtlimite": int(lote.qtlimite) if lote.qtlimite is not None else None,
+        "usarcapacidaderestante": lote.qtlimite is None,
         "qtvendidalote": int(lote.qtvendidalote or 0),
         "qtreservadalote": reservados,
         "qtdisponivel": disponibilidade,
@@ -182,6 +223,8 @@ def _validar_setores_do_lote(
     for setor in ativos:
         dados_setor = por_setor.get(setor.eventosetor_id)
         if dados_setor is None:
+            continue
+        if dados_setor.qtlimite is None:
             continue
         limite_novo = int(dados_setor.qtlimite)
         # Lotes globais são etapas sequenciais de preço. A quantidade de uma
@@ -293,6 +336,26 @@ def criar_lote_global(
             422,
             "Somente o Lote 1 tem início próprio. Os demais começam automaticamente na virada do lote anterior.",
         )
+    if numero > 1:
+        anterior = (
+            db.query(EventoLoteGlobal)
+            .filter(
+                EventoLoteGlobal.evento_id == evento_id,
+                EventoLoteGlobal.nrlote == numero - 1,
+            )
+            .first()
+        )
+        anterior_carregado = _carregar_global(db, anterior.loteglobal_id) if anterior else None
+        sem_meta = bool(
+            anterior_carregado
+            and anterior_carregado.configuracoes_setor
+            and all(item.qtlimite is None for item in anterior_carregado.configuracoes_setor)
+        )
+        if anterior_carregado and anterior_carregado.dtfimvenda is None and sem_meta:
+            raise HTTPException(
+                422,
+                "Defina uma meta ou uma data limite no lote anterior antes de criar o próximo.",
+            )
     _validar_setores_do_lote(db, evento=evento, configuracoes=data.setores)
 
     global_ = EventoLoteGlobal(
@@ -380,7 +443,7 @@ def adicionar_setor_ao_lote_global(
         raise HTTPException(422, "O setor informado não está ativo neste evento")
     if any(item.eventosetor_id == setor.eventosetor_id for item in global_.configuracoes_setor):
         raise HTTPException(409, "Este setor já participa deste lote global")
-    if data.qtlimite > int(setor.qtcapacidade):
+    if data.qtlimite is not None and data.qtlimite > int(setor.qtcapacidade):
         raise HTTPException(
             422,
             f"A quantidade deste lote não pode superar a capacidade de {setor.qtcapacidade} pessoas do setor",
@@ -416,11 +479,11 @@ def atualizar_configuracao_setor(
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
     evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
     validar_evento_editavel(evento)
-    if data.qtlimite is not None:
+    if "qtlimite" in data.model_fields_set:
         setor = lote.setor
-        if data.qtlimite > int(setor.qtcapacidade):
+        if data.qtlimite is not None and data.qtlimite > int(setor.qtcapacidade):
             raise HTTPException(422, "A quantidade deste lote não pode ultrapassar a capacidade do setor")
-        if data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
+        if data.qtlimite is not None and data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
             raise HTTPException(422, "O limite não pode ficar abaixo das vendas e reservas existentes")
         lote.qtlimite = data.qtlimite
     if data.situacao is not None:
@@ -449,14 +512,16 @@ def excluir_setor_do_lote(
     validar_evento_editavel(evento)
     if len(global_.configuracoes_setor) <= 1:
         raise HTTPException(409, "Este é o único setor do lote. Exclua o lote global inteiro.")
-    tem_vendas = db.query(ItVenda.itvenda_id).filter(ItVenda.lote_id == lote_id).first()
-    tem_reservas = db.query(ReservaIngresso.reserva_ingresso_id).filter(
-        ReservaIngresso.lote_id == lote_id
-    ).first()
-    if tem_vendas or tem_reservas:
-        raise HTTPException(409, "Não é possível excluir um setor do lote com vendas ou reservas")
+    _validar_exclusao_configuracao_lote(db, lote)
     db.delete(lote)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as erro:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Não é possível excluir este setor porque ele possui histórico vinculado.",
+        ) from erro
     return {"mensagem": "Setor removido do lote global com sucesso"}
 
 
@@ -484,11 +549,50 @@ def excluir_lote_global(
             "Não é possível excluir o último lote global de um evento publicado. "
             "Retire a publicação do evento antes de excluir este lote.",
         )
-    if any(item.qtvendidalote or quantidade_reservada(db, item.lote_id) for item in global_.configuracoes_setor):
-        raise HTTPException(409, "Não é possível excluir um lote global com vendas ou reservas")
+    for item in global_.configuracoes_setor:
+        _validar_exclusao_configuracao_lote(db, item)
     db.delete(global_)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as erro:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Não é possível excluir este lote porque ele possui histórico vinculado.",
+        ) from erro
     return {"mensagem": "Lote global excluído com sucesso"}
+
+
+@router.post("/lotes-globais/{loteglobal_id}/avancar")
+def avancar_lote_global(
+    loteglobal_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    global_ = _carregar_global(db, loteglobal_id)
+    if not global_:
+        raise HTTPException(404, "Lote global não encontrado")
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
+    atual = lote_global_ativo(db, global_.evento_id)
+    if not atual or atual.loteglobal_id != global_.loteglobal_id:
+        raise HTTPException(409, "Somente o lote atualmente em venda pode ser encerrado")
+    proximo = (
+        db.query(EventoLoteGlobal)
+        .filter(
+            EventoLoteGlobal.evento_id == global_.evento_id,
+            EventoLoteGlobal.situacao == "ATIVO",
+            EventoLoteGlobal.nrlote > global_.nrlote,
+        )
+        .order_by(EventoLoteGlobal.nrlote)
+        .first()
+    )
+    if not proximo:
+        raise HTTPException(409, "Cadastre o próximo lote antes de encerrar o atual")
+    global_.dtfimvenda = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+    db.commit()
+    return {"mensagem": f"{proximo.nmlote} iniciado com sucesso"}
 
 
 @router.get("/lotes/{lote_id}/quantidade-vendida")
@@ -499,10 +603,10 @@ def quantidade_vendida_lote(lote_id: int, db: Session = Depends(get_db)):
     reservada = quantidade_reservada(db, lote_id)
     return {
         "lote_id": lote_id,
-        "qt_total": int(lote.qtlimite),
+        "qt_total": int(lote.qtlimite) if lote.qtlimite is not None else None,
         "qt_vendida": int(lote.qtvendidalote or 0),
         "qt_reservada": reservada,
         "qt_disponivel": quantidade_disponivel_configuracao(db, lote),
-        "sem_limite": False,
+        "sem_limite": lote.qtlimite is None,
         "esgotado": quantidade_disponivel_configuracao(db, lote) <= 0,
     }

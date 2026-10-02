@@ -29,7 +29,8 @@ class EventoLote(Base):
         nullable=False,
         index=True,
     )
-    qtlimite = Column(Integer, nullable=False)
+    # Meta comercial opcional. Nulo significa vender todo o saldo do setor.
+    qtlimite = Column(Integer, nullable=True)
     qtvendidalote = Column(Integer, nullable=False, server_default="0")
     situacao = Column(String(10), nullable=False, server_default="ATIVO")
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
