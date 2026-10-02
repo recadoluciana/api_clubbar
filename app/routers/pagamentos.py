@@ -207,38 +207,13 @@ def _recalcular_itens_carrinho(
 
             continue
 
-        agora = datetime.now()
-        item_cardapio = (
-            db.query(CardapioItem)
-            .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
-            .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
-            .filter(
-                CardapioItem.cardapioitem_id == int(it.get("cardapioitem_id") or 0),
-                CardapioItem.produto_id == produto_id_int,
-                CardapioItem.sititem == "ATIVO",
-                Cardapio.loja_id == loja_id,
-                Cardapio.organizacao_id == organizacao_id,
-                Cardapio.sitcardapio == "ATIVO",
-                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
-                (CardapioVersao.dtiniciovigencia.is_(None)) | (CardapioVersao.dtiniciovigencia <= agora),
-                (CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora),
-            )
-            .first()
-        )
-        if item_cardapio is None or produto.organizacao_id != organizacao_id:
+        if produto.organizacao_id != organizacao_id:
             raise HTTPException(
                 status_code=409,
-                detail=f"O produto '{produto.nmproduto}' não está mais disponível no cardápio publicado da loja. Remova-o e adicione novamente.",
+                detail=f"O produto '{produto.nmproduto}' não pertence a esta organização.",
             )
-        vrprecofinal, descontoativo = calcular_preco_final(
-            produto,
-            item_cardapio.vrpreco,
-            tipodesconto=item_cardapio.tipodesconto,
-            vrdesconto=item_cardapio.vrdesconto,
-            dtinidesconto=item_cardapio.dtinidesconto,
-            dtfimdesconto=item_cardapio.dtfimdesconto,
-        )
-        vrunitario = round(float(vrprecofinal), 2)
+        vrunitario = round(float(it.get("vrprecoprod") or 0), 2)
+        descontoativo = False
         subtotal   = round(vrunitario * qt_prod, 2)
 
         percentual_taxa = round(float(it.get("pctaxaitvenda") or 0), 2)
@@ -257,8 +232,8 @@ def _recalcular_itens_carrinho(
                 "vrunitario"     : vrunitario,
                 "subtotal"       : subtotal,
                 "total_com_taxa" : subtotal,
-                "tipodesconto"   : item_cardapio.tipodesconto or "NENHUM",
-                "vrdesconto"     : float(item_cardapio.vrdesconto or 0),
+                "tipodesconto"   : "NENHUM",
+                "vrdesconto"     : 0,
                 "descontoativo"  : descontoativo,
                 "dsobsitcar"     : it.get("dsobsitcar") or it.get("obs"),
                 "nmparticipante" : it.get("nmparticipante"),

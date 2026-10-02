@@ -19,6 +19,7 @@ from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,
 from app.services.carrinho_service import (
     limpar_carrinhos_abertos_cliente,
     limpar_itens_indisponiveis,
+    revalidar_precos_carrinho,
 )
 
 
@@ -76,6 +77,13 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 detail="Este produto não está disponível em um cardápio publicado.",
             )
         cardapioitem_id_final = int(item_cardapio.cardapioitem_id)
+        vrunitario_final, _ = calcular_preco_final(
+            produto,
+            tipodesconto=item_cardapio.tipodesconto,
+            vrdesconto=item_cardapio.vrdesconto,
+            dtinidesconto=item_cardapio.dtinidesconto,
+            dtfimdesconto=item_cardapio.dtfimdesconto,
+        )
 
     # 2) carrinho aberto do cliente
     carr = (
@@ -106,6 +114,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             carrinho_id=int(carr.carrinho_id),
             produto_id=produto_id_final,
             cardapioitem_id=cardapioitem_id_final,
+            vrunitario=vrunitario_final,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,
             lote_id=lote_id_final,
@@ -158,10 +167,9 @@ def get_qt_carrinho_loja(cliente_id: int, loja_id: int, db: Session = Depends(ge
     row = (
         db.query(
             func.coalesce(func.sum(ItCarrinho.qtitcarrinho), 0).label("qt"),
-            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * CardapioItem.vrpreco), 0).label("total"),
+            func.coalesce(func.sum(ItCarrinho.qtitcarrinho * ItCarrinho.vrunitario), 0).label("total"),
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
-        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(ItCarrinho.carrinho_id    == carr.carrinho_id)
         .first()
     )
@@ -265,13 +273,8 @@ def obter_itens_carrinho(
             "itens": [],
         }
 
-    removidos = limpar_itens_indisponiveis(
-        db,
-        int(carrinho.carrinho_id),
-        int(carrinho.loja_id),
-    )
-    if removidos:
-        db.commit()
+    alteracoes_preco = revalidar_precos_carrinho(db, carrinho)
+    db.commit()
 
     itens_db = (
         db.query(
@@ -279,19 +282,18 @@ def obter_itens_carrinho(
             ItCarrinho.produto_id,
             Produto.nmproduto,
             Produto.dsproduto,
-            CardapioItem.vrpreco.label("vrprecoprod"),
+            ItCarrinho.vrunitario.label("vrprecoprod"),
             Produto.urlfotoproduto,
-            CardapioItem.tipodesconto,
-            CardapioItem.vrdesconto,
-            CardapioItem.dtinidesconto,
-            CardapioItem.dtfimdesconto,
+            Produto.tipodesconto,
+            Produto.vrdesconto,
+            Produto.dtinidesconto,
+            Produto.dtfimdesconto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
             ItCarrinho.nmparticipante,
             ItCarrinho.cpfparticipante,
         )
         .join(Produto, Produto.produto_id == ItCarrinho.produto_id)
-        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
         .all()
     )
@@ -301,23 +303,8 @@ def obter_itens_carrinho(
     qt_total = 0
 
     for i in itens_db:
-        class ProdutoTmp:
-            pass
-
-        produto_tmp = ProdutoTmp()
-        produto_tmp.vrprecoprod = i.vrprecoprod
-        produto_tmp.tipodesconto = i.tipodesconto
-        produto_tmp.vrdesconto = i.vrdesconto
-        produto_tmp.dtinidesconto = i.dtinidesconto
-        produto_tmp.dtfimdesconto = i.dtfimdesconto
-
-        vrprecofinal, descontoativo = calcular_preco_final(
-            produto_tmp,
-            tipodesconto=i.tipodesconto,
-            vrdesconto=i.vrdesconto,
-            dtinidesconto=i.dtinidesconto,
-            dtfimdesconto=i.dtfimdesconto,
-        )
+        vrprecofinal = float(i.vrprecoprod or 0)
+        descontoativo = False
 
         qt = int(i.qtitcarrinho or 0)
         subtotal = float(vrprecofinal) * qt
@@ -353,6 +340,7 @@ def obter_itens_carrinho(
         "qt_total": qt_total,
         "total": round(total, 2),
         "itens": itens,
+        "precos_atualizados": alteracoes_preco,
     }
 
 
@@ -408,6 +396,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 carrinho_id,
                 produto_id,
                 cardapioitem_id,
+                vrunitario,
                 lote_id,
                 qtitcarrinho,
                 dsobsitcar
@@ -416,6 +405,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 carrinho_id,
                 produto_id,
                 cardapioitem_id,
+                vrunitario,
                 lote_id,
                 1,
                 dsobsitcar
@@ -457,7 +447,7 @@ def get_itens_carrinho(
             func.sum(ItCarrinho.qtitcarrinho).label("qtitcarrinho"),
 
             Produto.nmproduto.label("nmproduto"),
-            CardapioItem.vrpreco.label("vrprecoprod"),
+            ItCarrinho.vrunitario.label("vrprecoprod"),
             Produto.img.label("img"),
         )
         .join(ItCarrinho, ItCarrinho.carrinho_id == Carrinho.carrinho_id)
@@ -466,7 +456,6 @@ def get_itens_carrinho(
             (Produto.produto_id == ItCarrinho.produto_id)
             & (Produto.organizacao_id == Carrinho.organizacao_id),
         )
-        .join(CardapioItem, CardapioItem.cardapioitem_id == ItCarrinho.cardapioitem_id)
         .filter(Carrinho.cliente_id == int(cliente_id))
         .filter(Carrinho.organizacao_id == int(organizacao_id))
         .filter(Carrinho.loja_id == int(loja_id))
@@ -481,7 +470,7 @@ def get_itens_carrinho(
             obs_norm,
 
             Produto.nmproduto,
-            CardapioItem.vrpreco,
+            ItCarrinho.vrunitario,
             Produto.img,
         )
         .order_by(Produto.nmproduto.asc(), obs_norm.asc())

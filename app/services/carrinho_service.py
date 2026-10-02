@@ -10,73 +10,80 @@ from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from decimal import Decimal
 
+def _preco_final(base, tipo, desconto, inicio, fim, agora):
+    valor = Decimal(str(base or 0))
+    tipo = (tipo or "NENHUM").upper()
+    desconto = Decimal(str(desconto or 0))
+    ativo = tipo != "NENHUM" and (not inicio or inicio <= agora) and (not fim or fim >= agora)
+    if not ativo:
+        return valor.quantize(Decimal("0.01"))
+    if tipo == "VALOR":
+        valor = max(Decimal("0"), valor - desconto)
+    elif tipo == "PERCENTUAL":
+        valor = max(Decimal("0"), valor - valor * desconto / Decimal("100"))
+    return valor.quantize(Decimal("0.01"))
+
+
+def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
+    """Atualiza snapshots vencidos sem retirar itens quando o cardápio muda."""
+    agora = datetime.now()
+    itens = db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho.carrinho_id).all()
+    alteracoes = []
+    for item in itens:
+        produto = db.query(Produto).filter(Produto.produto_id == item.produto_id).first()
+        if not produto or (produto.sitproduto or "").upper() != "ATIVO":
+            continue
+        item_atual = (
+            db.query(CardapioItem)
+            .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
+            .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+            .filter(
+                CardapioItem.produto_id == item.produto_id,
+                CardapioItem.sititem == "ATIVO",
+                Cardapio.loja_id == carrinho.loja_id,
+                Cardapio.sitcardapio == "ATIVO",
+                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+                (CardapioVersao.dtiniciovigencia.is_(None)) | (CardapioVersao.dtiniciovigencia <= agora),
+                (CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora),
+            )
+            .order_by(Cardapio.prioridade.desc(), CardapioVersao.nrversao.desc())
+            .first()
+        )
+        origem = item_atual or produto
+        novo = _preco_final(
+            getattr(origem, "vrpreco", None) if item_atual else produto.vrprecoprod,
+            getattr(origem, "tipodesconto", None),
+            getattr(origem, "vrdesconto", None),
+            getattr(origem, "dtinidesconto", None),
+            getattr(origem, "dtfimdesconto", None),
+            agora,
+        )
+        anterior = Decimal(str(item.vrunitario or 0)).quantize(Decimal("0.01"))
+        item.vrunitario = novo
+        if item_atual:
+            item.cardapioitem_id = item_atual.cardapioitem_id
+        if anterior != novo:
+            alteracoes.append({
+                "produto_id": int(item.produto_id),
+                "nmproduto": produto.nmproduto,
+                "preco_anterior": float(anterior),
+                "preco_atual": float(novo),
+            })
+    if itens:
+        db.flush()
+    unicas = {}
+    for alteracao in alteracoes:
+        unicas[alteracao["produto_id"]] = alteracao
+    return list(unicas.values())
+
 
 def limpar_itens_indisponiveis(
     db: Session,
     carrinho_id: int,
     loja_id: int,
 ) -> int:
-    """Remove do carrinho itens que não pertencem mais ao cardápio vigente."""
-    itens = (
-        db.query(ItCarrinho)
-        .filter(ItCarrinho.carrinho_id == carrinho_id)
-        .all()
-    )
-    if not itens:
-        return 0
-
-    ids_no_carrinho = {
-        int(item.cardapioitem_id)
-        for item in itens
-        if item.cardapioitem_id is not None
-    }
-    agora = datetime.now()
-    ids_disponiveis = {
-        int(row[0])
-        for row in (
-            db.query(CardapioItem.cardapioitem_id)
-            .join(
-                CardapioVersao,
-                CardapioVersao.cardapioversao_id
-                == CardapioItem.cardapioversao_id,
-            )
-            .join(
-                Cardapio,
-                Cardapio.cardapio_id == CardapioVersao.cardapio_id,
-            )
-            .join(Produto, Produto.produto_id == CardapioItem.produto_id)
-            .filter(
-                CardapioItem.cardapioitem_id.in_(ids_no_carrinho),
-                CardapioItem.sititem == "ATIVO",
-                Produto.sitproduto == "ATIVO",
-                Cardapio.loja_id == loja_id,
-                Cardapio.sitcardapio == "ATIVO",
-                CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
-                (CardapioVersao.dtiniciovigencia.is_(None))
-                | (CardapioVersao.dtiniciovigencia <= agora),
-                (CardapioVersao.dtfimvigencia.is_(None))
-                | (CardapioVersao.dtfimvigencia >= agora),
-            )
-            .all()
-        )
-    }
-
-    ids_remover = [
-        item.itcarrinho_id
-        for item in itens
-        if item.cardapioitem_id is None
-        or int(item.cardapioitem_id) not in ids_disponiveis
-    ]
-    if not ids_remover:
-        return 0
-
-    removidos = (
-        db.query(ItCarrinho)
-        .filter(ItCarrinho.itcarrinho_id.in_(ids_remover))
-        .delete(synchronize_session=False)
-    )
-    db.flush()
-    return int(removidos or 0)
+    """Mantido por compatibilidade; mudanças de cardápio não apagam o carrinho."""
+    return 0
 
 
 def limpar_carrinhos_abertos_cliente(db: Session, cliente_id: int) -> int:
@@ -121,13 +128,8 @@ def get_carrinho(
     if not carrinho_selec:
         raise HTTPException(status_code=404, detail="Carrinho não encontrado (ABERTO)")
 
-    removidos = limpar_itens_indisponiveis(
-        db,
-        int(carrinho_selec.carrinho_id),
-        int(carrinho_selec.loja_id),
-    )
-    if removidos:
-        db.commit()
+    revalidar_precos_carrinho(db, carrinho_selec)
+    db.commit()
 
     # 2) busca itens do carrinho
     itens_car = (
@@ -160,17 +162,6 @@ def get_carrinho(
         .all()
     )
     map_prod = {p.produto_id: p for p in produtos}
-    cardapioitem_ids = list({
-        it.cardapioitem_id for it in itens_car if it.cardapioitem_id is not None
-    })
-    itens_cardapio = (
-        db.query(CardapioItem)
-        .filter(CardapioItem.cardapioitem_id.in_(cardapioitem_ids))
-        .all()
-    ) if cardapioitem_ids else []
-    map_item_cardapio = {
-        item.cardapioitem_id: item for item in itens_cardapio
-    }
 
     itens_agrupados = {}
     qt_total = 0
@@ -189,13 +180,7 @@ def get_carrinho(
             )
 
         nmproduto     = getattr(prod, "nmproduto", "Produto")
-        item_cardapio = map_item_cardapio.get(it.cardapioitem_id)
-        if not item_cardapio:
-            raise HTTPException(
-                status_code=409,
-                detail=f"O produto '{nmproduto}' não está mais disponível no cardápio.",
-            )
-        vrprecoprod   = float(item_cardapio.vrpreco or 0)
+        vrprecoprod   = float(it.vrunitario or 0)
         idtipoproduto = (getattr(prod, "idtipoproduto", "P") or "P").upper()
 
         subtotal = round(vrprecoprod * qt_aux, 2)

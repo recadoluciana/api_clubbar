@@ -2,6 +2,7 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
@@ -25,9 +26,34 @@ from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(prefix="/eventos-modelos", tags=["Eventos padrão"])
 
+LIMITE_TITULO_EVENTO = 120
+
 
 def _agora_brasilia() -> datetime:
     return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+
+
+def _validar_titulo_evento(titulo: str) -> str:
+    titulo = titulo.strip()
+    if not titulo:
+        raise HTTPException(422, "Informe o título do evento.")
+    if len(titulo) > LIMITE_TITULO_EVENTO:
+        raise HTTPException(
+            422,
+            f"O título do evento deve ter no máximo {LIMITE_TITULO_EVENTO} caracteres.",
+        )
+    return titulo
+
+
+def _commit_evento_modelo(db: Session) -> None:
+    try:
+        db.commit()
+    except DataError as exc:
+        db.rollback()
+        raise HTTPException(
+            422,
+            "Um dos dados do evento ultrapassou o tamanho permitido. Revise os campos e tente novamente.",
+        ) from exc
 
 def _org(payload):
     try: return int(payload["organizacao_id"])
@@ -111,21 +137,24 @@ def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento
     tipo=tipolocalevento.strip().upper()
     if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
     if tipo == "OUTRO" and (not nrceplocalevento or not nmlocalevento or not dsendlocevento): raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
-    x=EventoModelo(organizacao_id=org,nmtituloevento=nmtituloevento.strip(),dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
-    db.add(x);db.commit();db.refresh(x);return _item(db, x)
+    titulo = _validar_titulo_evento(nmtituloevento)
+    x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
+    db.add(x);_commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
 def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),tipolocalevento:str|None=Form(None),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_gerenciamento_organizacao(payload,x.organizacao_id)
     tipo=(tipolocalevento or x.tipolocalevento).strip().upper()
     if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
+    if nmtituloevento is not None:
+        nmtituloevento = _validar_titulo_evento(nmtituloevento)
     for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"nrceplocalevento":nrceplocalevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
         if v is not None:setattr(x,k,v.upper() if k=="statusevento" else v)
     x.tipolocalevento=tipo
     if tipo=="ESTABELECIMENTO": x.nrceplocalevento=x.nmlocalevento=x.dsendlocevento=None
     elif not x.nrceplocalevento or not x.nmlocalevento or not x.dsendlocevento: raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
     if urlbannerevento and urlbannerevento.filename:x.urlbannerevento=salvar_banner_evento(urlbannerevento)
-    db.commit();db.refresh(x);return _item(db, x)
+    _commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
 @router.delete("/{modelo_id}",status_code=204)
 def excluir(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
