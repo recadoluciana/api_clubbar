@@ -38,6 +38,13 @@ if not JWT_SECRET:
     JWT_SECRET = "change-me"
 JWT_EXPIRES_MIN = int(os.getenv("JWT_EXPIRES_MIN", "10080"))
 
+# Percentual legal reservado à meia-entrada. Mantido em configuração para que
+# a mesma regra seja usada nos cálculos da API e nas telas dos aplicativos.
+PERCENTUAL_COTA_LEGAL = max(
+    0.0,
+    min(100.0, float(os.getenv("PERCENTUAL_COTA_LEGAL", "40"))),
+)
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.6-luna").strip()
 ASAAS_API_KEY = os.getenv("ASAAS_API_KEY", "").strip()
