@@ -1204,7 +1204,11 @@ CREATE TABLE itvenda (
   produto_id            BIGINT NULL,
   lote_id               BIGINT NULL,
   lotepreco_id          BIGINT NULL,
+  modalidade_id         BIGINT NULL,
+  beneficio_id          BIGINT NULL,
   tipobeneficio         VARCHAR(30) NULL,
+  nmmodalidadesnapshot  VARCHAR(100) NULL,
+  nmbeneficiosnapshot   VARCHAR(100) NULL,
   qtitvenda             INT NOT NULL DEFAULT 1,
   vrunititvenda         DECIMAL(10,2) NOT NULL,
   identregaitvenda      ENUM('SIM','NAO') NOT NULL DEFAULT 'NAO',
@@ -1275,7 +1279,9 @@ CREATE TABLE reserva_ingresso (
   reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
   evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, lotepreco_id BIGINT NOT NULL,
+  beneficio_id BIGINT NULL,
   tipobeneficio VARCHAR(30) NULL,
+  nmbeneficiosnapshot VARCHAR(100) NULL,
   venda_id BIGINT NULL, qtreservada INT NOT NULL,
   vrunitario DECIMAL(10,2) NOT NULL, pctaxa DECIMAL(10,2) NOT NULL DEFAULT 0,
   vrtaxa DECIMAL(10,2) NOT NULL DEFAULT 0, vrtotal DECIMAL(10,2) NOT NULL,
@@ -1607,9 +1613,74 @@ CREATE TABLE eventolotesetor (
   CHECK (qtlimite > 0), CHECK (qtvendidalote >= 0), CHECK (qtvendidalote <= qtlimite)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE modalidadeingresso (
+  modalidade_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NULL,
+  cdmodalidade VARCHAR(40) NOT NULL,
+  nmmodalidade VARCHAR(100) NOT NULL,
+  tipomodalidade VARCHAR(20) NOT NULL DEFAULT 'COMERCIAL',
+  aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE,
+  exigebeneficio BOOLEAN NOT NULL DEFAULT FALSE,
+  exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE,
+  permitepersonalizarnome BOOLEAN NOT NULL DEFAULT TRUE,
+  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  nrordem INT NOT NULL DEFAULT 1,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_modalidadeingresso_codigo (cdmodalidade),
+  INDEX idx_modalidadeingresso_organizacao (organizacao_id, situacao, nrordem),
+  FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT,
+  CHECK (tipomodalidade IN ('PADRAO','LEGAL','COMERCIAL')),
+  CHECK (situacao IN ('ATIVO','INATIVO'))
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE beneficioingresso (
+  beneficio_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  cdbeneficio VARCHAR(40) NOT NULL,
+  nmbeneficio VARCHAR(100) NOT NULL,
+  exigecomprovante BOOLEAN NOT NULL DEFAULT TRUE,
+  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',
+  nrordem INT NOT NULL DEFAULT 1,
+  dtiniciovigencia DATETIME NULL,
+  dtfimvigencia DATETIME NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_beneficioingresso_codigo (cdbeneficio),
+  CHECK (situacao IN ('ATIVO','INATIVO')),
+  CHECK (dtfimvigencia IS NULL OR dtiniciovigencia IS NULL OR dtfimvigencia > dtiniciovigencia)
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+CREATE TABLE modalidadebeneficio (
+  modalidade_id BIGINT NOT NULL,
+  beneficio_id BIGINT NOT NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (modalidade_id, beneficio_id),
+  FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso(modalidade_id) ON DELETE CASCADE,
+  FOREIGN KEY (beneficio_id) REFERENCES beneficioingresso(beneficio_id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
+INSERT INTO beneficioingresso (beneficio_id, cdbeneficio, nmbeneficio, exigecomprovante, nrordem) VALUES
+  (1, 'ESTUDANTE', 'Estudante', TRUE, 1),
+  (2, 'JOVEM_BAIXA_RENDA', 'Jovem de baixa renda', TRUE, 2),
+  (3, 'PCD', 'Pessoa com deficiência', TRUE, 3),
+  (4, 'ACOMPANHANTE_PCD', 'Acompanhante de PcD', TRUE, 4),
+  (5, 'IDOSO', 'Pessoa idosa', TRUE, 5);
+
+INSERT INTO modalidadeingresso (modalidade_id, cdmodalidade, nmmodalidade, tipomodalidade, aplicacotalegal, exigebeneficio, exigecomprovante, permitepersonalizarnome, nrordem) VALUES
+  (1, 'INTEIRA', 'Inteira', 'PADRAO', FALSE, FALSE, FALSE, FALSE, 1),
+  (2, 'MEIA_LEGAL', 'Meia-entrada', 'LEGAL', TRUE, TRUE, TRUE, FALSE, 2),
+  (3, 'MEIA_IDOSO', 'Pessoa idosa', 'LEGAL', FALSE, TRUE, TRUE, FALSE, 3),
+  (4, 'SOCIAL', 'Ingresso social', 'COMERCIAL', FALSE, FALSE, TRUE, TRUE, 4),
+  (5, 'CORTESIA', 'Cortesia', 'COMERCIAL', FALSE, FALSE, FALSE, TRUE, 5),
+  (6, 'OUTRO', 'Outra modalidade', 'COMERCIAL', FALSE, FALSE, FALSE, TRUE, 6);
+
+INSERT INTO modalidadebeneficio (modalidade_id, beneficio_id) VALUES
+  (2,1),(2,2),(2,3),(2,4),(3,5);
+
 CREATE TABLE eventolotesetorpreco (
   lotepreco_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   lote_id BIGINT NOT NULL,
+  modalidade_id BIGINT NOT NULL,
   nmpreco VARCHAR(100) NOT NULL,
   tipopreco VARCHAR(30) NOT NULL,
   vrpreco DECIMAL(10,2) NOT NULL,
@@ -1621,6 +1692,7 @@ CREATE TABLE eventolotesetorpreco (
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_eventolotesetorpreco_tipo (lote_id, tipopreco),
   FOREIGN KEY (lote_id) REFERENCES eventolotesetor(lote_id) ON DELETE CASCADE,
+  FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT,
   CHECK (vrpreco >= 0)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -1639,6 +1711,13 @@ ALTER TABLE reserva_ingresso ADD CONSTRAINT fk_reserva_lotepreco
 
 ALTER TABLE itvenda ADD CONSTRAINT fk_itvenda_lotepreco
   FOREIGN KEY (lotepreco_id) REFERENCES eventolotesetorpreco(lotepreco_id);
+
+ALTER TABLE itvenda ADD CONSTRAINT fk_itvenda_modalidade
+  FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso(modalidade_id);
+ALTER TABLE itvenda ADD CONSTRAINT fk_itvenda_beneficio
+  FOREIGN KEY (beneficio_id) REFERENCES beneficioingresso(beneficio_id);
+ALTER TABLE reserva_ingresso ADD CONSTRAINT fk_reserva_beneficio
+  FOREIGN KEY (beneficio_id) REFERENCES beneficioingresso(beneficio_id);
 
 ALTER TABLE reserva_ingresso
   ADD CONSTRAINT fk_reserva_evento

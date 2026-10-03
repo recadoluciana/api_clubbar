@@ -63,6 +63,7 @@ from app.routers import cora
 from app.routers import taxapadrao
 from app.routers import manuais
 from app.routers import politicas
+from app.routers import catalogo_ingressos
 
 
 app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
@@ -194,6 +195,135 @@ app.include_router(cora.router)
 app.include_router(taxapadrao.router)
 app.include_router(manuais.router)
 app.include_router(politicas.router)
+app.include_router(catalogo_ingressos.router)
+
+
+@app.on_event("startup")
+def garantir_catalogo_ingressos() -> None:
+    """Cria e relaciona o catálogo dinâmico sem descartar ingressos existentes."""
+    try:
+        with engine.begin() as conexao:
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS modalidadeingresso (
+                  modalidade_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                  organizacao_id BIGINT NULL, cdmodalidade VARCHAR(40) NOT NULL,
+                  nmmodalidade VARCHAR(100) NOT NULL, tipomodalidade VARCHAR(20) NOT NULL DEFAULT 'COMERCIAL',
+                  aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE, exigebeneficio BOOLEAN NOT NULL DEFAULT FALSE,
+                  exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE, permitepersonalizarnome BOOLEAN NOT NULL DEFAULT TRUE,
+                  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO', nrordem INT NOT NULL DEFAULT 1,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+                  UNIQUE KEY uk_modalidadeingresso_codigo (cdmodalidade),
+                  INDEX idx_modalidadeingresso_organizacao (organizacao_id, situacao, nrordem),
+                  CONSTRAINT fk_modalidadeingresso_organizacao FOREIGN KEY (organizacao_id)
+                    REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS beneficioingresso (
+                  beneficio_id BIGINT AUTO_INCREMENT PRIMARY KEY, cdbeneficio VARCHAR(40) NOT NULL,
+                  nmbeneficio VARCHAR(100) NOT NULL, exigecomprovante BOOLEAN NOT NULL DEFAULT TRUE,
+                  situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO', nrordem INT NOT NULL DEFAULT 1,
+                  dtiniciovigencia DATETIME NULL, dtfimvigencia DATETIME NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+                  UNIQUE KEY uk_beneficioingresso_codigo (cdbeneficio)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS modalidadebeneficio (
+                  modalidade_id BIGINT NOT NULL, beneficio_id BIGINT NOT NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (modalidade_id, beneficio_id),
+                  CONSTRAINT fk_modalidadebeneficio_modalidade FOREIGN KEY (modalidade_id)
+                    REFERENCES modalidadeingresso(modalidade_id) ON DELETE CASCADE,
+                  CONSTRAINT fk_modalidadebeneficio_beneficio FOREIGN KEY (beneficio_id)
+                    REFERENCES beneficioingresso(beneficio_id) ON DELETE RESTRICT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                INSERT INTO beneficioingresso (cdbeneficio,nmbeneficio,exigecomprovante,nrordem) VALUES
+                  ('ESTUDANTE','Estudante',TRUE,1),('JOVEM_BAIXA_RENDA','Jovem de baixa renda',TRUE,2),
+                  ('PCD','Pessoa com deficiência',TRUE,3),('ACOMPANHANTE_PCD','Acompanhante de PcD',TRUE,4),
+                  ('IDOSO','Pessoa idosa',TRUE,5)
+                ON DUPLICATE KEY UPDATE nmbeneficio=VALUES(nmbeneficio)
+            """))
+            conexao.execute(text("""
+                INSERT INTO modalidadeingresso
+                  (cdmodalidade,nmmodalidade,tipomodalidade,aplicacotalegal,exigebeneficio,exigecomprovante,permitepersonalizarnome,nrordem) VALUES
+                  ('INTEIRA','Inteira','PADRAO',FALSE,FALSE,FALSE,FALSE,1),
+                  ('MEIA_LEGAL','Meia-entrada','LEGAL',TRUE,TRUE,TRUE,FALSE,2),
+                  ('MEIA_IDOSO','Pessoa idosa','LEGAL',FALSE,TRUE,TRUE,FALSE,3),
+                  ('SOCIAL','Ingresso social','COMERCIAL',FALSE,FALSE,TRUE,TRUE,4),
+                  ('CORTESIA','Cortesia','COMERCIAL',FALSE,FALSE,FALSE,TRUE,5),
+                  ('OUTRO','Outra modalidade','COMERCIAL',FALSE,FALSE,FALSE,TRUE,6)
+                ON DUPLICATE KEY UPDATE nmmodalidade=VALUES(nmmodalidade)
+            """))
+            conexao.execute(text("""
+                INSERT IGNORE INTO modalidadebeneficio (modalidade_id, beneficio_id)
+                SELECT m.modalidade_id, b.beneficio_id FROM modalidadeingresso m
+                JOIN beneficioingresso b ON
+                  (m.cdmodalidade='MEIA_LEGAL' AND b.cdbeneficio IN ('ESTUDANTE','JOVEM_BAIXA_RENDA','PCD','ACOMPANHANTE_PCD'))
+                  OR (m.cdmodalidade='MEIA_IDOSO' AND b.cdbeneficio='IDOSO')
+            """))
+
+        inspector = inspect(engine)
+        with engine.begin() as conexao:
+            def adicionar_coluna(tabela: str, coluna: str, definicao: str) -> None:
+                atuais = {c["name"] for c in inspect(engine).get_columns(tabela)}
+                if coluna not in atuais:
+                    conexao.execute(text(f"ALTER TABLE `{tabela}` ADD COLUMN `{coluna}` {definicao}"))
+
+            if "eventolotesetorpreco" in inspector.get_table_names():
+                adicionar_coluna("eventolotesetorpreco", "modalidade_id", "BIGINT NULL AFTER lote_id")
+                conexao.execute(text("""
+                    UPDATE eventolotesetorpreco p JOIN modalidadeingresso m ON m.cdmodalidade=p.tipopreco
+                    SET p.modalidade_id=m.modalidade_id WHERE p.modalidade_id IS NULL
+                """))
+                conexao.execute(text("ALTER TABLE eventolotesetorpreco MODIFY modalidade_id BIGINT NOT NULL"))
+                fks = {fk.get("name") for fk in inspect(engine).get_foreign_keys("eventolotesetorpreco")}
+                if "fk_eventolotesetorpreco_modalidade" not in fks:
+                    conexao.execute(text("ALTER TABLE eventolotesetorpreco ADD CONSTRAINT fk_eventolotesetorpreco_modalidade FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT"))
+            for tabela in ("reserva_ingresso", "itvenda"):
+                if tabela in inspector.get_table_names():
+                    adicionar_coluna(tabela, "beneficio_id", "BIGINT NULL")
+                    adicionar_coluna(tabela, "nmbeneficiosnapshot", "VARCHAR(100) NULL")
+                    conexao.execute(text(f"""
+                        UPDATE {tabela} destino
+                        JOIN beneficioingresso beneficio ON beneficio.cdbeneficio=destino.tipobeneficio
+                        SET destino.beneficio_id=beneficio.beneficio_id,
+                            destino.nmbeneficiosnapshot=COALESCE(destino.nmbeneficiosnapshot, beneficio.nmbeneficio)
+                        WHERE destino.beneficio_id IS NULL AND destino.tipobeneficio IS NOT NULL
+                    """))
+            if "itvenda" in inspector.get_table_names():
+                adicionar_coluna("itvenda", "modalidade_id", "BIGINT NULL")
+                adicionar_coluna("itvenda", "nmmodalidadesnapshot", "VARCHAR(100) NULL")
+                conexao.execute(text("""
+                    UPDATE itvenda item
+                    JOIN eventolotesetorpreco preco ON preco.lotepreco_id=item.lotepreco_id
+                    SET item.modalidade_id=preco.modalidade_id,
+                        item.nmmodalidadesnapshot=COALESCE(item.nmmodalidadesnapshot, preco.nmpreco)
+                    WHERE item.modalidade_id IS NULL AND item.lotepreco_id IS NOT NULL
+                """))
+
+        inspector = inspect(engine)
+        with engine.begin() as conexao:
+            referencias = (
+                ("reserva_ingresso", "beneficio_id", "beneficioingresso", "beneficio_id", "fk_reserva_beneficio"),
+                ("itvenda", "beneficio_id", "beneficioingresso", "beneficio_id", "fk_itvenda_beneficio"),
+                ("itvenda", "modalidade_id", "modalidadeingresso", "modalidade_id", "fk_itvenda_modalidade"),
+            )
+            for tabela, coluna, tabela_ref, coluna_ref, nome in referencias:
+                if tabela not in inspector.get_table_names():
+                    continue
+                existentes = {fk.get("name") for fk in inspect(engine).get_foreign_keys(tabela)}
+                if nome not in existentes:
+                    conexao.execute(text(
+                        f"ALTER TABLE `{tabela}` ADD CONSTRAINT `{nome}` "
+                        f"FOREIGN KEY (`{coluna}`) REFERENCES `{tabela_ref}` (`{coluna_ref}`) ON DELETE RESTRICT"
+                    ))
+        logger.info("Catálogo dinâmico de modalidades e benefícios verificado.")
+    except Exception:
+        logger.exception("Não foi possível preparar o catálogo de ingressos")
+        raise
 
 
 @app.on_event("startup")
@@ -528,6 +658,7 @@ def reconstruir_lotes_globais() -> None:
                     CREATE TABLE eventolotesetorpreco (
                       lotepreco_id BIGINT AUTO_INCREMENT PRIMARY KEY,
                       lote_id BIGINT NOT NULL,
+                      modalidade_id BIGINT NOT NULL,
                       nmpreco VARCHAR(100) NOT NULL,
                       tipopreco VARCHAR(30) NOT NULL,
                       vrpreco DECIMAL(10,2) NOT NULL,
@@ -540,6 +671,8 @@ def reconstruir_lotes_globais() -> None:
                       UNIQUE KEY uk_eventolotesetorpreco_tipo (lote_id, tipopreco),
                       CONSTRAINT fk_eventolotesetorpreco_lote FOREIGN KEY (lote_id)
                         REFERENCES eventolotesetor(lote_id) ON DELETE CASCADE,
+                      CONSTRAINT fk_eventolotesetorpreco_modalidade FOREIGN KEY (modalidade_id)
+                        REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT,
                       CHECK (vrpreco >= 0)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """))

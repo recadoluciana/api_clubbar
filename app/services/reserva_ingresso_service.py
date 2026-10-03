@@ -11,13 +11,15 @@ from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.loja import Loja
+from app.models.modalidadeingresso import ModalidadeIngresso
+from app.models.modalidadebeneficio import ModalidadeBeneficio
+from app.models.beneficioingresso import BeneficioIngresso
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from app.utils.datetime_utils import FUSO_BRASIL
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
-BENEFICIOS_COTA = {"ESTUDANTE", "JOVEM_BAIXA_RENDA", "PCD", "ACOMPANHANTE_PCD"}
 PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
 
 
@@ -175,6 +177,7 @@ def criar_reserva(
     cliente_id: int,
     lote_id: int,
     lotepreco_id: int,
+    beneficio_id: int | None,
     tipo_beneficio: str | None,
     quantidade: int,
 ) -> ReservaIngresso:
@@ -193,11 +196,27 @@ def criar_reserva(
     if not preco:
         raise HTTPException(404, "Modalidade de preço não encontrada")
 
-    beneficio = (tipo_beneficio or "").strip().upper() or None
-    if preco.tipopreco == "MEIA_LEGAL" and beneficio not in BENEFICIOS_COTA:
-        raise HTTPException(422, "Informe um benefício válido para a meia-entrada legal")
-    if preco.tipopreco == "MEIA_IDOSO" and beneficio != "IDOSO":
-        raise HTTPException(422, "Selecione o benefício Pessoa idosa")
+    modalidade = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.modalidade_id == preco.modalidade_id,
+        ModalidadeIngresso.situacao == "ATIVO",
+    ).first()
+    if not modalidade:
+        raise HTTPException(422, "A modalidade deste ingresso não está disponível")
+    beneficio_item = None
+    if modalidade.exigebeneficio:
+        beneficio_item = (
+            db.query(BeneficioIngresso)
+            .join(ModalidadeBeneficio, ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id)
+            .filter(
+                ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+                BeneficioIngresso.beneficio_id == beneficio_id,
+                BeneficioIngresso.situacao == "ATIVO",
+            )
+            .first()
+        )
+        if not beneficio_item:
+            raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
+    beneficio = beneficio_item.cdbeneficio if beneficio_item else None
 
     # Reservas expiram no relógio do servidor; já os períodos de venda dos
     # lotes seguem a data/hora comercial informada pelo parceiro (Brasília).
@@ -273,7 +292,9 @@ def criar_reserva(
         evento_id=evento.evento_id,
         lote_id=lote.lote_id,
         lotepreco_id=preco.lotepreco_id,
+        beneficio_id=beneficio_item.beneficio_id if beneficio_item else None,
         tipobeneficio=beneficio,
+        nmbeneficiosnapshot=beneficio_item.nmbeneficio if beneficio_item else None,
         qtreservada=quantidade,
         vrunitario=unitario,
         pctaxa=percentual,

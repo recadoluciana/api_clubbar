@@ -32,6 +32,7 @@ def _saida(reserva: ReservaIngresso) -> dict:
         "evento_id": reserva.evento_id,
         "lote_id": reserva.lote_id,
         "lotepreco_id": reserva.lotepreco_id,
+        "beneficio_id": reserva.beneficio_id,
         "tipo_beneficio": reserva.tipobeneficio,
         "quantidade": reserva.qtreservada,
         "valor_unitario": float(reserva.vrunitario),
@@ -48,7 +49,7 @@ def _saida(reserva: ReservaIngresso) -> dict:
 def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
-        reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, lotepreco_id=payload.lotepreco_id, tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
+        reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id, tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
         db.commit()
         db.refresh(reserva)
         return _saida(reserva)

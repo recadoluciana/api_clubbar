@@ -12,6 +12,9 @@ from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
+from app.models.modalidadeingresso import ModalidadeIngresso
+from app.models.modalidadebeneficio import ModalidadeBeneficio
+from app.models.beneficioingresso import BeneficioIngresso
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -125,6 +128,25 @@ def _carregar_global(db: Session, loteglobal_id: int) -> EventoLoteGlobal | None
     )
 
 
+def _dados_preco_catalogo(db: Session, preco) -> dict:
+    modalidade = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.modalidade_id == preco.modalidade_id,
+        ModalidadeIngresso.situacao == "ATIVO",
+    ).first()
+    if not modalidade:
+        raise HTTPException(422, "Modalidade de ingresso inexistente ou inativa")
+    return {
+        "modalidade_id": modalidade.modalidade_id,
+        "nmpreco": preco.nmpreco if modalidade.permitepersonalizarnome else modalidade.nmmodalidade,
+        "tipopreco": modalidade.cdmodalidade,
+        "vrpreco": preco.vrpreco,
+        "aplicacotalegal": bool(modalidade.aplicacotalegal),
+        "exigecomprovante": bool(modalidade.exigecomprovante),
+        "situacao": preco.situacao,
+        "nrordem": preco.nrordem,
+    }
+
+
 def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, evento.evento_id)
     reservados = quantidade_reservada(db, lote.lote_id)
@@ -163,6 +185,7 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "precos": [
             {
                 "lotepreco_id": preco.lotepreco_id,
+                "modalidade_id": preco.modalidade_id,
                 "nmpreco": preco.nmpreco,
                 "tipopreco": preco.tipopreco,
                 "vrpreco": float(preco.vrpreco),
@@ -170,6 +193,27 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                 "exigecomprovante": bool(preco.exigecomprovante),
                 "situacao": preco.situacao,
                 "nrordem": int(preco.nrordem),
+                "exigebeneficio": bool(
+                    db.query(ModalidadeIngresso.exigebeneficio)
+                    .filter(ModalidadeIngresso.modalidade_id == preco.modalidade_id)
+                    .scalar()
+                ),
+                "beneficios": [
+                    {
+                        "beneficio_id": beneficio.beneficio_id,
+                        "cdbeneficio": beneficio.cdbeneficio,
+                        "nmbeneficio": beneficio.nmbeneficio,
+                        "exigecomprovante": bool(beneficio.exigecomprovante),
+                    }
+                    for beneficio in db.query(BeneficioIngresso)
+                    .join(ModalidadeBeneficio, ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id)
+                    .filter(
+                        ModalidadeBeneficio.modalidade_id == preco.modalidade_id,
+                        BeneficioIngresso.situacao == "ATIVO",
+                    )
+                    .order_by(BeneficioIngresso.nrordem)
+                    .all()
+                ],
             }
             for preco in lote.precos
         ],
@@ -381,7 +425,7 @@ def criar_lote_global(
         )
         db.add(configuracao)
         db.flush()
-        db.add_all(EventoLotePreco(lote_id=configuracao.lote_id, **preco.model_dump()) for preco in setor_dados.precos)
+        db.add_all(EventoLotePreco(lote_id=configuracao.lote_id, **_dados_preco_catalogo(db, preco)) for preco in setor_dados.precos)
     db.commit()
     return {"mensagem": "Lote global cadastrado com sucesso", "loteglobal_id": global_.loteglobal_id}
 
@@ -458,7 +502,7 @@ def adicionar_setor_ao_lote_global(
     db.add(configuracao)
     db.flush()
     db.add_all(
-        EventoLotePreco(lote_id=configuracao.lote_id, **preco.model_dump())
+        EventoLotePreco(lote_id=configuracao.lote_id, **_dados_preco_catalogo(db, preco))
         for preco in data.precos
     )
     db.commit()
@@ -492,7 +536,7 @@ def atualizar_configuracao_setor(
         if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
             raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
         db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
-        db.add_all(EventoLotePreco(lote_id=lote_id, **preco.model_dump()) for preco in data.precos)
+        db.add_all(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, preco)) for preco in data.precos)
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
 

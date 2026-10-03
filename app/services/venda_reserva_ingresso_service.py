@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.eventolote import EventoLote
+from app.models.eventolotepreco import EventoLotePreco
 from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
 from app.models.reserva_ingresso import ReservaIngresso
@@ -13,6 +14,17 @@ from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.venda import Venda
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.services.venda_service import gerar_token_qr
+
+
+def _dados_catalogo_item(db: Session, reserva: ReservaIngresso) -> dict:
+    preco = db.query(EventoLotePreco).filter(EventoLotePreco.lotepreco_id == reserva.lotepreco_id).first()
+    return {
+        "modalidade_id": preco.modalidade_id if preco else None,
+        "beneficio_id": reserva.beneficio_id,
+        "tipobeneficio": reserva.tipobeneficio,
+        "nmmodalidadesnapshot": preco.nmpreco if preco else None,
+        "nmbeneficiosnapshot": reserva.nmbeneficiosnapshot,
+    }
 
 
 def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pagamento: dict) -> dict:
@@ -41,7 +53,7 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
     db.add(venda)
     db.flush()
     for participante in participantes:
-        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, lotepreco_id=reserva.lotepreco_id, tipobeneficio=reserva.tipobeneficio, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=reserva.vrtaxa, sititvenda="ATIVO")
+        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, lotepreco_id=reserva.lotepreco_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=reserva.vrtaxa, sititvenda="ATIVO", **_dados_catalogo_item(db, reserva))
         db.add(item)
         db.flush()
         participante.itvenda_id = item.itvenda_id
@@ -78,7 +90,7 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
     venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PAGA", totalvenda=0)
     db.add(venda); db.flush()
     for participante in participantes:
-        item=ItVenda(venda_id=venda.venda_id,tipoitem="INGRESSO",produto_id=None,lote_id=reserva.lote_id,lotepreco_id=reserva.lotepreco_id,tipobeneficio=reserva.tipobeneficio,qtitvenda=1,vrunititvenda=0,identregaitvenda="NAO",qrtokenitvenda=gerar_token_qr(),nmparticipante=participante.nmparticipante,cpfparticipante=participante.cpfparticipante,pctaxaitvenda=0,vrtaxaitvenda=0,sititvenda="ATIVO")
+        item=ItVenda(venda_id=venda.venda_id,tipoitem="INGRESSO",produto_id=None,lote_id=reserva.lote_id,lotepreco_id=reserva.lotepreco_id,qtitvenda=1,vrunititvenda=0,identregaitvenda="NAO",qrtokenitvenda=gerar_token_qr(),nmparticipante=participante.nmparticipante,cpfparticipante=participante.cpfparticipante,pctaxaitvenda=0,vrtaxaitvenda=0,sititvenda="ATIVO",**_dados_catalogo_item(db, reserva))
         db.add(item);db.flush();participante.itvenda_id=item.itvenda_id
     pag=PagVenda(venda_id=venda.venda_id,dsmetodopag="GRATUITO",vrpagvenda=0,sitpagvenda="PAGO",idtransacaopagvenda=f"GRATUITO-{reserva_id}",dtconftranspagvenda=datetime.now(),provedor="CLUBBAR",reference_id=f"GRATUITO-RESERVA-{reserva_id}")
     db.add(pag);db.flush()
