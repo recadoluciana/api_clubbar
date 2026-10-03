@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.permissoes_loja import validar_mutacao_loja
+from app.core.config import PERCENTUAL_COTA_LEGAL
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.evento import Evento
@@ -153,6 +154,12 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     setor = lote.setor
     global_ = lote.lote_global
     disponibilidade = quantidade_disponivel_configuracao(db, lote)
+    base_cota_lote = (
+        int(lote.qtlimite)
+        if lote.qtlimite is not None
+        else int(setor.qtcapacidade) if setor else 0
+    )
+    quantidade_cota_lote = int(base_cota_lote * PERCENTUAL_COTA_LEGAL / 100)
     return {
         "lote_id": lote.lote_id,
         "loteglobal_id": global_.loteglobal_id,
@@ -179,7 +186,13 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "dtfimvenda": global_.dtfimvenda,
         "gatilhovirada": global_.gatilhovirada,
         "statuslote": global_.situacao if lote.situacao == "ATIVO" else "INATIVO",
-        "cotalegal": int(_capacidade_total_evento(db, evento) * 0.40),
+        "cotalegal": int(
+            _capacidade_total_evento(db, evento)
+            * PERCENTUAL_COTA_LEGAL
+            / 100
+        ),
+        "percentualcotalegal": PERCENTUAL_COTA_LEGAL,
+        "qtlimitecotalegal": quantidade_cota_lote,
         "qtvendidacotalegal": vendidos_cota,
         "qtreservadacotalegal": reservados_cota,
         "precos": [

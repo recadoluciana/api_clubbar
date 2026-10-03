@@ -18,6 +18,7 @@ from app.models.beneficioingresso import BeneficioIngresso
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from app.utils.datetime_utils import FUSO_BRASIL
+from app.core.config import PERCENTUAL_COTA_LEGAL
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
@@ -299,7 +300,9 @@ def criar_reserva(
             .scalar()
             or 0
         )
-        if usada_cota + quantidade > int(capacidade_evento * 0.40):
+        if usada_cota + quantidade > int(
+            capacidade_evento * PERCENTUAL_COTA_LEGAL / 100
+        ):
             raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
 
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
