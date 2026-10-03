@@ -148,6 +148,44 @@ def _dados_preco_catalogo(db: Session, preco) -> dict:
     }
 
 
+def _sincronizar_precos_lote(db: Session, lote_id: int, precos) -> None:
+    """Atualiza preços sem quebrar referências históricas de reservas/vendas."""
+    existentes = {
+        item.modalidade_id: item
+        for item in db.query(EventoLotePreco)
+        .filter(EventoLotePreco.lote_id == lote_id)
+        .all()
+    }
+    modalidades_recebidas: set[int] = set()
+
+    for preco in precos:
+        dados = _dados_preco_catalogo(db, preco)
+        modalidade_id = int(dados["modalidade_id"])
+        modalidades_recebidas.add(modalidade_id)
+        existente = existentes.get(modalidade_id)
+        if existente is None:
+            db.add(EventoLotePreco(lote_id=lote_id, **dados))
+            continue
+        for campo, valor in dados.items():
+            setattr(existente, campo, valor)
+
+    for modalidade_id, existente in existentes.items():
+        if modalidade_id in modalidades_recebidas:
+            continue
+        referenciado = (
+            db.query(ReservaIngresso.reserva_ingresso_id)
+            .filter(ReservaIngresso.lotepreco_id == existente.lotepreco_id)
+            .first()
+            or db.query(ItVenda.itvenda_id)
+            .filter(ItVenda.lotepreco_id == existente.lotepreco_id)
+            .first()
+        )
+        if referenciado:
+            existente.situacao = "INATIVO"
+        else:
+            db.delete(existente)
+
+
 def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, evento.evento_id)
     reservados = quantidade_reservada(db, lote.lote_id)
@@ -549,8 +587,7 @@ def atualizar_configuracao_setor(
     if data.precos is not None:
         if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
             raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
-        db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).delete()
-        db.add_all(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, preco)) for preco in data.precos)
+        _sincronizar_precos_lote(db, lote_id, data.precos)
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
 
