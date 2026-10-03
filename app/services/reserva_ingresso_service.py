@@ -219,7 +219,8 @@ def criar_reserva(
     if not modalidade:
         raise HTTPException(422, "A modalidade deste ingresso não está disponível")
     beneficio_item = None
-    if modalidade.exigebeneficio:
+    exige_beneficio = bool(modalidade.exigebeneficio or preco.aplicacotalegal)
+    if exige_beneficio:
         beneficio_item = (
             db.query(BeneficioIngresso)
             .join(ModalidadeBeneficio, ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id)
