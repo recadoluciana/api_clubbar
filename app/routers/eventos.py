@@ -7,7 +7,7 @@ import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -311,16 +311,27 @@ def atualizar_capacidade_evento(
     return _resumo_capacidade_evento(db, evento)
 
 
-def hoje_inicio_br() -> datetime:
-    tz = ZoneInfo("America/Sao_Paulo")
-    return datetime.combine(datetime.now(tz).date(), time.min).replace(tzinfo=None)
+def agora_br() -> datetime:
+    return datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
 
 
-def filtro_evento_atual_ou_proximo(inicio_dia: datetime):
-    """Inclui eventos que começam hoje/no futuro ou que ainda não terminaram."""
+def filtro_evento_atual_ou_proximo(agora: datetime):
+    """Inclui eventos futuros ou em andamento, respeitando o término real."""
+    fim_ultima_atracao = (
+        select(func.max(EventoAtracao.dtfimatracao))
+        .where(EventoAtracao.evento_id == Evento.evento_id)
+        .correlate(Evento)
+        .scalar_subquery()
+    )
     return or_(
-        Evento.dtinicioevento >= inicio_dia,
-        Evento.dtfimevento >= inicio_dia,
+        Evento.dtinicioevento >= agora,
+        Evento.dtfimevento >= agora,
+        and_(Evento.dtfimevento.is_(None), fim_ultima_atracao >= agora),
+        and_(
+            Evento.dtfimevento.is_(None),
+            fim_ultima_atracao.is_(None),
+            Evento.dtinicioevento >= agora - timedelta(hours=6),
+        ),
     )
 
 
@@ -427,7 +438,7 @@ def listar_eventos_proximos(
     loja_id: int,
     db: Session = Depends(get_db),
 ):
-    hi = hoje_inicio_br()
+    hi = agora_br()
 
     eventos = (
         db.query(Evento, Loja.nmloja, Cidade.nmcidade)
@@ -458,7 +469,7 @@ def listar_eventos_proximos_global(
     cidade_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    hi = hoje_inicio_br()
+    hi = agora_br()
 
     vendas_por_loja = (
         db.query(
@@ -817,6 +828,16 @@ def atualizar_evento(
             if dtinicioevento is not None
             else evento.dtinicioevento
         )
+        novo_fim = (
+            datetime.fromisoformat(dtfimevento)
+            if dtfimevento is not None and dtfimevento
+            else (None if dtfimevento == "" else evento.dtfimevento)
+        )
+        if novo_fim is not None and novo_fim <= novo_inicio:
+            raise HTTPException(
+                status_code=422,
+                detail="O término do evento deve ser posterior ao início.",
+            )
         novo_local = (
             nmlocalevento if nmlocalevento is not None else evento.nmlocalevento
         )
@@ -871,7 +892,7 @@ def atualizar_evento(
             deslocar_programacao_atracoes(programacoes, deslocamento_atracoes)
 
         if dtfimevento is not None:
-            evento.dtfimevento = datetime.fromisoformat(dtfimevento) if dtfimevento else None
+            evento.dtfimevento = novo_fim
 
         if nmlocalevento is not None:
             evento.nmlocalevento = nmlocalevento
