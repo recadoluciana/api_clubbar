@@ -498,7 +498,6 @@ def listar_eventos_proximos_global(
             func.coalesce(vendas_por_loja.c.total_vendas, 0).desc(),
             Evento.evento_id.asc(),
         )
-        .limit(10)
         .all()
     )
 
