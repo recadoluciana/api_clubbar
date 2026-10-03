@@ -85,6 +85,7 @@ def listar_compras(
             ItVenda,
             Produto.nmproduto,
             Evento.nmtituloevento,
+            Evento.dtinicioevento,
             EventoLote.nmlote,
             EventoLote.nrlote,
             EventoLotePreco.nmpreco,
@@ -123,6 +124,7 @@ def listar_compras(
         it,
         nmproduto,
         nmevento,
+        dtinicioevento,
         nmlote,
         nrlote,
         nmpreco,
@@ -134,6 +136,9 @@ def listar_compras(
             "produto_id": getattr(it, "produto_id", None),
             "nmproduto": nmproduto or nmevento or "Ingresso",
             "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
+            "dtinicioevento": formatar_data_br(dtinicioevento)
+            if dtinicioevento
+            else None,
             "qtitvenda": it.qtitvenda,
             "vrunititvenda": float(it.vrunititvenda),
             "vrtaxaitvenda": float(it.vrtaxaitvenda) if it.vrtaxaitvenda is not None else 0.0,

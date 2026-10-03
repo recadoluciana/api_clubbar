@@ -268,13 +268,6 @@ def listar_itens_nao_entregues(
 
     hoje = _hoje_brasil()
 
-    fim_ultima_atracao = (
-        db.query(func.max(EventoAtracao.dtfimatracao))
-        .filter(EventoAtracao.evento_id == Evento.evento_id)
-        .correlate(Evento)
-        .scalar_subquery()
-    )
-
     query = (
         db.query(
             ItVenda.itvenda_id,
@@ -305,8 +298,6 @@ def listar_itens_nao_entregues(
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
             EventoLotePreco.tipopreco.label("tipoprecoingresso"),
             EventoSetor.nmsetor.label("nmsetoringresso"),
-            Evento.dtfimevento,
-            fim_ultima_atracao.label("dtfimultimaatracao"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
@@ -332,6 +323,10 @@ def listar_itens_nao_entregues(
                 (
                     (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
+                    & (
+                        Evento.dtinicioevento
+                        >= _agora_brasil() - timedelta(hours=6)
+                    )
                 ),
             )
         )
@@ -350,8 +345,6 @@ def listar_itens_nao_entregues(
         query = query.filter(Venda.loja_id == loja_id)
 
     itens = query.order_by(ItVenda.dtexpiraitvenda.asc()).all()
-
-    agora = _agora_brasil()
 
     return [
         {
@@ -372,15 +365,6 @@ def listar_itens_nao_entregues(
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
-            "dtfimevento": row.dtfimevento,
-            "ingresso_encerrado": bool(
-                row.idtipoproduto == "I"
-                and agora >= (
-                    row.dtfimevento
-                    or row.dtfimultimaatracao
-                    or (row.dtinicioevento + timedelta(hours=6))
-                )
-            ),
             "nmlocalevento": row.nmlocalevento or row.nmloja,
             "dsendlocevento": row.dsendlocevento or _formatar_endereco_estabelecimento(
                 row.endloja,
