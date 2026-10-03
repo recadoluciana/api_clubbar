@@ -129,6 +129,14 @@ def _carregar_global(db: Session, loteglobal_id: int) -> EventoLoteGlobal | None
     )
 
 
+def _validar_data_limite_evento(evento: Evento, data_limite: datetime | None) -> None:
+    if data_limite is not None and data_limite > evento.dtinicioevento:
+        raise HTTPException(
+            422,
+            "A data limite deste preço não pode ser posterior ao início do evento.",
+        )
+
+
 def _dados_preco_catalogo(db: Session, preco) -> dict:
     modalidade = db.query(ModalidadeIngresso).filter(
         ModalidadeIngresso.modalidade_id == preco.modalidade_id,
@@ -417,6 +425,7 @@ def criar_lote_global(
     loja = db.query(Loja).filter(Loja.loja_id == data.loja_id).first()
     if not loja or data.organizacao_id != evento.organizacao_id or data.loja_id != evento.loja_id:
         raise HTTPException(422, "Organização ou loja divergente do evento")
+    _validar_data_limite_evento(evento, data.dtfimvenda)
 
     proximo_numero = int(
         db.query(func.coalesce(func.max(EventoLoteGlobal.nrlote), 0))
@@ -495,6 +504,8 @@ def atualizar_lote_global(
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
     evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
     validar_evento_editavel(evento)
+    if "dtfimvenda" in data.model_fields_set:
+        _validar_data_limite_evento(evento, data.dtfimvenda)
     if global_.nrlote != 1 and data.dtiniciovenda is not None:
         raise HTTPException(
             422,

@@ -4,11 +4,12 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from pydantic import ValidationError
+from fastapi import HTTPException
 
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
-from app.routers.eventolotes import _validar_setores_do_lote
+from app.routers.eventolotes import _validar_data_limite_evento, _validar_setores_do_lote
 from app.schemas.eventolote import EventoLoteGlobalCreate, EventoLotePrecoIn, EventoLoteSetorIn
 
 
@@ -61,6 +62,22 @@ class ModeloLoteGlobalTest(unittest.TestCase):
             evento=evento,
             configuracoes=configuracoes,
         )
+
+    def test_data_limite_pode_ser_igual_ao_inicio_do_evento(self):
+        inicio = datetime(2026, 10, 3, 20, 0)
+        _validar_data_limite_evento(
+            SimpleNamespace(dtinicioevento=inicio),
+            inicio,
+        )
+
+    def test_data_limite_nao_pode_ultrapassar_inicio_do_evento(self):
+        inicio = datetime(2026, 10, 3, 20, 0)
+        with self.assertRaises(HTTPException) as erro:
+            _validar_data_limite_evento(
+                SimpleNamespace(dtinicioevento=inicio),
+                datetime(2026, 10, 3, 20, 1),
+            )
+        self.assertEqual(422, erro.exception.status_code)
 
 
 if __name__ == "__main__":
