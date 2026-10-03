@@ -18,6 +18,7 @@ from app.models.loja import Loja
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.models.evento import Evento
+from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
@@ -179,12 +180,36 @@ def _dados_visuais_ingresso(db: Session, lote_id: int | None) -> tuple[str, str]
     return resultado.nmtituloevento or "Ingresso", resultado.urlbannerevento or ""
 
 
-def _validar_data_do_ingresso(evento: Evento | None, item: ItVenda) -> None:
+def _fim_efetivo_evento(db: Session, evento: Evento | None) -> datetime | None:
+    if not evento:
+        return None
+    if evento.dtfimevento:
+        return evento.dtfimevento
+    fim_atracao = (
+        db.query(func.max(EventoAtracao.dtfimatracao))
+        .filter(EventoAtracao.evento_id == evento.evento_id)
+        .scalar()
+    )
+    if fim_atracao:
+        return fim_atracao
+    if evento.dtinicioevento:
+        return evento.dtinicioevento + timedelta(hours=6)
+    return None
+
+
+def _validar_data_do_ingresso(db: Session, evento: Evento | None, item: ItVenda) -> None:
     """Garante que o ingresso seja validado somente no dia do evento."""
     if (item.tipoitem or "").upper() != "INGRESSO" or not evento:
         return
     if not evento.dtinicioevento:
         return
+
+    fim_evento = _fim_efetivo_evento(db, evento)
+    if fim_evento is not None and _agora_brasil() >= fim_evento:
+        raise HTTPException(
+            status_code=409,
+            detail="Este ingresso pertence a um evento já encerrado e não pode mais ser utilizado.",
+        )
 
     data_evento = evento.dtinicioevento.date()
     if data_evento == _hoje_brasil():
@@ -243,6 +268,13 @@ def listar_itens_nao_entregues(
 
     hoje = _hoje_brasil()
 
+    fim_ultima_atracao = (
+        db.query(func.max(EventoAtracao.dtfimatracao))
+        .filter(EventoAtracao.evento_id == Evento.evento_id)
+        .correlate(Evento)
+        .scalar_subquery()
+    )
+
     query = (
         db.query(
             ItVenda.itvenda_id,
@@ -273,6 +305,8 @@ def listar_itens_nao_entregues(
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
             EventoLotePreco.tipopreco.label("tipoprecoingresso"),
             EventoSetor.nmsetor.label("nmsetoringresso"),
+            Evento.dtfimevento,
+            fim_ultima_atracao.label("dtfimultimaatracao"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
@@ -298,7 +332,6 @@ def listar_itens_nao_entregues(
                 (
                     (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
-                    & (func.date(Evento.dtinicioevento) >= hoje)
                 ),
             )
         )
@@ -317,6 +350,8 @@ def listar_itens_nao_entregues(
         query = query.filter(Venda.loja_id == loja_id)
 
     itens = query.order_by(ItVenda.dtexpiraitvenda.asc()).all()
+
+    agora = _agora_brasil()
 
     return [
         {
@@ -337,6 +372,15 @@ def listar_itens_nao_entregues(
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,
+            "dtfimevento": row.dtfimevento,
+            "ingresso_encerrado": bool(
+                row.idtipoproduto == "I"
+                and agora >= (
+                    row.dtfimevento
+                    or row.dtfimultimaatracao
+                    or (row.dtinicioevento + timedelta(hours=6))
+                )
+            ),
             "nmlocalevento": row.nmlocalevento or row.nmloja,
             "dsendlocevento": row.dsendlocevento or _formatar_endereco_estabelecimento(
                 row.endloja,
@@ -1637,7 +1681,7 @@ def entregar_produto_por_token(
         usuario.dscargo,
         "I" if item.tipoitem == "INGRESSO" else "P",
     )
-    _validar_data_do_ingresso(evento, item)
+    _validar_data_do_ingresso(db, evento, item)
     if evento_id is not None and (evento is None or evento.evento_id != evento_id):
         raise HTTPException(
             status_code=409,
