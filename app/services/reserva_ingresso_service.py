@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.evento import Evento
+from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
@@ -26,6 +27,21 @@ PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
 def _agora_brasilia() -> datetime:
     """Datas comerciais dos lotes e dos eventos são informadas em Brasília."""
     return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+
+
+def _fim_efetivo_evento(db: Session, evento: Evento) -> datetime | None:
+    if evento.dtfimevento:
+        return evento.dtfimevento
+    fim_atracao = (
+        db.query(func.max(EventoAtracao.dtfimatracao))
+        .filter(EventoAtracao.evento_id == evento.evento_id)
+        .scalar()
+    )
+    if fim_atracao:
+        return fim_atracao
+    if evento.dtinicioevento:
+        return evento.dtinicioevento + timedelta(hours=6)
+    return None
 
 
 def expirar_reservas(db: Session, lote_id: int | None = None) -> int:
@@ -231,6 +247,11 @@ def criar_reserva(
     evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()
     if not evento:
         raise HTTPException(404, "Evento não encontrado")
+    if (evento.statusevento or "").upper() != "ATIVO":
+        raise HTTPException(409, "Este evento não está disponível para venda")
+    fim_evento = _fim_efetivo_evento(db, evento)
+    if fim_evento is not None and agora_vendas >= fim_evento:
+        raise HTTPException(409, "Este evento já foi encerrado e não aceita novas compras")
     capacidade_evento = _capacidade_evento(db, evento)
     reservada_evento = int(
         db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
