@@ -193,7 +193,8 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                 "exigecomprovante": bool(preco.exigecomprovante),
                 "situacao": preco.situacao,
                 "nrordem": int(preco.nrordem),
-                "exigebeneficio": bool(
+                "exigebeneficio": bool(preco.aplicacotalegal)
+                or bool(
                     db.query(ModalidadeIngresso.exigebeneficio)
                     .filter(ModalidadeIngresso.modalidade_id == preco.modalidade_id)
                     .scalar()
