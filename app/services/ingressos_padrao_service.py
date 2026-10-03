@@ -5,6 +5,7 @@ from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
+from app.models.modalidadeingresso import ModalidadeIngresso
 from app.utils.datetime_utils import FUSO_BRASIL
 
 
@@ -54,11 +55,32 @@ def criar_lote_setor_com_precos(
         situacao="ATIVO",
     )
     db.add(lote); db.flush()
-    db.add_all([
-        EventoLotePreco(lote_id=lote.lote_id, nmpreco="Inteira", tipopreco="INTEIRA", vrpreco=valor, aplicacotalegal=False, exigecomprovante=False, nrordem=1),
-        EventoLotePreco(lote_id=lote.lote_id, nmpreco="Meia-entrada", tipopreco="MEIA_LEGAL", vrpreco=meia, aplicacotalegal=True, exigecomprovante=True, nrordem=2),
-        EventoLotePreco(lote_id=lote.lote_id, nmpreco="Pessoa idosa", tipopreco="MEIA_IDOSO", vrpreco=meia, aplicacotalegal=False, exigecomprovante=True, nrordem=3),
-    ]); db.flush()
+    modalidades = (
+        db.query(ModalidadeIngresso)
+        .filter(
+            ModalidadeIngresso.organizacao_id.is_(None),
+            ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
+            ModalidadeIngresso.situacao == "ATIVO",
+        )
+        .order_by(ModalidadeIngresso.nrordem, ModalidadeIngresso.modalidade_id)
+        .all()
+    )
+    if not modalidades or not any(item.tipomodalidade == "PADRAO" for item in modalidades):
+        raise RuntimeError("Catálogo padrão de modalidades de ingresso incompleto")
+    db.add_all(
+        EventoLotePreco(
+            lote_id=lote.lote_id,
+            modalidade_id=item.modalidade_id,
+            nmpreco=item.nmmodalidade,
+            tipopreco=item.cdmodalidade,
+            vrpreco=valor if item.tipomodalidade == "PADRAO" else meia,
+            aplicacotalegal=item.aplicacotalegal,
+            exigecomprovante=item.exigecomprovante,
+            nrordem=ordem,
+        )
+        for ordem, item in enumerate(modalidades, start=1)
+    )
+    db.flush()
     return lote
 
 # Mantém a compatibilidade com os agendamentos já existentes.

@@ -220,29 +220,13 @@ def _descricao_tipo_ingresso(
     nome_setor: str | None,
     nome_preco: str | None,
     tipo_preco: str | None,
-    tipo_beneficio: str | None,
+    nome_beneficio: str | None,
 ) -> str:
     """Descrição legível da modalidade adquirida, inclusive meia-entrada."""
-    modalidade = (tipo_preco or "").upper()
-    beneficio = (tipo_beneficio or "").upper()
-    nomes_modalidade = {
-        "INTEIRA": "Inteira",
-        "MEIA_LEGAL": "Meia-entrada",
-        "MEIA_IDOSO": "Meia-entrada",
-    }
-    nomes_beneficio = {
-        "ESTUDANTE": "Estudante",
-        "JOVEM_BAIXA_RENDA": "Jovem de baixa renda",
-        "PCD": "Pessoa com deficiência",
-        "ACOMPANHANTE_PCD": "Acompanhante PCD",
-        "IDOSO": "Pessoa idosa",
-    }
-    partes = [parte for parte in [nome_setor, nome_preco or nomes_modalidade.get(modalidade, "Ingresso")] if parte]
+    partes = [parte for parte in [nome_setor, nome_preco or "Ingresso"] if parte]
     descricao = " • ".join(partes)
-    if modalidade.startswith("MEIA") and beneficio:
-        nome_beneficio = nomes_beneficio.get(beneficio, beneficio.replace("_", " ").title())
-        if nome_beneficio.lower() not in descricao.lower():
-            descricao = f"{descricao} • {nome_beneficio}"
+    if nome_beneficio and nome_beneficio.lower() not in descricao.lower():
+        descricao = f"{descricao} • {nome_beneficio}"
     return descricao
 
 
@@ -283,6 +267,7 @@ def listar_itens_nao_entregues(
             ItVenda.nmparticipante,
             ItVenda.cpfparticipante,
             ItVenda.tipobeneficio,
+            ItVenda.nmbeneficiosnapshot,
             Venda.dtcriacao,
             Venda.loja_id,
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
@@ -382,7 +367,7 @@ def listar_itens_nao_entregues(
                 row.nmsetoringresso,
                 row.nmprecoingresso,
                 row.tipoprecoingresso,
-                row.tipobeneficio,
+                row.nmbeneficiosnapshot,
             ) if row.idtipoproduto == "I" else None,
         }
         for row in itens

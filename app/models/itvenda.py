@@ -47,7 +47,11 @@ class ItVenda(Base):
     cpfparticipante = Column(String(11), nullable=True)
     lote_id = Column(BigInteger, ForeignKey("eventolotesetor.lote_id"), nullable=True)
     lotepreco_id = Column(BigInteger, ForeignKey("eventolotesetorpreco.lotepreco_id"), nullable=True)
+    modalidade_id = Column(BigInteger, ForeignKey("modalidadeingresso.modalidade_id", ondelete="RESTRICT"), nullable=True)
+    beneficio_id = Column(BigInteger, ForeignKey("beneficioingresso.beneficio_id", ondelete="RESTRICT"), nullable=True)
     tipobeneficio = Column(String(30), nullable=True)
+    nmmodalidadesnapshot = Column(String(100), nullable=True)
+    nmbeneficiosnapshot = Column(String(100), nullable=True)
 
     pctaxaitvenda = Column(Numeric(5, 2), default=0)
     vrtaxaitvenda = Column(Numeric(10, 2), default=0)

@@ -5,21 +5,14 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class EventoLotePrecoIn(BaseModel):
+    modalidade_id: int
     nmpreco: str = Field(min_length=1, max_length=100)
-    tipopreco: Literal["INTEIRA", "MEIA_LEGAL", "MEIA_IDOSO", "SOCIAL", "CORTESIA", "OUTRO"]
+    tipopreco: str | None = Field(default=None, max_length=40)
     vrpreco: float = Field(ge=0)
     aplicacotalegal: bool = False
     exigecomprovante: bool = False
     situacao: Literal["ATIVO", "INATIVO"] = "ATIVO"
     nrordem: int = Field(default=1, ge=1)
-
-    @model_validator(mode="after")
-    def normalizar_regras_da_modalidade(self):
-        if self.tipopreco == "INTEIRA":
-            self.aplicacotalegal = False
-            self.exigecomprovante = False
-        return self
-
 
 class EventoLoteSetorIn(BaseModel):
     eventosetor_id: int
@@ -28,7 +21,7 @@ class EventoLoteSetorIn(BaseModel):
 
     @model_validator(mode="after")
     def modalidades_nao_repetidas(self):
-        tipos = [preco.tipopreco for preco in self.precos]
+        tipos = [preco.modalidade_id for preco in self.precos]
         if len(tipos) != len(set(tipos)):
             raise ValueError("Não repita uma modalidade de preço no mesmo setor")
         return self

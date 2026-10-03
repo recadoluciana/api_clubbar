@@ -5,6 +5,7 @@ class ReservaIngressoCreate(BaseModel):
     cliente_id: int
     lote_id: int
     lotepreco_id: int
+    beneficio_id: int | None = None
     tipo_beneficio: str | None = None
     quantidade: int = Field(ge=1, le=20)
 

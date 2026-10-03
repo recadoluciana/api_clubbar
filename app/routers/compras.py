@@ -21,34 +21,16 @@ def _descricao_tipo_ingresso(
     nome_setor: str | None,
     nome_preco: str | None,
     tipo_preco: str | None,
-    tipo_beneficio: str | None,
+    nome_beneficio: str | None,
 ) -> str:
-    modalidade = (tipo_preco or "").upper()
-    beneficio = (tipo_beneficio or "").upper()
-    nomes_modalidade = {
-        "INTEIRA": "Inteira",
-        "MEIA_LEGAL": "Meia-entrada",
-        "MEIA_IDOSO": "Meia-entrada",
-    }
-    nomes_beneficio = {
-        "ESTUDANTE": "Estudante",
-        "JOVEM_BAIXA_RENDA": "Jovem de baixa renda",
-        "PCD": "Pessoa com deficiência",
-        "ACOMPANHANTE_PCD": "Acompanhante PCD",
-        "IDOSO": "Pessoa idosa",
-    }
     partes = [
         parte
-        for parte in [nome_setor, nome_preco or nomes_modalidade.get(modalidade, "Ingresso")]
+        for parte in [nome_setor, nome_preco or "Ingresso"]
         if parte
     ]
     descricao = " • ".join(partes)
-    if modalidade.startswith("MEIA") and beneficio:
-        nome_beneficio = nomes_beneficio.get(
-            beneficio, beneficio.replace("_", " ").title()
-        )
-        if nome_beneficio.lower() not in descricao.lower():
-            descricao = f"{descricao} • {nome_beneficio}"
+    if nome_beneficio and nome_beneficio.lower() not in descricao.lower():
+        descricao = f"{descricao} • {nome_beneficio}"
     return descricao
 
 
@@ -171,7 +153,7 @@ def listar_compras(
                 nmsetor,
                 nmpreco,
                 tipopreco,
-                it.tipobeneficio,
+                it.nmbeneficiosnapshot,
             ) if it.tipoitem == "INGRESSO" else None,
             "historico_participantes": historicos_por_item.get(it.itvenda_id, []),
         })
