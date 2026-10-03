@@ -7,7 +7,7 @@ import traceback
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -316,23 +316,8 @@ def agora_br() -> datetime:
 
 
 def filtro_evento_atual_ou_proximo(agora: datetime):
-    """Inclui eventos futuros ou em andamento, respeitando o término real."""
-    fim_ultima_atracao = (
-        select(func.max(EventoAtracao.dtfimatracao))
-        .where(EventoAtracao.evento_id == Evento.evento_id)
-        .correlate(Evento)
-        .scalar_subquery()
-    )
-    return or_(
-        Evento.dtinicioevento >= agora,
-        Evento.dtfimevento >= agora,
-        and_(Evento.dtfimevento.is_(None), fim_ultima_atracao >= agora),
-        and_(
-            Evento.dtfimevento.is_(None),
-            fim_ultima_atracao.is_(None),
-            Evento.dtinicioevento >= agora - timedelta(hours=6),
-        ),
-    )
+    """Inclui eventos futuros ou iniciados há no máximo seis horas."""
+    return Evento.dtinicioevento >= agora - timedelta(hours=6)
 
 
 def _ticketman_logado(db: Session, payload: dict) -> Usuario:
@@ -498,7 +483,10 @@ def listar_eventos_proximos_global(
         )
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
-        .filter(filtro_evento_atual_ou_proximo(hi))
+        # O endpoint global alimenta o carrossel da Home: nele entram apenas
+        # eventos que ainda não começaram. Eventos em andamento continuam
+        # disponíveis na agenda de cada estabelecimento.
+        .filter(Evento.dtinicioevento >= hi)
     )
 
     if cidade_id:
@@ -506,8 +494,8 @@ def listar_eventos_proximos_global(
 
     eventos = (
         q.order_by(
-            func.coalesce(vendas_por_loja.c.total_vendas, 0).desc(),
             Evento.dtinicioevento.asc(),
+            func.coalesce(vendas_por_loja.c.total_vendas, 0).desc(),
             Evento.evento_id.asc(),
         )
         .limit(10)
