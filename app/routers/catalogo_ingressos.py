@@ -1,4 +1,6 @@
 from datetime import datetime
+import re
+import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/ingressos-catalogo", tags=["Catálogo de ingressos"]
 
 
 class ModalidadeIn(BaseModel):
-    cdmodalidade: str = Field(min_length=2, max_length=40)
+    cdmodalidade: str | None = Field(default=None, max_length=40)
     nmmodalidade: str = Field(min_length=2, max_length=100)
     organizacao_id: int | None = None
     tipomodalidade: str = Field(pattern="^(PADRAO|LEGAL|COMERCIAL)$")
@@ -31,7 +33,7 @@ class ModalidadeIn(BaseModel):
 
 
 class BeneficioIn(BaseModel):
-    cdbeneficio: str = Field(min_length=2, max_length=40)
+    cdbeneficio: str | None = Field(default=None, max_length=40)
     nmbeneficio: str = Field(min_length=2, max_length=100)
     exigecomprovante: bool = True
     situacao: str = Field(default="ATIVO", pattern="^(ATIVO|INATIVO)$")
@@ -105,6 +107,28 @@ def _sincronizar_beneficios(
     db.add_all(ModalidadeBeneficio(modalidade_id=modalidade.modalidade_id, beneficio_id=i) for i in ids_unicos)
 
 
+def _codigo_obrigatorio(codigo: str | None, descricao: str) -> str:
+    valor = (codigo or "").strip().upper()
+    if len(valor) < 2:
+        raise HTTPException(422, f"Informe o código da {descricao}.")
+    return valor
+
+
+def _codigo_automatico(db: Session, modelo, atributo: str, prefixo: str, organizacao_id: int, nome: str) -> str:
+    """Gera um código interno estável e único, sem expor esse detalhe ao parceiro."""
+    normalizado = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
+    sufixo = re.sub(r"[^A-Z0-9]+", "_", normalizado.upper()).strip("_") or "ITEM"
+    base = f"{prefixo}_{organizacao_id}_{sufixo}"[:40].rstrip("_")
+    codigo = base
+    indice = 2
+    coluna = getattr(modelo, atributo)
+    while db.query(modelo).filter(coluna == codigo).first():
+        complemento = f"_{indice}"
+        codigo = f"{base[: 40 - len(complemento)]}{complemento}"
+        indice += 1
+    return codigo
+
+
 @router.get("/beneficios")
 def listar_beneficios(incluir_inativos: bool = False, db: Session = Depends(get_db)):
     query = db.query(BeneficioIngresso).filter(BeneficioIngresso.organizacao_id.is_(None))
@@ -127,7 +151,7 @@ def listar_modalidades(organizacao_id: int | None = None, incluir_inativos: bool
 
 @router.post("/beneficios", status_code=status.HTTP_201_CREATED)
 def criar_beneficio(dados: BeneficioIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    codigo = dados.cdbeneficio.strip().upper()
+    codigo = _codigo_obrigatorio(dados.cdbeneficio, "benefício")
     if db.query(BeneficioIngresso).filter(BeneficioIngresso.cdbeneficio == codigo).first():
         raise HTTPException(409, "Já existe um benefício com este código")
     item = BeneficioIngresso(**dados.model_dump(exclude={"cdbeneficio"}), cdbeneficio=codigo)
@@ -139,7 +163,7 @@ def criar_beneficio(dados: BeneficioIn, _: dict = Depends(get_operador_logado), 
 def alterar_beneficio(beneficio_id: int, dados: BeneficioIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     item = db.query(BeneficioIngresso).filter(BeneficioIngresso.beneficio_id == beneficio_id).first()
     if not item: raise HTTPException(404, "Benefício não encontrado")
-    codigo = dados.cdbeneficio.strip().upper()
+    codigo = _codigo_obrigatorio(dados.cdbeneficio, "benefício")
     duplicado = db.query(BeneficioIngresso).filter(BeneficioIngresso.cdbeneficio == codigo, BeneficioIngresso.beneficio_id != beneficio_id).first()
     if duplicado: raise HTTPException(409, "Já existe um benefício com este código")
     for campo, valor in dados.model_dump().items(): setattr(item, campo, codigo if campo == "cdbeneficio" else valor)
@@ -149,7 +173,7 @@ def alterar_beneficio(beneficio_id: int, dados: BeneficioIn, _: dict = Depends(g
 
 @router.post("/modalidades", status_code=status.HTTP_201_CREATED)
 def criar_modalidade(dados: ModalidadeIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
-    codigo = dados.cdmodalidade.strip().upper()
+    codigo = _codigo_obrigatorio(dados.cdmodalidade, "modalidade")
     if db.query(ModalidadeIngresso).filter(ModalidadeIngresso.cdmodalidade == codigo).first():
         raise HTTPException(409, "Já existe uma modalidade com este código")
     item = ModalidadeIngresso(**dados.model_dump(exclude={"cdmodalidade", "beneficios_ids"}), cdmodalidade=codigo)
@@ -162,7 +186,7 @@ def criar_modalidade(dados: ModalidadeIn, _: dict = Depends(get_operador_logado)
 def alterar_modalidade(modalidade_id: int, dados: ModalidadeIn, _: dict = Depends(get_operador_logado), db: Session = Depends(get_db)):
     item = db.query(ModalidadeIngresso).filter(ModalidadeIngresso.modalidade_id == modalidade_id).first()
     if not item: raise HTTPException(404, "Modalidade não encontrada")
-    codigo = dados.cdmodalidade.strip().upper()
+    codigo = _codigo_obrigatorio(dados.cdmodalidade, "modalidade")
     duplicado = db.query(ModalidadeIngresso).filter(ModalidadeIngresso.cdmodalidade == codigo, ModalidadeIngresso.modalidade_id != modalidade_id).first()
     if duplicado: raise HTTPException(409, "Já existe uma modalidade com este código")
     for campo, valor in dados.model_dump(exclude={"beneficios_ids"}).items(): setattr(item, campo, codigo if campo == "cdmodalidade" else valor)
@@ -251,9 +275,14 @@ def criar_beneficio_parceiro(
     db: Session = Depends(get_db),
 ):
     organizacao_id = _organizacao_do_usuario(payload)
-    codigo = dados.cdbeneficio.strip().upper()
-    if db.query(BeneficioIngresso).filter(BeneficioIngresso.cdbeneficio == codigo).first():
-        raise HTTPException(409, "Já existe um benefício com este código")
+    codigo = _codigo_automatico(
+        db,
+        BeneficioIngresso,
+        "cdbeneficio",
+        "BEN",
+        organizacao_id,
+        dados.nmbeneficio,
+    )
     item = BeneficioIngresso(
         **dados.model_dump(exclude={"cdbeneficio"}),
         organizacao_id=organizacao_id,
@@ -271,11 +300,8 @@ def alterar_beneficio_parceiro(
     db: Session = Depends(get_db),
 ):
     item = _item_da_organizacao(db, BeneficioIngresso, beneficio_id, _organizacao_do_usuario(payload), "beneficio")
-    codigo = dados.cdbeneficio.strip().upper()
-    if db.query(BeneficioIngresso).filter(BeneficioIngresso.cdbeneficio == codigo, BeneficioIngresso.beneficio_id != beneficio_id).first():
-        raise HTTPException(409, "Já existe um benefício com este código")
-    for campo, valor in dados.model_dump().items():
-        setattr(item, campo, codigo if campo == "cdbeneficio" else valor)
+    for campo, valor in dados.model_dump(exclude={"cdbeneficio"}).items():
+        setattr(item, campo, valor)
     db.commit(); db.refresh(item)
     return _beneficio_out(item)
 
@@ -299,9 +325,14 @@ def criar_modalidade_parceiro(
     db: Session = Depends(get_db),
 ):
     organizacao_id = _organizacao_do_usuario(payload)
-    codigo = dados.cdmodalidade.strip().upper()
-    if db.query(ModalidadeIngresso).filter(ModalidadeIngresso.cdmodalidade == codigo).first():
-        raise HTTPException(409, "Já existe uma modalidade com este código")
+    codigo = _codigo_automatico(
+        db,
+        ModalidadeIngresso,
+        "cdmodalidade",
+        "MOD",
+        organizacao_id,
+        dados.nmmodalidade,
+    )
     item = ModalidadeIngresso(
         **dados.model_dump(exclude={"cdmodalidade", "beneficios_ids", "organizacao_id"}),
         organizacao_id=organizacao_id,
@@ -321,11 +352,8 @@ def alterar_modalidade_parceiro(
 ):
     organizacao_id = _organizacao_do_usuario(payload)
     item = _item_da_organizacao(db, ModalidadeIngresso, modalidade_id, organizacao_id, "modalidade")
-    codigo = dados.cdmodalidade.strip().upper()
-    if db.query(ModalidadeIngresso).filter(ModalidadeIngresso.cdmodalidade == codigo, ModalidadeIngresso.modalidade_id != modalidade_id).first():
-        raise HTTPException(409, "Já existe uma modalidade com este código")
-    for campo, valor in dados.model_dump(exclude={"beneficios_ids", "organizacao_id"}).items():
-        setattr(item, campo, codigo if campo == "cdmodalidade" else valor)
+    for campo, valor in dados.model_dump(exclude={"beneficios_ids", "organizacao_id", "cdmodalidade"}).items():
+        setattr(item, campo, valor)
     _sincronizar_beneficios(db, item, dados.beneficios_ids, organizacao_id)
     db.commit(); db.refresh(item)
     return _modalidade_out(db, item)
