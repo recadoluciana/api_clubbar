@@ -16,6 +16,8 @@ from app.models.eventolotepreco import EventoLotePreco
 from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
 from app.models.beneficioingresso import BeneficioIngresso
+from app.models.eventomodalidade import EventoModalidade
+from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -38,6 +40,62 @@ from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
+
+
+def _evento_do_usuario(db: Session, evento_id: int, usuario: dict) -> Evento:
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado")
+    validar_mutacao_loja(usuario, evento.organizacao_id, evento.loja_id)
+    return evento
+
+
+@router.get("/{evento_id}/modalidades")
+def listar_modalidades_do_evento(
+    evento_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    evento = _evento_do_usuario(db, evento_id, payload)
+    ids = [item[0] for item in db.query(EventoModalidade.modalidade_id).filter(
+        EventoModalidade.evento_id == evento.evento_id
+    ).all()]
+    query = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.situacao == "ATIVO",
+    )
+    if ids:
+        query = query.filter(ModalidadeIngresso.modalidade_id.in_(ids))
+    else:
+        # Eventos criados antes da configuração por modalidade continuam
+        # funcionando com o catálogo padrão até serem reconfigurados.
+        query = query.filter(
+            ModalidadeIngresso.organizacao_id.is_(None),
+            ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
+        )
+    modalidades = query.order_by(
+        ModalidadeIngresso.nrordem, ModalidadeIngresso.nmmodalidade
+    ).all()
+    resultado = []
+    for modalidade in modalidades:
+        beneficios = _beneficios_da_modalidade_no_evento(db, evento.evento_id, modalidade.modalidade_id)
+        resultado.append({
+            "modalidade_id": modalidade.modalidade_id,
+            "organizacao_id": modalidade.organizacao_id,
+            "cdmodalidade": modalidade.cdmodalidade,
+            "nmmodalidade": modalidade.nmmodalidade,
+            "tipomodalidade": modalidade.tipomodalidade,
+            "aplicacotalegal": bool(modalidade.aplicacotalegal),
+            "exigebeneficio": bool(modalidade.exigebeneficio),
+            "exigecomprovante": bool(modalidade.exigecomprovante),
+            "permitepersonalizarnome": bool(modalidade.permitepersonalizarnome),
+            "nrordem": int(modalidade.nrordem),
+            "beneficios": [{
+                "beneficio_id": b.beneficio_id, "organizacao_id": b.organizacao_id,
+                "cdbeneficio": b.cdbeneficio, "nmbeneficio": b.nmbeneficio,
+                "exigecomprovante": bool(b.exigecomprovante), "nrordem": int(b.nrordem),
+            } for b in beneficios],
+        })
+    return resultado
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
 
 
@@ -194,6 +252,27 @@ def _sincronizar_precos_lote(db: Session, lote_id: int, precos) -> None:
             db.delete(existente)
 
 
+def _beneficios_da_modalidade_no_evento(db: Session, evento_id: int, modalidade_id: int):
+    possui_configuracao = db.query(EventoModalidade).filter(
+        EventoModalidade.evento_id == evento_id
+    ).first()
+    query = db.query(BeneficioIngresso).filter(BeneficioIngresso.situacao == "ATIVO")
+    if possui_configuracao:
+        return query.join(
+            EventoModalidadeBeneficio,
+            EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+        ).filter(
+            EventoModalidadeBeneficio.evento_id == evento_id,
+            EventoModalidadeBeneficio.modalidade_id == modalidade_id,
+        ).order_by(BeneficioIngresso.nrordem).all()
+    return query.join(
+        ModalidadeBeneficio,
+        ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+    ).filter(
+        ModalidadeBeneficio.modalidade_id == modalidade_id,
+    ).order_by(BeneficioIngresso.nrordem).all()
+
+
 def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     vendidos_cota, reservados_cota = _uso_cota_legal_evento(db, evento.evento_id)
     reservados = quantidade_reservada(db, lote.lote_id)
@@ -261,14 +340,9 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                         "nmbeneficio": beneficio.nmbeneficio,
                         "exigecomprovante": bool(beneficio.exigecomprovante),
                     }
-                    for beneficio in db.query(BeneficioIngresso)
-                    .join(ModalidadeBeneficio, ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id)
-                    .filter(
-                        ModalidadeBeneficio.modalidade_id == preco.modalidade_id,
-                        BeneficioIngresso.situacao == "ATIVO",
+                    for beneficio in _beneficios_da_modalidade_no_evento(
+                        db, evento.evento_id, preco.modalidade_id
                     )
-                    .order_by(BeneficioIngresso.nrordem)
-                    .all()
                 ],
             }
             for preco in lote.precos

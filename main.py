@@ -220,12 +220,60 @@ def garantir_catalogo_ingressos() -> None:
             """))
             conexao.execute(text("""
                 CREATE TABLE IF NOT EXISTS beneficioingresso (
-                  beneficio_id BIGINT AUTO_INCREMENT PRIMARY KEY, cdbeneficio VARCHAR(40) NOT NULL,
+                  beneficio_id BIGINT AUTO_INCREMENT PRIMARY KEY, organizacao_id BIGINT NULL, cdbeneficio VARCHAR(40) NOT NULL,
                   nmbeneficio VARCHAR(100) NOT NULL, exigecomprovante BOOLEAN NOT NULL DEFAULT TRUE,
                   situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO', nrordem INT NOT NULL DEFAULT 1,
                   dtiniciovigencia DATETIME NULL, dtfimvigencia DATETIME NULL,
                   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
                   UNIQUE KEY uk_beneficioingresso_codigo (cdbeneficio)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS eventomodelomodalidade (
+                  eventomodelo_id BIGINT NOT NULL, modalidade_id BIGINT NOT NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (eventomodelo_id, modalidade_id),
+                  CONSTRAINT fk_eventomodelomodalidade_modelo FOREIGN KEY (eventomodelo_id)
+                    REFERENCES eventomodelo(eventomodelo_id) ON DELETE CASCADE,
+                  CONSTRAINT fk_eventomodelomodalidade_modalidade FOREIGN KEY (modalidade_id)
+                    REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS eventomodelomodalidadebeneficio (
+                  eventomodelo_id BIGINT NOT NULL, modalidade_id BIGINT NOT NULL, beneficio_id BIGINT NOT NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (eventomodelo_id, modalidade_id, beneficio_id),
+                  CONSTRAINT fk_emmb_modelo FOREIGN KEY (eventomodelo_id)
+                    REFERENCES eventomodelo(eventomodelo_id) ON DELETE CASCADE,
+                  CONSTRAINT fk_emmb_modalidade FOREIGN KEY (modalidade_id)
+                    REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT,
+                  CONSTRAINT fk_emmb_beneficio FOREIGN KEY (beneficio_id)
+                    REFERENCES beneficioingresso(beneficio_id) ON DELETE RESTRICT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS eventomodalidade (
+                  evento_id BIGINT NOT NULL, modalidade_id BIGINT NOT NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (evento_id, modalidade_id),
+                  CONSTRAINT fk_eventomodalidade_evento FOREIGN KEY (evento_id)
+                    REFERENCES evento(evento_id) ON DELETE CASCADE,
+                  CONSTRAINT fk_eventomodalidade_modalidade FOREIGN KEY (modalidade_id)
+                    REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """))
+            conexao.execute(text("""
+                CREATE TABLE IF NOT EXISTS eventomodalidadebeneficio (
+                  evento_id BIGINT NOT NULL, modalidade_id BIGINT NOT NULL, beneficio_id BIGINT NOT NULL,
+                  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (evento_id, modalidade_id, beneficio_id),
+                  CONSTRAINT fk_emb_evento FOREIGN KEY (evento_id)
+                    REFERENCES evento(evento_id) ON DELETE CASCADE,
+                  CONSTRAINT fk_emb_modalidade FOREIGN KEY (modalidade_id)
+                    REFERENCES modalidadeingresso(modalidade_id) ON DELETE RESTRICT,
+                  CONSTRAINT fk_emb_beneficio FOREIGN KEY (beneficio_id)
+                    REFERENCES beneficioingresso(beneficio_id) ON DELETE RESTRICT
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """))
             conexao.execute(text("""
@@ -271,6 +319,14 @@ def garantir_catalogo_ingressos() -> None:
                 atuais = {c["name"] for c in inspect(engine).get_columns(tabela)}
                 if coluna not in atuais:
                     conexao.execute(text(f"ALTER TABLE `{tabela}` ADD COLUMN `{coluna}` {definicao}"))
+
+            adicionar_coluna("beneficioingresso", "organizacao_id", "BIGINT NULL AFTER beneficio_id")
+            beneficio_fks = {fk.get("name") for fk in inspect(engine).get_foreign_keys("beneficioingresso")}
+            if "fk_beneficioingresso_organizacao" not in beneficio_fks:
+                conexao.execute(text(
+                    "ALTER TABLE beneficioingresso ADD CONSTRAINT fk_beneficioingresso_organizacao "
+                    "FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT"
+                ))
 
             if "eventolotesetorpreco" in inspector.get_table_names():
                 adicionar_coluna("eventolotesetorpreco", "modalidade_id", "BIGINT NULL AFTER lote_id")
