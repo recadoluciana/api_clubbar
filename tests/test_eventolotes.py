@@ -30,6 +30,19 @@ class ModeloLoteGlobalTest(unittest.TestCase):
                 ],
             )
 
+    def test_setor_precisa_ter_quantidade_definida_no_lote(self):
+        with self.assertRaises(ValidationError):
+            EventoLoteSetorIn(
+                eventosetor_id=1,
+                precos=[
+                    EventoLotePrecoIn(
+                        nmpreco="Inteira",
+                        tipopreco="INTEIRA",
+                        vrpreco=50,
+                    ),
+                ],
+            )
+
     def test_fim_da_venda_nao_pode_vir_antes_do_inicio(self):
         with self.assertRaises(ValidationError):
             EventoLoteGlobalCreate(

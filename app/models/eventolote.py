@@ -29,8 +29,10 @@ class EventoLote(Base):
         nullable=False,
         index=True,
     )
-    # Meta comercial opcional. Nulo significa vender todo o saldo do setor.
-    qtlimite = Column(Integer, nullable=True)
+    # Quantidade máxima deste setor nesta faixa de preço. A capacidade física
+    # permanece no setor e é compartilhada somente entre os lotes do mesmo
+    # setor — nunca com outros setores do evento.
+    qtlimite = Column(Integer, nullable=False)
     qtvendidalote = Column(Integer, nullable=False, server_default="0")
     situacao = Column(String(10), nullable=False, server_default="ATIVO")
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
