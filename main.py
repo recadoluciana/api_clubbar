@@ -697,6 +697,57 @@ def reconstruir_lotes_globais() -> None:
         logger.exception("Não foi possível reconstruir o modelo de lotes globais")
         raise
 
+
+@app.on_event("startup")
+def normalizar_capacidade_por_setor_nos_lotes() -> None:
+    """Converte o antigo "saldo restante" em limites explícitos por setor.
+
+    Cada etapa comercial continua reaproveitando apenas o estoque não vendido
+    do mesmo setor. Este ajuste é idempotente e também corrige configurações
+    antigas que ultrapassavam a capacidade física do próprio setor.
+    """
+    try:
+        inspector = inspect(engine)
+        if not {"eventolotesetor", "eventosetor"}.issubset(
+            set(inspector.get_table_names())
+        ):
+            return
+
+        with engine.begin() as conexao:
+            conexao.execute(
+                text(
+                    """
+                    UPDATE eventolotesetor lote
+                    INNER JOIN eventosetor setor
+                      ON setor.eventosetor_id = lote.eventosetor_id
+                    SET lote.qtlimite = setor.qtcapacidade
+                    WHERE lote.qtlimite IS NULL
+                       OR (
+                         lote.qtlimite > setor.qtcapacidade
+                         AND COALESCE(lote.qtvendidalote, 0) <= setor.qtcapacidade
+                       )
+                    """
+                )
+            )
+
+            coluna_limite = next(
+                (
+                    coluna
+                    for coluna in inspector.get_columns("eventolotesetor")
+                    if coluna["name"] == "qtlimite"
+                ),
+                None,
+            )
+            if coluna_limite and coluna_limite.get("nullable", True):
+                conexao.execute(
+                    text("ALTER TABLE eventolotesetor MODIFY qtlimite INT NOT NULL")
+                )
+        logger.info("Capacidades dos lotes normalizadas por setor.")
+    except Exception:
+        logger.exception("Não foi possível normalizar as capacidades por setor")
+        raise
+
+
 @app.get("/health")
 def health():
     banco_online = False

@@ -78,8 +78,6 @@ def quantidade_disponivel_configuracao(db: Session, lote: EventoLote) -> int:
     """
     setor = lote.setor
     if not setor:
-        if lote.qtlimite is None:
-            return 0
         return max(
             0,
             int(lote.qtlimite)
@@ -92,8 +90,6 @@ def quantidade_disponivel_configuracao(db: Session, lote: EventoLote) -> int:
         int(setor.eventosetor_id),
         int(setor.qtcapacidade),
     )
-    if lote.qtlimite is None:
-        return disponivel_no_setor
     disponivel_no_lote = max(
         0,
         int(lote.qtlimite)
@@ -241,9 +237,19 @@ def criar_reserva(
     agora = datetime.now()
     agora_vendas = _agora_brasilia()
     expirar_reservas(db)
-    if lote_atual_do_setor(db, lote, agora_vendas) is None:
+    lote_global_atual = lote_global_ativo(db, lote.evento_id, agora_vendas)
+    if (
+        lote.situacao != "ATIVO"
+        or not lote.lote_global
+        or lote.lote_global.situacao != "ATIVO"
+        or lote_global_atual is None
+        or lote_global_atual.loteglobal_id != lote.loteglobal_id
+    ):
         raise HTTPException(409, "Este setor não está disponível no lote global vigente")
-    if quantidade > quantidade_disponivel_configuracao(db, lote):
+    disponivel_setor_no_lote = quantidade_disponivel_configuracao(db, lote)
+    if disponivel_setor_no_lote <= 0:
+        raise HTTPException(409, "Não há ingressos disponíveis neste setor neste lote")
+    if quantidade > disponivel_setor_no_lote:
         raise HTTPException(409, "O limite deste setor no lote vigente foi atingido")
 
     evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()

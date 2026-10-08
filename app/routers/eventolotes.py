@@ -200,11 +200,7 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     setor = lote.setor
     global_ = lote.lote_global
     disponibilidade = quantidade_disponivel_configuracao(db, lote)
-    base_cota_lote = (
-        int(lote.qtlimite)
-        if lote.qtlimite is not None
-        else int(setor.qtcapacidade) if setor else 0
-    )
+    base_cota_lote = int(lote.qtlimite)
     quantidade_cota_lote = int(base_cota_lote * PERCENTUAL_COTA_LEGAL / 100)
     return {
         "lote_id": lote.lote_id,
@@ -217,9 +213,9 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "eventosetor_id": lote.eventosetor_id,
         "nmsetor": setor.nmsetor if setor else None,
         "dssetor": setor.dssetor if setor else None,
-        "qttotallote": int(lote.qtlimite) if lote.qtlimite is not None else None,
-        "qtlimite": int(lote.qtlimite) if lote.qtlimite is not None else None,
-        "usarcapacidaderestante": lote.qtlimite is None,
+        "qttotallote": int(lote.qtlimite),
+        "qtlimite": int(lote.qtlimite),
+        "usarcapacidaderestante": False,
         "qtvendidalote": int(lote.qtvendidalote or 0),
         "qtreservadalote": reservados,
         "qtdisponivel": disponibilidade,
@@ -329,7 +325,10 @@ def _validar_setores_do_lote(
         if dados_setor is None:
             continue
         if dados_setor.qtlimite is None:
-            continue
+            raise HTTPException(
+                422,
+                f"Informe a quantidade disponível para {setor.nmsetor} neste lote",
+            )
         limite_novo = int(dados_setor.qtlimite)
         # Lotes globais são etapas sequenciais de preço. A quantidade de uma
         # etapa não é somada à das anteriores; todos compartilham o estoque do
@@ -450,17 +449,8 @@ def criar_lote_global(
             )
             .first()
         )
-        anterior_carregado = _carregar_global(db, anterior.loteglobal_id) if anterior else None
-        sem_meta = bool(
-            anterior_carregado
-            and anterior_carregado.configuracoes_setor
-            and all(item.qtlimite is None for item in anterior_carregado.configuracoes_setor)
-        )
-        if anterior_carregado and anterior_carregado.dtfimvenda is None and sem_meta:
-            raise HTTPException(
-                422,
-                "Defina uma meta ou uma data limite no lote anterior antes de criar o próximo.",
-            )
+        if anterior is None:
+            raise HTTPException(422, "Não foi possível localizar o lote anterior")
     _validar_setores_do_lote(db, evento=evento, configuracoes=data.setores)
 
     global_ = EventoLoteGlobal(
@@ -550,7 +540,9 @@ def adicionar_setor_ao_lote_global(
         raise HTTPException(422, "O setor informado não está ativo neste evento")
     if any(item.eventosetor_id == setor.eventosetor_id for item in global_.configuracoes_setor):
         raise HTTPException(409, "Este setor já participa deste lote global")
-    if data.qtlimite is not None and data.qtlimite > int(setor.qtcapacidade):
+    if data.qtlimite is None:
+        raise HTTPException(422, "Informe a quantidade disponível para este setor no lote")
+    if data.qtlimite > int(setor.qtcapacidade):
         raise HTTPException(
             422,
             f"A quantidade deste lote não pode superar a capacidade de {setor.qtcapacidade} pessoas do setor",
@@ -588,9 +580,11 @@ def atualizar_configuracao_setor(
     validar_evento_editavel(evento)
     if "qtlimite" in data.model_fields_set:
         setor = lote.setor
-        if data.qtlimite is not None and data.qtlimite > int(setor.qtcapacidade):
+        if data.qtlimite is None:
+            raise HTTPException(422, "Informe a quantidade disponível para este setor no lote")
+        if data.qtlimite > int(setor.qtcapacidade):
             raise HTTPException(422, "A quantidade deste lote não pode ultrapassar a capacidade do setor")
-        if data.qtlimite is not None and data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
+        if data.qtlimite < int(lote.qtvendidalote or 0) + quantidade_reservada(db, lote.lote_id):
             raise HTTPException(422, "O limite não pode ficar abaixo das vendas e reservas existentes")
         lote.qtlimite = data.qtlimite
     if data.situacao is not None:
@@ -709,10 +703,10 @@ def quantidade_vendida_lote(lote_id: int, db: Session = Depends(get_db)):
     reservada = quantidade_reservada(db, lote_id)
     return {
         "lote_id": lote_id,
-        "qt_total": int(lote.qtlimite) if lote.qtlimite is not None else None,
+        "qt_total": int(lote.qtlimite),
         "qt_vendida": int(lote.qtvendidalote or 0),
         "qt_reservada": reservada,
         "qt_disponivel": quantidade_disponivel_configuracao(db, lote),
-        "sem_limite": lote.qtlimite is None,
+        "sem_limite": False,
         "esgotado": quantidade_disponivel_configuracao(db, lote) <= 0,
     }

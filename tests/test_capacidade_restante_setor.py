@@ -31,7 +31,7 @@ class CapacidadeRestanteSetorTest(unittest.TestCase):
         reservas_do_setor = Mock()
         reservas_do_setor.join.return_value.filter.return_value.scalar.return_value = 0
         db = Mock()
-        db.query.side_effect = [reserva_do_lote, vendas_do_setor, reservas_do_setor]
+        db.query.side_effect = [vendas_do_setor, reservas_do_setor, reserva_do_lote]
 
         lote = Mock(qtlimite=5, qtvendidalote=0, lote_id=10, evento_id=1)
         lote.setor = Mock(eventosetor_id=2, qtcapacidade=3)

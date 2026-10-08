@@ -97,6 +97,21 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     # quando o parceiro efetivamente tenta reduzir a capacidade do setor.
     if dados.qtcapacidade != int(x.qtcapacidade) and dados.qtcapacidade < minimo_seguro:
         raise HTTPException(422, f"A capacidade não pode ser menor que {minimo_seguro}, pois há lotes, vendas ou reservas neste setor")
+    maior_limite_lote = int(
+        db.query(func.coalesce(func.max(EventoLote.qtlimite), 0))
+        .filter(EventoLote.eventosetor_id == setor_id)
+        .scalar()
+        or 0
+    )
+    if (
+        dados.qtcapacidade != int(x.qtcapacidade)
+        and dados.qtcapacidade < maior_limite_lote
+    ):
+        raise HTTPException(
+            422,
+            "A capacidade não pode ser menor que a quantidade configurada nos lotes "
+            f"deste setor ({maior_limite_lote}). Atualize primeiro os lotes.",
+        )
     _validar_teto_capacidade_evento(
         db, evento, dados.qtcapacidade, dados.sitsetor, x.eventosetor_id
     )
