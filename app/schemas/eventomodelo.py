@@ -37,3 +37,12 @@ class EventoModeloAtracaoUpdate(BaseModel):
     atracao_id: int | None = None
     ordem: int | None = Field(default=None, ge=1, le=100)
     nrminutoduracao: int | None = Field(default=None, gt=0, le=1440)
+
+
+class EventoModeloModalidadeIn(BaseModel):
+    modalidade_id: int = Field(gt=0)
+    beneficios_ids: list[int] = Field(default_factory=list)
+
+
+class EventoModeloModalidadesIn(BaseModel):
+    modalidades: list[EventoModeloModalidadeIn] = Field(min_length=1)

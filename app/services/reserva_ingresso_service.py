@@ -15,6 +15,8 @@ from app.models.loja import Loja
 from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
 from app.models.beneficioingresso import BeneficioIngresso
+from app.models.eventomodalidade import EventoModalidade
+from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from app.utils.datetime_utils import FUSO_BRASIL
@@ -218,16 +220,27 @@ def criar_reserva(
     beneficio_item = None
     exige_beneficio = bool(modalidade.exigebeneficio or preco.aplicacotalegal)
     if exige_beneficio:
-        beneficio_item = (
-            db.query(BeneficioIngresso)
-            .join(ModalidadeBeneficio, ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id)
-            .filter(
-                ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
-                BeneficioIngresso.beneficio_id == beneficio_id,
-                BeneficioIngresso.situacao == "ATIVO",
-            )
-            .first()
+        evento_configurado = db.query(EventoModalidade).filter(
+            EventoModalidade.evento_id == lote.evento_id
+        ).first()
+        query_beneficio = db.query(BeneficioIngresso).filter(
+            BeneficioIngresso.beneficio_id == beneficio_id,
+            BeneficioIngresso.situacao == "ATIVO",
         )
+        if evento_configurado:
+            query_beneficio = query_beneficio.join(
+                EventoModalidadeBeneficio,
+                EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+            ).filter(
+                EventoModalidadeBeneficio.evento_id == lote.evento_id,
+                EventoModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+            )
+        else:
+            query_beneficio = query_beneficio.join(
+                ModalidadeBeneficio,
+                ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+            ).filter(ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id)
+        beneficio_item = query_beneficio.first()
         if not beneficio_item:
             raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
     beneficio = beneficio_item.cdbeneficio if beneficio_item else None

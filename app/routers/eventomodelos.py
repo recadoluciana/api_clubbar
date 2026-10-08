@@ -18,8 +18,16 @@ from app.services.evento_disponibilidade_service import (
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.loja import Loja
+from app.models.modalidadeingresso import ModalidadeIngresso
+from app.models.beneficioingresso import BeneficioIngresso
+from app.models.modalidadebeneficio import ModalidadeBeneficio
+from app.models.eventomodelomodalidade import EventoModeloModalidade
+from app.models.eventomodelomodalidadebeneficio import EventoModeloModalidadeBeneficio
+from app.models.eventomodalidade import EventoModalidade
+from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.routers.eventos import salvar_banner_evento
-from app.schemas.eventomodelo import AgendarEventoModeloIn, EventoModeloAtracaoIn, EventoModeloAtracaoUpdate
+from app.schemas.eventomodelo import (AgendarEventoModeloIn, EventoModeloAtracaoIn,
+    EventoModeloAtracaoUpdate, EventoModeloModalidadesIn)
 from app.services.evento_imagem_service import imagem_evento_modelo
 from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
 from app.utils.datetime_utils import FUSO_BRASIL
@@ -66,6 +74,114 @@ def _modelo(db,id,org):
     x=db.query(EventoModelo).filter(EventoModelo.eventomodelo_id==id,EventoModelo.organizacao_id==org).first()
     if not x: raise HTTPException(404,"Evento padrão não encontrado.")
     return x
+
+
+def _modalidades_padrao(db: Session):
+    return db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.organizacao_id.is_(None),
+        ModalidadeIngresso.situacao == "ATIVO",
+        ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
+    ).order_by(ModalidadeIngresso.nrordem, ModalidadeIngresso.modalidade_id).all()
+
+
+def _saida_modalidades_modelo(db: Session, modelo_id: int) -> list[dict]:
+    selecionadas = db.query(EventoModeloModalidade.modalidade_id).filter(
+        EventoModeloModalidade.eventomodelo_id == modelo_id
+    ).all()
+    ids = [item[0] for item in selecionadas]
+    modalidades = (
+        db.query(ModalidadeIngresso).filter(ModalidadeIngresso.modalidade_id.in_(ids)).all()
+        if ids else _modalidades_padrao(db)
+    )
+    selecionados_beneficios = {
+        (item.modalidade_id, item.beneficio_id)
+        for item in db.query(EventoModeloModalidadeBeneficio).filter(
+            EventoModeloModalidadeBeneficio.eventomodelo_id == modelo_id
+        ).all()
+    }
+    resultado = []
+    for modalidade in modalidades:
+        beneficios = db.query(BeneficioIngresso).join(
+            ModalidadeBeneficio,
+            ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+        ).filter(
+            ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+            BeneficioIngresso.situacao == "ATIVO",
+        ).order_by(BeneficioIngresso.nrordem, BeneficioIngresso.nmbeneficio).all()
+        resultado.append({
+            "modalidade_id": modalidade.modalidade_id,
+            "beneficios_ids": [
+                b.beneficio_id for b in beneficios
+                if not ids or (modalidade.modalidade_id, b.beneficio_id) in selecionados_beneficios
+            ],
+        })
+    return resultado
+
+
+def _salvar_modalidades_modelo(db: Session, modelo: EventoModelo, dados: EventoModeloModalidadesIn) -> None:
+    configuracoes = dados.modalidades
+    ids = [item.modalidade_id for item in configuracoes]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(422, "Uma modalidade só pode ser selecionada uma vez.")
+    modalidades = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.modalidade_id.in_(ids),
+        ModalidadeIngresso.situacao == "ATIVO",
+        (ModalidadeIngresso.organizacao_id.is_(None) | (ModalidadeIngresso.organizacao_id == modelo.organizacao_id)),
+    ).all()
+    if len(modalidades) != len(ids):
+        raise HTTPException(422, "Há modalidades inválidas ou inativas na seleção.")
+    por_id = {item.modalidade_id: item for item in modalidades}
+    beneficios_por_modalidade: dict[int, set[int]] = {}
+    for item in configuracoes:
+        beneficio_ids = set(item.beneficios_ids)
+        modalidade = por_id[item.modalidade_id]
+        permitidos = {
+            x[0] for x in db.query(ModalidadeBeneficio.beneficio_id).join(
+                BeneficioIngresso,
+                BeneficioIngresso.beneficio_id == ModalidadeBeneficio.beneficio_id,
+            ).filter(
+                ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+                BeneficioIngresso.situacao == "ATIVO",
+                (BeneficioIngresso.organizacao_id.is_(None) | (BeneficioIngresso.organizacao_id == modelo.organizacao_id)),
+            ).all()
+        }
+        if not beneficio_ids.issubset(permitidos):
+            raise HTTPException(422, f"Há benefícios inválidos para a modalidade {modalidade.nmmodalidade}.")
+        if modalidade.exigebeneficio and not beneficio_ids:
+            raise HTTPException(422, f"Selecione ao menos um benefício para {modalidade.nmmodalidade}.")
+        beneficios_por_modalidade[modalidade.modalidade_id] = beneficio_ids
+    if not any(item.tipomodalidade == "PADRAO" for item in modalidades):
+        raise HTTPException(422, "Selecione pelo menos uma modalidade padrão, como Inteira.")
+    db.query(EventoModeloModalidadeBeneficio).filter(
+        EventoModeloModalidadeBeneficio.eventomodelo_id == modelo.eventomodelo_id
+    ).delete(synchronize_session=False)
+    db.query(EventoModeloModalidade).filter(
+        EventoModeloModalidade.eventomodelo_id == modelo.eventomodelo_id
+    ).delete(synchronize_session=False)
+    db.add_all(EventoModeloModalidade(eventomodelo_id=modelo.eventomodelo_id, modalidade_id=i) for i in ids)
+    db.add_all(
+        EventoModeloModalidadeBeneficio(
+            eventomodelo_id=modelo.eventomodelo_id, modalidade_id=modalidade_id, beneficio_id=beneficio_id
+        )
+        for modalidade_id, beneficio_ids in beneficios_por_modalidade.items()
+        for beneficio_id in beneficio_ids
+    )
+
+
+def _copiar_modalidades_para_evento(db: Session, modelo_id: int, evento_id: int) -> list[int]:
+    configuracoes = _saida_modalidades_modelo(db, modelo_id)
+    ids = [item["modalidade_id"] for item in configuracoes]
+    db.add_all(EventoModalidade(evento_id=evento_id, modalidade_id=i) for i in ids)
+    db.add_all(
+        EventoModalidadeBeneficio(
+            evento_id=evento_id,
+            modalidade_id=item["modalidade_id"],
+            beneficio_id=beneficio_id,
+        )
+        for item in configuracoes
+        for beneficio_id in item["beneficios_ids"]
+    )
+    return ids
 
 def _atracao_item(x):
     return {
@@ -123,6 +239,27 @@ def excluir_atracao_modelo(item_id:int,payload=Depends(get_usuario_logado),db:Se
     if not item: raise HTTPException(404,"Atração padrão não encontrada.")
     modelo=_modelo(db,item.eventomodelo_id,_org(payload));validar_gerenciamento_organizacao(payload,modelo.organizacao_id)
     db.delete(item);db.commit()
+
+
+@router.get("/{modelo_id}/modalidades")
+def listar_modalidades_modelo(modelo_id: int, payload=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    modelo = _modelo(db, modelo_id, _org(payload))
+    validar_gerenciamento_organizacao(payload, modelo.organizacao_id)
+    return _saida_modalidades_modelo(db, modelo.eventomodelo_id)
+
+
+@router.put("/{modelo_id}/modalidades")
+def salvar_modalidades_modelo(
+    modelo_id: int,
+    dados: EventoModeloModalidadesIn,
+    payload=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    modelo = _modelo(db, modelo_id, _org(payload))
+    validar_gerenciamento_organizacao(payload, modelo.organizacao_id)
+    _salvar_modalidades_modelo(db, modelo, dados)
+    db.commit()
+    return _saida_modalidades_modelo(db, modelo.eventomodelo_id)
 
 @router.get("")
 def listar(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
@@ -187,12 +324,13 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
         evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
         db.add(evento);db.flush()
+        modalidades_ids = _copiar_modalidades_para_evento(db, x.eventomodelo_id, evento.evento_id)
         inicio_atracao = inicio
         for padrao in atracoes_padrao:
             fim_atracao = inicio_atracao + timedelta(minutes=padrao.nrminutoduracao)
             db.add(EventoAtracao(evento_id=evento.evento_id,atracao_id=padrao.atracao_id,dtinicioatracao=inicio_atracao,dtfimatracao=fim_atracao,nrminutoduracao=padrao.nrminutoduracao))
             inicio_atracao = fim_atracao
         if dados.capacidade > int(getattr(loja,"qtcpdloja",0) or 0): raise HTTPException(422,"A capacidade da sessão não pode ultrapassar a capacidade do estabelecimento.")
-        criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=loja.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=Decimal(str(dados.preco_inteira)) if dados.preco_inteira is not None else x.vrprecolote,capacidade=dados.capacidade,nome_setor=dados.nome_setor_inicial)
+        criar_ingressos_pista_inteira_meia(db,organizacao_id=x.organizacao_id,loja_id=loja.loja_id,evento_id=evento.evento_id,inicio_evento=inicio,preco_inteira=Decimal(str(dados.preco_inteira)) if dados.preco_inteira is not None else x.vrprecolote,capacidade=dados.capacidade,nome_setor=dados.nome_setor_inicial,modalidades_ids=modalidades_ids)
         ids.append(evento.evento_id)
     db.commit();return {"sessoes_criadas":len(ids),"evento_ids":ids}

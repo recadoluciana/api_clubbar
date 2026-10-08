@@ -23,6 +23,7 @@ def criar_lote_setor_com_precos(
     preco_inteira: Decimal,
     capacidade: int,
     nome_setor: str = "Pista",
+    modalidades_ids: list[int] | None = None,
 ) -> EventoLote:
     """Cria um único estoque e modalidades de preço que compartilham a capacidade."""
     valor = Decimal(str(preco_inteira)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -55,16 +56,21 @@ def criar_lote_setor_com_precos(
         situacao="ATIVO",
     )
     db.add(lote); db.flush()
-    modalidades = (
-        db.query(ModalidadeIngresso)
-        .filter(
+    consulta_modalidades = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.situacao == "ATIVO",
+    )
+    if modalidades_ids:
+        consulta_modalidades = consulta_modalidades.filter(
+            ModalidadeIngresso.modalidade_id.in_(modalidades_ids)
+        )
+    else:
+        consulta_modalidades = consulta_modalidades.filter(
             ModalidadeIngresso.organizacao_id.is_(None),
             ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
-            ModalidadeIngresso.situacao == "ATIVO",
         )
-        .order_by(ModalidadeIngresso.nrordem, ModalidadeIngresso.modalidade_id)
-        .all()
-    )
+    modalidades = consulta_modalidades.order_by(
+        ModalidadeIngresso.nrordem, ModalidadeIngresso.modalidade_id
+    ).all()
     if not modalidades or not any(item.tipomodalidade == "PADRAO" for item in modalidades):
         raise RuntimeError("Catálogo padrão de modalidades de ingresso incompleto")
     db.add_all(
