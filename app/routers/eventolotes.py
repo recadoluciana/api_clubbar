@@ -252,6 +252,28 @@ def _sincronizar_precos_lote(db: Session, lote_id: int, precos) -> None:
             db.delete(existente)
 
 
+def _validar_modalidades_do_evento(db: Session, evento_id: int, precos) -> None:
+    """Impede que um setor use modalidades fora da configuração do evento."""
+    permitidas = {
+        item[0]
+        for item in db.query(EventoModalidade.modalidade_id)
+        .filter(EventoModalidade.evento_id == evento_id)
+        .all()
+    }
+    if not permitidas:
+        permitidas = {
+            item[0]
+            for item in db.query(ModalidadeIngresso.modalidade_id).filter(
+                ModalidadeIngresso.organizacao_id.is_(None),
+                ModalidadeIngresso.situacao == "ATIVO",
+                ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
+            ).all()
+        }
+    recebidas = {int(item.modalidade_id) for item in precos}
+    if not recebidas.issubset(permitidas):
+        raise HTTPException(422, "Há modalidades que não foram habilitadas para este evento")
+
+
 def _beneficios_da_modalidade_no_evento(db: Session, evento_id: int, modalidade_id: int):
     possui_configuracao = db.query(EventoModalidade).filter(
         EventoModalidade.evento_id == evento_id
@@ -526,6 +548,8 @@ def criar_lote_global(
         if anterior is None:
             raise HTTPException(422, "Não foi possível localizar o lote anterior")
     _validar_setores_do_lote(db, evento=evento, configuracoes=data.setores)
+    for setor_dados in data.setores:
+        _validar_modalidades_do_evento(db, evento.evento_id, setor_dados.precos)
 
     global_ = EventoLoteGlobal(
         organizacao_id=evento.organizacao_id,
@@ -601,6 +625,7 @@ def adicionar_setor_ao_lote_global(
     validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
     evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
     validar_evento_editavel(evento)
+    _validar_modalidades_do_evento(db, evento.evento_id, data.precos)
     setor = (
         db.query(EventoSetor)
         .filter(
@@ -666,6 +691,7 @@ def atualizar_configuracao_setor(
     if data.precos is not None:
         if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
             raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
+        _validar_modalidades_do_evento(db, evento.evento_id, data.precos)
         _sincronizar_precos_lote(db, lote_id, data.precos)
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
