@@ -37,7 +37,10 @@ from app.services.evento_disponibilidade_service import (
     validar_evento_unico_por_loja_data_local,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
+from app.services.onboarding_parceiro_service import (
+    evento_possui_ingressos_pagos,
+    validar_publicacao_loja,
+)
 
 router = APIRouter(prefix="/eventos", tags=["eventos"])
 
@@ -160,7 +163,9 @@ def _publicar_eventos(db: Session, eventos: list[Evento]) -> int:
         )
 
     for loja_id in {evento.loja_id for evento in eventos}:
-        validar_publicacao_loja(db, loja_id)
+        eventos_da_loja = [evento for evento in eventos if evento.loja_id == loja_id]
+        if any(evento_possui_ingressos_pagos(db, evento.evento_id) for evento in eventos_da_loja):
+            validar_publicacao_loja(db, loja_id)
 
     publicados = 0
     for evento in eventos:

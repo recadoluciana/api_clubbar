@@ -12,7 +12,10 @@ from app.models.loja import Loja
 from app.models.agendamensal import AgendaMensal
 from app.schemas.atracao import EventoRapidoAgendaIn
 from app.services.agenda_service import obter_ou_criar_agenda
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
+from app.services.onboarding_parceiro_service import (
+    evento_possui_ingressos_pagos,
+    validar_publicacao_loja,
+)
 from app.services.evento_imagem_service import imagem_evento
 from app.services.ingressos_padrao_service import criar_ingressos_pista_inteira_meia
 from app.services.evento_edicao_service import validar_evento_editavel
@@ -65,7 +68,8 @@ def publicar(loja_id: int, ano: int, mes: int, dados: PublicacaoAgendaIn, payloa
         raise HTTPException(422, "Cadastre pelo menos um evento antes de publicar a agenda.")
     for evento in eventos:
         validar_evento_editavel(evento)
-    validar_publicacao_loja(db, loja_id)
+    if any(evento_possui_ingressos_pagos(db, evento.evento_id) for evento in eventos):
+        validar_publicacao_loja(db, loja_id)
     # Compatibilidade com versões antigas do Partner. A interface atual
     # publica evento a evento ou uma seleção deles.
     for evento in eventos:
