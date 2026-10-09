@@ -422,6 +422,14 @@ async def cancelar_ingresso(
     if payload.get("role") != "cliente":
         raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
 
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "O cancelamento agora é feito por transação completa. "
+            "Acesse Perfil > Cancelar transação e informe o número da venda."
+        ),
+    )
+
     resultado = (
         db.query(ItVenda, Venda, EventoLote, Evento, PagVenda)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -558,6 +566,14 @@ async def cancelar_produto(
 ):
     if payload.get("role") != "cliente":
         raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "O cancelamento agora é feito por transação completa. "
+            "Acesse Perfil > Cancelar transação e informe o número da venda."
+        ),
+    )
 
     resultado = (
         db.query(ItVenda, Venda, PagVenda)
@@ -710,6 +726,227 @@ async def cancelar_produto(
         "cancelado": True,
         "itvenda_id": item.itvenda_id,
         "valor_reembolso": valor_reembolso,
+    }
+
+
+@router.get("/vendas/{venda_id}/cancelamento")
+def consultar_cancelamento_transacao(
+    venda_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Mostra ao cliente os itens que serão cancelados antes da confirmação."""
+    if payload.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+    if not venda:
+        raise HTTPException(status_code=404, detail="Transação não encontrada.")
+    if str(venda.cliente_id) != str(payload.get("sub")):
+        raise HTTPException(status_code=403, detail="Esta transação pertence a outro cliente.")
+    if venda.sitvenda != "PAGA":
+        raise HTTPException(status_code=409, detail="Esta transação não está disponível para cancelamento.")
+    pagamento = (
+        db.query(PagVenda)
+        .filter(PagVenda.venda_id == venda_id, PagVenda.sitpagvenda == "PAGO")
+        .order_by(PagVenda.pagvenda_id.desc())
+        .first()
+    )
+    if not pagamento:
+        raise HTTPException(status_code=409, detail="O pagamento desta transação não está confirmado.")
+
+    itens = (
+        db.query(ItVenda, Produto, Evento)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+        .filter(ItVenda.venda_id == venda_id, ItVenda.sititvenda == "ATIVO")
+        .order_by(ItVenda.itvenda_id)
+        .all()
+    )
+    if not itens:
+        raise HTTPException(status_code=409, detail="Esta transação não possui itens ativos para cancelar.")
+
+    return {
+        "venda_id": venda.venda_id,
+        "itens": [
+            {
+                "itvenda_id": item.itvenda_id,
+                "tipo": item.tipoitem,
+                "nome": produto.nmproduto if produto else (evento.nmtituloevento if evento else "Item Clubbar"),
+                "quantidade": int(item.qtitvenda or 1),
+                "valor": round(float(item.vrunititvenda or 0) * int(item.qtitvenda or 1) + float(item.vrtaxaitvenda or 0), 2),
+            }
+            for item, produto, evento in itens
+        ],
+        "valor_total": round(float(pagamento.vrpagvenda or venda.totalvenda or 0), 2),
+    }
+
+
+@router.post("/vendas/{venda_id}/cancelar")
+async def cancelar_transacao(
+    venda_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Cancela uma venda inteira e solicita um único estorno do seu total."""
+    if payload.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do cliente.")
+
+    resultado = (
+        db.query(Venda, PagVenda)
+        .join(PagVenda, PagVenda.venda_id == Venda.venda_id)
+        .filter(Venda.venda_id == venda_id)
+        .with_for_update()
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Transação não encontrada.")
+
+    venda, pagamento = resultado
+    if str(venda.cliente_id) != str(payload.get("sub")):
+        raise HTTPException(status_code=403, detail="Esta transação pertence a outro cliente.")
+    if venda.sitvenda == "CANCELADA":
+        return {"ok": True, "cancelada": True, "venda_id": venda.venda_id}
+    if pagamento.sitpagvenda != "PAGO":
+        raise HTTPException(status_code=409, detail="O pagamento desta transação não está confirmado.")
+
+    itens = (
+        db.query(ItVenda)
+        .filter(ItVenda.venda_id == venda_id)
+        .with_for_update()
+        .all()
+    )
+    itens_ativos = [item for item in itens if item.sititvenda == "ATIVO"]
+    if not itens_ativos:
+        raise HTTPException(status_code=409, detail="Esta transação não possui itens ativos para cancelar.")
+    if len(itens_ativos) != len(itens):
+        raise HTTPException(
+            status_code=409,
+            detail="Esta transação já possui cancelamentos. Para manter o controle financeiro, procure o suporte.",
+        )
+    if any((item.identregaitvenda or "NAO").upper() == "SIM" for item in itens_ativos):
+        raise HTTPException(status_code=409, detail="A transação possui item já utilizado ou entregue e não pode ser cancelada.")
+    if any((item.idcontrolebar or "PENDENTE").upper() in {"EM_PRODUCAO", "ENTREGUE"} for item in itens_ativos):
+        raise HTTPException(status_code=409, detail="A transação possui produto em preparação ou já entregue e não pode ser cancelada.")
+
+    itens_produto = [item for item in itens_ativos if (item.tipoitem or "").upper() == "PRODUTO"]
+    if itens_produto:
+        politica_produto = _politica_vigente(db, "PRODUTO")
+        dias_produto = int(getattr(politica_produto, "qtd_dias_cancelamento", None) or 7)
+        if not _cancelamento_produto_permitido(venda.dtcriacao, dias_produto):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Esta transação não pode ser cancelada: a compra foi realizada há mais de {dias_produto} dias.",
+            )
+
+    itens_ingresso = [item for item in itens_ativos if (item.tipoitem or "").upper() == "INGRESSO"]
+    if itens_ingresso:
+        politica_ingresso = _politica_vigente(db, "INGRESSO")
+        dias_ingresso = int(getattr(politica_ingresso, "qtd_dias_cancelamento", None) or 7)
+        horas_ingresso = int(getattr(politica_ingresso, "qtd_horas_antecedencia_cancelamento", None) or 48)
+        eventos_por_item = {
+            item.itvenda_id: evento
+            for item, evento in (
+                db.query(ItVenda, Evento)
+                .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+                .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+                .filter(ItVenda.itvenda_id.in_([item.itvenda_id for item in itens_ingresso]))
+                .all()
+            )
+        }
+        for item in itens_ingresso:
+            evento = eventos_por_item.get(item.itvenda_id)
+            if not evento or not evento.dtinicioevento or not _cancelamento_ingresso_permitido(
+                venda.dtcriacao,
+                evento.dtinicioevento,
+                dias_ingresso,
+                horas_ingresso,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "A transação possui ingresso fora do prazo de cancelamento. "
+                        f"O prazo é de até {dias_ingresso} dias após a compra e pelo menos {horas_ingresso} horas antes do evento."
+                    ),
+                )
+
+    valor_reembolso = round(float(pagamento.vrpagvenda or venda.totalvenda or 0), 2)
+    estorno = {}
+    if _exige_estorno_asaas(valor_reembolso):
+        payment_id = str(pagamento.idtransacaopagvenda or "").strip()
+        if not payment_id:
+            raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
+        api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
+        pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
+        saldo_disponivel = _saldo_disponivel_para_estorno(
+            pagamento_asaas,
+            valor_reembolso,
+        )
+        if saldo_disponivel + 0.01 < valor_reembolso:
+            raise HTTPException(
+                status_code=409,
+                detail="Esta transação possui um estorno anterior e não pode ser cancelada integralmente.",
+            )
+        taxas = sum(float(item.vrtaxaitvenda or 0) for item in itens_ativos)
+        split_refunds = _estornos_do_split_clubbar(pagamento_asaas, taxas)
+        for item in itens_ativos:
+            item.sititvenda = "CANCELAMENTO_SOLICITADO"
+        db.commit()
+        try:
+            estorno = await estornar_pagamento_asaas(
+                payment_id=payment_id,
+                valor=valor_reembolso,
+                descricao=f"Cancelamento transação Clubbar venda {venda_id}",
+                api_key=api_key_estorno,
+                split_refunds=split_refunds,
+            )
+        except HTTPException as exc:
+            db.rollback()
+            if exc.status_code < 500:
+                db.query(ItVenda).filter(
+                    ItVenda.venda_id == venda_id,
+                    ItVenda.sititvenda == "CANCELAMENTO_SOLICITADO",
+                ).update({ItVenda.sititvenda: "ATIVO"}, synchronize_session=False)
+                db.commit()
+            raise
+        except Exception as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=502,
+                detail="O Asaas ainda não confirmou o cancelamento. Tente novamente mais tarde.",
+            ) from exc
+
+    itens = db.query(ItVenda).filter(ItVenda.venda_id == venda_id, ItVenda.sititvenda == "ATIVO").all()
+    saldo_a_distribuir = valor_reembolso
+    lotes_cancelados: dict[int, int] = {}
+    for indice, item in enumerate(itens):
+        valor_item = round(float(item.vrunititvenda or 0) * int(item.qtitvenda or 1) + float(item.vrtaxaitvenda or 0), 2)
+        reembolso_item = saldo_a_distribuir if indice == len(itens) - 1 else min(valor_item, saldo_a_distribuir)
+        saldo_a_distribuir = round(max(0, saldo_a_distribuir - reembolso_item), 2)
+        item.sititvenda = "CANCELADO"
+        item.dtcancelamento = _agora_brasil()
+        item.vrreembolso = reembolso_item
+        item.idreembolso = str(estorno.get("id") or "") or None
+        if item.lote_id:
+            lotes_cancelados[item.lote_id] = lotes_cancelados.get(item.lote_id, 0) + int(item.qtitvenda or 1)
+
+    for lote_id, quantidade in lotes_cancelados.items():
+        lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+        if lote and lote.qtvendidalote:
+            lote.qtvendidalote = max(0, int(lote.qtvendidalote) - quantidade)
+
+    venda.sitvenda = "CANCELADA"
+    pagamento.sitpagvenda = "CANCELADO"
+    cancelar_cashback_da_venda(db, venda.venda_id)
+    db.commit()
+    return {
+        "ok": True,
+        "cancelada": True,
+        "venda_id": venda.venda_id,
+        "itens_cancelados": len(itens),
+        "valor_reembolso": valor_reembolso,
+        "mensagem": "Transação cancelada. O reembolso total foi solicitado com sucesso.",
     }
 
 
