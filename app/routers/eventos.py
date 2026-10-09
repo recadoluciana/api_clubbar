@@ -36,6 +36,10 @@ from app.services.evento_imagem_service import imagem_evento
 from app.services.evento_disponibilidade_service import (
     validar_evento_unico_por_loja_data_local,
 )
+from app.services.reserva_ingresso_service import (
+    lote_global_ativo,
+    quantidade_disponivel_configuracao,
+)
 from app.services.evento_edicao_service import validar_evento_editavel
 from app.services.onboarding_parceiro_service import (
     evento_possui_ingressos_pagos,
@@ -520,6 +524,83 @@ def listar_eventos_proximos_global(
             atracoes.get(ev.evento_id),
         )
         for ev, nmloja, nmcidade, urllogoloja, total_vendas_loja in eventos
+    ]
+
+
+@router.get("/cortesias-disponiveis", response_model=list[EventoOutBR])
+def listar_eventos_com_cortesias_disponiveis(
+    cidade_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Lista eventos futuros cuja cortesia gratuita ainda pode ser retirada."""
+    agora = agora_br()
+    consulta = (
+        db.query(
+            Evento,
+            Loja.nmloja,
+            Cidade.nmcidade,
+            Loja.urllogoloja,
+        )
+        .join(Loja, Loja.loja_id == Evento.loja_id)
+        .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
+        .join(EventoLoteGlobal, EventoLoteGlobal.evento_id == Evento.evento_id)
+        .join(EventoLote, EventoLote.loteglobal_id == EventoLoteGlobal.loteglobal_id)
+        .join(EventoLotePreco, EventoLotePreco.lote_id == EventoLote.lote_id)
+        .filter(
+            Organizacao.sitorganizacao == "ATIVA",
+            Evento.statusevento == "ATIVO",
+            Evento.dtinicioevento >= agora,
+            EventoLoteGlobal.situacao == "ATIVO",
+            EventoLote.situacao == "ATIVO",
+            EventoLotePreco.situacao == "ATIVO",
+            func.upper(EventoLotePreco.tipopreco) == "CORTESIA",
+            EventoLotePreco.vrpreco == 0,
+        )
+    )
+    if cidade_id:
+        consulta = consulta.filter(Loja.cidade_id == cidade_id)
+
+    candidatos = (
+        consulta.distinct()
+        .order_by(Evento.dtinicioevento.asc(), Evento.evento_id.asc())
+        .all()
+    )
+    eventos = []
+    for evento, nmloja, nmcidade, urllogoloja in candidatos:
+        lote_atual = lote_global_ativo(db, evento.evento_id, agora)
+        if lote_atual is None:
+            continue
+
+        possui_cortesia_disponivel = any(
+            configuracao.situacao == "ATIVO"
+            and configuracao.setor is not None
+            and configuracao.setor.sitsetor == "ATIVO"
+            and quantidade_disponivel_configuracao(db, configuracao) > 0
+            and any(
+                preco.situacao == "ATIVO"
+                and (preco.tipopreco or "").upper() == "CORTESIA"
+                and preco.vrpreco == 0
+                for preco in configuracao.precos
+            )
+            for configuracao in lote_atual.configuracoes_setor
+        )
+        if possui_cortesia_disponivel:
+            eventos.append((evento, nmloja, nmcidade, urllogoloja))
+
+    atracoes = atracoes_resumo_por_evento(
+        db, [evento.evento_id for evento, *_ in eventos]
+    )
+    return [
+        evento_to_out_br(
+            db,
+            evento,
+            nmloja,
+            nmcidade,
+            urllogoloja,
+            atracoes=atracoes.get(evento.evento_id),
+        )
+        for evento, nmloja, nmcidade, urllogoloja in eventos
     ]
 
 
