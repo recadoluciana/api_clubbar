@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, R
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
@@ -262,6 +262,7 @@ def atracoes_resumo_por_evento(
     programacoes = (
         db.query(EventoAtracao, Atracao)
         .join(Atracao, Atracao.atracao_id == EventoAtracao.atracao_id)
+        .options(joinedload(Atracao.estilos))
         .filter(EventoAtracao.evento_id.in_(evento_ids))
         .order_by(
             EventoAtracao.evento_id.asc(),
@@ -271,11 +272,23 @@ def atracoes_resumo_por_evento(
         .all()
     )
     for programacao, atracao in programacoes:
+        estilos = [
+            estilo.nmestilomusical
+            for estilo in atracao.estilos
+            if estilo.nmestilomusical and estilo.sitestilomusical == "ATIVO"
+        ]
+        if not estilos and (atracao.dsestilomusical or "").strip():
+            estilos = [
+                estilo.strip()
+                for estilo in atracao.dsestilomusical.split(",")
+                if estilo.strip()
+            ]
         resultado.setdefault(programacao.evento_id, []).append(
             {
                 "atracao_id": atracao.atracao_id,
                 "nmatracao": atracao.nmatracao,
                 "urlbanneratracao": atracao.urlbanneratracao,
+                "estilos": estilos,
             }
         )
     return resultado
