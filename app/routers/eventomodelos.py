@@ -2,6 +2,7 @@ from calendar import monthrange
 from datetime import datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import func
 from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session, joinedload
 
@@ -18,6 +19,7 @@ from app.services.evento_disponibilidade_service import (
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.loja import Loja
+from app.models.organizacao import Organizacao
 from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.beneficioingresso import BeneficioIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
@@ -150,8 +152,6 @@ def _salvar_modalidades_modelo(db: Session, modelo: EventoModelo, dados: EventoM
         if modalidade.exigebeneficio and not beneficio_ids:
             raise HTTPException(422, f"Selecione ao menos um benefício para {modalidade.nmmodalidade}.")
         beneficios_por_modalidade[modalidade.modalidade_id] = beneficio_ids
-    if not any(item.tipomodalidade == "PADRAO" for item in modalidades):
-        raise HTTPException(422, "Selecione pelo menos uma modalidade padrão, como Inteira.")
     db.query(EventoModeloModalidadeBeneficio).filter(
         EventoModeloModalidadeBeneficio.eventomodelo_id == modelo.eventomodelo_id
     ).delete(synchronize_session=False)
@@ -267,16 +267,36 @@ def listar(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     return [_item(db, x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org).order_by(EventoModelo.nmtituloevento).all()]
 
 @router.post("",status_code=201)
-def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),modalidades_json:str|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload)
     if organizacao_id!=org: raise HTTPException(403,"Organização inválida.")
     validar_gerenciamento_organizacao(payload,org)
+    # Serializa a criação por empresa para que duas requisições concorrentes
+    # nunca consigam registrar o mesmo evento padrão.
+    db.query(Organizacao).filter(
+        Organizacao.organizacao_id == org
+    ).with_for_update().first()
     tipo=tipolocalevento.strip().upper()
     if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
     if tipo == "OUTRO" and (not nrceplocalevento or not nmlocalevento or not dsendlocevento): raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
     titulo = _validar_titulo_evento(nmtituloevento)
+    if db.query(EventoModelo).filter(
+        EventoModelo.organizacao_id == org,
+        func.lower(EventoModelo.nmtituloevento) == titulo.lower(),
+    ).first():
+        raise HTTPException(409, "Já existe um evento padrão com este título. Edite o existente ou informe outro título.")
+    modalidades = None
+    if modalidades_json:
+        try:
+            modalidades = EventoModeloModalidadesIn.model_validate_json(modalidades_json)
+        except ValueError as exc:
+            raise HTTPException(422, "As modalidades selecionadas são inválidas.") from exc
     x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
-    db.add(x);_commit_evento_modelo(db);db.refresh(x);return _item(db, x)
+    db.add(x)
+    db.flush()
+    if modalidades is not None:
+        _salvar_modalidades_modelo(db, x, modalidades)
+    _commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
 def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),tipolocalevento:str|None=Form(None),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):

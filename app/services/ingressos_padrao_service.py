@@ -71,15 +71,21 @@ def criar_lote_setor_com_precos(
     modalidades = consulta_modalidades.order_by(
         ModalidadeIngresso.nrordem, ModalidadeIngresso.modalidade_id
     ).all()
-    if not modalidades or not any(item.tipomodalidade == "PADRAO" for item in modalidades):
-        raise RuntimeError("Catálogo padrão de modalidades de ingresso incompleto")
+    if not modalidades:
+        raise RuntimeError("Selecione ao menos uma modalidade para criar o lote.")
+
+    def preco_modalidade(item: ModalidadeIngresso) -> Decimal:
+        if item.cdmodalidade.strip().upper() == "CORTESIA":
+            return Decimal("0.00")
+        return valor if item.tipomodalidade != "LEGAL" else meia
+
     db.add_all(
         EventoLotePreco(
             lote_id=lote.lote_id,
             modalidade_id=item.modalidade_id,
             nmpreco=item.nmmodalidade,
             tipopreco=item.cdmodalidade,
-            vrpreco=valor if item.tipomodalidade == "PADRAO" else meia,
+            vrpreco=preco_modalidade(item),
             aplicacotalegal=item.aplicacotalegal,
             exigecomprovante=item.exigecomprovante,
             nrordem=ordem,
