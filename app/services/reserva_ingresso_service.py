@@ -24,7 +24,10 @@ from app.core.config import PERCENTUAL_COTA_LEGAL
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
-PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
+# A reserva evita que duas pessoas comprem a mesma vaga ao mesmo tempo. O
+# prazo curto protege o estoque sem fazer o ingresso parecer esgotado para
+# quem está aguardando uma compra abandonada.
+PRAZO_RESERVA_INGRESSO = timedelta(minutes=5)
 
 
 def _agora_brasilia() -> datetime:
