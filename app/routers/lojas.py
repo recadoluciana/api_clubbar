@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from app.database import get_db
 from app.models.loja import Loja
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
 from app.models.organizacao import Organizacao
@@ -587,6 +588,10 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.organizacao_id,
             Loja.estado_id,
             Organizacao.nmorganizacao,
+            Organizacao.emailorganizacao,
+            Organizacao.telorganizacao,
+            LeadEstabelecimento.email.label("email_lead"),
+            LeadEstabelecimento.telefone.label("telefone_lead"),
             Cidade.nmcidade,
             Loja.nmloja,
             Loja.endloja,
@@ -607,6 +612,10 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.vrtaxaminimaingresso,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
+        .outerjoin(
+            LeadEstabelecimento,
+            LeadEstabelecimento.leadestabelecimento_id == Loja.leadestabelecimento_id,
+        )
         .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .filter(Loja.loja_id == loja_id)
         .first()
@@ -630,6 +639,8 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "aberto24x7": row.aberto24x7,
         "idvalidadeprod": row.idvalidadeprod,
         "nrtelloja": row.nrtelloja,
+        "emailcontato": (row.email_lead or row.emailorganizacao or "").strip(),
+        "whatsapp": (row.telefone_lead or row.nrtelloja or row.telorganizacao or "").strip(),
         "dsinstaloja": row.dsinstaloja,
         "dsrefeloja": row.dsrefeloja,
         "complementoloja": row.complementoloja,
