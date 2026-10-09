@@ -147,6 +147,17 @@ def _saldo_disponivel_para_estorno(
     return round(max(0, valor_original - valor_ja_estornado), 2)
 
 
+def _mensagem_amigavel_estorno_parcial(exc: HTTPException) -> str | None:
+    """Traduz a restrição operacional do Asaas para uma orientação ao cliente."""
+    detalhe = str(exc.detail or "").lower()
+    if "estornada parcialmente no próximo dia" in detalhe:
+        return (
+            "Esta compra possui mais de um item. Para cancelar somente este item, "
+            "tente novamente a partir do dia seguinte ao pagamento."
+        )
+    return None
+
+
 def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> None:
     cargo_normalizado = (cargo or "").strip().upper()
     tipo_normalizado = (idtipoproduto or "").strip().upper()
@@ -486,6 +497,9 @@ async def cancelar_ingresso(
                 if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
                     item.sititvenda = "ATIVO"
                     db.commit()
+            mensagem_amigavel = _mensagem_amigavel_estorno_parcial(exc)
+            if mensagem_amigavel:
+                raise HTTPException(status_code=409, detail=mensagem_amigavel) from exc
             raise
         except Exception as exc:
             db.rollback()
@@ -658,6 +672,9 @@ async def cancelar_produto(
             if item and item.sititvenda == "CANCELAMENTO_SOLICITADO":
                 item.sititvenda = "ATIVO"
                 db.commit()
+        mensagem_amigavel = _mensagem_amigavel_estorno_parcial(exc)
+        if mensagem_amigavel:
+            raise HTTPException(status_code=409, detail=mensagem_amigavel) from exc
         raise
     except Exception as exc:
         db.rollback()
