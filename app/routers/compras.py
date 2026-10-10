@@ -84,6 +84,7 @@ def listar_compras(
         db.query(
             ItVenda,
             Produto.nmproduto,
+            Produto.urlfotoproduto,
             Evento.nmtituloevento,
             Evento.dtinicioevento,
             EventoLote.nmlote,
@@ -123,6 +124,7 @@ def listar_compras(
     for (
         it,
         nmproduto,
+        urlfotoproduto,
         nmevento,
         dtinicioevento,
         nmlote,
@@ -135,6 +137,7 @@ def listar_compras(
             "itvenda_id": getattr(it, "itvenda_id", None),
             "produto_id": getattr(it, "produto_id", None),
             "nmproduto": nmproduto or nmevento or "Ingresso",
+            "urlfotoproduto": urlfotoproduto,
             "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
             "dtinicioevento": formatar_data_br(dtinicioevento)
             if dtinicioevento
