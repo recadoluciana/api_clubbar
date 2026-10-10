@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -145,11 +145,12 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
             raise HTTPException(404, "Cliente não encontrado")
         validar_endereco_cobranca_para_cartao(cliente)
         segundos_restantes = int((reserva.dtexpiracao - datetime.now()).total_seconds())
+        # O checkout do cartão exige ao menos dez minutos de validade. Se a
+        # reserva ainda estiver ativa, estenda-a para que o cliente consiga
+        # finalizar o pagamento, em vez de forçá-lo a iniciar outra compra.
         if segundos_restantes < 10 * 60:
-            raise HTTPException(
-                409,
-                "Restam menos de 10 minutos para concluir esta reserva. Inicie uma nova compra de ingresso.",
-            )
+            reserva.dtexpiracao = datetime.now() + timedelta(minutes=10)
+            segundos_restantes = 10 * 60
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
@@ -159,7 +160,7 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
         checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         db.commit()
-        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "checkout_url": checkout.checkout_url, "status": checkout.status, "parcelas_solicitadas": payload.parcelas}
+        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "checkout_url": checkout.checkout_url, "status": checkout.status, "parcelas_solicitadas": payload.parcelas, "data_expiracao": iso_utc(reserva.dtexpiracao)}
     except HTTPException:
         db.rollback(); raise
 
