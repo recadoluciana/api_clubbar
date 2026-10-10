@@ -86,6 +86,7 @@ def listar_compras(
             Produto.nmproduto,
             Produto.urlfotoproduto,
             Evento.nmtituloevento,
+            Evento.urlbannerevento,
             Evento.dtinicioevento,
             EventoLote.nmlote,
             EventoLote.nrlote,
@@ -126,6 +127,7 @@ def listar_compras(
         nmproduto,
         urlfotoproduto,
         nmevento,
+        urlbannerevento,
         dtinicioevento,
         nmlote,
         nrlote,
@@ -138,6 +140,7 @@ def listar_compras(
             "produto_id": getattr(it, "produto_id", None),
             "nmproduto": nmproduto or nmevento or "Ingresso",
             "urlfotoproduto": urlfotoproduto,
+            "urlbannerevento": urlbannerevento,
             "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
             "dtinicioevento": formatar_data_br(dtinicioevento)
             if dtinicioevento
