@@ -410,12 +410,18 @@ def listar_eventos_do_dia_para_ticketman(
     hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     inicio = datetime.combine(hoje, time.min)
     fim = inicio + timedelta(days=1)
+    agora = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
     eventos = (
         db.query(Evento, Loja)
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .filter(Evento.loja_id == usuario.loja_id)
         .filter(Evento.statusevento == "ATIVO")
-        .filter(Evento.dtinicioevento >= inicio, Evento.dtinicioevento < fim)
+        .filter(
+            or_(
+                and_(Evento.dtinicioevento >= inicio, Evento.dtinicioevento < fim),
+                and_(Evento.dtfimevento > agora, Evento.dtfimevento < fim),
+            )
+        )
         .order_by(Evento.dtinicioevento.asc())
         .all()
     )
