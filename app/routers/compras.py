@@ -13,6 +13,7 @@ from app.models.eventosetor import EventoSetor
 from app.models.evento import Evento
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
 from app.models.pedidoentrega import PedidoEntrega
+from app.services.localidade_entrega_service import nome_localidade_entrega
 
 from app.utils.datetime_utils import formatar_data_br
 
@@ -183,6 +184,13 @@ def listar_compras(
     # 3) Resposta final
     resp = []
     for v, nmloja, urllogoloja, pedido in vendas:
+        cidade_entrega, estado_entrega = nome_localidade_entrega(
+            db,
+            cidade_id=pedido.cidade_id if pedido else None,
+            estado_id=pedido.estado_id if pedido else None,
+            cidade_legado=pedido.cidadeentrega if pedido else None,
+            uf_legado=pedido.ufentrega if pedido else None,
+        )
         resp.append({
             "venda_id": v.venda_id,
             "organizacao_id": v.organizacao_id,
@@ -205,10 +213,12 @@ def listar_compras(
                         f"{pedido.enderecoentrega}, {pedido.numeroentrega}",
                         pedido.complementoentrega,
                         pedido.bairroentrega,
-                        f"{pedido.cidadeentrega}/{pedido.ufentrega}",
+                        f"{cidade_entrega}/{estado_entrega}",
                     ] if parte
                 ),
                 "cep": pedido.cepentrega,
+                "cidade_id": pedido.cidade_id,
+                "estado_id": pedido.estado_id,
                 "observacao": pedido.observacaoentrega,
                 "dtaceite": formatar_data_br(pedido.dtaceite),
                 "dtdespacho": formatar_data_br(pedido.dtdespacho),

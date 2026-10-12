@@ -36,6 +36,7 @@ from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
+from app.services.localidade_entrega_service import resolver_localidade_entrega
 from app.services.venda_service import criar_ou_obter_venda_idempotente, gerar_token_qr
 
 from app.routers.produtos import calcular_preco_final
@@ -528,6 +529,13 @@ async def criar_pedido_entrega(
         if not venda or not pagamento:
             raise HTTPException(status_code=500, detail='Não foi possível preparar o pedido.')
 
+        cidade, estado = resolver_localidade_entrega(
+            db,
+            cidade_informada=payload.cidade,
+            uf_informada=payload.uf,
+            loja=loja,
+        )
+
         pagamento.dsmetodopag = 'PAGAMENTO_ENTREGA'
         pagamento.provedor = 'ENTREGA'
         pagamento.sitpagvenda = 'PENDENTE'
@@ -544,8 +552,10 @@ async def criar_pedido_entrega(
             numeroentrega=payload.numero.strip(),
             complementoentrega=(payload.complemento or '').strip() or None,
             bairroentrega=payload.bairro.strip(),
-            cidadeentrega=payload.cidade.strip(),
-            ufentrega=payload.uf.strip().upper(),
+            cidade_id=cidade.cidade_id,
+            estado_id=estado.estado_id,
+            cidadeentrega=cidade.nmcidade,
+            ufentrega=estado.sgestado,
             observacaoentrega=(payload.observacao or '').strip() or None,
         )
         db.add(pedido)

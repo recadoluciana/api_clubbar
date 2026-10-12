@@ -39,6 +39,20 @@ class PedidoEntrega(Base):
     numeroentrega = Column(String(20), nullable=False)
     complementoentrega = Column(String(120), nullable=True)
     bairroentrega = Column(String(120), nullable=False)
+    # Chaves oficiais da localidade. Os campos textuais abaixo permanecem
+    # temporariamente para preservar o histórico dos pedidos antigos.
+    cidade_id = Column(
+        BigInteger,
+        ForeignKey("cidade.cidade_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    estado_id = Column(
+        BigInteger,
+        ForeignKey("estado.estado_id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     cidadeentrega = Column(String(120), nullable=False)
     ufentrega = Column(String(2), nullable=False)
     observacaoentrega = Column(String(255), nullable=True)
