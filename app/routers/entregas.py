@@ -187,17 +187,47 @@ def _usuario_operacional_entrega(
     usuario_id: int,
     payload: dict,
     db: Session,
-) -> Usuario:
+    loja_id: int | None = None,
+) -> tuple[Usuario, int]:
     if str(payload.get("sub", "")) != str(usuario_id):
         raise HTTPException(status_code=403, detail="Usuário autenticado inválido.")
     usuario = db.query(Usuario).filter(Usuario.usuario_id == usuario_id).first()
-    if not usuario or not usuario.loja_id:
-        raise HTTPException(status_code=403, detail="Usuário sem estabelecimento vinculado.")
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
     if (usuario.dscargo or '').upper() not in {
         'SUPERADMIN', 'ADMIN', 'MANAGER', 'BARMAN', 'WAITER', 'MOTOBOY'
     }:
         raise HTTPException(status_code=403, detail="Este perfil não pode operar pedidos de entrega.")
-    return usuario
+
+    if usuario.loja_id:
+        if loja_id is not None and loja_id != usuario.loja_id:
+            raise HTTPException(
+                status_code=403,
+                detail="O usuário só pode operar o estabelecimento ao qual está vinculado.",
+            )
+        return usuario, int(usuario.loja_id)
+
+    if (usuario.dscargo or '').upper() not in {'SUPERADMIN', 'ADMIN', 'MANAGER'}:
+        raise HTTPException(
+            status_code=403,
+            detail="Vincule este usuário a um estabelecimento para operar pedidos de entrega.",
+        )
+    if loja_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Selecione um estabelecimento para consultar os pedidos de entrega.",
+        )
+
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == usuario.organizacao_id,
+    ).first()
+    if not loja:
+        raise HTTPException(
+            status_code=403,
+            detail="O estabelecimento selecionado não pertence à sua organização.",
+        )
+    return usuario, loja.loja_id
 
 
 def _pedido_entrega_por_token(db: Session, token: str):
@@ -248,17 +278,20 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
 @router.get('/pedidos-entrega')
 def listar_pedidos_entrega(
     usuario_id: int,
+    loja_id: int | None = Query(default=None, gt=0),
     situacao: str | None = Query(default=None),
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    usuario = _usuario_operacional_entrega(usuario_id, payload, db)
+    _, loja_resolvida_id = _usuario_operacional_entrega(
+        usuario_id, payload, db, loja_id,
+    )
     consulta = (
         db.query(PedidoEntrega, Venda, Loja, Cliente)
         .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
-        .filter(Venda.loja_id == usuario.loja_id)
+        .filter(Venda.loja_id == loja_resolvida_id)
     )
     if situacao:
         consulta = consulta.filter(PedidoEntrega.situacaopedido == situacao.strip().upper())
@@ -273,10 +306,13 @@ def atualizar_situacao_pedido_entrega(
     pedidoentrega_id: int,
     dados: AtualizarSituacaoEntregaIn,
     usuario_id: int,
+    loja_id: int | None = Query(default=None, gt=0),
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
-    usuario = _usuario_operacional_entrega(usuario_id, payload, db)
+    usuario, loja_resolvida_id = _usuario_operacional_entrega(
+        usuario_id, payload, db, loja_id,
+    )
     resultado = (
         db.query(PedidoEntrega, Venda, Loja, Cliente)
         .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
@@ -288,7 +324,7 @@ def atualizar_situacao_pedido_entrega(
     if not resultado:
         raise HTTPException(status_code=404, detail='Pedido de entrega não encontrado.')
     pedido, venda, loja, cliente = resultado
-    if venda.loja_id != usuario.loja_id:
+    if venda.loja_id != loja_resolvida_id:
         raise HTTPException(status_code=403, detail='Este pedido pertence a outro estabelecimento.')
 
     nova_situacao = (dados.situacao or '').upper()
