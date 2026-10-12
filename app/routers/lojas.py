@@ -615,6 +615,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
             Loja.vrtaxaminimaingresso,
+            Loja.permiteentrega,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .outerjoin(
