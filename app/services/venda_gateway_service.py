@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from decimal import Decimal
 
@@ -13,6 +14,7 @@ from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
 from app.models.loja import Loja
+from app.models.pedidoentrega import PedidoEntrega
 from app.models.venda import Venda
 from app.services.carrinho_service import get_carrinho
 from app.services.venda_service import (
@@ -22,6 +24,26 @@ from app.services.venda_service import (
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.routers.pagamentos import _recalcular_itens_carrinho
 from app.services.cashback_service import confirmar_uso, gerar_cashback_venda
+
+
+def _criar_delivery(db: Session, checkout: CheckoutAsaas | None, venda_id: int) -> None:
+    if not checkout or not checkout.dadosentrega:
+        return
+    if db.query(PedidoEntrega).filter(PedidoEntrega.venda_id == venda_id).first():
+        return
+    dados = json.loads(checkout.dadosentrega)
+    campos = ('cep', 'endereco', 'numero', 'bairro', 'cidade', 'uf')
+    if any(not str(dados.get(campo) or '').strip() for campo in campos):
+        raise HTTPException(409, 'Endereço de entrega incompleto no checkout')
+    db.add(PedidoEntrega(
+        venda_id=venda_id, qrcode_token=gerar_token_qr(),
+        situacaopedido='AGUARDANDO_ACEITE', cepentrega=dados['cep'].strip(),
+        enderecoentrega=dados['endereco'].strip(), numeroentrega=dados['numero'].strip(),
+        complementoentrega=(dados.get('complemento') or '').strip() or None,
+        bairroentrega=dados['bairro'].strip(), cidadeentrega=dados['cidade'].strip(),
+        ufentrega=dados['uf'].strip().upper(),
+        observacaoentrega=(dados.get('observacao') or '').strip() or None,
+    ))
 
 
 def _finalizar_carrinho_pago(db: Session, carrinho_id: int) -> None:
@@ -288,6 +310,7 @@ async def criar_venda_paga_por_carrinho_gateway(
         gateway=gateway,
         payload=pagamento,
     )
+    _criar_delivery(db, checkout_cashback, venda_id)
     if checkout_cashback:
         confirmar_uso(db, checkout_cashback, venda_id)
     cashback_gerado = gerar_cashback_venda(db, venda_id)
@@ -483,6 +506,7 @@ async def criar_venda_paga_por_checkout_snapshot(
         payload=pagamento,
         finalizar_carrinho=True,
     )
+    _criar_delivery(db, checkout, int(venda.venda_id))
     cashback_gerado = gerar_cashback_venda(db, int(venda.venda_id))
     checkout.venda_id = venda.venda_id
     checkout.payment_id = payment_id or checkout.payment_id

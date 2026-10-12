@@ -34,6 +34,7 @@ class CheckoutAsaas(Base):
     vrcashbackusado = Column(Numeric(10, 2), nullable=False, server_default="0")
     asaas_wallet_loja = Column(String(100), nullable=True)
     asaas_wallet_clubbar = Column(String(100), nullable=True)
+    dadosentrega = Column(Text, nullable=True)
 
     dtcriacao = Column(
         DateTime,

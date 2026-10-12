@@ -65,6 +65,7 @@ class PagarNovoIn(BaseModel):
     origem_checkout: Literal["CLIENT", "PARTNER"] = "CLIENT"
     usar_cashback: bool = False
     valor_cashback: Optional[float] = Field(default=None, ge=0)
+    entrega: Optional[dict] = None
 
 class PagarNovoOut(BaseModel):
     venda_id: int

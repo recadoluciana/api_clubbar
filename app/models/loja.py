@@ -52,6 +52,7 @@ class Loja(Base):
     atendimentofisico = Column(CHAR(1), nullable=False, default="S")
     vendaprodutos = Column(CHAR(1), nullable=False, default="S")
     vendaingressos = Column(CHAR(1), nullable=False, default="S")
+    permiteentrega = Column(CHAR(1), nullable=False, default="N")
     
     dtultatu = Column(DateTime, onupdate=func.now())
 
