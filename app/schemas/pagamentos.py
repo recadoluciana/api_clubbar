@@ -71,6 +71,20 @@ class PagarNovoOut(BaseModel):
     pagbank_order_id: Optional[str] = None
     status: str
 
+
+class CriarPedidoEntregaIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
+    cep: str = Field(min_length=8, max_length=10)
+    endereco: str = Field(min_length=2, max_length=255)
+    numero: str = Field(min_length=1, max_length=20)
+    complemento: str | None = Field(default=None, max_length=120)
+    bairro: str = Field(min_length=2, max_length=120)
+    cidade: str = Field(min_length=2, max_length=120)
+    uf: str = Field(min_length=2, max_length=2)
+    observacao: str | None = Field(default=None, max_length=255)
+
 class PagarPixRequest(BaseModel):
     cliente_id: int
     organizacao_id: int

@@ -774,7 +774,8 @@ CREATE TABLE usuario (
     'TOTEM',
     'BARMAN',
     'WAITER',
-    'TICKETMAN'
+    'TICKETMAN',
+    'MOTOBOY'
   ) NOT NULL DEFAULT 'BARMAN',
 
   situsuario      VARCHAR(15) NOT NULL DEFAULT 'ATIVO',

@@ -25,6 +25,7 @@ from app.models.eventosetor import EventoSetor
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
 from app.models.politicacompra import PoliticaCompra
 from app.models.pagvenda import PagVenda
+from app.models.pedidoentrega import PedidoEntrega
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
 from app.services.cashback_service import cancelar_cashback_da_venda
@@ -41,6 +42,11 @@ class AtualizarControleBarIn(BaseModel):
     situacao: str
     nrmesa: str | None = Field(default=None, max_length=50)
     observacao: str | None = Field(default=None, max_length=255)
+
+
+class AtualizarSituacaoEntregaIn(BaseModel):
+    situacao: str
+    motivo_recusa: str | None = Field(default=None, max_length=255)
 
 
 def _hoje_brasil() -> date:
@@ -177,6 +183,143 @@ def _validar_cargo_leitura_qr(cargo: str | None, idtipoproduto: str | None) -> N
         )
 
 
+def _usuario_operacional_entrega(
+    usuario_id: int,
+    payload: dict,
+    db: Session,
+) -> Usuario:
+    if str(payload.get("sub", "")) != str(usuario_id):
+        raise HTTPException(status_code=403, detail="Usuário autenticado inválido.")
+    usuario = db.query(Usuario).filter(Usuario.usuario_id == usuario_id).first()
+    if not usuario or not usuario.loja_id:
+        raise HTTPException(status_code=403, detail="Usuário sem estabelecimento vinculado.")
+    if (usuario.dscargo or '').upper() not in {
+        'SUPERADMIN', 'ADMIN', 'MANAGER', 'BARMAN', 'WAITER', 'MOTOBOY'
+    }:
+        raise HTTPException(status_code=403, detail="Este perfil não pode operar pedidos de entrega.")
+    return usuario
+
+
+def _pedido_entrega_por_token(db: Session, token: str):
+    return (
+        db.query(PedidoEntrega, Venda, Loja, Cliente)
+        .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(PedidoEntrega.qrcode_token == token)
+        .first()
+    )
+
+
+def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loja: Loja, cliente: Cliente) -> dict:
+    itens = (
+        db.query(ItVenda, Produto.nmproduto)
+        .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+        .filter(ItVenda.venda_id == venda.venda_id)
+        .all()
+    )
+    descricao_itens = ', '.join(
+        f"{item.qtitvenda or 1}x {nome or 'Produto'}" for item, nome in itens
+    )
+    endereco = ', '.join(parte for parte in [
+        f"{pedido.enderecoentrega}, {pedido.numeroentrega}",
+        pedido.complementoentrega,
+        pedido.bairroentrega,
+        f"{pedido.cidadeentrega}/{pedido.ufentrega}",
+    ] if parte)
+    return {
+        'pedidoentrega_id': pedido.pedidoentrega_id,
+        'venda_id': venda.venda_id,
+        'loja_id': loja.loja_id,
+        'nmloja': loja.nmloja or '',
+        'nmcliente': cliente.nmcliente or '',
+        'situacao': pedido.situacaopedido,
+        'total': float(venda.totalvenda or 0),
+        'endereco': endereco,
+        'cep': pedido.cepentrega,
+        'observacao': pedido.observacaoentrega or '',
+        'itens_resumo': descricao_itens,
+        'dtaceite': iso_utc(pedido.dtaceite),
+        'dtdespacho': iso_utc(pedido.dtdespacho),
+        'dtrecebimento': iso_utc(pedido.dtrecebimento),
+    }
+
+
+@router.get('/pedidos-entrega')
+def listar_pedidos_entrega(
+    usuario_id: int,
+    situacao: str | None = Query(default=None),
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    usuario = _usuario_operacional_entrega(usuario_id, payload, db)
+    consulta = (
+        db.query(PedidoEntrega, Venda, Loja, Cliente)
+        .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(Venda.loja_id == usuario.loja_id)
+    )
+    if situacao:
+        consulta = consulta.filter(PedidoEntrega.situacaopedido == situacao.strip().upper())
+    return [
+        _resumo_pedido_entrega(db, pedido, venda, loja, cliente)
+        for pedido, venda, loja, cliente in consulta.order_by(PedidoEntrega.dtcriacao.desc()).all()
+    ]
+
+
+@router.post('/pedidos-entrega/{pedidoentrega_id}/situacao')
+def atualizar_situacao_pedido_entrega(
+    pedidoentrega_id: int,
+    dados: AtualizarSituacaoEntregaIn,
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    usuario = _usuario_operacional_entrega(usuario_id, payload, db)
+    resultado = (
+        db.query(PedidoEntrega, Venda, Loja, Cliente)
+        .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(PedidoEntrega.pedidoentrega_id == pedidoentrega_id)
+        .first()
+    )
+    if not resultado:
+        raise HTTPException(status_code=404, detail='Pedido de entrega não encontrado.')
+    pedido, venda, loja, cliente = resultado
+    if venda.loja_id != usuario.loja_id:
+        raise HTTPException(status_code=403, detail='Este pedido pertence a outro estabelecimento.')
+
+    nova_situacao = (dados.situacao or '').upper()
+    transicoes = {
+        'AGUARDANDO_ACEITE': {'ACEITO', 'RECUSADO', 'CANCELADO'},
+        'ACEITO': {'EM_ROTA', 'CANCELADO'},
+    }
+    if nova_situacao not in transicoes.get(pedido.situacaopedido, set()):
+        raise HTTPException(status_code=409, detail='Esta alteração de situação não é permitida.')
+    if nova_situacao == 'EM_ROTA' and (usuario.dscargo or '').upper() == 'MOTOBOY':
+        # Um motoboy pode iniciar a rota, mas não aceitar ou recusar o pedido.
+        pass
+    elif (usuario.dscargo or '').upper() == 'MOTOBOY':
+        raise HTTPException(status_code=403, detail='O motoboy só pode iniciar a rota ou confirmar a entrega.')
+
+    agora = _agora_brasil()
+    pedido.situacaopedido = nova_situacao
+    if nova_situacao == 'ACEITO':
+        pedido.dtaceite = agora
+        pedido.usuarioaceite_id = usuario.usuario_id
+    elif nova_situacao == 'EM_ROTA':
+        pedido.dtdespacho = agora
+        pedido.usuariodespacho_id = usuario.usuario_id
+    elif nova_situacao in {'RECUSADO', 'CANCELADO'}:
+        pedido.dtrecusa = agora
+        pedido.motivorecusa = (dados.motivo_recusa or '').strip() or None
+    db.commit()
+    db.refresh(pedido)
+    return _resumo_pedido_entrega(db, pedido, venda, loja, cliente)
+
+
 def _dados_visuais_ingresso(db: Session, lote_id: int | None) -> tuple[str, str]:
     if not lote_id:
         return "Ingresso", ""
@@ -306,6 +449,10 @@ def listar_itens_nao_entregues(
             ItVenda.nmbeneficiosnapshot,
             Venda.dtcriacao,
             Venda.loja_id,
+            PedidoEntrega.situacaopedido.label('situacaoentrega'),
+            PedidoEntrega.qrcode_token.label('qrcodeentrega'),
+            PedidoEntrega.dtdespacho.label('dtdespachoentrega'),
+            PedidoEntrega.dtrecebimento.label('dtrecebimentoentrega'),
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
             EventoLotePreco.tipopreco.label("tipoprecoingresso"),
             EventoSetor.nmsetor.label("nmsetoringresso"),
@@ -314,12 +461,26 @@ def listar_itens_nao_entregues(
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(PedidoEntrega, PedidoEntrega.venda_id == Venda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
         .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
         .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
         .filter(Venda.cliente_id == cliente_id)
-        .filter(Venda.sitvenda == "PAGA")
+        .filter(
+            or_(
+                Venda.sitvenda == "PAGA",
+                PedidoEntrega.pedidoentrega_id.isnot(None),
+            )
+        )
+        .filter(
+            or_(
+                PedidoEntrega.pedidoentrega_id.is_(None),
+                PedidoEntrega.situacaopedido.in_([
+                    'AGUARDANDO_ACEITE', 'ACEITO', 'EM_ROTA'
+                ]),
+            )
+        )
         .filter(ItVenda.identregaitvenda == "NAO")
         .filter(ItVenda.sititvenda == "ATIVO")
         .filter(
@@ -363,6 +524,11 @@ def listar_itens_nao_entregues(
             "venda_id": row.venda_id,
             "produto_id": row.produto_id,
             "qrtokenitvenda": row.qrtokenitvenda or "",
+            "qrcodeentrega": row.qrcodeentrega or "",
+            "situacaoentrega": row.situacaoentrega,
+            "dtdespachoentrega": iso_utc(row.dtdespachoentrega),
+            "dtrecebimentoentrega": iso_utc(row.dtrecebimentoentrega),
+            "tipo_operacao": "DELIVERY" if row.situacaoentrega else "RETIRADA",
             "nmproduto": row.nmproduto,
             "urlfotoproduto": row.urlfotoproduto,
             "idtipoproduto": row.idtipoproduto,
@@ -1120,12 +1286,18 @@ def get_qt_itens_naoentregues(
                 ).label("valor_total"),
             )
             .join(Venda, Venda.venda_id == ItVenda.venda_id)
+            .outerjoin(PedidoEntrega, PedidoEntrega.venda_id == Venda.venda_id)
             .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
             .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
             .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
             .filter(
                 Venda.cliente_id == cliente_id,
-                Venda.sitvenda == "PAGA",
+                or_(
+                    Venda.sitvenda == "PAGA",
+                    PedidoEntrega.situacaopedido.in_([
+                        'AGUARDANDO_ACEITE', 'ACEITO', 'EM_ROTA'
+                    ]),
+                ),
                 ItVenda.identregaitvenda == "NAO",
                 ItVenda.sititvenda == "ATIVO",
             )
@@ -1671,6 +1843,29 @@ def buscar_item_por_token(
             detail="O usuário não está vinculado a uma loja.",
         )
 
+    pedido_resultado = _pedido_entrega_por_token(db, token)
+    if pedido_resultado:
+        pedido, venda_pedido, loja_pedido, cliente_pedido = pedido_resultado
+        if (usuario.dscargo or '').upper() not in {'MOTOBOY', 'BARMAN', 'WAITER'}:
+            raise HTTPException(status_code=403, detail='Somente o motoboy pode validar uma entrega.')
+        if venda_pedido.loja_id != usuario.loja_id:
+            raise HTTPException(status_code=403, detail='Este pedido pertence a outro estabelecimento.')
+        resumo = _resumo_pedido_entrega(db, pedido, venda_pedido, loja_pedido, cliente_pedido)
+        return {
+            **resumo,
+            'itvenda_id': None,
+            'produto_id': None,
+            'idtipoproduto': 'P',
+            'tipo_operacao': 'DELIVERY',
+            'qrcode_token': pedido.qrcode_token,
+            'nmproduto': 'Pedido para entrega',
+            'urlfotoproduto': loja_pedido.urllogoloja or '',
+            'dsobsitvenda': pedido.observacaoentrega or '',
+            'identregaitvenda': 'SIM' if pedido.situacaopedido == 'ENTREGUE' else 'NAO',
+            'idcontrolebar': pedido.situacaopedido,
+            'disponivel': pedido.situacaopedido == 'EM_ROTA',
+        }
+
     resultado = (
         db.query(
             ItVenda,
@@ -1848,6 +2043,54 @@ def entregar_produto_por_token(
             status_code=403,
             detail="O usuário não está vinculado a uma loja.",
         )
+
+    pedido_resultado = _pedido_entrega_por_token(db, token)
+    if pedido_resultado:
+        pedido, venda_pedido, loja_pedido, cliente_pedido = pedido_resultado
+        if (usuario.dscargo or '').upper() not in {'MOTOBOY', 'BARMAN', 'WAITER'}:
+            raise HTTPException(status_code=403, detail='Somente o motoboy pode confirmar a entrega.')
+        if venda_pedido.loja_id != usuario.loja_id:
+            raise HTTPException(status_code=403, detail='Este pedido pertence a outro estabelecimento.')
+        if pedido.situacaopedido != 'EM_ROTA':
+            raise HTTPException(
+                status_code=409,
+                detail='O pedido precisa estar em rota antes da confirmação de entrega.',
+            )
+
+        agora = _agora_brasil()
+        pedido.situacaopedido = 'ENTREGUE'
+        pedido.dtrecebimento = agora
+        pedido.usuariorecebimento_id = usuario.usuario_id
+        (
+            db.query(ItVenda)
+            .filter(ItVenda.venda_id == venda_pedido.venda_id)
+            .filter(ItVenda.sititvenda == 'ATIVO')
+            .update({
+                ItVenda.identregaitvenda: 'SIM',
+                ItVenda.dtentregaitvenda: agora,
+                ItVenda.userentregaitvenda: usuario.usuario_id,
+                ItVenda.nmuserentregaitvenda: usuario.nmusuario,
+                ItVenda.idcontrolebar: 'ENTREGUE',
+            }, synchronize_session=False)
+        )
+        pagamento = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id == venda_pedido.venda_id)
+            .order_by(PagVenda.pagvenda_id.desc())
+            .first()
+        )
+        if pagamento:
+            pagamento.sitpagvenda = 'PAGO'
+            pagamento.dtconftranspagvenda = agora
+            pagamento.idtransacaopagvenda = f'ENTREGA-{pedido.pedidoentrega_id}'
+        venda_pedido.sitvenda = 'PAGA'
+        db.commit()
+        return {
+            'ok': True,
+            'msg': 'Entrega confirmada e pagamento na entrega registrado.',
+            **_resumo_pedido_entrega(db, pedido, venda_pedido, loja_pedido, cliente_pedido),
+            'tipo_operacao': 'DELIVERY',
+        }
 
     resultado = (
         db.query(
