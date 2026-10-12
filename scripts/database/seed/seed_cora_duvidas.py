@@ -19,14 +19,19 @@ DUVIDAS = [
     (1, "Como comprar um ingresso?", "Abra o evento, escolha o ingresso e a quantidade, toque em Comprar ingressos e conclua os dados solicitados."),
     (2, "Onde encontro meus ingressos?", "Seus ingressos ficam na Carteira, acessível pela barra inferior do aplicativo."),
     (3, "Como apresentar o ingresso no evento?", "Abra a Carteira, escolha o ingresso e toque em Exibir ingresso e QR Code. Apresente o código na portaria."),
-    (4, "Como cancelar a compra de um ingresso?", "Na Carteira, abra o ingresso e use a opção Cancelar. As condições de cancelamento aplicáveis serão exibidas antes da confirmação."),
+    (4, "Como cancelar a compra de um ingresso?", "Acesse Perfil/Minhas compras, localize a compra e toque em Cancelar compra. As condições de cancelamento aplicáveis serão exibidas antes da confirmação."),
     (5, "Como comprar um produto?", "Abra o estabelecimento ou o cardápio, adicione os produtos ao carrinho e finalize o pagamento."),
     (6, "Onde retiro os produtos comprados?", "Os produtos ficam disponíveis na Carteira. Apresente o ticket no estabelecimento para realizar a retirada."),
     (7, "Como alterar meus dados?", "Toque em Perfil na barra inferior e abra a opção de editar seus dados."),
     (8, "Quais formas de pagamento são aceitas?", "As formas disponíveis aparecem ao finalizar cada compra e podem variar conforme o estabelecimento e o tipo de venda."),
     (9, "Paguei e a compra não apareceu. O que faço?", "Atualize a Carteira e confira novamente após alguns instantes. Se continuar sem aparecer, envie uma mensagem para a Cora com os dados da compra."),
     (10, "Como falar com o atendimento?", "Digite sua mensagem no campo abaixo. A Cora responderá dúvidas conhecidas e registrará as demais solicitações para acompanhamento."),
-    (11, "Como cancelar a compra de um produto?", "Na Carteira, abra o produto e toque em Cancelar compra. O cancelamento pode ser solicitado até 7 dias após a data da compra, desde que o produto ainda não tenha sido retirado. Quando permitido, o reembolso é solicitado pelo mesmo meio de pagamento."),
+    (11, "Como cancelar a compra de um produto?", "Acesse Perfil/Minhas compras, localize a compra e toque em Cancelar compra. O cancelamento pode ser solicitado até 7 dias após a data da compra, desde que o produto ainda não tenha sido retirado. Quando permitido, o reembolso é solicitado pelo mesmo meio de pagamento."),
+    (12, "Preciso apresentar documento físico ou aceita digital?", "Depende da política do organizador. Recomendamos confirmar antes do evento."),
+    (13, "Posso comprar meia-entrada para outra pessoa?", "Sim, mas essa pessoa precisará apresentar o documento dela no dia do evento."),
+    (14, "O organizador pode limitar a quantidade de meia-entrada por CPF?", "Sim, desde que respeite a cota mínima de 40% do total de ingressos."),
+    (15, "Documento estrangeiro é aceito para comprovar idade (idosos)?", "Sim, desde que seja documento oficial com foto. Passaporte, por exemplo, é aceito."),
+    (16, "Perdi minha carteirinha de estudante. E agora?", "Solicite a segunda via junto à entidade que emitiu o documento, como UNE ou UBES. O processo pode levar alguns dias."),
 ]
 
 
