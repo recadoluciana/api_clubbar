@@ -12,6 +12,7 @@ CargoUsuario = Literal[
     "BARMAN",
     "WAITER",
     "TICKETMAN",
+    "MOTOBOY",
 ]
 
 

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -11,6 +12,7 @@ from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.evento import Evento
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
+from app.models.pedidoentrega import PedidoEntrega
 
 from app.utils.datetime_utils import formatar_data_br
 
@@ -42,15 +44,19 @@ def listar_compras(
 ):
     # 1) Vendas do cliente + nome da loja + logo da loja
     vendas = (
-        db.query(Venda, Loja.nmloja, Loja.urllogoloja)
+        db.query(Venda, Loja.nmloja, Loja.urllogoloja, PedidoEntrega)
         .join(
             Loja,
             (Loja.organizacao_id == Venda.organizacao_id)
             & (Loja.loja_id == Venda.loja_id),
         )
+        .outerjoin(PedidoEntrega, PedidoEntrega.venda_id == Venda.venda_id)
         .filter(
             Venda.cliente_id == cliente_id,
-            Venda.sitvenda.in_(["PAGA", "CANCELADA"])
+            or_(
+                Venda.sitvenda.in_(["PAGA", "CANCELADA"]),
+                PedidoEntrega.pedidoentrega_id.isnot(None),
+            ),
         )
         .order_by(Venda.dtcriacao.desc())
         .all()
@@ -73,11 +79,16 @@ def listar_compras(
                 "dtcriacao": formatar_data_br(v.dtcriacao),
                 "carrinho_id": v.carrinho_id,
                 "dsplataforma": v.dsplataforma,
+                "entrega": {
+                    "pedidoentrega_id": pedido.pedidoentrega_id,
+                    "situacao": pedido.situacaopedido,
+                    "qrcode_token": pedido.qrcode_token,
+                } if pedido else None,
             }
-            for v, nmloja, urllogoloja in vendas
+            for v, nmloja, urllogoloja, pedido in vendas
         ]
 
-    venda_ids = [v.venda_id for v, _, _ in vendas]
+    venda_ids = [v.venda_id for v, _, _, _ in vendas]
 
     # 2) Itens + nome do produto + tipo do produto
     itens_rows = (
@@ -171,7 +182,7 @@ def listar_compras(
 
     # 3) Resposta final
     resp = []
-    for v, nmloja, urllogoloja in vendas:
+    for v, nmloja, urllogoloja, pedido in vendas:
         resp.append({
             "venda_id": v.venda_id,
             "organizacao_id": v.organizacao_id,
@@ -185,6 +196,26 @@ def listar_compras(
             "dtcriacao": formatar_data_br(v.dtcriacao),
             "dtultatu": formatar_data_br(v.dtultatu),
             "carrinho_id": v.carrinho_id,
+            "entrega": {
+                "pedidoentrega_id": pedido.pedidoentrega_id,
+                "situacao": pedido.situacaopedido,
+                "qrcode_token": pedido.qrcode_token,
+                "endereco": ", ".join(
+                    parte for parte in [
+                        f"{pedido.enderecoentrega}, {pedido.numeroentrega}",
+                        pedido.complementoentrega,
+                        pedido.bairroentrega,
+                        f"{pedido.cidadeentrega}/{pedido.ufentrega}",
+                    ] if parte
+                ),
+                "cep": pedido.cepentrega,
+                "observacao": pedido.observacaoentrega,
+                "dtaceite": formatar_data_br(pedido.dtaceite),
+                "dtdespacho": formatar_data_br(pedido.dtdespacho),
+                "dtrecebimento": formatar_data_br(pedido.dtrecebimento),
+                "dtrecusa": formatar_data_br(pedido.dtrecusa),
+                "motivorecusa": pedido.motivorecusa,
+            } if pedido else None,
             "itens": itens_por_venda.get(v.venda_id, []),
         })
 

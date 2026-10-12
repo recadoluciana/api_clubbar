@@ -14,11 +14,16 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.security import get_usuario_logado
 from app.core.cliente_auth import exigir_cliente_autenticado
-from app.schemas.pagamentos import PagarNovoIn
+from app.schemas.pagamentos import CriarPedidoEntregaIn, PagarNovoIn
 
 from app.models.carrinho import Carrinho
+from app.models.itcarrinho import ItCarrinho
+from app.models.itvenda import ItVenda
+from app.models.pagvenda import PagVenda
+from app.models.pedidoentrega import PedidoEntrega
 from app.models.venda import Venda
 from app.models.produto import Produto
+from app.models.loja import Loja
 from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
@@ -30,6 +35,7 @@ from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
+from app.services.venda_service import criar_ou_obter_venda_idempotente, gerar_token_qr
 
 from app.routers.produtos import calcular_preco_final
 
@@ -428,6 +434,134 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
             status_code=500,
             detail=f'Erro ao gerar PIX Asaas ({type(exc).__name__}): {exc}',
         )
+
+
+@router.post('/pedido-entrega')
+async def criar_pedido_entrega(
+    payload: CriarPedidoEntregaIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Fecha o carrinho de produtos como um pedido com pagamento na entrega.
+
+    O estado financeiro permanece PENDENTE. O entregador o confirma somente
+    quando lê o QR Code do pedido no endereço do cliente.
+    """
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+
+    loja = (
+        db.query(Loja)
+        .filter(
+            Loja.loja_id == payload.loja_id,
+            Loja.organizacao_id == payload.organizacao_id,
+            Loja.sitloja == 'ATIVA',
+        )
+        .first()
+    )
+    if not loja:
+        raise HTTPException(status_code=404, detail='Estabelecimento não encontrado ou indisponível.')
+
+    carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id, None)
+    if not carrinho or not carrinho.get('itens'):
+        raise HTTPException(status_code=400, detail='Carrinho vazio')
+
+    carrinho_id = int(carrinho.get('carrinho_id') or 0)
+    if not carrinho_id:
+        raise HTTPException(status_code=400, detail='Carrinho inválido')
+
+    existente = (
+        db.query(PedidoEntrega)
+        .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
+        .filter(
+            Venda.carrinho_id == carrinho_id,
+            Venda.cliente_id == payload.cliente_id,
+        )
+        .order_by(PedidoEntrega.pedidoentrega_id.desc())
+        .first()
+    )
+    if existente:
+        return {
+            'pedidoentrega_id': int(existente.pedidoentrega_id),
+            'venda_id': int(existente.venda_id),
+            'situacao': existente.situacaopedido,
+            'qrcode_token': existente.qrcode_token,
+            'mensagem': 'Este pedido de entrega já foi criado.',
+        }
+
+    try:
+        itens_recalculados, total = _recalcular_itens_carrinho(
+            db,
+            carrinho.get('itens') or [],
+            payload.loja_id,
+            payload.organizacao_id,
+        )
+        if not itens_recalculados:
+            raise HTTPException(status_code=400, detail='Carrinho vazio')
+
+        carrinho_para_venda = dict(carrinho)
+        carrinho_para_venda['itens'] = itens_recalculados
+        carrinho_para_venda['total'] = total
+        venda_criada = await criar_ou_obter_venda_idempotente(
+            db,
+            cliente_id=payload.cliente_id,
+            loja_id=payload.loja_id,
+            organizacao_id=payload.organizacao_id,
+            carrinho=carrinho_para_venda,
+            plataforma='WEB',
+            metodo_pagamento='OUTRO',
+        )
+        venda_id = int(venda_criada['venda_id'])
+        venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+        pagamento = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id == venda_id)
+            .order_by(PagVenda.pagvenda_id.desc())
+            .first()
+        )
+        if not venda or not pagamento:
+            raise HTTPException(status_code=500, detail='Não foi possível preparar o pedido.')
+
+        pagamento.dsmetodopag = 'PAGAMENTO_ENTREGA'
+        pagamento.provedor = 'ENTREGA'
+        pagamento.sitpagvenda = 'PENDENTE'
+        pagamento.vrpagvenda = total
+        venda.sitvenda = 'PENDENTE'
+        venda.totalvenda = total
+
+        pedido = PedidoEntrega(
+            venda_id=venda_id,
+            qrcode_token=gerar_token_qr(),
+            situacaopedido='AGUARDANDO_ACEITE',
+            cepentrega=payload.cep.strip(),
+            enderecoentrega=payload.endereco.strip(),
+            numeroentrega=payload.numero.strip(),
+            complementoentrega=(payload.complemento or '').strip() or None,
+            bairroentrega=payload.bairro.strip(),
+            cidadeentrega=payload.cidade.strip(),
+            ufentrega=payload.uf.strip().upper(),
+            observacaoentrega=(payload.observacao or '').strip() or None,
+        )
+        db.add(pedido)
+
+        carrinho_db = db.query(Carrinho).filter(Carrinho.carrinho_id == carrinho_id).first()
+        if carrinho_db:
+            carrinho_db.sitcarrinho = 'FECHADO'
+        db.commit()
+        db.refresh(pedido)
+        return {
+            'pedidoentrega_id': int(pedido.pedidoentrega_id),
+            'venda_id': venda_id,
+            'situacao': pedido.situacaopedido,
+            'qrcode_token': pedido.qrcode_token,
+            'mensagem': 'Pedido enviado ao estabelecimento. Aguarde o aceite.',
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        print('[PEDIDO ENTREGA][ERRO]', repr(exc))
+        raise HTTPException(status_code=500, detail='Não foi possível criar o pedido de entrega.')
 
 
 @router.post("/pagar-asaas")
