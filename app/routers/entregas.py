@@ -252,6 +252,13 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
     descricao_itens = ', '.join(
         f"{item.qtitvenda or 1}x {nome or 'Produto'}" for item, nome in itens
     )
+    itens_detalhados = [
+        {
+            'nome': nome or 'Produto',
+            'quantidade': int(item.qtitvenda or 1),
+        }
+        for item, nome in itens
+    ]
     cidade, estado = nome_localidade_entrega(
         db,
         cidade_id=pedido.cidade_id,
@@ -286,6 +293,7 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
         'cep': pedido.cepentrega,
         'observacao': pedido.observacaoentrega or '',
         'itens_resumo': descricao_itens,
+        'itens': itens_detalhados,
         'dtaceite': iso_utc(pedido.dtaceite),
         'dtdespacho': iso_utc(pedido.dtdespacho),
         'dtrecebimento': iso_utc(pedido.dtrecebimento),
@@ -322,6 +330,61 @@ def listar_pedidos_entrega(
         _resumo_pedido_entrega(db, pedido, venda, loja, cliente)
         for pedido, venda, loja, cliente in consulta.order_by(PedidoEntrega.dtcriacao.desc()).all()
     ]
+
+
+@router.get('/motoboy/entregas-pendentes')
+def listar_entregas_pendentes_motoboy(
+    usuario_id: int,
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Pedidos aceitos da loja, ordenados do maior para o menor tempo de espera."""
+    usuario, loja_id = _usuario_operacional_entrega(usuario_id, payload, db)
+    if (usuario.dscargo or '').upper() != 'MOTOBOY':
+        raise HTTPException(
+            status_code=403,
+            detail='Esta consulta é exclusiva para o perfil Motoboy.',
+        )
+
+    pedidos = (
+        db.query(PedidoEntrega, Venda, Loja, Cliente)
+        .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .filter(
+            Venda.loja_id == loja_id,
+            PedidoEntrega.situacaopedido.in_(['ACEITO', 'EM_ROTA']),
+        )
+        .order_by(
+            func.coalesce(PedidoEntrega.dtaceite, PedidoEntrega.dtcriacao).asc(),
+            PedidoEntrega.pedidoentrega_id.asc(),
+        )
+        .all()
+    )
+    agora = _agora_brasil()
+    resultado = []
+    for pedido, venda, loja, cliente in pedidos:
+        inicio_espera = pedido.dtaceite or pedido.dtcriacao
+        espera_minutos = max(
+            0,
+            int((agora - inicio_espera).total_seconds() // 60),
+        )
+        resumo = _resumo_pedido_entrega(db, pedido, venda, loja, cliente)
+        resumo.update({
+            'dtpedido_fmt': pedido.dtcriacao.strftime('%d/%m/%Y às %H:%M'),
+            'dtaceite_fmt': (
+                pedido.dtaceite.strftime('%d/%m/%Y às %H:%M')
+                if pedido.dtaceite
+                else None
+            ),
+            'tempo_espera_minutos': espera_minutos,
+        })
+        resultado.append(resumo)
+
+    return {
+        'total': len(resultado),
+        'pedidos': resultado,
+    }
 
 
 @router.post('/pedidos-entrega/{pedidoentrega_id}/situacao')
