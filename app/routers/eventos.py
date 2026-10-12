@@ -26,6 +26,8 @@ from app.models.eventosetor import EventoSetor
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
 from app.models.organizacao import Organizacao
+from app.models.eventomodelo import EventoModelo
+from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.lojapoliticaingresso import LojaPoliticaIngresso
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
@@ -664,11 +666,33 @@ def get_evento_por_id(
     db: Session = Depends(get_db),
 ):
     evento = (
-        db.query(Evento, Loja.nmloja, Loja.dsbairroloja, Loja.endloja, Loja.nrendeloja, Cidade.nmcidade, Estado.sgestado)
+        db.query(
+            Evento,
+            Loja.nmloja,
+            Loja.dsbairroloja,
+            Loja.endloja,
+            Loja.nrendeloja,
+            Cidade.nmcidade,
+            Estado.sgestado,
+            Organizacao.emailorganizacao,
+            Organizacao.telorganizacao,
+            EventoModelo.emailcontatoevento,
+            EventoModelo.whatsappevento,
+            LeadEstabelecimento.email,
+            LeadEstabelecimento.email_responsavel,
+            LeadEstabelecimento.telefone,
+            LeadEstabelecimento.telefone_responsavel,
+            Loja.nrtelloja,
+        )
         .join(Loja, Loja.loja_id == Evento.loja_id)
         .join(Cidade, Cidade.cidade_id == Loja.cidade_id)
         .join(Estado, Estado.estado_id == Cidade.estado_id)
         .join(Organizacao, Organizacao.organizacao_id == Evento.organizacao_id)
+        .outerjoin(EventoModelo, EventoModelo.eventomodelo_id == Evento.eventomodelo_id)
+        .outerjoin(
+            LeadEstabelecimento,
+            LeadEstabelecimento.leadestabelecimento_id == Loja.leadestabelecimento_id,
+        )
         .filter(Evento.evento_id == evento_id)
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .first()
@@ -677,7 +701,24 @@ def get_evento_por_id(
     if not evento:
         raise HTTPException(status_code=404, detail="Evento não encontrado")
 
-    evento_obj, nmloja, dsbairroloja, endloja, nrendloja, nmcidade, sgestado = evento
+    (
+        evento_obj,
+        nmloja,
+        dsbairroloja,
+        endloja,
+        nrendloja,
+        nmcidade,
+        sgestado,
+        email_organizacao,
+        telefone_organizacao,
+        email_evento,
+        whatsapp_evento,
+        email_estabelecimento,
+        email_responsavel_estabelecimento,
+        whatsapp_estabelecimento,
+        whatsapp_responsavel_estabelecimento,
+        telefone_loja,
+    ) = evento
 
     lotes = (
         db.query(EventoLote)
@@ -714,6 +755,18 @@ def get_evento_por_id(
         "nrendlocevento": numero_endereco_evento,
         "dsdescevento": getattr(evento_obj, "dsdescevento", None),
         "dspoliticacancelamento": evento_obj.dspoliticacancelamento,
+        "email_evento": (email_evento or email_organizacao or "").strip(),
+        "whatsapp_evento": (whatsapp_evento or telefone_organizacao or "").strip(),
+        "email_estabelecimento": (
+            email_estabelecimento or email_responsavel_estabelecimento or email_organizacao or ""
+        ).strip(),
+        "whatsapp_estabelecimento": (
+            whatsapp_estabelecimento
+            or whatsapp_responsavel_estabelecimento
+            or telefone_loja
+            or telefone_organizacao
+            or ""
+        ).strip(),
         "politica_loja": {
             "dspoliticaingresso": politica_loja.dspoliticaingresso,
             "dsorientacoesacesso": politica_loja.dsorientacoesacesso,
