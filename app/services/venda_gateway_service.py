@@ -24,6 +24,7 @@ from app.services.venda_service import (
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.routers.pagamentos import _recalcular_itens_carrinho
 from app.services.cashback_service import confirmar_uso, gerar_cashback_venda
+from app.services.localidade_entrega_service import resolver_localidade_entrega
 
 
 def _criar_delivery(db: Session, checkout: CheckoutAsaas | None, venda_id: int) -> None:
@@ -35,13 +36,24 @@ def _criar_delivery(db: Session, checkout: CheckoutAsaas | None, venda_id: int) 
     campos = ('cep', 'endereco', 'numero', 'bairro', 'cidade', 'uf')
     if any(not str(dados.get(campo) or '').strip() for campo in campos):
         raise HTTPException(409, 'Endereço de entrega incompleto no checkout')
+    venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+    loja = db.query(Loja).filter(Loja.loja_id == venda.loja_id).first() if venda else None
+    if not loja:
+        raise HTTPException(404, 'Estabelecimento do pedido não encontrado')
+    cidade, estado = resolver_localidade_entrega(
+        db,
+        cidade_informada=dados['cidade'],
+        uf_informada=dados['uf'],
+        loja=loja,
+    )
     db.add(PedidoEntrega(
         venda_id=venda_id, qrcode_token=gerar_token_qr(),
         situacaopedido='AGUARDANDO_ACEITE', cepentrega=dados['cep'].strip(),
         enderecoentrega=dados['endereco'].strip(), numeroentrega=dados['numero'].strip(),
         complementoentrega=(dados.get('complemento') or '').strip() or None,
-        bairroentrega=dados['bairro'].strip(), cidadeentrega=dados['cidade'].strip(),
-        ufentrega=dados['uf'].strip().upper(),
+        bairroentrega=dados['bairro'].strip(), cidade_id=cidade.cidade_id,
+        estado_id=estado.estado_id, cidadeentrega=cidade.nmcidade,
+        ufentrega=estado.sgestado,
         observacaoentrega=(dados.get('observacao') or '').strip() or None,
     ))
 

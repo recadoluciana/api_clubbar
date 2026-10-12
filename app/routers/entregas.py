@@ -29,6 +29,7 @@ from app.models.pedidoentrega import PedidoEntrega
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
 from app.services.cashback_service import cancelar_cashback_da_venda
+from app.services.localidade_entrega_service import nome_localidade_entrega
 from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
@@ -251,16 +252,25 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
     descricao_itens = ', '.join(
         f"{item.qtitvenda or 1}x {nome or 'Produto'}" for item, nome in itens
     )
+    cidade, estado = nome_localidade_entrega(
+        db,
+        cidade_id=pedido.cidade_id,
+        estado_id=pedido.estado_id,
+        cidade_legado=pedido.cidadeentrega,
+        uf_legado=pedido.ufentrega,
+    )
     endereco = ', '.join(parte for parte in [
         f"{pedido.enderecoentrega}, {pedido.numeroentrega}",
         pedido.complementoentrega,
         pedido.bairroentrega,
-        f"{pedido.cidadeentrega}/{pedido.ufentrega}",
+        f"{cidade}/{estado}",
     ] if parte)
     return {
         'pedidoentrega_id': pedido.pedidoentrega_id,
         'venda_id': venda.venda_id,
         'loja_id': loja.loja_id,
+        'cidade_id': pedido.cidade_id,
+        'estado_id': pedido.estado_id,
         'nmloja': loja.nmloja or '',
         'nmcliente': cliente.nmcliente or '',
         'situacao': pedido.situacaopedido,
