@@ -1420,6 +1420,7 @@ CREATE TABLE eventomodelo (
   organizacao_id BIGINT NOT NULL,
   nmtituloevento VARCHAR(120) NOT NULL,
   dsdescevento TEXT NULL, dspoliticacancelamento TEXT NULL,
+  emailcontatoevento VARCHAR(255) NULL, whatsappevento VARCHAR(30) NULL,
   tipolocalevento ENUM('ESTABELECIMENTO','OUTRO') NOT NULL DEFAULT 'ESTABELECIMENTO',
   nrceplocalevento VARCHAR(9) NULL,
   nmlocalevento VARCHAR(120) NULL, dsendlocevento VARCHAR(200) NULL,

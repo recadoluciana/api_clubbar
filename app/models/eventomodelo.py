@@ -9,6 +9,8 @@ class EventoModelo(Base):
     nmtituloevento = Column(String(120), nullable=False)
     dsdescevento = Column(Text)
     dspoliticacancelamento = Column(Text)
+    emailcontatoevento = Column(String(255), nullable=True)
+    whatsappevento = Column(String(30), nullable=True)
     tipolocalevento = Column(Enum("ESTABELECIMENTO", "OUTRO", name="eventomodelo_tipo_local"), nullable=False, server_default="ESTABELECIMENTO")
     nrceplocalevento = Column(String(9))
     nmlocalevento = Column(String(120))
