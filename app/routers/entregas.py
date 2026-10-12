@@ -265,6 +265,13 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
         pedido.bairroentrega,
         f"{cidade}/{estado}",
     ] if parte)
+    usuario_recebimento = (
+        db.query(Usuario.nmusuario)
+        .filter(Usuario.usuario_id == pedido.usuariorecebimento_id)
+        .scalar()
+        if pedido.usuariorecebimento_id
+        else None
+    )
     return {
         'pedidoentrega_id': pedido.pedidoentrega_id,
         'venda_id': venda.venda_id,
@@ -282,6 +289,12 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
         'dtaceite': iso_utc(pedido.dtaceite),
         'dtdespacho': iso_utc(pedido.dtdespacho),
         'dtrecebimento': iso_utc(pedido.dtrecebimento),
+        'dtrecebimento_fmt': (
+            pedido.dtrecebimento.strftime('%d/%m/%Y às %H:%M')
+            if pedido.dtrecebimento
+            else None
+        ),
+        'nmusuariorecebimento': usuario_recebimento or '',
     }
 
 
