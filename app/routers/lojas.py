@@ -355,6 +355,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
             Loja.vrtaxaminimaingresso,
+            Loja.permiteentrega,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -383,6 +384,7 @@ def listar_todas_lojas(request: Request, db: Session = Depends(get_db)):
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
             "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
+            "permiteentrega": r.permiteentrega,
         }
         for r in rows
     ]
@@ -417,6 +419,7 @@ def listar_todas_lojas_ativas(
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
             Loja.vrtaxaminimaingresso,
+            Loja.permiteentrega,
             Estado.sgestado,
             Loja.dtcriacao,
         )
@@ -454,6 +457,7 @@ def listar_todas_lojas_ativas(
             "vrtaxaprod": float(r.vrtaxaprod or 0),
             "vrtaxaing": float(r.vrtaxaing or 0),
             "vrtaxaminimaingresso": float(r.vrtaxaminimaingresso or 0),
+            "permiteentrega": r.permiteentrega,
             "sgestado": r.sgestado or "",
             "dtcriacao": r.dtcriacao,
             "estilos": estilos,
@@ -485,6 +489,7 @@ def listar_lojas_com_retirada_pendente(
             Loja.vrtaxaprod,
             Loja.vrtaxaing,
             Loja.vrtaxaminimaingresso,
+            Loja.permiteentrega,
         )
         .join(Organizacao, Organizacao.organizacao_id == Loja.organizacao_id)
         .filter(Loja.sitloja == "ATIVA")
@@ -651,6 +656,7 @@ def dados_loja(loja_id: int, request: Request, db: Session = Depends(get_db)):
         "vrtaxaprod": float(row.vrtaxaprod or 0),
         "vrtaxaing": float(row.vrtaxaing or 0),
         "vrtaxaminimaingresso": float(row.vrtaxaminimaingresso or 0),
+        "permiteentrega": row.permiteentrega,
 
     }
 
@@ -703,6 +709,7 @@ def listar_lojas_por_organizacao_todas(
             "tipoloja": loja.tipoloja,
             "vendaprodutos": loja.vendaprodutos,
             "vendaingressos": loja.vendaingressos,
+            "permiteentrega": loja.permiteentrega,
             "dsbairroloja": loja.dsbairroloja,
             "endloja": loja.endloja,
             "nrceploja": loja.nrceploja,
@@ -754,6 +761,7 @@ def atualizar_loja(
     qtcpdloja: int | None = Form(None),
     usacashback: str | None = Form(None),
     pccashback: float | None = Form(None),
+    permiteentrega: str | None = Form(None),
     estilos_ids: str | None = Form(None),
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
@@ -892,6 +900,11 @@ def atualizar_loja(
             if qtcpdloja <= 0:
                 raise HTTPException(status_code=422, detail="A capacidade da loja deve ser maior que zero")
             loja.qtcpdloja = qtcpdloja
+        if permiteentrega is not None:
+            permite = permiteentrega.strip().upper()
+            if permite not in {"S", "N"}:
+                raise HTTPException(422, "Configuração de delivery inválida")
+            loja.permiteentrega = permite
 
         if urllogoloja is not None and urllogoloja.filename:
             nova_url_logo = salvar_logo_loja(urllogoloja)
@@ -943,6 +956,7 @@ def atualizar_loja(
                 "sitloja": loja.sitloja,
                 "usacashback": "S" if config.sitcashback == "ATIVO" else "N",
                 "pccashback": float(config.pccashback or 0),
+                "permiteentrega": loja.permiteentrega,
                 "urllogoloja": loja.urllogoloja,
                 "urlfachadaloja": loja.urlfachadaloja,
                 "qtcpdloja": loja.qtcpdloja,

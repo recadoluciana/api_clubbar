@@ -1,6 +1,7 @@
 # app/routers/pagamentos.py
 from __future__ import annotations
 
+import json
 import traceback
 import uuid
 from datetime import datetime, timedelta
@@ -348,6 +349,9 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
         itens = carrinho.get('itens') or []
         if not itens:
             raise HTTPException(status_code=400, detail='Carrinho vazio')
+        loja = db.query(Loja).filter(Loja.loja_id == payload.loja_id).first()
+        if payload.entrega and (not loja or loja.permiteentrega != 'S'):
+            raise HTTPException(status_code=400, detail='Este estabelecimento não aceita delivery.')
         carrinho_id = int(carrinho.get('carrinho_id') or 0)
         if not carrinho_id:
             raise HTTPException(status_code=400, detail='Carrinho invalido')
@@ -400,6 +404,7 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
             vrcashbackusado=valor_cashback,
             asaas_wallet_loja=wallet_loja,
             asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID,
+            dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
         )
         db.add(registro)
         db.flush()
@@ -460,6 +465,8 @@ async def criar_pedido_entrega(
     )
     if not loja:
         raise HTTPException(status_code=404, detail='Estabelecimento não encontrado ou indisponível.')
+    if loja.permiteentrega != 'S':
+        raise HTTPException(status_code=400, detail='Este estabelecimento não aceita delivery.')
 
     carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id, None)
     if not carrinho or not carrinho.get('itens'):
@@ -582,6 +589,9 @@ async def pagar_asaas(
 ):
     try:
         validar_publicacao_loja(db, payload.loja_id)
+        loja = db.query(Loja).filter(Loja.loja_id == payload.loja_id).first()
+        if payload.entrega and (not loja or loja.permiteentrega != 'S'):
+            raise HTTPException(status_code=400, detail='Este estabelecimento não aceita delivery.')
 
         carrinho = get_carrinho(
             db,
@@ -696,6 +706,7 @@ async def pagar_asaas(
             vrcashbackusado=valor_cashback,
             asaas_wallet_loja=wallet_loja,
             asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID,
+            dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
         )
 
         db.add(novo)

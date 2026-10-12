@@ -370,6 +370,7 @@ CREATE TABLE loja (
   atendimentofisico CHAR(1) NOT NULL DEFAULT 'S',
   vendaprodutos  CHAR(1) NOT NULL DEFAULT 'S',
   vendaingressos CHAR(1) NOT NULL DEFAULT 'S',
+  permiteentrega CHAR(1) NOT NULL DEFAULT 'N',
   urllogoloja    VARCHAR(255) NULL,
   urlfachadaloja VARCHAR(255) NULL,
   vrtaxaprod     DECIMAL(10,2) NOT NULL DEFAULT 5,
