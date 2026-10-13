@@ -216,6 +216,20 @@ def garantir_estrutura_campanhas_doacao() -> None:
                     "ADD COLUMN urllogocampanha VARCHAR(500) NULL AFTER nmbeficiario"
                 )
             )
+        novas_colunas = {
+            "asaas_account_id": "VARCHAR(100) NULL AFTER asaas_wallet_id",
+            "asaas_api_key_criptografada": "TEXT NULL AFTER asaas_account_id",
+            "status_asaas": "VARCHAR(32) NULL AFTER asaas_api_key_criptografada",
+            "onboarding_url": "VARCHAR(1000) NULL AFTER status_asaas",
+        }
+        for nome, definicao in novas_colunas.items():
+            if nome not in colunas:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE campanha_doacao "
+                        f"ADD COLUMN {nome} {definicao}"
+                    )
+                )
 
 
 @app.on_event("startup")
