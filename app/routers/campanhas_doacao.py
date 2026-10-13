@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.permissoes_loja import validar_mutacao_loja
