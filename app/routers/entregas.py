@@ -15,6 +15,8 @@ from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.loja import Loja
+from app.models.cidade import Cidade
+from app.models.estado import Estado
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.models.evento import Evento
@@ -517,6 +519,24 @@ def _formatar_endereco_estabelecimento(
     return ", ".join(parte.strip() for parte in partes if parte and parte.strip())
 
 
+def _formatar_endereco_completo_estabelecimento(
+    endereco: str | None,
+    numero: str | None,
+    complemento: str | None,
+    bairro: str | None,
+    cidade: str | None,
+    estado: str | None,
+) -> str:
+    endereco_base = _formatar_endereco_estabelecimento(
+        endereco, numero, complemento, bairro,
+    )
+    localidade = " / ".join(
+        parte.strip() for parte in [cidade or "", estado or ""] if parte and parte.strip()
+    )
+    return " - ".join(parte for parte in [endereco_base, localidade] if parte)
+
+
+
 def _descricao_tipo_ingresso(
     nome_setor: str | None,
     nome_preco: str | None,
@@ -584,6 +604,8 @@ def listar_itens_nao_entregues(
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(Cidade, Cidade.cidade_id == Loja.cidade_id)
+        .outerjoin(Estado, Estado.estado_id == Loja.estado_id)
         .outerjoin(PedidoEntrega, PedidoEntrega.venda_id == Venda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
@@ -630,6 +652,8 @@ def listar_itens_nao_entregues(
             Evento.dtinicioevento,
             Evento.nmlocalevento,
             Evento.dsendlocevento,
+            Cidade.nmcidade.label("nmcidadeloja"),
+            Estado.sgestado.label("sgestadoloja"),
             EventoLote.nmlote.label("nmlote"),
             EventoLote.nrlote.label("nrlote"),
         )
@@ -672,6 +696,14 @@ def listar_itens_nao_entregues(
                 row.nrendeloja,
                 row.complementoloja,
                 row.dsbairroloja,
+            ),
+            "endereco_evento_completo": row.dsendlocevento or _formatar_endereco_completo_estabelecimento(
+                row.endloja,
+                row.nrendeloja,
+                row.complementoloja,
+                row.dsbairroloja,
+                row.nmcidadeloja,
+                row.sgestadoloja,
             ),
             "nmlote": row.nmlote,
             "nrlote": row.nrlote,
