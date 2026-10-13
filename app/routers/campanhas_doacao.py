@@ -103,10 +103,11 @@ class CampanhaDoacaoIn(BaseModel):
             return None
         try:
             return str(UUID(valor))
-        except ValueError as erro:
-            raise ValueError(
-                "Informe o Wallet ID do Asaas; a chave PIX não serve para split."
-            ) from erro
+        except ValueError:
+            # Mantém campanhas antigas editáveis: antes do fluxo de subcontas,
+            # algumas armazenavam a chave PIX neste campo. A criação de novas
+            # campanhas continua exigindo uma subconta válida abaixo.
+            return valor
 
     @field_validator("dsmensagem")
     @classmethod
@@ -375,6 +376,11 @@ async def criar(
     else:
         # Uma carteira inserida manualmente não comprova que a conta está apta
         # a receber. Campanhas legadas podem continuar inativas para ajuste.
+        if not carteira_asaas_valida(valores.get("asaas_wallet_id")):
+            raise HTTPException(
+                422,
+                "Cadastre a subconta Asaas do beneficiário; a chave PIX não serve para split.",
+            )
         valores["status_asaas"] = "PENDENTE_DOCUMENTOS"
     if valores["sitcampanha"] == "ATIVA" and valores.get("status_asaas") != "APROVADO":
         valores["sitcampanha"] = "INATIVA"
