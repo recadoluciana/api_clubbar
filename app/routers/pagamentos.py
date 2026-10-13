@@ -60,8 +60,13 @@ from app.services.asaas_service import (
 )
 from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout, cancelar_uso_pendente
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
-from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
+from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
+from app.services.campanha_doacao_service import (
+    obter_campanha_doacao_vigente,
+    registrar_snapshot_doacao,
+    validar_campanha_para_split,
+)
 from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
@@ -370,6 +375,8 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
             f'PIX-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
         )
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
+        campanha_doacao = obter_campanha_doacao_vigente(db, loja_id=payload.loja_id)
+        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(
             db, cliente_id=payload.cliente_id, loja_id=payload.loja_id,
@@ -381,7 +388,9 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
             descricao=f'Clubbar carrinho {carrinho_id}',
             external_reference=external_reference,
             api_key=api_key_loja,
-            splits=montar_split_clubbar(valor_taxa),
+            splits=montar_splits_pagamento(
+                valor_taxa, campanha_doacao=campanha_doacao
+            ),
             due_date=agora.date().isoformat(),
         )
         pagamento = cobranca['payment']
@@ -413,6 +422,11 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
             db,
             registro.checkout_asaas_id,
             itens_recalculados,
+        )
+        registrar_snapshot_doacao(
+            db,
+            checkout_asaas_id=registro.checkout_asaas_id,
+            campanha=campanha_doacao,
         )
         vincular_uso_ao_checkout(db, debitos_cashback, registro)
         db.commit()
@@ -650,6 +664,8 @@ async def pagar_asaas(
         validar_endereco_cobranca_para_cartao(cliente)
 
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
+        campanha_doacao = obter_campanha_doacao_vigente(db, loja_id=payload.loja_id)
+        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
@@ -669,7 +685,9 @@ async def pagar_asaas(
             external_reference=external_reference,
             carrinho_id=carrinho_id,
             api_key=api_key_loja,
-            splits=montar_split_clubbar(valor_taxa_clubbar),
+            splits=montar_splits_pagamento(
+                valor_taxa_clubbar, campanha_doacao=campanha_doacao
+            ),
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,
             cpf_cliente=cliente.nrcpfcliente,
@@ -721,6 +739,11 @@ async def pagar_asaas(
 
         db.add(novo)
         db.flush()
+        registrar_snapshot_doacao(
+            db,
+            checkout_asaas_id=novo.checkout_asaas_id,
+            campanha=campanha_doacao,
+        )
         vincular_uso_ao_checkout(db, debitos_cashback, novo)
         db.commit()
 

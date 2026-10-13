@@ -13,6 +13,8 @@ from app.core.config import APP_ENV, UPLOAD_DIR
 from app.core.responses import ClubbarJSONResponse
 from app.database import SessionLocal, engine
 from app.models.contratopadrao import ContratoPadrao
+from app.models.campanha_doacao import CampanhaDoacao
+from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
 from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
@@ -64,6 +66,7 @@ from app.routers import taxapadrao
 from app.routers import manuais
 from app.routers import politicas
 from app.routers import catalogo_ingressos
+from app.routers import campanhas_doacao
 
 
 app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
@@ -196,6 +199,14 @@ app.include_router(taxapadrao.router)
 app.include_router(manuais.router)
 app.include_router(politicas.router)
 app.include_router(catalogo_ingressos.router)
+app.include_router(campanhas_doacao.router)
+
+
+@app.on_event("startup")
+def garantir_estrutura_campanhas_doacao() -> None:
+    """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
+    CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)
+    CheckoutAsaasDoacao.__table__.create(bind=engine, checkfirst=True)
 
 
 @app.on_event("startup")

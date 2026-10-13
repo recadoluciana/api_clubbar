@@ -16,8 +16,13 @@ from app.services.reserva_ingresso_service import criar_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
-from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_split_clubbar
+from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
+from app.services.campanha_doacao_service import (
+    obter_campanha_para_reserva,
+    registrar_snapshot_doacao,
+    validar_campanha_para_split,
+)
 from app.utils.datetime_utils import iso_utc
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
@@ -121,14 +126,18 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
+        campanha_doacao = obter_campanha_para_reserva(db, reserva)
+        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(db, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, api_key=api_key_loja)
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
-        cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_split_clubbar(taxa_clubbar), due_date=datetime.now().date().isoformat())
+        cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao), due_date=datetime.now().date().isoformat())
         pagamento, qr = cobranca["payment"], cobranca["qrCode"]
         payment_id = str(pagamento["id"])
         checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=payment_id, payment_id=payment_id, pix_qr_code_id=None, pix_payload=str(qr["payload"]), pix_encoded_image=str(qr.get("encodedImage") or ""), pix_expiration_date=reserva.dtexpiracao, external_reference=referencia, status="PENDING", valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
+        db.flush()
+        registrar_snapshot_doacao(db, checkout_asaas_id=checkout.checkout_asaas_id, campanha=campanha_doacao)
         db.commit()
         return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "pix_qr_code_id": checkout.pix_qr_code_id, "pix_copia_cola": checkout.pix_payload, "encoded_image": checkout.pix_encoded_image, "pix_expiration_date": iso_utc(checkout.pix_expiration_date), "expiration_date": iso_utc(reserva.dtexpiracao), "valor_total": float(reserva.vrtotal), "status": "PENDENTE"}
     except HTTPException:
@@ -152,13 +161,17 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
             reserva.dtexpiracao = datetime.now() + timedelta(minutes=10)
             segundos_restantes = 10 * 60
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
+        campanha_doacao = obter_campanha_para_reserva(db, reserva)
+        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
         permite_parcelamento = float(reserva.vrtotal) >= 100
-        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_split_clubbar(taxa_clubbar, parcelado=permite_parcelamento), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
+        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao, parcelado=permite_parcelamento), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
         checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
+        db.flush()
+        registrar_snapshot_doacao(db, checkout_asaas_id=checkout.checkout_asaas_id, campanha=campanha_doacao)
         db.commit()
         return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "checkout_url": checkout.checkout_url, "status": checkout.status, "parcelas_solicitadas": payload.parcelas, "data_expiracao": iso_utc(reserva.dtexpiracao)}
     except HTTPException:

@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,6 +20,7 @@ from app.services.venda_gateway_service import (
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.models.checkout_asaas_pagador import CheckoutAsaasPagador
+from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
 from app.models.cliente import Cliente
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.implantacao_service import reconciliar_cobranca_implantacao
@@ -174,6 +176,48 @@ async def asaas_webhook(
 
     try:
         evento = str(body.get("event") or "").upper()
+
+        # A liquidação de cada split é comunicada em evento próprio pelo
+        # Asaas. Ela não confirma a compra (isso já foi tratado no evento do
+        # pagamento), mas fecha a auditoria do repasse da campanha.
+        if evento == "PAYMENT_SPLIT_DONE":
+            split = body.get("paymentSplit") or {}
+            referencia_split = str(split.get("externalReference") or "")
+            dados_pagamento = split.get("payment") or {}
+            payment_id_split = str(dados_pagamento.get("id") or "")
+            wallet_destino = str(split.get("walletId") or "")
+            if referencia_split.startswith("DOACAO-") and payment_id_split:
+                checkout_split = (
+                    db.query(CheckoutAsaas)
+                    .filter(
+                        or_(
+                            CheckoutAsaas.payment_id == payment_id_split,
+                            CheckoutAsaas.checkout_id == payment_id_split,
+                        )
+                    )
+                    .order_by(CheckoutAsaas.checkout_asaas_id.desc())
+                    .first()
+                )
+                if checkout_split:
+                    snapshot = (
+                        db.query(CheckoutAsaasDoacao)
+                        .filter(
+                            CheckoutAsaasDoacao.checkout_asaas_id
+                            == checkout_split.checkout_asaas_id,
+                            CheckoutAsaasDoacao.asaas_wallet_id == wallet_destino,
+                        )
+                        .first()
+                    )
+                    if snapshot:
+                        snapshot.split_asaas_id = str(split.get("id") or "") or None
+                        snapshot.situacaorepasse = "LIQUIDADO"
+                        snapshot.dtliquidacao = datetime.now()
+                        db.commit()
+                        return {
+                            "ok": True,
+                            "tipo": "DOACAO",
+                            "checkout_asaas_id": checkout_split.checkout_asaas_id,
+                        }
 
         checkout = body.get("checkout") or {}
         payment = body.get("payment") or checkout or body.get("object") or {}

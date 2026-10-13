@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import APP_ENV, ASAAS_CLUBBAR_WALLET_ID
 from app.core.credential_crypto import descriptografar_credencial
+from app.models.campanha_doacao import CampanhaDoacao
 from app.models.lojaasaas import LojaAsaas
 
 
@@ -58,3 +59,27 @@ def montar_split_clubbar(valor_taxa: Decimal | float, *, parcelado: bool = False
         "externalReference": "TAXA-CLUBBAR",
         "description": "Taxa de serviço Clubbar",
     }]
+
+
+def montar_splits_pagamento(
+    valor_taxa: Decimal | float,
+    *,
+    campanha_doacao: CampanhaDoacao | None = None,
+    parcelado: bool = False,
+) -> list[dict]:
+    """Monta a taxa Clubbar e, quando ativa, a doação do parceiro.
+
+    O percentual da doação é calculado pelo Asaas sobre o valor líquido. A
+    taxa Clubbar permanece fixa, exatamente como já ocorre hoje.
+    """
+    splits = montar_split_clubbar(valor_taxa, parcelado=parcelado)
+    if not campanha_doacao:
+        return splits
+
+    splits.append({
+        "walletId": campanha_doacao.asaas_wallet_id,
+        "percentualValue": float(campanha_doacao.percentual_doacao),
+        "externalReference": f"DOACAO-{campanha_doacao.campanhadoacao_id}",
+        "description": f"Doação: {campanha_doacao.nmcampanha}"[:500],
+    })
+    return splits
