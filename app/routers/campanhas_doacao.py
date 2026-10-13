@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -43,6 +44,16 @@ class CampanhaDoacaoIn(BaseModel):
         if not valor:
             raise ValueError("Informe este campo.")
         return valor
+
+    @field_validator("asaas_wallet_id")
+    @classmethod
+    def validar_wallet_asaas(cls, valor: str) -> str:
+        try:
+            return str(UUID(valor))
+        except ValueError as erro:
+            raise ValueError(
+                "Informe o Wallet ID do Asaas; a chave PIX não serve para split."
+            ) from erro
 
     @field_validator("dsmensagem")
     @classmethod

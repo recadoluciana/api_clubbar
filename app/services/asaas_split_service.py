@@ -66,6 +66,7 @@ def montar_splits_pagamento(
     *,
     campanha_doacao: CampanhaDoacao | None = None,
     parcelado: bool = False,
+    para_checkout: bool = False,
 ) -> list[dict]:
     """Monta a taxa Clubbar e, quando ativa, a doação do parceiro.
 
@@ -76,9 +77,12 @@ def montar_splits_pagamento(
     if not campanha_doacao:
         return splits
 
+    # A API de Checkout usa percentageValue; a criação direta de cobrança usa
+    # percentualValue. Cada endpoint rejeita a outra grafia.
+    campo_percentual = "percentageValue" if para_checkout else "percentualValue"
     splits.append({
         "walletId": campanha_doacao.asaas_wallet_id,
-        "percentualValue": float(campanha_doacao.percentual_doacao),
+        campo_percentual: float(campanha_doacao.percentual_doacao),
         "externalReference": f"DOACAO-{campanha_doacao.campanhadoacao_id}",
         "description": f"Doação: {campanha_doacao.nmcampanha}"[:500],
     })
