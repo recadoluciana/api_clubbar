@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import os
+import shutil
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.orm import Session
 
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
 from app.database import get_db
+from app.core.config import UPLOAD_CAMPANHAS
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.evento import Evento
 from app.models.loja import Loja
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.campanha_doacao_service import (
+    carteira_asaas_valida,
     dados_publicos_campanha,
     obter_campanha_doacao_vigente,
     obter_campanha_para_reserva,
@@ -76,6 +81,7 @@ def _saida(campanha: CampanhaDoacao) -> dict:
         "evento_id": int(campanha.evento_id) if campanha.evento_id else None,
         "nome": campanha.nmcampanha,
         "beneficiario": campanha.nmbeficiario,
+        "url_logo": campanha.urllogocampanha,
         "mensagem": campanha.dsmensagem,
         "chave_pix": campanha.chavepix,
         "asaas_wallet_id": campanha.asaas_wallet_id,
@@ -85,6 +91,16 @@ def _saida(campanha: CampanhaDoacao) -> dict:
         "data_fim": campanha.dtfim,
         "data_criacao": campanha.dtcriacao,
     }
+
+
+def _salvar_logo(arquivo: UploadFile) -> str:
+    extensao = os.path.splitext(arquivo.filename or "")[1].lower()
+    if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise HTTPException(422, "Use uma imagem JPG, PNG ou WebP.")
+    nome = f"campanha_{uuid.uuid4().hex}{extensao}"
+    with open(UPLOAD_CAMPANHAS / nome, "wb") as destino:
+        shutil.copyfileobj(arquivo.file, destino)
+    return f"/uploads/campanhas/{nome}"
 
 
 def _loja_gerenciavel(db: Session, loja_id: int, usuario: dict) -> Loja:
@@ -144,6 +160,41 @@ def consultar_vigente(
     else:
         campanha = obter_campanha_doacao_vigente(db, loja_id=loja_id)
     return {"campanha": dados_publicos_campanha(campanha)}
+
+
+@router.get("/participantes")
+def listar_participantes(db: Session = Depends(get_db)):
+    """Lista uma campanha vigente por estabelecimento para a Home pública."""
+    agora = datetime.now()
+    campanhas = (
+        db.query(CampanhaDoacao, Loja)
+        .join(Loja, Loja.loja_id == CampanhaDoacao.loja_id)
+        .filter(
+            CampanhaDoacao.sitcampanha == "ATIVA",
+            or_(CampanhaDoacao.dtinicio.is_(None), CampanhaDoacao.dtinicio <= agora),
+            or_(CampanhaDoacao.dtfim.is_(None), CampanhaDoacao.dtfim >= agora),
+        )
+        .order_by(CampanhaDoacao.dtcriacao.desc())
+        .all()
+    )
+    participantes = []
+    lojas_incluidas: set[int] = set()
+    for campanha, loja in campanhas:
+        loja_id = int(loja.loja_id)
+        if loja_id in lojas_incluidas or not carteira_asaas_valida(campanha.asaas_wallet_id):
+            continue
+        lojas_incluidas.add(loja_id)
+        participantes.append({
+            "loja_id": loja_id,
+            "loja_nome": loja.nmloja,
+            "loja_logo_url": loja.urllogoloja,
+            "campanha_doacao_id": int(campanha.campanhadoacao_id),
+            "campanha_nome": campanha.nmcampanha,
+            "campanha_logo_url": campanha.urllogocampanha,
+            "beneficiario": campanha.nmbeficiario,
+            "percentual_doacao": float(campanha.percentual_doacao),
+        })
+    return {"participantes": participantes}
 
 
 @router.get("/lojas/{loja_id}")
@@ -211,6 +262,27 @@ def alterar(
         )
     for campo, valor in dados.model_dump().items():
         setattr(campanha, campo, valor)
+    db.commit()
+    db.refresh(campanha)
+    return _saida(campanha)
+
+
+@router.post("/{campanha_id}/logo")
+def enviar_logo(
+    campanha_id: int,
+    logo: UploadFile = File(...),
+    usuario: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    campanha = (
+        db.query(CampanhaDoacao)
+        .filter(CampanhaDoacao.campanhadoacao_id == campanha_id)
+        .first()
+    )
+    if not campanha:
+        raise HTTPException(404, "Campanha não encontrada.")
+    _loja_gerenciavel(db, int(campanha.loja_id), usuario)
+    campanha.urllogocampanha = _salvar_logo(logo)
     db.commit()
     db.refresh(campanha)
     return _saida(campanha)

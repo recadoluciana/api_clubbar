@@ -103,10 +103,12 @@ UPLOAD_PRODUTOS = UPLOAD_DIR / "produtos"
 UPLOAD_LOJAS = UPLOAD_DIR / "lojas"
 UPLOAD_EVENTOS = UPLOAD_DIR / "eventos"
 UPLOAD_ATRACOES = UPLOAD_DIR / "atracoes"
+UPLOAD_CAMPANHAS = UPLOAD_DIR / "campanhas"
 UPLOAD_MATERIAIS_LEAD = UPLOAD_DIR / "materiais-lead"
 
 UPLOAD_PRODUTOS.mkdir(parents=True, exist_ok=True)
 UPLOAD_LOJAS.mkdir(parents=True, exist_ok=True)
 UPLOAD_EVENTOS.mkdir(parents=True, exist_ok=True)
 UPLOAD_ATRACOES.mkdir(parents=True, exist_ok=True)
+UPLOAD_CAMPANHAS.mkdir(parents=True, exist_ok=True)
 UPLOAD_MATERIAIS_LEAD.mkdir(parents=True, exist_ok=True)

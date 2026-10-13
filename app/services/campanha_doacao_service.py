@@ -72,6 +72,7 @@ def dados_publicos_campanha(campanha: CampanhaDoacao | None) -> dict | None:
         "campanha_doacao_id": int(campanha.campanhadoacao_id),
         "nome": campanha.nmcampanha,
         "beneficiario": campanha.nmbeficiario,
+        "url_logo": campanha.urllogocampanha,
         "mensagem": campanha.dsmensagem,
         "percentual_doacao": float(campanha.percentual_doacao),
     }
