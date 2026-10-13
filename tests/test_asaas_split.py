@@ -1,8 +1,9 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.routers.pagamentos import _montar_itens_asaas
-from app.services.asaas_split_service import montar_split_clubbar
+from app.services.asaas_split_service import montar_split_clubbar, montar_splits_pagamento
 
 
 class AsaasSplitTest(unittest.TestCase):
@@ -27,6 +28,25 @@ class AsaasSplitTest(unittest.TestCase):
 
         self.assertEqual(12.0, split[0]["totalFixedValue"])
         self.assertNotIn("fixedValue", split[0])
+
+    def test_split_da_doacao_e_adicionado_sem_alterar_taxa_clubbar(self):
+        campanha = SimpleNamespace(
+            campanhadoacao_id=18,
+            asaas_wallet_id="wallet-esperanca",
+            percentual_doacao=5,
+            nmcampanha="Criança Esperança",
+        )
+        with patch(
+            "app.services.asaas_split_service.ASAAS_CLUBBAR_WALLET_ID",
+            "wallet-clubbar",
+        ):
+            split = montar_splits_pagamento(10, campanha_doacao=campanha)
+
+        self.assertEqual(2, len(split))
+        self.assertEqual(10.0, split[0]["fixedValue"])
+        self.assertEqual("wallet-esperanca", split[1]["walletId"])
+        self.assertEqual(5.0, split[1]["percentualValue"])
+        self.assertEqual("DOACAO-18", split[1]["externalReference"])
 
     def test_somente_taxa_de_ingresso_e_cobrada_do_cliente(self):
         itens, total, taxa = _montar_itens_asaas([
