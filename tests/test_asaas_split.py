@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.routers.pagamentos import _montar_itens_asaas
 from app.services.asaas_split_service import montar_split_clubbar, montar_splits_pagamento
+from app.services.campanha_doacao_service import carteira_asaas_valida, dados_publicos_campanha
 
 
 class AsaasSplitTest(unittest.TestCase):
@@ -32,7 +33,7 @@ class AsaasSplitTest(unittest.TestCase):
     def test_split_da_doacao_e_adicionado_sem_alterar_taxa_clubbar(self):
         campanha = SimpleNamespace(
             campanhadoacao_id=18,
-            asaas_wallet_id="wallet-esperanca",
+            asaas_wallet_id="0b763922-aa88-4cbe-a567-e3fe8511fa06",
             percentual_doacao=5,
             nmcampanha="Criança Esperança",
         )
@@ -44,9 +45,33 @@ class AsaasSplitTest(unittest.TestCase):
 
         self.assertEqual(2, len(split))
         self.assertEqual(10.0, split[0]["fixedValue"])
-        self.assertEqual("wallet-esperanca", split[1]["walletId"])
+        self.assertEqual("0b763922-aa88-4cbe-a567-e3fe8511fa06", split[1]["walletId"])
         self.assertEqual(5.0, split[1]["percentualValue"])
         self.assertEqual("DOACAO-18", split[1]["externalReference"])
+
+    def test_split_de_checkout_usa_campo_percentual_do_checkout(self):
+        campanha = SimpleNamespace(
+            campanhadoacao_id=18,
+            asaas_wallet_id="0b763922-aa88-4cbe-a567-e3fe8511fa06",
+            percentual_doacao=5,
+            nmcampanha="Criança Esperança",
+        )
+        with patch(
+            "app.services.asaas_split_service.ASAAS_CLUBBAR_WALLET_ID",
+            "wallet-clubbar",
+        ):
+            split = montar_splits_pagamento(
+                10, campanha_doacao=campanha, para_checkout=True
+            )
+
+        self.assertEqual(5.0, split[1]["percentageValue"])
+        self.assertNotIn("percentualValue", split[1])
+
+    def test_chave_pix_nao_e_uma_carteira_asaas(self):
+        campanha = SimpleNamespace(asaas_wallet_id="esperanca@unesco.org")
+
+        self.assertFalse(carteira_asaas_valida(campanha.asaas_wallet_id))
+        self.assertIsNone(dados_publicos_campanha(campanha))
 
     def test_somente_taxa_de_ingresso_e_cobrada_do_cliente(self):
         itens, total, taxa = _montar_itens_asaas([

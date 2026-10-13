@@ -376,7 +376,9 @@ async def criar_pix_cliente(payload: PagarNovoIn, db: Session = Depends(get_db),
         )
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
         campanha_doacao = obter_campanha_doacao_vigente(db, loja_id=payload.loja_id)
-        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
+        campanha_doacao = validar_campanha_para_split(
+            campanha_doacao, wallet_loja=wallet_loja
+        )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(
             db, cliente_id=payload.cliente_id, loja_id=payload.loja_id,
@@ -665,7 +667,9 @@ async def pagar_asaas(
 
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, payload.loja_id)
         campanha_doacao = obter_campanha_doacao_vigente(db, loja_id=payload.loja_id)
-        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
+        campanha_doacao = validar_campanha_para_split(
+            campanha_doacao, wallet_loja=wallet_loja
+        )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         external_reference = criar_referencia_checkout_asaas(carrinho_id)
         items_asaas, valor_total_com_taxa, valor_taxa_clubbar = _montar_itens_asaas(
@@ -686,7 +690,9 @@ async def pagar_asaas(
             carrinho_id=carrinho_id,
             api_key=api_key_loja,
             splits=montar_splits_pagamento(
-                valor_taxa_clubbar, campanha_doacao=campanha_doacao
+                valor_taxa_clubbar,
+                campanha_doacao=campanha_doacao,
+                para_checkout=True,
             ),
             nome_cliente=cliente.nmcliente,
             email_cliente=cliente.emailcliente,

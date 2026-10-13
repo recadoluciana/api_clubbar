@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from fastapi import HTTPException
 from sqlalchemy import or_
@@ -10,6 +11,15 @@ from sqlalchemy.orm import Session
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
 from app.models.reserva_ingresso import ReservaIngresso
+
+
+def carteira_asaas_valida(wallet_id: str | None) -> bool:
+    """Confere o formato do identificador de carteira devolvido pelo Asaas."""
+    try:
+        UUID((wallet_id or "").strip())
+    except (AttributeError, ValueError):
+        return False
+    return True
 
 
 def obter_campanha_doacao_vigente(
@@ -53,7 +63,10 @@ def obter_campanha_para_reserva(
 
 
 def dados_publicos_campanha(campanha: CampanhaDoacao | None) -> dict | None:
-    if not campanha:
+    # A chave PIX identifica o beneficiário, mas não recebe split. Só exibimos
+    # a campanha no checkout quando há uma carteira Asaas utilizável para que a
+    # promessa de doação corresponda ao repasse efetivamente criado.
+    if not campanha or not carteira_asaas_valida(campanha.asaas_wallet_id):
         return None
     return {
         "campanha_doacao_id": int(campanha.campanhadoacao_id),
@@ -66,12 +79,14 @@ def dados_publicos_campanha(campanha: CampanhaDoacao | None) -> dict | None:
 
 def validar_campanha_para_split(
     campanha: CampanhaDoacao | None, *, wallet_loja: str
-) -> None:
+) -> CampanhaDoacao | None:
     if not campanha:
-        return
+        return None
     wallet = (campanha.asaas_wallet_id or "").strip()
-    if not wallet:
-        raise HTTPException(422, "A campanha de doação não possui carteira Asaas.")
+    if not carteira_asaas_valida(wallet):
+        # Campanhas legadas podem ter recebido uma chave PIX neste campo. Elas
+        # permanecem editáveis no Partner, mas não podem criar um split.
+        return None
     if wallet == wallet_loja:
         raise HTTPException(
             422,
@@ -80,6 +95,7 @@ def validar_campanha_para_split(
     percentual = Decimal(str(campanha.percentual_doacao or 0))
     if percentual <= 0 or percentual > 100:
         raise HTTPException(422, "O percentual da campanha de doação é inválido.")
+    return campanha
 
 
 def registrar_snapshot_doacao(

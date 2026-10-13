@@ -127,7 +127,9 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         campanha_doacao = obter_campanha_para_reserva(db, reserva)
-        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
+        campanha_doacao = validar_campanha_para_split(
+            campanha_doacao, wallet_loja=wallet_loja
+        )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(db, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, api_key=api_key_loja)
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
@@ -162,12 +164,14 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
             segundos_restantes = 10 * 60
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         campanha_doacao = obter_campanha_para_reserva(db, reserva)
-        validar_campanha_para_split(campanha_doacao, wallet_loja=wallet_loja)
+        campanha_doacao = validar_campanha_para_split(
+            campanha_doacao, wallet_loja=wallet_loja
+        )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
         permite_parcelamento = float(reserva.vrtotal) >= 100
-        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao, parcelado=permite_parcelamento), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
+        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao, parcelado=permite_parcelamento, para_checkout=True), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
         checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         db.flush()
