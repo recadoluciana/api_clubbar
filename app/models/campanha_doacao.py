@@ -19,6 +19,7 @@ class CampanhaDoacao(Base):
 
     nmcampanha = Column(String(120), nullable=False)
     nmbeficiario = Column(String(160), nullable=False)
+    urllogocampanha = Column(String(500), nullable=True)
     dsmensagem = Column(Text, nullable=True)
     chavepix = Column(String(160), nullable=False)
     asaas_wallet_id = Column(String(100), nullable=False)

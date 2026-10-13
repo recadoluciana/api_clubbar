@@ -207,6 +207,15 @@ def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)
     CheckoutAsaasDoacao.__table__.create(bind=engine, checkfirst=True)
+    with engine.begin() as conexao:
+        colunas = {coluna["name"] for coluna in inspect(engine).get_columns("campanha_doacao")}
+        if "urllogocampanha" not in colunas:
+            conexao.execute(
+                text(
+                    "ALTER TABLE campanha_doacao "
+                    "ADD COLUMN urllogocampanha VARCHAR(500) NULL AFTER nmbeficiario"
+                )
+            )
 
 
 @app.on_event("startup")
