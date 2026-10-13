@@ -22,6 +22,15 @@ def carteira_asaas_valida(wallet_id: str | None) -> bool:
     return True
 
 
+def conta_beneficiaria_aprovada(campanha: CampanhaDoacao | None) -> bool:
+    """Só permite prometer uma doação quando a subconta pode recebê-la."""
+    return bool(
+        campanha
+        and carteira_asaas_valida(campanha.asaas_wallet_id)
+        and (campanha.status_asaas or "").upper() == "APROVADO"
+    )
+
+
 def obter_campanha_doacao_vigente(
     db: Session,
     *,
@@ -66,7 +75,7 @@ def dados_publicos_campanha(campanha: CampanhaDoacao | None) -> dict | None:
     # A chave PIX identifica o beneficiário, mas não recebe split. Só exibimos
     # a campanha no checkout quando há uma carteira Asaas utilizável para que a
     # promessa de doação corresponda ao repasse efetivamente criado.
-    if not campanha or not carteira_asaas_valida(campanha.asaas_wallet_id):
+    if not conta_beneficiaria_aprovada(campanha):
         return None
     return {
         "campanha_doacao_id": int(campanha.campanhadoacao_id),
@@ -84,7 +93,7 @@ def validar_campanha_para_split(
     if not campanha:
         return None
     wallet = (campanha.asaas_wallet_id or "").strip()
-    if not carteira_asaas_valida(wallet):
+    if not conta_beneficiaria_aprovada(campanha):
         # Campanhas legadas podem ter recebido uma chave PIX neste campo. Elas
         # permanecem editáveis no Partner, mas não podem criar um split.
         return None
