@@ -34,6 +34,7 @@ from app.services.reserva_ingresso_service import (
     capacidade_restante_setor,
     lote_global_ativo,
     quantidade_disponivel_configuracao,
+    quantidade_disponivel_modalidade,
     quantidade_reservada,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
@@ -361,6 +362,11 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                 "vrpreco": float(preco.vrpreco),
                 "qtlimitemodalidade": (
                     int(preco.qtlimitemodalidade)
+                    if preco.qtlimitemodalidade is not None
+                    else None
+                ),
+                "qtdisponivelmodalidade": (
+                    min(disponibilidade, quantidade_disponivel_modalidade(db, preco))
                     if preco.qtlimitemodalidade is not None
                     else None
                 ),
