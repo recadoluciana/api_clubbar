@@ -1,8 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
-from decimal import Decimal
-from datetime import datetime
-from datetime import datetime
 
 class ProdutoCreate(BaseModel):
     organizacao_id: int
@@ -10,17 +7,10 @@ class ProdutoCreate(BaseModel):
     categoria_id: Optional[int] = None
     nmproduto: str = Field(..., min_length=1, max_length=100)
     dsproduto: Optional[str] = Field(None, max_length=255)
-    vrprecoprod: Decimal
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: Optional[str] = Field(None, max_length=100)
     idtipoproduto: Literal["I", "P"] = "P"
     lote_id: Optional[int] = None
-    tipodesconto: Optional[str] = "NENHUM"
-    vrdesconto: Optional[Decimal] = Decimal("0.00")
-    dtinidesconto: Optional[datetime] = None
-    dtfimdesconto: Optional[datetime] = None
-    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
-    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
 
     @field_validator("nmproduto")
     @classmethod
@@ -30,13 +20,6 @@ class ProdutoCreate(BaseModel):
             raise ValueError("O nome do produto é obrigatório")
         return v
 
-    @field_validator("vrprecoprod")
-    @classmethod
-    def validar_preco(cls, v: Decimal):
-        if v <= 0:
-            raise ValueError("O preço deve ser maior que zero")
-        return v
-
 class ProdutoOut(BaseModel):
     produto_id: int
     organizacao_id: int
@@ -44,7 +27,6 @@ class ProdutoOut(BaseModel):
     categoria_id: Optional[int]
     nmproduto: str
     dsproduto: Optional[str]
-    vrprecoprod: Decimal
     sitproduto: str
     skuproduto: Optional[str]
     idtipoproduto: str
@@ -52,17 +34,6 @@ class ProdutoOut(BaseModel):
     nmcategoria: Optional[str] = None
     urlfotoproduto: Optional[str] = None
 
-    tipodesconto: str = "NENHUM"
-    vrdesconto: Decimal = Decimal("0.00")
-    dtinidesconto: Optional[datetime] = None
-    dtfimdesconto: Optional[datetime] = None
-    vrprecofinal: Decimal
-    descontoativo: bool
-    pccashback: Optional[Decimal] = None
-    pccashback: Optional[Decimal] = None
-
-    class Config:
-        from_attributes = True
 
     class Config:
         from_attributes = True
@@ -71,12 +42,5 @@ class ProdutoUpdate(BaseModel):
     categoria_id: Optional[int] = None
     nmproduto: Optional[str] = None
     dsproduto: Optional[str] = None
-    vrprecoprod: Optional[float] = None
     sitproduto: Optional[str] = None
     skuproduto: Optional[str] = None
-    tipodesconto: Optional[str] = None
-    vrdesconto: Optional[Decimal] = None
-    dtinidesconto: Optional[datetime] = None
-    dtfimdesconto: Optional[datetime] = None
-    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)
-    pccashback: Optional[Decimal] = Field(None, ge=0, le=100)

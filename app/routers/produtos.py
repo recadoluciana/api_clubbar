@@ -20,7 +20,6 @@ from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
-from app.services.precos_cardapio import atualizar_preco_nas_lojas
 from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(tags=["Produtos"])
@@ -65,8 +64,7 @@ def _parse_datetime(valor: str | None):
 
 
 def calcular_preco_final(
-    produto: Produto,
-    preco_base=None,
+    preco_base,
     *,
     tipodesconto=None,
     vrdesconto=None,
@@ -75,12 +73,12 @@ def calcular_preco_final(
 ):
     agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
-    tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
-    vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)
-    vrprecoprod = float(preco_base if preco_base is not None else (produto.vrprecoprod or 0))
+    tipodesconto = (tipodesconto or "NENHUM").upper()
+    vrdesconto = float(vrdesconto or 0)
+    vrprecoprod = float(preco_base or 0)
 
-    dtini = dtinidesconto if dtinidesconto is not None else produto.dtinidesconto
-    dtfim = dtfimdesconto if dtfimdesconto is not None else produto.dtfimdesconto
+    dtini = dtinidesconto
+    dtfim = dtfimdesconto
 
     desconto_ativo = False
 
@@ -205,8 +203,7 @@ def listar_produtos_mais_vendidos(
         if item_cardapio is None:
             continue
         vrprecofinal, descontoativo = calcular_preco_final(
-            produto,
-            preco_base=item_cardapio.vrpreco,
+            item_cardapio.vrpreco,
             tipodesconto=item_cardapio.tipodesconto,
             vrdesconto=item_cardapio.vrdesconto,
             dtinidesconto=item_cardapio.dtinidesconto,
@@ -279,15 +276,7 @@ def atualizar_produto(
     categoria_id: int | None = Form(None),
     nmproduto: str | None = Form(None),
     dsproduto: str | None = Form(None),
-    vrprecoprod: float | None = Form(None),
-    atualizar_preco_lojas: bool = Form(False),
     sitproduto: str | None = Form(None),
-    tipodesconto: str | None = Form(None),
-    vrdesconto: float | None = Form(None),
-    dtinidesconto: str | None = Form(None),
-    dtfimdesconto: str | None = Form(None),
-    pccashback: float | None = Form(None),
-    usacashbackproduto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -332,40 +321,8 @@ def atualizar_produto(
         if dsproduto is not None:
             produto.dsproduto = dsproduto
 
-        preco_anterior = float(produto.vrprecoprod)
-        if vrprecoprod is not None:
-            if vrprecoprod <= 0:
-                raise HTTPException(status_code=400, detail="Preço do produto deve ser maior que zero.")
-            produto.vrprecoprod = vrprecoprod
-            if atualizar_preco_lojas and round(vrprecoprod, 2) != round(preco_anterior, 2):
-                atualizar_preco_nas_lojas(db, produto.organizacao_id, produto.produto_id, vrprecoprod)
-
         if sitproduto is not None:
             produto.sitproduto = sitproduto
-
-        if tipodesconto is not None:
-            produto.tipodesconto = (tipodesconto or "NENHUM").upper()
-
-        if vrdesconto is not None:
-            produto.vrdesconto = vrdesconto
-
-        if dtinidesconto is not None:
-            produto.dtinidesconto = _parse_datetime(dtinidesconto)
-
-        if dtfimdesconto is not None:
-            produto.dtfimdesconto = _parse_datetime(dtfimdesconto)
-
-        if usacashbackproduto is not None and usacashbackproduto.strip().upper() == "N":
-            produto.pccashback = None
-        elif pccashback is not None:
-            if pccashback < 0 or pccashback > 100:
-                raise HTTPException(status_code=400, detail="O percentual de cashback deve ficar entre 0% e 100%.")
-            produto.pccashback = pccashback
-
-        if (produto.tipodesconto or "NENHUM").upper() == "NENHUM":
-            produto.vrdesconto = 0
-            produto.dtinidesconto = None
-            produto.dtfimdesconto = None
 
         db.commit()
         db.refresh(produto)
@@ -378,14 +335,8 @@ def atualizar_produto(
             "categoria_id": categoria_atual.categoria_id if categoria_atual else None,
             "nmproduto": produto.nmproduto,
             "dsproduto": produto.dsproduto,
-            "vrprecoprod": float(produto.vrprecoprod),
             "sitproduto": produto.sitproduto,
             "urlfotoproduto": produto.urlfotoproduto,
-            "tipodesconto": produto.tipodesconto,
-            "vrdesconto": float(produto.vrdesconto or 0),
-            "dtinidesconto": produto.dtinidesconto,
-            "dtfimdesconto": produto.dtfimdesconto,
-            "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
         }
 
     except HTTPException:
@@ -443,7 +394,6 @@ def listar_produtos_por_loja(
                 existente["nmcategoria"] = ", ".join(existente["categorias"])
             continue
         vrprecofinal, descontoativo = calcular_preco_final(
-            produto,
             item.vrpreco,
             tipodesconto=item.tipodesconto,
             vrdesconto=item.vrdesconto,
@@ -486,16 +436,9 @@ async def criar_produto(
     categoria_id: int | None = Form(None),
     nmproduto: str = Form(...),
     dsproduto: str = Form(""),
-    vrprecoprod: float = Form(...),
     sitproduto: str = Form(...),
     idtipoproduto: str = Form(...),
     lote_id: int | None = Form(None),
-    tipodesconto: str = Form("NENHUM"),
-    vrdesconto: float = Form(0),
-    dtinidesconto: str | None = Form(None),
-    dtfimdesconto: str | None = Form(None),
-    pccashback: float | None = Form(None),
-    usacashbackproduto: str = Form("N"),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -505,12 +448,6 @@ async def criar_produto(
 
     if not nmproduto:
         raise HTTPException(status_code=400, detail="Nome do produto é obrigatório.")
-
-    if vrprecoprod <= 0:
-        raise HTTPException(status_code=400, detail="Preço do produto deve ser maior que zero.")
-
-    if pccashback is not None and (pccashback < 0 or pccashback > 100):
-        raise HTTPException(status_code=400, detail="O percentual de cashback deve ficar entre 0% e 100%.")
 
     if categoria_id:
         categoria = db.query(Categoria).filter(
@@ -553,27 +490,12 @@ async def criar_produto(
 
         url_foto = f"/uploads/produtos/{nome_arquivo_foto}"
 
-    tipodesconto = (tipodesconto or "NENHUM").upper()
-    dtini = _parse_datetime(dtinidesconto)
-    dtfim = _parse_datetime(dtfimdesconto)
-
-    if tipodesconto == "NENHUM":
-        vrdesconto = 0
-        dtini = None
-        dtfim = None
-
     novo_produto = Produto(
         organizacao_id=organizacao_id,
         nmproduto=nmproduto,
         dsproduto=dsproduto,
-        vrprecoprod=vrprecoprod,
         sitproduto=sitproduto,
         urlfotoproduto=url_foto,
-        tipodesconto=tipodesconto,
-        vrdesconto=vrdesconto,
-        dtinidesconto=dtini,
-        dtfimdesconto=dtfim,
-        pccashback=pccashback if usacashbackproduto.strip().upper() == "S" else None,
     )
 
     db.add(novo_produto)
@@ -590,15 +512,9 @@ async def criar_produto(
         "categoria_id": categoria_id,
         "nmproduto": novo_produto.nmproduto,
         "dsproduto": novo_produto.dsproduto,
-        "vrprecoprod": float(novo_produto.vrprecoprod),
         "sitproduto": novo_produto.sitproduto,
         "foto": nome_arquivo_foto,
         "urlfotoproduto": novo_produto.urlfotoproduto,
-        "tipodesconto": novo_produto.tipodesconto,
-        "vrdesconto": float(novo_produto.vrdesconto or 0),
-        "dtinidesconto": novo_produto.dtinidesconto,
-        "dtfimdesconto": novo_produto.dtfimdesconto,
-        "pccashback": float(novo_produto.pccashback) if novo_produto.pccashback is not None else None,
     }
 
 # >>>>> dados de apenas 1 prouduto >>>>>>>>>
@@ -619,7 +535,6 @@ def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
             detail="Produto não encontrado."
         )
 
-    vrprecofinal, descontoativo = calcular_preco_final(produto)
     categoria_catalogo = _categoria_catalogo(db, produto.produto_id)
 
     return {
@@ -628,14 +543,6 @@ def buscar_produto(produto_id: int, db: Session = Depends(get_db)):
         "categoria_id": categoria_catalogo.categoria_id if categoria_catalogo else None,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,
-        "vrprecoprod": float(produto.vrprecoprod),
         "sitproduto": produto.sitproduto,
         "urlfotoproduto": produto.urlfotoproduto,
-        "tipodesconto": produto.tipodesconto or "NENHUM",
-        "vrdesconto": float(produto.vrdesconto or 0),
-        "dtinidesconto": produto.dtinidesconto,
-        "dtfimdesconto": produto.dtfimdesconto,
-        "vrprecofinal": vrprecofinal,
-        "descontoativo": descontoativo,
-        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
     }

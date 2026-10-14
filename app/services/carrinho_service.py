@@ -52,13 +52,16 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
             .order_by(CardapioLoja.prioridade.desc(), CardapioVersao.nrversao.desc())
             .first()
         )
-        origem = item_atual or produto
+        if item_atual is None:
+            # Produtos não possuem preço fora de um cardápio publicado.
+            # Preservamos o snapshot do carrinho até o usuário removê-lo.
+            continue
         novo = _preco_final(
-            getattr(origem, "vrpreco", None) if item_atual else produto.vrprecoprod,
-            getattr(origem, "tipodesconto", None),
-            getattr(origem, "vrdesconto", None),
-            getattr(origem, "dtinidesconto", None),
-            getattr(origem, "dtfimdesconto", None),
+            item_atual.vrpreco,
+            item_atual.tipodesconto,
+            item_atual.vrdesconto,
+            item_atual.dtinidesconto,
+            item_atual.dtfimdesconto,
             agora,
         )
         anterior = Decimal(str(item.vrunitario or 0)).quantize(Decimal("0.01"))

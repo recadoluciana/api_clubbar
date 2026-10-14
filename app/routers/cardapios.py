@@ -21,7 +21,6 @@ from app.models.categoria import Categoria
 from app.models.cardapio_padrao import CardapioModeloCategoria, CardapioModeloProduto
 from app.models.loja import Loja
 from app.models.produto import Produto
-from app.services.precos_cardapio import atualizar_preco_nas_lojas
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.utils.datetime_utils import FUSO_BRASIL
 
@@ -43,18 +42,11 @@ class CardapioIn(BaseModel):
 class ItemPadraoIn(BaseModel):
     cardapiomodelocategoria_id: int = Field(gt=0)
     produto_id: int | None = Field(default=None, gt=0)
-    atualizar_preco_lojas: bool = False
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
-    vrprecoprod: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: str | None = Field(default=None, max_length=100)
     urlfotoproduto: str | None = Field(default=None, max_length=255)
-    tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
-    vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
-    pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
-    dtinidesconto: datetime | None = None
-    dtfimdesconto: datetime | None = None
 
     @model_validator(mode="after")
     def validar_valores(self):
@@ -64,35 +56,15 @@ class ItemPadraoIn(BaseModel):
         self.urlfotoproduto = (self.urlfotoproduto or "").strip() or None
         if len(self.nmproduto) < 2:
             raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
-        if self.tipodesconto == "NENHUM":
-            self.vrdesconto = Decimal("0")
-            self.dtinidesconto = None
-            self.dtfimdesconto = None
-        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
-            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
-        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrprecoprod:
-            raise ValueError("O desconto não pode superar o preço do produto.")
-        if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
-            raise ValueError("O fim do desconto deve ser posterior ao início.")
         return self
 
 
 class ProdutoOrganizacaoIn(BaseModel):
-    atualizar_preco_lojas: bool = False
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
-    # Valor, promoção e cashback pertencem ao item do cardápio, não ao
-    # cadastro mestre do produto. Os campos abaixo são mantidos apenas para
-    # compatibilidade com clientes antigos e são normalizados no endpoint.
-    vrprecoprod: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: str | None = Field(default=None, max_length=100)
     urlfotoproduto: str | None = Field(default=None, max_length=255)
-    tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
-    vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
-    pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
-    dtinidesconto: datetime | None = None
-    dtfimdesconto: datetime | None = None
 
     @model_validator(mode="after")
     def validar_valores(self):
@@ -102,16 +74,6 @@ class ProdutoOrganizacaoIn(BaseModel):
         self.urlfotoproduto = (self.urlfotoproduto or "").strip() or None
         if len(self.nmproduto) < 2:
             raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
-        if self.tipodesconto == "NENHUM":
-            self.vrdesconto = Decimal("0")
-            self.dtinidesconto = None
-            self.dtfimdesconto = None
-        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
-            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
-        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrprecoprod:
-            raise ValueError("O desconto não pode superar o preço do produto.")
-        if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
-            raise ValueError("O fim do desconto deve ser posterior ao início.")
         return self
 
 
@@ -554,16 +516,9 @@ def _saida_item_padrao(vinculo: CardapioModeloProduto, produto: Produto, categor
         "nmcategoria": origem.nmcategoria,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,
-        "vrprecoprod": float(produto.vrprecoprod),
-        "vrpreco": float(produto.vrprecoprod),
         "sitproduto": produto.sitproduto,
         "skuproduto": produto.skuproduto,
         "urlfotoproduto": produto.urlfotoproduto,
-        "tipodesconto": produto.tipodesconto,
-        "vrdesconto": float(produto.vrdesconto or 0),
-        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
-        "dtinidesconto": produto.dtinidesconto,
-        "dtfimdesconto": produto.dtfimdesconto,
         "dtcriacao": produto.dtcriacao,
         "dtultatu": produto.dtultatu,
     }
@@ -591,15 +546,9 @@ def _saida_produto_organizacao(produto: Produto) -> dict:
         "organizacao_id": produto.organizacao_id,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,
-        "vrprecoprod": float(produto.vrprecoprod),
         "sitproduto": produto.sitproduto,
         "skuproduto": produto.skuproduto,
         "urlfotoproduto": produto.urlfotoproduto,
-        "tipodesconto": produto.tipodesconto,
-        "vrdesconto": float(produto.vrdesconto or 0),
-        "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
-        "dtinidesconto": produto.dtinidesconto,
-        "dtfimdesconto": produto.dtfimdesconto,
         "dtcriacao": produto.dtcriacao,
         "dtultatu": produto.dtultatu,
     }
@@ -620,12 +569,7 @@ def criar_produto_organizacao(organizacao_id: int, dados: ProdutoOrganizacaoIn, 
     ).first()
     if existente:
         raise HTTPException(409, "Este produto já existe na organização.")
-    campos = dados.model_dump(exclude={"atualizar_preco_lojas"})
-    campos.update({
-        "vrprecoprod": Decimal("0"), "tipodesconto": "NENHUM",
-        "vrdesconto": Decimal("0"), "pccashback": None,
-        "dtinidesconto": None, "dtfimdesconto": None,
-    })
+    campos = dados.model_dump()
     produto = Produto(organizacao_id=organizacao_id, **campos)
     db.add(produto)
     db.commit()
@@ -642,14 +586,8 @@ def alterar_produto_organizacao(organizacao_id: int, produto_id: int, dados: Pro
     ).first()
     if produto is None:
         raise HTTPException(404, "Produto não encontrado na organização.")
-    for campo, valor in dados.model_dump(exclude={"atualizar_preco_lojas"}).items():
+    for campo, valor in dados.model_dump().items():
         setattr(produto, campo, valor)
-    produto.vrprecoprod = Decimal("0")
-    produto.tipodesconto = "NENHUM"
-    produto.vrdesconto = Decimal("0")
-    produto.pccashback = None
-    produto.dtinidesconto = None
-    produto.dtfimdesconto = None
     db.commit()
     db.refresh(produto)
     return _saida_produto_organizacao(produto)
@@ -685,7 +623,7 @@ def adicionar_item_padrao(organizacao_id: int, modelo_id: int, dados: ItemPadrao
         else:
             if db.query(Produto).filter(Produto.organizacao_id == organizacao_id, func.lower(Produto.nmproduto) == dados.nmproduto.lower()).first():
                 raise HTTPException(409, "Este produto já existe na organização. Selecione-o para utilizar neste cardápio.")
-            campos = dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id", "atualizar_preco_lojas"})
+            campos = dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"})
             produto = Produto(organizacao_id=organizacao_id, **campos)
             db.add(produto); db.flush()
         if db.query(CardapioModeloProduto).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, CardapioModeloProduto.produto_id == produto.produto_id).first():
@@ -729,11 +667,8 @@ def alterar_produto_padrao(organizacao_id: int, modelo_id: int, item_id: int, da
     categoria = _categoria_do_padrao(db, organizacao_id, modelo_id, dados.cardapiomodelocategoria_id)
     if dados.produto_id is not None and dados.produto_id != produto.produto_id:
         raise HTTPException(422, "O produto do vínculo não pode ser trocado nesta edição.")
-    preco_anterior = Decimal(produto.vrprecoprod)
-    for campo, valor in dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id", "atualizar_preco_lojas"}).items():
+    for campo, valor in dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"}).items():
         setattr(produto, campo, valor)
-    if dados.atualizar_preco_lojas and dados.vrprecoprod != preco_anterior:
-        atualizar_preco_nas_lojas(db, organizacao_id, produto.produto_id, dados.vrprecoprod)
     vinculo.cardapiomodelocategoria_id = categoria.cardapiomodelocategoria_id
     db.commit()
     db.refresh(produto)
@@ -778,7 +713,15 @@ def _associar_modelo_legado(db: Session, loja: Loja, modelo: CardapioModelo, pri
         db.add(categoria_versao); db.flush()
         produtos = db.query(CardapioModeloProduto, Produto).join(Produto, Produto.produto_id == CardapioModeloProduto.produto_id).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, Produto.organizacao_id == loja.organizacao_id).order_by(CardapioModeloProduto.idorditem).all()
         for vinculo, produto in produtos:
-            db.add(CardapioItem(cardapioversao_id=versao.cardapioversao_id, cardapioversaocategoria_id=categoria_versao.cardapioversaocategoria_id, produto_id=produto.produto_id, vrpreco=produto.vrprecoprod, tipodesconto=produto.tipodesconto, vrdesconto=produto.vrdesconto, dtinidesconto=produto.dtinidesconto, dtfimdesconto=produto.dtfimdesconto, idorditem=vinculo.idorditem))
+            # Modelos antigos não armazenam condições comerciais. Produtos
+            # só podem ganhar preço e promoção em uma versão de cardápio.
+            db.add(CardapioItem(
+                cardapioversao_id=versao.cardapioversao_id,
+                cardapioversaocategoria_id=categoria_versao.cardapioversaocategoria_id,
+                produto_id=produto.produto_id,
+                vrpreco=Decimal("0"),
+                idorditem=vinculo.idorditem,
+            ))
     db.commit(); db.refresh(item)
     return item
 

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, Enum, DECIMAL, text
+from sqlalchemy import Column, BigInteger, String, DateTime, Enum, text
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -9,7 +9,6 @@ class Produto(Base):
     organizacao_id = Column(BigInteger, nullable=False, index=True)
     nmproduto = Column(String(100), nullable=False)
     dsproduto = Column(String(255), nullable=True)
-    vrprecoprod = Column(DECIMAL(10, 2), nullable=False)
     sitproduto = Column(Enum("ATIVO", "INATIVO", name="sitproduto_enum"), nullable=False, server_default="ATIVO")
     skuproduto = Column(String(100), nullable=True)
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
@@ -20,15 +19,3 @@ class Produto(Base):
         server_onupdate=text("CURRENT_TIMESTAMP"),
     )
     urlfotoproduto = Column(String(255), nullable=True)
-
-    tipodesconto = Column(
-        Enum("NENHUM", "PERCENTUAL", "VALOR", name="enum_tipodesconto_produto"),
-        nullable=False,
-        default="NENHUM",
-    )
-
-    vrdesconto = Column(DECIMAL(10, 2), nullable=False, default=0.00)
-    pccashback = Column(DECIMAL(10, 2), nullable=True)
-
-    dtinidesconto = Column(DateTime, nullable=True)
-    dtfimdesconto = Column(DateTime, nullable=True)

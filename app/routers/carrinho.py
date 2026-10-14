@@ -81,7 +81,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             )
         cardapioitem_id_final = int(item_cardapio.cardapioitem_id)
         vrunitario_final, _ = calcular_preco_final(
-            produto,
+            item_cardapio.vrpreco,
             tipodesconto=item_cardapio.tipodesconto,
             vrdesconto=item_cardapio.vrdesconto,
             dtinidesconto=item_cardapio.dtinidesconto,
@@ -206,7 +206,7 @@ def get_qt_itens_geral(cliente_id: int, db: Session = Depends(get_db)):
 from datetime import datetime
 
 def calcular_preco_final(
-    produto: Produto,
+    vrprecoprod,
     *,
     tipodesconto=None,
     vrdesconto=None,
@@ -215,12 +215,12 @@ def calcular_preco_final(
 ):
     agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
-    tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
-    vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)
-    vrprecoprod = float(produto.vrprecoprod or 0)
+    tipodesconto = (tipodesconto or "NENHUM").upper()
+    vrdesconto = float(vrdesconto or 0)
+    vrprecoprod = float(vrprecoprod or 0)
 
-    dtini = dtinidesconto if dtinidesconto is not None else produto.dtinidesconto
-    dtfim = dtfimdesconto if dtfimdesconto is not None else produto.dtfimdesconto
+    dtini = dtinidesconto
+    dtfim = dtfimdesconto
 
     desconto_ativo = False
 
@@ -287,10 +287,6 @@ def obter_itens_carrinho(
             Produto.dsproduto,
             ItCarrinho.vrunitario.label("vrprecoprod"),
             Produto.urlfotoproduto,
-            Produto.tipodesconto,
-            Produto.vrdesconto,
-            Produto.dtinidesconto,
-            Produto.dtfimdesconto,
             ItCarrinho.qtitcarrinho,
             ItCarrinho.dsobsitcar,
             ItCarrinho.nmparticipante,
@@ -327,8 +323,8 @@ def obter_itens_carrinho(
                 "vrprecoprod": float(i.vrprecoprod or 0),
                 "vrprecofinal": float(vrprecofinal),
                 "descontoativo": descontoativo,
-                "tipodesconto": i.tipodesconto or "NENHUM",
-                "vrdesconto": float(i.vrdesconto or 0),
+                "tipodesconto": "NENHUM",
+                "vrdesconto": 0,
                 "urlfotoproduto": f"{i.urlfotoproduto}" if i.urlfotoproduto else "",
                 "qt": qt,
                 "observacao": i.dsobsitcar or "",

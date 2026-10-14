@@ -425,7 +425,6 @@ def garantir_descontos_por_cardapio() -> None:
         if "cardapioitem" not in inspector.get_table_names():
             return
         colunas = {coluna["name"] for coluna in inspector.get_columns("cardapioitem")}
-        migracao_inicial = "tipodesconto" not in colunas
         with engine.begin() as conexao:
             if "tipodesconto" not in colunas:
                 conexao.execute(text(
@@ -447,16 +446,6 @@ def garantir_descontos_por_cardapio() -> None:
                 conexao.execute(text(
                     "ALTER TABLE cardapioitem ADD COLUMN dtfimdesconto DATETIME NULL "
                     "AFTER dtinidesconto"
-                ))
-            if migracao_inicial:
-                conexao.execute(text(
-                    "UPDATE cardapioitem item "
-                    "INNER JOIN produto produto ON produto.produto_id = item.produto_id "
-                    "SET item.tipodesconto = produto.tipodesconto, "
-                    "item.vrdesconto = produto.vrdesconto, "
-                    "item.dtinidesconto = produto.dtinidesconto, "
-                    "item.dtfimdesconto = produto.dtfimdesconto "
-                    "WHERE produto.tipodesconto <> 'NENHUM'"
                 ))
         logger.info("Descontos por item de cardápio verificados.")
     except Exception:
@@ -531,6 +520,36 @@ def garantir_cardapios_compartilhados() -> None:
         logger.info("Cardápios compartilhados e associações por loja verificados.")
     except Exception:
         logger.exception("Não foi possível preparar os cardápios compartilhados")
+        raise
+
+
+@app.on_event("startup")
+def remover_condicoes_comerciais_do_produto() -> None:
+    """Produto mestre é catálogo; preço, promoções e cashback são do cardápio."""
+    try:
+        inspector = inspect(engine)
+        if "produto" not in inspector.get_table_names():
+            return
+        colunas = {coluna["name"] for coluna in inspector.get_columns("produto")}
+        obsoletas = (
+            "vrprecoprod",
+            "tipodesconto",
+            "vrdesconto",
+            "pccashback",
+            "dtinidesconto",
+            "dtfimdesconto",
+        )
+        existentes = [coluna for coluna in obsoletas if coluna in colunas]
+        if existentes:
+            with engine.begin() as conexao:
+                for coluna in existentes:
+                    conexao.execute(text(f"ALTER TABLE produto DROP COLUMN `{coluna}`"))
+            logger.warning(
+                "Configurações comerciais removidas do cadastro mestre de produto: %s",
+                ", ".join(existentes),
+            )
+    except Exception:
+        logger.exception("Não foi possível separar as condições comerciais do produto")
         raise
 
 

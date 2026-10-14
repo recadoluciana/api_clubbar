@@ -4,18 +4,19 @@ from zoneinfo import ZoneInfo
 
 TZ_BR = ZoneInfo("America/Sao_Paulo")
 
-def calcular_preco_final(produto):
-    preco = Decimal(produto.vrprecoprod or 0)
-    tipo = (produto.tipodesconto or "NENHUM").upper()
-    desconto = Decimal(produto.vrdesconto or 0)
+def calcular_preco_final(item_cardapio):
+    """Calcula preço a partir do item do cardápio, nunca do produto mestre."""
+    preco = Decimal(item_cardapio.vrpreco or 0)
+    tipo = (item_cardapio.tipodesconto or "NENHUM").upper()
+    desconto = Decimal(item_cardapio.vrdesconto or 0)
 
     agora = datetime.now(TZ_BR)
 
     desconto_ativo = True
 
     # 🔹 Ajusta datas do banco (sem timezone)
-    dt_ini = produto.dtinidesconto
-    dt_fim = produto.dtfimdesconto
+    dt_ini = item_cardapio.dtinidesconto
+    dt_fim = item_cardapio.dtfimdesconto
 
     if dt_ini:
         dt_ini = dt_ini.replace(tzinfo=TZ_BR)
