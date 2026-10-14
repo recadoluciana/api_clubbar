@@ -9,7 +9,7 @@ import traceback
 
 from app.database import get_db
 from app.models.categoria import Categoria
-from app.models.cardapio_padrao import CardapioModeloProduto, ProdutoCategoriaOrg
+from app.models.cardapio_padrao import ProdutoCategoriaOrg
 from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioProgramacao, CardapioVersao, CardapioVersaoCategoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
@@ -250,10 +250,9 @@ def excluir_produto(
         exists().where(ItVenda.produto_id == produto_id)
     ).scalar()
 
-    usado_cardapio = (
-        db.query(CardapioModeloProduto).filter(CardapioModeloProduto.produto_id == produto_id).first()
-        or db.query(CardapioItem).filter(CardapioItem.produto_id == produto_id).first()
-    )
+    usado_cardapio = db.query(CardapioItem).filter(
+        CardapioItem.produto_id == produto_id
+    ).first()
 
     if usado_cardapio:
         raise HTTPException(status_code=409, detail="Remova o produto dos cardápios antes de excluí-lo. Como alternativa, inative-o.")

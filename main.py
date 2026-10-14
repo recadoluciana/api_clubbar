@@ -467,10 +467,6 @@ def garantir_cardapios_compartilhados() -> None:
             if "cardapioprogramacao" in tabelas else set()
         )
         with engine.begin() as conexao:
-            # Os campos legados ficam nulos nos novos registros: a relação com
-            # loja passa a ser exclusivamente pela tabela cardapioloja.
-            conexao.execute(text("ALTER TABLE cardapio MODIFY loja_id BIGINT NULL"))
-            conexao.execute(text("ALTER TABLE cardapio MODIFY cardapiomodelo_id BIGINT NULL"))
             conexao.execute(text(
                 "CREATE TABLE IF NOT EXISTS cardapioloja ("
                 "cardapioloja_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
@@ -520,6 +516,56 @@ def garantir_cardapios_compartilhados() -> None:
         logger.info("Cardápios compartilhados e associações por loja verificados.")
     except Exception:
         logger.exception("Não foi possível preparar os cardápios compartilhados")
+        raise
+
+
+@app.on_event("startup")
+def remover_modelo_legado_de_cardapio() -> None:
+    """Remove o antigo modelo de cardápio e seus vínculos, já substituídos.
+
+    Cardápio é agora um catálogo compartilhável da empresa, associado às
+    lojas somente por ``cardapioloja``.
+    """
+    try:
+        inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        with engine.begin() as conexao:
+            if "cardapio" in tabelas:
+                colunas = {
+                    coluna["name"] for coluna in inspector.get_columns("cardapio")
+                }
+                for coluna in ("cardapiomodelo_id", "loja_id"):
+                    if coluna not in colunas:
+                        continue
+                    for chave in inspector.get_foreign_keys("cardapio"):
+                        if coluna in chave.get("constrained_columns", []) and chave.get("name"):
+                            conexao.execute(
+                                text(f"ALTER TABLE cardapio DROP FOREIGN KEY `{chave['name']}`")
+                            )
+                    indices = [
+                        indice.get("name")
+                        for indice in inspector.get_indexes("cardapio")
+                        if coluna in indice.get("column_names", [])
+                    ]
+                    indices.extend(
+                        indice.get("name")
+                        for indice in inspector.get_unique_constraints("cardapio")
+                        if coluna in indice.get("column_names", [])
+                    )
+                    for indice in {indice for indice in indices if indice}:
+                        conexao.execute(text(f"ALTER TABLE cardapio DROP INDEX `{indice}`"))
+                    conexao.execute(text(f"ALTER TABLE cardapio DROP COLUMN `{coluna}`"))
+
+            # A ordem respeita as chaves estrangeiras do modelo substituído.
+            for tabela in (
+                "cardapiomodeloproduto",
+                "cardapiomodelocategoria",
+                "cardapiomodelo",
+            ):
+                conexao.execute(text(f"DROP TABLE IF EXISTS `{tabela}`"))
+        logger.warning("Modelo legado de cardápios removido.")
+    except Exception:
+        logger.exception("Não foi possível remover o modelo legado de cardápios")
         raise
 
 

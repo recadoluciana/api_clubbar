@@ -7,7 +7,6 @@ from app.core.permissoes_loja import validar_edicao_organizacao
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.organizacao import Organizacao
-from app.models.cardapio import CardapioModelo
 from app.models.leadparceiro import LeadParceiro
 from app.models.usuario import Usuario
 from app.schemas.organizacao import OrganizacaoCreate, OrganizacaoUpdate
@@ -90,7 +89,6 @@ def cadastrar_organizacao(dados: OrganizacaoCreate, db: Session = Depends(get_db
         nova = Organizacao(**dados.model_dump(), sitorganizacao='ATIVA')
         db.add(nova)
         db.flush()
-        db.add(CardapioModelo(organizacao_id=nova.organizacao_id, nmcardapio='Cardápio padrão', tipocardapio='PRINCIPAL'))
         db.commit()
         db.refresh(nova)
         return {'mensagem': 'Organizacao cadastrada com sucesso', **_out(nova, db)}

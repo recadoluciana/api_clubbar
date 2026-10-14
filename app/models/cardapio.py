@@ -15,20 +15,6 @@ class CategoriaPadrao(Base):
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 
 
-class CardapioModelo(Base):
-    __tablename__ = "cardapiomodelo"
-
-    cardapiomodelo_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    organizacao_id = Column(BigInteger, nullable=False, index=True)
-    nmcardapio = Column(String(120), nullable=False)
-    tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL"), nullable=False, server_default="PRINCIPAL")
-    sitcardapio = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
-    dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
-    dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
-
-    __table_args__ = (UniqueConstraint("organizacao_id", "nmcardapio", name="uk_cardapiomodelo_org_nome"),)
-
-
 class Cardapio(Base):
     __tablename__ = "cardapio"
 
@@ -37,17 +23,12 @@ class Cardapio(Base):
     # O cardápio é um catálogo da empresa. A disponibilidade em cada loja é
     # registrada em CardapioLoja, para que um único catálogo possa ser
     # compartilhado sem copiar preços, promoções ou itens.
-    loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=True, index=True)
-    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id"), nullable=True, index=True)
     nmcardapio = Column(String(120), nullable=False)
     tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL"), nullable=False, server_default="PRINCIPAL")
     prioridade = Column(Integer, nullable=False, server_default="0")
     sitcardapio = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
-
-    __table_args__ = (UniqueConstraint("loja_id", "cardapiomodelo_id", name="uk_cardapio_loja_modelo"),)
-
 
 class CardapioLoja(Base):
     __tablename__ = "cardapioloja"

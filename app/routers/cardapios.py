@@ -14,11 +14,10 @@ from app.core.security import get_usuario_logado
 from app.core.config import UPLOAD_PRODUTOS
 from app.database import get_db
 from app.models.cardapio import (
-    Cardapio, CardapioItem, CardapioLoja, CardapioModelo, CardapioProgramacao, CardapioReajuste,
+    Cardapio, CardapioItem, CardapioLoja, CardapioProgramacao, CardapioReajuste,
     CardapioVersao, CardapioVersaoCategoria,
 )
 from app.models.categoria import Categoria
-from app.models.cardapio_padrao import CardapioModeloCategoria, CardapioModeloProduto
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
@@ -37,26 +36,6 @@ class CardapioIn(BaseModel):
     nmcardapio: str = Field(min_length=2, max_length=120)
     tipocardapio: str = "PRINCIPAL"
     prioridade: int = Field(default=0, ge=0, le=999)
-
-
-class ItemPadraoIn(BaseModel):
-    cardapiomodelocategoria_id: int = Field(gt=0)
-    produto_id: int | None = Field(default=None, gt=0)
-    nmproduto: str = Field(min_length=2, max_length=100)
-    dsproduto: str | None = Field(default=None, max_length=255)
-    sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
-    skuproduto: str | None = Field(default=None, max_length=100)
-    urlfotoproduto: str | None = Field(default=None, max_length=255)
-
-    @model_validator(mode="after")
-    def validar_valores(self):
-        self.nmproduto = self.nmproduto.strip()
-        self.dsproduto = (self.dsproduto or "").strip() or None
-        self.skuproduto = (self.skuproduto or "").strip() or None
-        self.urlfotoproduto = (self.urlfotoproduto or "").strip() or None
-        if len(self.nmproduto) < 2:
-            raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
-        return self
 
 
 class ProdutoOrganizacaoIn(BaseModel):
@@ -78,15 +57,8 @@ class ProdutoOrganizacaoIn(BaseModel):
 
 
 class AssociarCardapioIn(BaseModel):
-    cardapio_id: int | None = Field(default=None, gt=0)
-    cardapiomodelo_id: int | None = Field(default=None, gt=0)
+    cardapio_id: int = Field(gt=0)
     prioridade: int = Field(default=0, ge=0, le=999)
-
-    @model_validator(mode="after")
-    def validar_cardapio(self):
-        if self.cardapio_id is None and self.cardapiomodelo_id is None:
-            raise ValueError("Informe o cardápio a associar.")
-        return self
 
 
 class ItemIn(BaseModel):
@@ -173,16 +145,6 @@ def _loja(db: Session, loja_id: int, payload: dict | None = None) -> Loja:
     return loja
 
 
-def _validar_edicao_padrao(payload: dict, organizacao_id: int) -> None:
-    validar_gerenciamento_organizacao(payload, organizacao_id)
-    if (
-        int(payload.get("organizacao_id") or 0) != organizacao_id
-        or payload.get("loja_id") is not None
-        or str(payload.get("dscargo") or "").upper() not in {"SUPERADMIN", "ADMIN"}
-    ):
-        raise HTTPException(403, "Somente administradores da empresa podem editar o cardápio padrão.")
-
-
 def _cardapio(db: Session, cardapio_id: int, payload: dict | None = None) -> Cardapio:
     item = db.query(Cardapio).filter(Cardapio.cardapio_id == cardapio_id).first()
     if not item:
@@ -222,9 +184,8 @@ def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None
     ).order_by(CardapioProgramacao.dtinicio.asc(), CardapioProgramacao.hrinicio.asc()).all()
     return {
         "cardapio_id": item.cardapio_id, "organizacao_id": item.organizacao_id,
-        "loja_id": associacao.loja_id if associacao else item.loja_id,
+        "loja_id": associacao.loja_id if associacao else None,
         "cardapioloja_id": associacao.cardapioloja_id if associacao else None,
-        "cardapiomodelo_id": item.cardapiomodelo_id,
         "nmcardapio": item.nmcardapio,
         "tipocardapio": item.tipocardapio,
         "prioridade": associacao.prioridade if associacao else item.prioridade,
@@ -398,139 +359,6 @@ def criar_cardapio_empresa(organizacao_id: int, dados: CardapioIn, payload=Depen
     return _saida_cardapio(db, cardapio)
 
 
-@router.get("/organizacoes/{organizacao_id}/cardapios-padrao")
-def listar_padroes(organizacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    validar_gerenciamento_organizacao(payload, organizacao_id)
-    if int(payload.get("organizacao_id") or 0) != organizacao_id:
-        raise HTTPException(403, "A organização não pertence ao usuário.")
-    itens = db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == organizacao_id).order_by(CardapioModelo.nmcardapio).all()
-    return [{"cardapiomodelo_id": x.cardapiomodelo_id, "organizacao_id": x.organizacao_id, "nmcardapio": x.nmcardapio, "tipocardapio": x.tipocardapio, "sitcardapio": x.sitcardapio, "quantidade_produtos": db.query(CardapioModeloProduto).join(CardapioModeloCategoria, CardapioModeloCategoria.cardapiomodelocategoria_id == CardapioModeloProduto.cardapiomodelocategoria_id).filter(CardapioModeloCategoria.cardapiomodelo_id == x.cardapiomodelo_id).count()} for x in itens]
-
-
-@router.post("/organizacoes/{organizacao_id}/cardapios-padrao", status_code=201)
-def criar_padrao(organizacao_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _validar_edicao_padrao(payload, organizacao_id)
-    tipo = dados.tipocardapio.upper()
-    if tipo not in {"PRINCIPAL", "ESPECIAL"}:
-        raise HTTPException(422, "Tipo de cardápio inválido.")
-    nome = dados.nmcardapio.strip()
-    if db.query(CardapioModelo).filter(CardapioModelo.organizacao_id == organizacao_id, func.lower(CardapioModelo.nmcardapio) == nome.lower()).first():
-        raise HTTPException(409, "Já existe um cardápio padrão com esse nome.")
-    if tipo == "PRINCIPAL" and db.query(CardapioModelo).filter(
-        CardapioModelo.organizacao_id == organizacao_id,
-        CardapioModelo.tipocardapio == "PRINCIPAL",
-    ).first():
-        raise HTTPException(409, "A organização já possui um cardápio principal. Crie os demais como especiais.")
-    item = CardapioModelo(organizacao_id=organizacao_id, nmcardapio=nome, tipocardapio=tipo)
-    db.add(item); db.commit(); db.refresh(item)
-    return {"cardapiomodelo_id": item.cardapiomodelo_id, "organizacao_id": item.organizacao_id, "nmcardapio": item.nmcardapio, "tipocardapio": item.tipocardapio, "sitcardapio": item.sitcardapio}
-
-
-def _modelo_organizacao(db: Session, organizacao_id: int, modelo_id: int, payload: dict) -> CardapioModelo:
-    validar_gerenciamento_organizacao(payload, organizacao_id)
-    if int(payload.get("organizacao_id") or 0) != organizacao_id:
-        raise HTTPException(403, "A organização não pertence ao usuário.")
-    modelo = db.query(CardapioModelo).filter(CardapioModelo.cardapiomodelo_id == modelo_id, CardapioModelo.organizacao_id == organizacao_id).first()
-    if not modelo:
-        raise HTTPException(404, "Cardápio padrão não encontrado.")
-    return modelo
-
-
-class CategoriaDoPadraoIn(BaseModel):
-    categoria_id: int = Field(gt=0)
-
-
-def _categoria_do_padrao(db: Session, organizacao_id: int, modelo_id: int, categoria_padrao_id: int) -> CardapioModeloCategoria:
-    item = db.query(CardapioModeloCategoria).filter(
-        CardapioModeloCategoria.cardapiomodelocategoria_id == categoria_padrao_id,
-        CardapioModeloCategoria.cardapiomodelo_id == modelo_id,
-        CardapioModeloCategoria.organizacao_id == organizacao_id,
-    ).first()
-    if item is None:
-        raise HTTPException(404, "Categoria não encontrada neste cardápio padrão.")
-    return item
-
-
-@router.get("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/categorias")
-def listar_categorias_padrao(organizacao_id: int, modelo_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    categorias = db.query(CardapioModeloCategoria, Categoria).join(Categoria, Categoria.categoria_id == CardapioModeloCategoria.categoria_id).filter(
-        CardapioModeloCategoria.cardapiomodelo_id == modelo_id,
-    ).order_by(CardapioModeloCategoria.idordcategoria).all()
-    return [{
-        "cardapiomodelocategoria_id": c.cardapiomodelocategoria_id,
-        "categoria_id": c.categoria_id,
-        "nmcategoria": origem.nmcategoria,
-        "dsicone": origem.dsicone,
-        "quantidade_produtos": db.query(CardapioModeloProduto).filter(CardapioModeloProduto.cardapiomodelocategoria_id == c.cardapiomodelocategoria_id).count(),
-    } for c, origem in categorias]
-
-
-@router.post("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/categorias", status_code=201)
-def adicionar_categoria_padrao(organizacao_id: int, modelo_id: int, dados: CategoriaDoPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    categoria = _categoria_produto_padrao(db, organizacao_id, dados.categoria_id)
-    if db.query(CardapioModeloCategoria).filter(
-        CardapioModeloCategoria.cardapiomodelo_id == modelo_id,
-        CardapioModeloCategoria.categoria_id == categoria.categoria_id,
-    ).first():
-        raise HTTPException(409, "Esta categoria já está no cardápio padrão.")
-    ordem = db.query(func.coalesce(func.max(CardapioModeloCategoria.idordcategoria), 0)).filter(CardapioModeloCategoria.cardapiomodelo_id == modelo_id).scalar()
-    item = CardapioModeloCategoria(
-        organizacao_id=organizacao_id, cardapiomodelo_id=modelo_id,
-        categoria_id=categoria.categoria_id, idordcategoria=int(ordem) + 1,
-    )
-    db.add(item); db.commit(); db.refresh(item)
-    return {"cardapiomodelocategoria_id": item.cardapiomodelocategoria_id, "categoria_id": item.categoria_id, "nmcategoria": categoria.nmcategoria, "dsicone": categoria.dsicone, "quantidade_produtos": 0}
-
-
-@router.delete("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/categorias/{categoria_padrao_id}")
-def remover_categoria_padrao(organizacao_id: int, modelo_id: int, categoria_padrao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    categoria = _categoria_do_padrao(db, organizacao_id, modelo_id, categoria_padrao_id)
-    vinculos = db.query(CardapioModeloProduto).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria_padrao_id).all()
-    quantidade = len(vinculos)
-    for vinculo in vinculos:
-        db.delete(vinculo)
-    db.delete(categoria)
-    db.commit()
-    return {"categorias_excluidas": 1, "vinculos_excluidos": quantidade, "produtos_excluidos": 0}
-
-
-@router.get("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens")
-def listar_itens_padrao(organizacao_id: int, modelo_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    linhas = db.query(CardapioModeloProduto, Produto, CardapioModeloCategoria, Categoria).join(Produto, Produto.produto_id == CardapioModeloProduto.produto_id).join(CardapioModeloCategoria, CardapioModeloCategoria.cardapiomodelocategoria_id == CardapioModeloProduto.cardapiomodelocategoria_id).join(Categoria, Categoria.categoria_id == CardapioModeloCategoria.categoria_id).filter(CardapioModeloCategoria.cardapiomodelo_id == modelo_id, Produto.organizacao_id == organizacao_id).order_by(CardapioModeloCategoria.idordcategoria, CardapioModeloProduto.idorditem).all()
-    return [_saida_item_padrao(vinculo, produto, categoria, origem) for vinculo, produto, categoria, origem in linhas]
-
-
-def _saida_item_padrao(vinculo: CardapioModeloProduto, produto: Produto, categoria: CardapioModeloCategoria, origem: Categoria) -> dict:
-    return {
-        "cardapiomodeloproduto_id": vinculo.cardapiomodeloproduto_id,
-        "produto_id": produto.produto_id,
-        "cardapiomodelocategoria_id": categoria.cardapiomodelocategoria_id,
-        "organizacao_id": produto.organizacao_id,
-        "categoria_id": categoria.categoria_id,
-        "nmcategoria": origem.nmcategoria,
-        "nmproduto": produto.nmproduto,
-        "dsproduto": produto.dsproduto,
-        "sitproduto": produto.sitproduto,
-        "skuproduto": produto.skuproduto,
-        "urlfotoproduto": produto.urlfotoproduto,
-        "dtcriacao": produto.dtcriacao,
-        "dtultatu": produto.dtultatu,
-    }
-
-
-def _categoria_produto_padrao(db: Session, organizacao_id: int, categoria_id: int) -> Categoria:
-    categoria = db.query(Categoria).filter(Categoria.organizacao_id == organizacao_id, Categoria.categoria_id == categoria_id, Categoria.sitcategoria == "ATIVA").first()
-    if categoria is None:
-        raise HTTPException(422, "Selecione uma categoria ativa da organização.")
-    return categoria
-
-
 @router.get("/organizacoes/{organizacao_id}/produtos")
 def listar_produtos_organizacao(organizacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload, organizacao_id)
@@ -610,168 +438,44 @@ async def enviar_foto_produto_organizacao(organizacao_id: int, foto: UploadFile 
     return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
 
 
-@router.post("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens", status_code=201)
-def adicionar_item_padrao(organizacao_id: int, modelo_id: int, dados: ItemPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    categoria = _categoria_do_padrao(db, organizacao_id, modelo_id, dados.cardapiomodelocategoria_id)
-    try:
-        if dados.produto_id is not None:
-            produto = db.query(Produto).filter(Produto.produto_id == dados.produto_id, Produto.organizacao_id == organizacao_id).first()
-            if produto is None:
-                raise HTTPException(404, "Produto não encontrado na organização.")
-        else:
-            if db.query(Produto).filter(Produto.organizacao_id == organizacao_id, func.lower(Produto.nmproduto) == dados.nmproduto.lower()).first():
-                raise HTTPException(409, "Este produto já existe na organização. Selecione-o para utilizar neste cardápio.")
-            campos = dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"})
-            produto = Produto(organizacao_id=organizacao_id, **campos)
-            db.add(produto); db.flush()
-        if db.query(CardapioModeloProduto).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, CardapioModeloProduto.produto_id == produto.produto_id).first():
-            raise HTTPException(409, "Este produto já está nesta categoria do cardápio.")
-        ordem = db.query(func.coalesce(func.max(CardapioModeloProduto.idorditem), 0)).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id).scalar()
-        vinculo = CardapioModeloProduto(cardapiomodelocategoria_id=categoria.cardapiomodelocategoria_id, produto_id=produto.produto_id, idorditem=int(ordem) + 1)
-        db.add(vinculo); db.commit(); db.refresh(vinculo)
-        origem = db.get(Categoria, categoria.categoria_id)
-        return _saida_item_padrao(vinculo, produto, categoria, origem)
-    except Exception:
-        db.rollback()
-        raise
-
-
-@router.delete("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens/{item_id}", status_code=204)
-def remover_item_padrao(organizacao_id: int, modelo_id: int, item_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    vinculo, _, _, _ = _produto_do_padrao(db, organizacao_id, modelo_id, item_id)
-    db.delete(vinculo)
-    db.commit()
-
-
-def _produto_do_padrao(db: Session, organizacao_id: int, modelo_id: int, item_id: int):
-    linha = db.query(CardapioModeloProduto, Produto, CardapioModeloCategoria, Categoria).join(Produto, Produto.produto_id == CardapioModeloProduto.produto_id).join(CardapioModeloCategoria, CardapioModeloCategoria.cardapiomodelocategoria_id == CardapioModeloProduto.cardapiomodelocategoria_id).join(Categoria, Categoria.categoria_id == CardapioModeloCategoria.categoria_id).filter(
-        CardapioModeloProduto.cardapiomodeloproduto_id == item_id,
-        CardapioModeloCategoria.cardapiomodelo_id == modelo_id,
-        CardapioModeloCategoria.organizacao_id == organizacao_id,
-        Produto.organizacao_id == organizacao_id,
-    ).first()
-    if linha is None:
-        raise HTTPException(404, "Produto não encontrado neste cardápio.")
-    return linha
-
-
-@router.put("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/itens/{item_id}")
-def alterar_produto_padrao(organizacao_id: int, modelo_id: int, item_id: int, dados: ItemPadraoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    vinculo, produto, _, _ = _produto_do_padrao(db, organizacao_id, modelo_id, item_id)
-    categoria = _categoria_do_padrao(db, organizacao_id, modelo_id, dados.cardapiomodelocategoria_id)
-    if dados.produto_id is not None and dados.produto_id != produto.produto_id:
-        raise HTTPException(422, "O produto do vínculo não pode ser trocado nesta edição.")
-    for campo, valor in dados.model_dump(exclude={"cardapiomodelocategoria_id", "produto_id"}).items():
-        setattr(produto, campo, valor)
-    vinculo.cardapiomodelocategoria_id = categoria.cardapiomodelocategoria_id
-    db.commit()
-    db.refresh(produto)
-    origem = db.get(Categoria, categoria.categoria_id)
-    return _saida_item_padrao(vinculo, produto, categoria, origem)
-
-
-@router.post("/organizacoes/{organizacao_id}/cardapios-padrao/{modelo_id}/foto")
-async def enviar_foto_produto_padrao(organizacao_id: int, modelo_id: int, foto: UploadFile = File(...), payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
-    _modelo_organizacao(db, organizacao_id, modelo_id, payload)
-    _validar_edicao_padrao(payload, organizacao_id)
-    extensoes = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
-    extensao = extensoes.get(foto.content_type or "")
-    if extensao is None:
-        raise HTTPException(422, "Escolha uma imagem JPG, PNG ou WebP.")
-    conteudo = await foto.read(5 * 1024 * 1024 + 1)
-    if not conteudo or len(conteudo) > 5 * 1024 * 1024:
-        raise HTTPException(422, "A foto deve ter até 5 MB.")
-    os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
-    nome = f"padrao_{uuid.uuid4().hex}{extensao}"
-    with open(os.path.join(UPLOAD_PRODUTOS, nome), "wb") as arquivo:
-        arquivo.write(conteudo)
-    return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
-
-
-def _associar_modelo_legado(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) -> Cardapio:
-    existente = db.query(Cardapio).filter(Cardapio.loja_id == loja.loja_id, Cardapio.cardapiomodelo_id == modelo.cardapiomodelo_id).first()
-    if existente:
-        return existente
-    if modelo.tipocardapio == "PRINCIPAL" and db.query(Cardapio).filter(
-        Cardapio.loja_id == loja.loja_id,
-        Cardapio.tipocardapio == "PRINCIPAL",
-    ).first():
-        raise HTTPException(409, "Este estabelecimento já possui um cardápio principal. Use outro cardápio do tipo especial.")
-    item = Cardapio(organizacao_id=loja.organizacao_id, loja_id=loja.loja_id, cardapiomodelo_id=modelo.cardapiomodelo_id, nmcardapio=modelo.nmcardapio, tipocardapio=modelo.tipocardapio, prioridade=prioridade)
-    db.add(item); db.flush()
-    versao = CardapioVersao(cardapio_id=item.cardapio_id, nrversao=1)
-    db.add(versao); db.flush()
-    categorias = db.query(CardapioModeloCategoria).filter(CardapioModeloCategoria.cardapiomodelo_id == modelo.cardapiomodelo_id).order_by(CardapioModeloCategoria.idordcategoria).all()
-    for categoria in categorias:
-        categoria_versao = CardapioVersaoCategoria(cardapioversao_id=versao.cardapioversao_id, categoria_id=categoria.categoria_id, idordcategoria=categoria.idordcategoria)
-        db.add(categoria_versao); db.flush()
-        produtos = db.query(CardapioModeloProduto, Produto).join(Produto, Produto.produto_id == CardapioModeloProduto.produto_id).filter(CardapioModeloProduto.cardapiomodelocategoria_id == categoria.cardapiomodelocategoria_id, Produto.organizacao_id == loja.organizacao_id).order_by(CardapioModeloProduto.idorditem).all()
-        for vinculo, produto in produtos:
-            # Modelos antigos não armazenam condições comerciais. Produtos
-            # só podem ganhar preço e promoção em uma versão de cardápio.
-            db.add(CardapioItem(
-                cardapioversao_id=versao.cardapioversao_id,
-                cardapioversaocategoria_id=categoria_versao.cardapioversaocategoria_id,
-                produto_id=produto.produto_id,
-                vrpreco=Decimal("0"),
-                idorditem=vinculo.idorditem,
-            ))
-    db.commit(); db.refresh(item)
-    return item
-
-
 @router.post("/lojas/{loja_id}/cardapios/associar", status_code=201)
 def associar(loja_id: int, dados: AssociarCardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     loja = _loja(db, loja_id, payload)
-    if dados.cardapio_id is not None:
-        cardapio = db.query(Cardapio).filter(
-            Cardapio.cardapio_id == dados.cardapio_id,
-            Cardapio.organizacao_id == loja.organizacao_id,
-            Cardapio.sitcardapio == "ATIVO",
-        ).first()
-        if not cardapio:
-            raise HTTPException(404, "Cardápio não encontrado na organização.")
-        if cardapio.tipocardapio == "PRINCIPAL":
-            principal = db.query(CardapioLoja, Cardapio).join(
-                Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
-            ).filter(
-                CardapioLoja.loja_id == loja.loja_id,
-                CardapioLoja.sitassociacao == "ATIVA",
-                Cardapio.tipocardapio == "PRINCIPAL",
-                Cardapio.cardapio_id != cardapio.cardapio_id,
-            ).first()
-            if principal:
-                raise HTTPException(409, "Este estabelecimento já possui um cardápio principal.")
-        vinculo = db.query(CardapioLoja).filter(
-            CardapioLoja.cardapio_id == cardapio.cardapio_id,
+    cardapio = db.query(Cardapio).filter(
+        Cardapio.cardapio_id == dados.cardapio_id,
+        Cardapio.organizacao_id == loja.organizacao_id,
+        Cardapio.sitcardapio == "ATIVO",
+    ).first()
+    if not cardapio:
+        raise HTTPException(404, "Cardápio não encontrado na organização.")
+    if cardapio.tipocardapio == "PRINCIPAL":
+        principal = db.query(CardapioLoja, Cardapio).join(
+            Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+        ).filter(
             CardapioLoja.loja_id == loja.loja_id,
+            CardapioLoja.sitassociacao == "ATIVA",
+            Cardapio.tipocardapio == "PRINCIPAL",
+            Cardapio.cardapio_id != cardapio.cardapio_id,
         ).first()
-        if vinculo is None:
-            vinculo = CardapioLoja(
-                cardapio_id=cardapio.cardapio_id,
-                loja_id=loja.loja_id,
-                prioridade=dados.prioridade,
-            )
-            db.add(vinculo)
-        else:
-            vinculo.sitassociacao = "ATIVA"
-            vinculo.prioridade = dados.prioridade
-        db.commit(); db.refresh(vinculo)
-        return _saida_cardapio(db, cardapio, vinculo)
-
-    # Compatibilidade de leitura com a estrutura anterior. Novos fluxos usam
-    # cardapio_id e não criam cópias do catálogo por estabelecimento.
-    modelo = db.query(CardapioModelo).filter(CardapioModelo.cardapiomodelo_id == dados.cardapiomodelo_id, CardapioModelo.organizacao_id == loja.organizacao_id, CardapioModelo.sitcardapio == "ATIVO").first()
-    if not modelo: raise HTTPException(404, "Cardápio padrão não encontrado.")
-    if not db.query(CardapioModeloProduto).join(CardapioModeloCategoria, CardapioModeloCategoria.cardapiomodelocategoria_id == CardapioModeloProduto.cardapiomodelocategoria_id).filter(CardapioModeloCategoria.cardapiomodelo_id == modelo.cardapiomodelo_id).first():
-        raise HTTPException(422, "Adicione produtos ao cardápio padrão antes de utilizá-lo em uma loja.")
-    return _saida_cardapio(db, _associar_modelo_legado(db, loja, modelo, dados.prioridade))
+        if principal:
+            raise HTTPException(409, "Este estabelecimento já possui um cardápio principal.")
+    vinculo = db.query(CardapioLoja).filter(
+        CardapioLoja.cardapio_id == cardapio.cardapio_id,
+        CardapioLoja.loja_id == loja.loja_id,
+    ).first()
+    if vinculo is None:
+        vinculo = CardapioLoja(
+            cardapio_id=cardapio.cardapio_id,
+            loja_id=loja.loja_id,
+            prioridade=dados.prioridade,
+        )
+        db.add(vinculo)
+    else:
+        vinculo.sitassociacao = "ATIVA"
+        vinculo.prioridade = dados.prioridade
+    db.commit()
+    db.refresh(vinculo)
+    return _saida_cardapio(db, cardapio, vinculo)
 
 
 @router.delete("/lojas/{loja_id}/cardapios/{cardapio_id}/associacao", status_code=204)
