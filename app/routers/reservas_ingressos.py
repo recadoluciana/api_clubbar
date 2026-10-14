@@ -12,7 +12,7 @@ from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
-from app.services.reserva_ingresso_service import criar_reserva
+from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
@@ -81,9 +81,24 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
     cpfs = [p.cpf for p in payload.participantes]
     if len(set(cpfs)) != len(cpfs):
         raise HTTPException(422, "Cada participante deve possuir um CPF distinto")
+    beneficios_validos = beneficios_validos_para_reserva(db, reserva)
+    if beneficios_validos and any(p.beneficio_id is None for p in payload.participantes):
+        raise HTTPException(422, "Selecione um benefício para cada participante")
+    for participante in payload.participantes:
+        if participante.beneficio_id is not None and participante.beneficio_id not in beneficios_validos:
+            raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
     db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).delete()
     for ordem, participante in enumerate(payload.participantes, 1):
-        db.add(ReservaIngressoParticipante(reserva_ingresso_id=reserva_id, ordem=ordem, nmparticipante=participante.nome.strip(), cpfparticipante=participante.cpf))
+        beneficio = beneficios_validos.get(participante.beneficio_id)
+        db.add(ReservaIngressoParticipante(
+            reserva_ingresso_id=reserva_id,
+            ordem=ordem,
+            nmparticipante=participante.nome.strip(),
+            cpfparticipante=participante.cpf,
+            beneficio_id=beneficio.beneficio_id if beneficio else None,
+            tipobeneficio=beneficio.cdbeneficio if beneficio else None,
+            nmbeneficiosnapshot=beneficio.nmbeneficio if beneficio else None,
+        ))
     reserva.sitreserva = "AGUARDANDO_PAGAMENTO"
     # A reserva gratuita é finalizada nesta mesma transação. Garanta que os
     # participantes recém-inseridos já possam ser consultados pelo serviço.

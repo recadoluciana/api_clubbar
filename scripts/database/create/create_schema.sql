@@ -1303,6 +1303,7 @@ CREATE TABLE reserva_ingresso_participante (
   reserva_ingresso_participante_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   reserva_ingresso_id BIGINT NOT NULL, ordem INT NOT NULL,
   nmparticipante VARCHAR(150) NOT NULL, cpfparticipante VARCHAR(11) NOT NULL,
+  beneficio_id BIGINT NULL, tipobeneficio VARCHAR(30) NULL, nmbeneficiosnapshot VARCHAR(100) NULL,
   itvenda_id BIGINT NULL, dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uk_reserva_participante_ordem (reserva_ingresso_id, ordem),

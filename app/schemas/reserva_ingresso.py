@@ -13,6 +13,7 @@ class ReservaIngressoCreate(BaseModel):
 class ParticipanteReservaIn(BaseModel):
     nome: str = Field(min_length=3, max_length=150)
     cpf: str
+    beneficio_id: int | None = None
 
     @field_validator("cpf")
     @classmethod

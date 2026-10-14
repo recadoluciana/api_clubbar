@@ -189,6 +189,39 @@ def _capacidade_evento(db: Session, evento: Evento) -> int:
     )
 
 
+def beneficios_validos_para_reserva(db: Session, reserva: ReservaIngresso) -> dict[int, BeneficioIngresso]:
+    preco = db.query(EventoLotePreco).filter(
+        EventoLotePreco.lotepreco_id == reserva.lotepreco_id
+    ).first()
+    if not preco:
+        return {}
+    modalidade = db.query(ModalidadeIngresso).filter(
+        ModalidadeIngresso.modalidade_id == preco.modalidade_id,
+        ModalidadeIngresso.situacao == "ATIVO",
+    ).first()
+    if not modalidade or not (modalidade.exigebeneficio or preco.aplicacotalegal):
+        return {}
+
+    evento_configurado = db.query(EventoModalidade).filter(
+        EventoModalidade.evento_id == reserva.evento_id
+    ).first()
+    query = db.query(BeneficioIngresso).filter(BeneficioIngresso.situacao == "ATIVO")
+    if evento_configurado:
+        query = query.join(
+            EventoModalidadeBeneficio,
+            EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+        ).filter(
+            EventoModalidadeBeneficio.evento_id == reserva.evento_id,
+            EventoModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+        )
+    else:
+        query = query.join(
+            ModalidadeBeneficio,
+            ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+        ).filter(ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id)
+    return {beneficio.beneficio_id: beneficio for beneficio in query.all()}
+
+
 def criar_reserva(
     db: Session,
     *,
@@ -223,29 +256,17 @@ def criar_reserva(
     beneficio_item = None
     exige_beneficio = bool(modalidade.exigebeneficio or preco.aplicacotalegal)
     if exige_beneficio:
-        evento_configurado = db.query(EventoModalidade).filter(
-            EventoModalidade.evento_id == lote.evento_id
-        ).first()
-        query_beneficio = db.query(BeneficioIngresso).filter(
-            BeneficioIngresso.beneficio_id == beneficio_id,
-            BeneficioIngresso.situacao == "ATIVO",
+        reserva_referencia = ReservaIngresso(
+            evento_id=lote.evento_id,
+            lotepreco_id=preco.lotepreco_id,
         )
-        if evento_configurado:
-            query_beneficio = query_beneficio.join(
-                EventoModalidadeBeneficio,
-                EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
-            ).filter(
-                EventoModalidadeBeneficio.evento_id == lote.evento_id,
-                EventoModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
-            )
-        else:
-            query_beneficio = query_beneficio.join(
-                ModalidadeBeneficio,
-                ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
-            ).filter(ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id)
-        beneficio_item = query_beneficio.first()
-        if not beneficio_item:
-            raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
+        beneficios_validos = beneficios_validos_para_reserva(db, reserva_referencia)
+        if not beneficios_validos:
+            raise HTTPException(422, "Nenhum benefício está configurado para esta modalidade")
+        if beneficio_id is not None:
+            beneficio_item = beneficios_validos.get(beneficio_id)
+            if not beneficio_item:
+                raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
     beneficio = beneficio_item.cdbeneficio if beneficio_item else None
 
     # Reservas expiram no relógio do servidor; já os períodos de venda dos
