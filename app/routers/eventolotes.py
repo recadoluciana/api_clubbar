@@ -188,10 +188,11 @@ def _carregar_global(db: Session, loteglobal_id: int) -> EventoLoteGlobal | None
 
 
 def _validar_data_limite_evento(evento: Evento, data_limite: datetime | None) -> None:
-    if data_limite is not None and data_limite > evento.dtinicioevento:
+    limite_venda = evento.dtfimevento or evento.dtinicioevento
+    if data_limite is not None and limite_venda is not None and data_limite > limite_venda:
         raise HTTPException(
             422,
-            "A data limite deste preço não pode ser posterior ao início do evento.",
+            "A data limite deste preço não pode ser posterior ao término do evento.",
         )
 
 

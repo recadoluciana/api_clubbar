@@ -340,8 +340,14 @@ def agora_br() -> datetime:
 
 
 def filtro_evento_atual_ou_proximo(agora: datetime):
-    """Inclui eventos futuros ou iniciados há no máximo seis horas."""
-    return Evento.dtinicioevento >= agora - timedelta(hours=6)
+    """Mantém eventos disponíveis até o horário de término configurado."""
+    return or_(
+        Evento.dtfimevento > agora,
+        and_(
+            Evento.dtfimevento.is_(None),
+            Evento.dtinicioevento >= agora - timedelta(hours=6),
+        ),
+    )
 
 
 def _ticketman_logado(db: Session, payload: dict) -> Usuario:
@@ -513,10 +519,7 @@ def listar_eventos_proximos_global(
         )
         .filter(Organizacao.sitorganizacao == "ATIVA")
         .filter(Evento.statusevento == "ATIVO")
-        # O endpoint global alimenta o carrossel da Home: nele entram apenas
-        # eventos que ainda não começaram. Eventos em andamento continuam
-        # disponíveis na agenda de cada estabelecimento.
-        .filter(Evento.dtinicioevento >= hi)
+        .filter(filtro_evento_atual_ou_proximo(hi))
     )
 
     if cidade_id:
@@ -553,7 +556,7 @@ def listar_eventos_com_cortesias_disponiveis(
     cidade_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    """Lista eventos futuros cuja cortesia gratuita ainda pode ser retirada."""
+    """Lista eventos ativos cuja cortesia gratuita ainda pode ser retirada."""
     agora = agora_br()
     consulta = (
         db.query(
@@ -571,7 +574,7 @@ def listar_eventos_com_cortesias_disponiveis(
         .filter(
             Organizacao.sitorganizacao == "ATIVA",
             Evento.statusevento == "ATIVO",
-            Evento.dtinicioevento >= agora,
+            filtro_evento_atual_ou_proximo(agora),
             EventoLoteGlobal.situacao == "ATIVO",
             EventoLote.situacao == "ATIVO",
             EventoLotePreco.situacao == "ATIVO",
