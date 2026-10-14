@@ -13,6 +13,9 @@ class EventoLotePreco(Base):
     nmpreco = Column(String(100), nullable=False)
     tipopreco = Column(String(30), nullable=False, server_default="INTEIRA")
     vrpreco = Column(Numeric(10, 2), nullable=False)
+    # Limite comercial opcional da modalidade dentro da capacidade compartilhada
+    # do setor no lote. Nulo significa que só se aplica o limite do setor.
+    qtlimitemodalidade = Column(BigInteger, nullable=True)
     aplicacotalegal = Column(Boolean, nullable=False, server_default="0")
     exigecomprovante = Column(Boolean, nullable=False, server_default="0")
     situacao = Column(String(10), nullable=False, server_default="ATIVO")

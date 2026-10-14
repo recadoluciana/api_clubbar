@@ -9,6 +9,7 @@ class EventoLotePrecoIn(BaseModel):
     nmpreco: str = Field(min_length=1, max_length=100)
     tipopreco: str | None = Field(default=None, max_length=40)
     vrpreco: float = Field(ge=0)
+    qtlimitemodalidade: int | None = Field(default=None, gt=0)
     aplicacotalegal: bool = False
     exigecomprovante: bool = False
     situacao: Literal["ATIVO", "INATIVO"] = "ATIVO"

@@ -1688,6 +1688,7 @@ CREATE TABLE eventolotesetorpreco (
   nmpreco VARCHAR(100) NOT NULL,
   tipopreco VARCHAR(30) NOT NULL,
   vrpreco DECIMAL(10,2) NOT NULL,
+  qtlimitemodalidade BIGINT NULL,
   aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE,
   exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE,
   situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',

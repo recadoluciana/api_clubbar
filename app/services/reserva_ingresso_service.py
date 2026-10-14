@@ -18,6 +18,8 @@ from app.models.beneficioingresso import BeneficioIngresso
 from app.models.eventomodalidade import EventoModalidade
 from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.models.reserva_ingresso import ReservaIngresso
+from app.models.itvenda import ItVenda
+from app.models.venda import Venda
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from app.utils.datetime_utils import FUSO_BRASIL
 from app.core.config import PERCENTUAL_COTA_LEGAL
@@ -70,6 +72,44 @@ def quantidade_reservada(db: Session, lote_id: int) -> int:
         )
         .scalar()
         or 0
+    )
+
+
+def quantidade_reservada_modalidade(db: Session, lotepreco_id: int) -> int:
+    return int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .filter(
+            ReservaIngresso.lotepreco_id == lotepreco_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > datetime.now(),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def quantidade_vendida_modalidade(db: Session, lotepreco_id: int) -> int:
+    return int(
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            ItVenda.lotepreco_id == lotepreco_id,
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda == "PAGA",
+        )
+        .scalar()
+        or 0
+    )
+
+
+def quantidade_disponivel_modalidade(db: Session, preco: EventoLotePreco) -> int | None:
+    if preco.qtlimitemodalidade is None:
+        return None
+    return max(
+        0,
+        int(preco.qtlimitemodalidade)
+        - quantidade_vendida_modalidade(db, preco.lotepreco_id)
+        - quantidade_reservada_modalidade(db, preco.lotepreco_id),
     )
 
 
@@ -242,6 +282,7 @@ def criar_reserva(
             EventoLotePreco.lote_id == lote_id,
             EventoLotePreco.situacao == "ATIVO",
         )
+        .with_for_update()
         .first()
     )
     if not preco:
@@ -288,6 +329,12 @@ def criar_reserva(
         raise HTTPException(409, "Não há ingressos disponíveis neste setor neste lote")
     if quantidade > disponivel_setor_no_lote:
         raise HTTPException(409, "O limite deste setor no lote vigente foi atingido")
+    disponivel_modalidade = quantidade_disponivel_modalidade(db, preco)
+    if disponivel_modalidade is not None:
+        if disponivel_modalidade <= 0:
+            raise HTTPException(409, "O limite desta modalidade neste setor foi atingido")
+        if quantidade > disponivel_modalidade:
+            raise HTTPException(409, "A quantidade solicitada supera o limite disponível desta modalidade")
 
     evento = db.query(Evento).filter(Evento.evento_id == lote.evento_id).first()
     if not evento:

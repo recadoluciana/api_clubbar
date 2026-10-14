@@ -209,11 +209,23 @@ def _dados_preco_catalogo(db: Session, preco) -> dict:
         "nmpreco": preco.nmpreco if modalidade.permitepersonalizarnome else modalidade.nmmodalidade,
         "tipopreco": modalidade.cdmodalidade,
         "vrpreco": preco.vrpreco,
+        "qtlimitemodalidade": preco.qtlimitemodalidade,
         "aplicacotalegal": bool(modalidade.aplicacotalegal),
         "exigecomprovante": bool(modalidade.exigecomprovante),
         "situacao": preco.situacao,
         "nrordem": preco.nrordem,
     }
+
+
+def _validar_limites_modalidades(lote: EventoLote, precos) -> None:
+    """Mantém cada limite opcional dentro da capacidade compartilhada do setor."""
+    for preco in precos:
+        limite = getattr(preco, "qtlimitemodalidade", None)
+        if limite is not None and int(limite) > int(lote.qtlimite):
+            raise HTTPException(
+                422,
+                "O limite de uma modalidade não pode superar a capacidade deste setor no lote.",
+            )
 
 
 def _sincronizar_precos_lote(db: Session, lote_id: int, precos) -> None:
@@ -347,6 +359,11 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                 "nmpreco": preco.nmpreco,
                 "tipopreco": preco.tipopreco,
                 "vrpreco": float(preco.vrpreco),
+                "qtlimitemodalidade": (
+                    int(preco.qtlimitemodalidade)
+                    if preco.qtlimitemodalidade is not None
+                    else None
+                ),
                 "aplicacotalegal": bool(preco.aplicacotalegal),
                 "exigecomprovante": bool(preco.exigecomprovante),
                 "situacao": preco.situacao,
@@ -576,6 +593,7 @@ def criar_lote_global(
         )
         db.add(configuracao)
         db.flush()
+        _validar_limites_modalidades(configuracao, setor_dados.precos)
         db.add_all(EventoLotePreco(lote_id=configuracao.lote_id, **_dados_preco_catalogo(db, preco)) for preco in setor_dados.precos)
     db.commit()
     return {"mensagem": "Lote global cadastrado com sucesso", "loteglobal_id": global_.loteglobal_id}
@@ -657,6 +675,7 @@ def adicionar_setor_ao_lote_global(
     )
     db.add(configuracao)
     db.flush()
+    _validar_limites_modalidades(configuracao, data.precos)
     db.add_all(
         EventoLotePreco(lote_id=configuracao.lote_id, **_dados_preco_catalogo(db, preco))
         for preco in data.precos
@@ -694,7 +713,13 @@ def atualizar_configuracao_setor(
         if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
             raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
         _validar_modalidades_do_evento(db, evento.evento_id, data.precos)
+        _validar_limites_modalidades(lote, data.precos)
         _sincronizar_precos_lote(db, lote_id, data.precos)
+    elif "qtlimite" in data.model_fields_set:
+        _validar_limites_modalidades(
+            lote,
+            db.query(EventoLotePreco).filter(EventoLotePreco.lote_id == lote_id).all(),
+        )
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
 
@@ -738,6 +763,7 @@ def adicionar_modalidade_ao_setor(
         .first()
     ):
         raise HTTPException(409, "Esta modalidade já está configurada neste setor")
+    _validar_limites_modalidades(lote, [data])
 
     evento_modalidade = (
         db.query(EventoModalidade)
