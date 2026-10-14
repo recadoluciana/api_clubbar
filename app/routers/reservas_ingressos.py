@@ -11,10 +11,16 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.cliente import Cliente
+from app.models.eventolotepreco import EventoLotePreco
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
+from app.services.cortesia_evento_service import (
+    bloquear_evento_para_cortesia,
+    eh_modalidade_cortesia,
+    validar_cortesia_unica_por_cpf,
+)
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
@@ -81,6 +87,17 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
     cpfs = [p.cpf for p in payload.participantes]
     if len(set(cpfs)) != len(cpfs):
         raise HTTPException(422, "Cada participante deve possuir um CPF distinto")
+    preco = db.query(EventoLotePreco).filter(
+        EventoLotePreco.lotepreco_id == reserva.lotepreco_id,
+    ).first()
+    if eh_modalidade_cortesia(preco):
+        bloquear_evento_para_cortesia(db, reserva.evento_id)
+        for cpf in cpfs:
+            validar_cortesia_unica_por_cpf(
+                db,
+                evento_id=reserva.evento_id,
+                cpf=cpf,
+            )
     beneficios_validos = beneficios_validos_para_reserva(db, reserva)
     if beneficios_validos and any(p.beneficio_id is None for p in payload.participantes):
         raise HTTPException(422, "Selecione um benefício para cada participante")

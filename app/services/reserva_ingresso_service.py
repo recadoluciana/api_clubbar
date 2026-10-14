@@ -26,6 +26,7 @@ from app.core.config import PERCENTUAL_COTA_LEGAL
 
 
 STATUS_RESERVAM_ESTOQUE = ("PREENCHENDO", "AGUARDANDO_PAGAMENTO")
+LIMITE_INGRESSOS_POR_TRANSACAO = 5
 # A reserva evita que duas pessoas comprem a mesma vaga ao mesmo tempo. O
 # prazo curto protege o estoque sem fazer o ingresso parecer esgotado para
 # quem está aguardando uma compra abandonada.
@@ -272,6 +273,11 @@ def criar_reserva(
     tipo_beneficio: str | None,
     quantidade: int,
 ) -> ReservaIngresso:
+    if quantidade > LIMITE_INGRESSOS_POR_TRANSACAO:
+        raise HTTPException(
+            422,
+            f"O limite é de {LIMITE_INGRESSOS_POR_TRANSACAO} ingressos por transação.",
+        )
     lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).with_for_update().first()
     if not lote:
         raise HTTPException(404, "Configuração de setor não encontrada")
