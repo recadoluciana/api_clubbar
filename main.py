@@ -534,6 +534,28 @@ def remover_modelo_legado_de_cardapio() -> None:
                 colunas = {
                     coluna["name"] for coluna in inspector.get_columns("cardapio")
                 }
+                # A versão antiga tinha uma chave única gerada a partir da
+                # loja principal. Ela precisa sair antes da coluna fonte.
+                if "principal_loja_id" in colunas:
+                    indices_principais = [
+                        indice.get("name")
+                        for indice in inspector.get_indexes("cardapio")
+                        if "principal_loja_id" in indice.get("column_names", [])
+                    ]
+                    indices_principais.extend(
+                        indice.get("name")
+                        for indice in inspector.get_unique_constraints("cardapio")
+                        if "principal_loja_id" in indice.get("column_names", [])
+                    )
+                    for indice in {
+                        indice for indice in indices_principais if indice
+                    }:
+                        conexao.execute(
+                            text(f"ALTER TABLE cardapio DROP INDEX `{indice}`")
+                        )
+                    conexao.execute(
+                        text("ALTER TABLE cardapio DROP COLUMN `principal_loja_id`")
+                    )
                 for coluna in ("cardapiomodelo_id", "loja_id"):
                     if coluna not in colunas:
                         continue
