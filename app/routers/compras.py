@@ -151,6 +151,7 @@ def listar_compras(
             "itvenda_id": getattr(it, "itvenda_id", None),
             "produto_id": getattr(it, "produto_id", None),
             "nmproduto": nmproduto or nmevento or "Ingresso",
+            "nmevento": nmevento,
             "urlfotoproduto": urlfotoproduto,
             "urlbannerevento": urlbannerevento,
             "idtipoproduto": "I" if it.tipoitem == "INGRESSO" else "P",
@@ -172,6 +173,10 @@ def listar_compras(
             "nmparticipante": it.nmparticipante,
             "cpfparticipante": it.cpfparticipante,
             "lote": nmlote or (f"Lote {nrlote}" if nrlote else None),
+            "nmsetor": nmsetor,
+            "nmpreco": nmpreco,
+            "tipobeneficio": it.tipobeneficio,
+            "nmbeneficiosnapshot": it.nmbeneficiosnapshot,
             "tipo_ingresso": _descricao_tipo_ingresso(
                 nmsetor,
                 nmpreco,
