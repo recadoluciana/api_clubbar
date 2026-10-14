@@ -34,8 +34,11 @@ class Cardapio(Base):
 
     cardapio_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, nullable=False, index=True)
-    loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
-    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id"), nullable=False, index=True)
+    # O cardápio é um catálogo da empresa. A disponibilidade em cada loja é
+    # registrada em CardapioLoja, para que um único catálogo possa ser
+    # compartilhado sem copiar preços, promoções ou itens.
+    loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=True, index=True)
+    cardapiomodelo_id = Column(BigInteger, ForeignKey("cardapiomodelo.cardapiomodelo_id"), nullable=True, index=True)
     nmcardapio = Column(String(120), nullable=False)
     tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL"), nullable=False, server_default="PRINCIPAL")
     prioridade = Column(Integer, nullable=False, server_default="0")
@@ -44,6 +47,20 @@ class Cardapio(Base):
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (UniqueConstraint("loja_id", "cardapiomodelo_id", name="uk_cardapio_loja_modelo"),)
+
+
+class CardapioLoja(Base):
+    __tablename__ = "cardapioloja"
+
+    cardapioloja_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    cardapio_id = Column(BigInteger, ForeignKey("cardapio.cardapio_id", ondelete="CASCADE"), nullable=False, index=True)
+    loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
+    prioridade = Column(Integer, nullable=False, server_default="0")
+    sitassociacao = Column(Enum("ATIVA", "INATIVA"), nullable=False, server_default="ATIVA")
+    dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
+
+    __table_args__ = (UniqueConstraint("cardapio_id", "loja_id", name="uk_cardapioloja_cardapio_loja"),)
 
 
 class CardapioVersao(Base):
@@ -89,6 +106,7 @@ class CardapioItem(Base):
     vrdesconto = Column(Numeric(10, 2), nullable=False, server_default="0.00")
     dtinidesconto = Column(DateTime, nullable=True)
     dtfimdesconto = Column(DateTime, nullable=True)
+    pccashback = Column(Numeric(5, 2), nullable=True)
     sititem = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
     idorditem = Column(Integer, nullable=False, server_default="1")
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
@@ -101,7 +119,8 @@ class CardapioProgramacao(Base):
     __tablename__ = "cardapioprogramacao"
 
     cardapioprogramacao_id = Column(BigInteger, primary_key=True, autoincrement=True)
-    cardapio_id = Column(BigInteger, ForeignKey("cardapio.cardapio_id", ondelete="CASCADE"), nullable=False, index=True)
+    cardapio_id = Column(BigInteger, ForeignKey("cardapio.cardapio_id", ondelete="CASCADE"), nullable=True, index=True)
+    cardapioloja_id = Column(BigInteger, ForeignKey("cardapioloja.cardapioloja_id", ondelete="CASCADE"), nullable=True, index=True)
     diasemana = Column(Integer, nullable=True)
     dtinicio = Column(Date, nullable=True)
     dtfim = Column(Date, nullable=True)

@@ -107,6 +107,7 @@ async def criar_ou_obter_venda_idempotente(
                     venda_id=venda_id,
                     tipoitem="PRODUTO",
                     produto_id=produto_id,
+                    cardapioitem_id=it.get("cardapioitem_id"),
                     qtitvenda=1,
                     vrunititvenda=vr_unit,
                     dsobsitvenda=dsobsitcar,

@@ -10,7 +10,7 @@ import traceback
 from app.database import get_db
 from app.models.categoria import Categoria
 from app.models.cardapio_padrao import CardapioModeloProduto, ProdutoCategoriaOrg
-from app.models.cardapio import Cardapio, CardapioItem, CardapioProgramacao, CardapioVersao, CardapioVersaoCategoria
+from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioProgramacao, CardapioVersao, CardapioVersaoCategoria
 from app.models.produto import Produto
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -125,14 +125,17 @@ def _programacao_vigente(programacao: CardapioProgramacao, agora: datetime) -> b
 
 
 def _itens_cardapio_em_exibicao(db: Session, loja_id: int, agora: datetime) -> dict[int, CardapioItem]:
-    cardapios = db.query(Cardapio).filter(
-        Cardapio.loja_id == loja_id,
+    cardapios = db.query(CardapioLoja, Cardapio).join(
+        Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+    ).filter(
+        CardapioLoja.loja_id == loja_id,
+        CardapioLoja.sitassociacao == "ATIVA",
         Cardapio.sitcardapio == "ATIVO",
-    ).order_by(Cardapio.prioridade.desc()).all()
-    candidatos: list[tuple[Cardapio, CardapioVersao]] = []
-    for cardapio in cardapios:
+    ).order_by(CardapioLoja.prioridade.desc()).all()
+    candidatos: list[tuple[CardapioLoja, Cardapio, CardapioVersao]] = []
+    for associacao, cardapio in cardapios:
         programacoes = db.query(CardapioProgramacao).filter(
-            CardapioProgramacao.cardapio_id == cardapio.cardapio_id,
+            CardapioProgramacao.cardapioloja_id == associacao.cardapioloja_id,
         ).all()
         if cardapio.tipocardapio != "PRINCIPAL" and not any(
             _programacao_vigente(programacao, agora)
@@ -147,12 +150,12 @@ def _itens_cardapio_em_exibicao(db: Session, loja_id: int, agora: datetime) -> d
                 (CardapioVersao.dtfimvigencia >= agora),
         ).order_by(CardapioVersao.nrversao.desc()).first()
         if versao:
-            candidatos.append((cardapio, versao))
+            candidatos.append((associacao, cardapio, versao))
 
     if not candidatos:
         return {}
-    sazonais = [item for item in candidatos if item[0].tipocardapio != "PRINCIPAL"]
-    _, versao = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
+    sazonais = [item for item in candidatos if item[1].tipocardapio != "PRINCIPAL"]
+    _, _, versao = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
     itens = db.query(CardapioItem).filter(
         CardapioItem.cardapioversao_id == versao.cardapioversao_id,
         CardapioItem.sititem == "ATIVO",
@@ -417,9 +420,10 @@ def listar_produtos_por_loja(
         .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
         .join(ultima_versao, (ultima_versao.c.cardapio_id == CardapioVersao.cardapio_id) & (ultima_versao.c.nrversao == CardapioVersao.nrversao))
         .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+        .join(CardapioLoja, CardapioLoja.cardapio_id == Cardapio.cardapio_id)
         .join(CardapioVersaoCategoria, CardapioVersaoCategoria.cardapioversaocategoria_id == CardapioItem.cardapioversaocategoria_id)
         .join(Categoria, Categoria.categoria_id == CardapioVersaoCategoria.categoria_id)
-        .filter(Cardapio.loja_id == loja_id, Cardapio.organizacao_id == loja.organizacao_id, Produto.organizacao_id == loja.organizacao_id, Categoria.organizacao_id == loja.organizacao_id)
+        .filter(CardapioLoja.loja_id == loja_id, CardapioLoja.sitassociacao == "ATIVA", Cardapio.organizacao_id == loja.organizacao_id, Produto.organizacao_id == loja.organizacao_id, Categoria.organizacao_id == loja.organizacao_id)
     )
 
     if not incluir_inativos:
@@ -466,7 +470,7 @@ def listar_produtos_por_loja(
                 "dtfimdesconto": item.dtfimdesconto,
                 "vrprecofinal": vrprecofinal,
                 "descontoativo": descontoativo,
-                "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
+                "pccashback": float(item.pccashback) if item.pccashback is not None else None,
             }
         produtos_listados[produto.produto_id] = registro
         saida.append(registro)

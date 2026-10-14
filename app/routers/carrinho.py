@@ -13,7 +13,7 @@ from app.models.loja import Loja
 from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.evento import Evento
-from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
+from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioVersao
 
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut,AlterarParticipanteIn
 from app.services.carrinho_service import (
@@ -21,6 +21,7 @@ from app.services.carrinho_service import (
     limpar_itens_indisponiveis,
     revalidar_precos_carrinho,
 )
+from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
@@ -56,10 +57,12 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             db.query(CardapioItem)
             .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
             .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+            .join(CardapioLoja, CardapioLoja.cardapio_id == Cardapio.cardapio_id)
             .filter(
                 CardapioItem.produto_id == produto_id_final,
                 CardapioItem.sititem == "ATIVO",
-                Cardapio.loja_id == payload.loja_id,
+                CardapioLoja.loja_id == payload.loja_id,
+                CardapioLoja.sitassociacao == "ATIVA",
                 Cardapio.sitcardapio == "ATIVO",
                 CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
             )
@@ -69,7 +72,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 CardapioItem.cardapioitem_id == payload.cardapioitem_id
             )
         item_cardapio = consulta_item.order_by(
-            Cardapio.prioridade.desc(), CardapioVersao.nrversao.desc()
+            CardapioLoja.prioridade.desc(), CardapioVersao.nrversao.desc()
         ).first()
         if not item_cardapio:
             raise HTTPException(
@@ -210,7 +213,7 @@ def calcular_preco_final(
     dtinidesconto=None,
     dtfimdesconto=None,
 ):
-    agora = datetime.now()
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
     tipodesconto = (tipodesconto if tipodesconto is not None else produto.tipodesconto or "NENHUM").upper()
     vrdesconto = float(vrdesconto if vrdesconto is not None else produto.vrdesconto or 0)

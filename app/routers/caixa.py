@@ -21,7 +21,7 @@ from app.models.cliente import Cliente
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
-from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
+from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioVersao
 from app.models.venda import Venda
 from app.routers.carrinho import adicionar_item
 from app.routers.pagamentos import (
@@ -322,15 +322,17 @@ async def cancelar_pix(
                     Cardapio,
                     Cardapio.cardapio_id == CardapioVersao.cardapio_id,
                 )
+                .join(CardapioLoja, CardapioLoja.cardapio_id == Cardapio.cardapio_id)
                 .filter(
                     CardapioItem.produto_id == item.produto_id,
                     CardapioItem.sititem == "ATIVO",
-                    Cardapio.loja_id == checkout.loja_id,
+                    CardapioLoja.loja_id == checkout.loja_id,
+                    CardapioLoja.sitassociacao == "ATIVA",
                     Cardapio.sitcardapio == "ATIVO",
                     CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
                 )
                 .order_by(
-                    Cardapio.prioridade.desc(),
+                    CardapioLoja.prioridade.desc(),
                     CardapioVersao.nrversao.desc(),
                 )
                 .first()

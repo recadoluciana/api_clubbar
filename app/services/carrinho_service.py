@@ -6,9 +6,10 @@ from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
 from app.models.produto import Produto
 from app.models.loja import Loja
-from app.models.cardapio import Cardapio, CardapioItem, CardapioVersao
+from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioVersao
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from decimal import Decimal
+from app.utils.datetime_utils import FUSO_BRASIL
 
 def _preco_final(base, tipo, desconto, inicio, fim, agora):
     valor = Decimal(str(base or 0))
@@ -26,7 +27,7 @@ def _preco_final(base, tipo, desconto, inicio, fim, agora):
 
 def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
     """Atualiza snapshots vencidos sem retirar itens quando o cardápio muda."""
-    agora = datetime.now()
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
     itens = db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho.carrinho_id).all()
     alteracoes = []
     for item in itens:
@@ -37,16 +38,18 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
             db.query(CardapioItem)
             .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
             .join(Cardapio, Cardapio.cardapio_id == CardapioVersao.cardapio_id)
+            .join(CardapioLoja, CardapioLoja.cardapio_id == Cardapio.cardapio_id)
             .filter(
                 CardapioItem.produto_id == item.produto_id,
                 CardapioItem.sititem == "ATIVO",
-                Cardapio.loja_id == carrinho.loja_id,
+                CardapioLoja.loja_id == carrinho.loja_id,
+                CardapioLoja.sitassociacao == "ATIVA",
                 Cardapio.sitcardapio == "ATIVO",
                 CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
                 (CardapioVersao.dtiniciovigencia.is_(None)) | (CardapioVersao.dtiniciovigencia <= agora),
                 (CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora),
             )
-            .order_by(Cardapio.prioridade.desc(), CardapioVersao.nrversao.desc())
+            .order_by(CardapioLoja.prioridade.desc(), CardapioVersao.nrversao.desc())
             .first()
         )
         origem = item_atual or produto

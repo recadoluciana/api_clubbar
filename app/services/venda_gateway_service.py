@@ -486,6 +486,7 @@ async def criar_venda_paga_por_checkout_snapshot(
                 venda_id=venda.venda_id,
                 tipoitem="PRODUTO",
                 produto_id=item.produto_id,
+                cardapioitem_id=item.cardapioitem_id,
                 lote_id=None,
                 qtitvenda=1,
                 vrunititvenda=item.vrunitario,

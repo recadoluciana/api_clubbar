@@ -465,6 +465,76 @@ def garantir_descontos_por_cardapio() -> None:
 
 
 @app.on_event("startup")
+def garantir_cardapios_compartilhados() -> None:
+    """Prepara cardápios reutilizáveis e a associação independente por loja."""
+    try:
+        inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        if "cardapio" not in tabelas:
+            return
+        colunas_item = {coluna["name"] for coluna in inspector.get_columns("cardapioitem")}
+        colunas_programacao = (
+            {coluna["name"] for coluna in inspector.get_columns("cardapioprogramacao")}
+            if "cardapioprogramacao" in tabelas else set()
+        )
+        with engine.begin() as conexao:
+            # Os campos legados ficam nulos nos novos registros: a relação com
+            # loja passa a ser exclusivamente pela tabela cardapioloja.
+            conexao.execute(text("ALTER TABLE cardapio MODIFY loja_id BIGINT NULL"))
+            conexao.execute(text("ALTER TABLE cardapio MODIFY cardapiomodelo_id BIGINT NULL"))
+            conexao.execute(text(
+                "CREATE TABLE IF NOT EXISTS cardapioloja ("
+                "cardapioloja_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
+                "cardapio_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, "
+                "prioridade INT NOT NULL DEFAULT 0, "
+                "sitassociacao ENUM('ATIVA','INATIVA') NOT NULL DEFAULT 'ATIVA', "
+                "dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                "dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                "UNIQUE KEY uk_cardapioloja_cardapio_loja (cardapio_id, loja_id), "
+                "KEY ix_cardapioloja_cardapio (cardapio_id), KEY ix_cardapioloja_loja (loja_id), "
+                "CONSTRAINT fk_cardapioloja_cardapio FOREIGN KEY (cardapio_id) "
+                "REFERENCES cardapio(cardapio_id) ON DELETE CASCADE, "
+                "CONSTRAINT fk_cardapioloja_loja FOREIGN KEY (loja_id) "
+                "REFERENCES loja(loja_id))"
+            ))
+            if "pccashback" not in colunas_item:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN pccashback DECIMAL(5,2) NULL "
+                    "AFTER dtfimdesconto"
+                ))
+            if "cardapioloja_id" not in colunas_programacao:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioprogramacao MODIFY cardapio_id BIGINT NULL"
+                ))
+            colunas_checkout = {coluna["name"] for coluna in inspector.get_columns("checkout_asaas_item")}
+            if "cardapioitem_id" not in colunas_checkout:
+                conexao.execute(text(
+                    "ALTER TABLE checkout_asaas_item ADD COLUMN cardapioitem_id BIGINT NULL, "
+                    "ADD KEY ix_checkout_asaas_item_cardapioitem (cardapioitem_id), "
+                    "ADD CONSTRAINT fk_checkout_asaas_item_cardapioitem FOREIGN KEY (cardapioitem_id) "
+                    "REFERENCES cardapioitem(cardapioitem_id) ON DELETE SET NULL"
+                ))
+            colunas_itvenda = {coluna["name"] for coluna in inspector.get_columns("itvenda")}
+            if "cardapioitem_id" not in colunas_itvenda:
+                conexao.execute(text(
+                    "ALTER TABLE itvenda ADD COLUMN cardapioitem_id BIGINT NULL, "
+                    "ADD KEY ix_itvenda_cardapioitem (cardapioitem_id), "
+                    "ADD CONSTRAINT fk_itvenda_cardapioitem FOREIGN KEY (cardapioitem_id) "
+                    "REFERENCES cardapioitem(cardapioitem_id) ON DELETE SET NULL"
+                ))
+                conexao.execute(text(
+                    "ALTER TABLE cardapioprogramacao ADD COLUMN cardapioloja_id BIGINT NULL "
+                    "AFTER cardapio_id, ADD KEY ix_cardapioprogramacao_cardapioloja (cardapioloja_id), "
+                    "ADD CONSTRAINT fk_cardapioprogramacao_cardapioloja "
+                    "FOREIGN KEY (cardapioloja_id) REFERENCES cardapioloja(cardapioloja_id) ON DELETE CASCADE"
+                ))
+        logger.info("Cardápios compartilhados e associações por loja verificados.")
+    except Exception:
+        logger.exception("Não foi possível preparar os cardápios compartilhados")
+        raise
+
+
+@app.on_event("startup")
 def garantir_politica_compra_inicial() -> None:
     """Garante uma política vigente de ingresso e outra de produto."""
     PoliticaCompra.__table__.create(bind=engine, checkfirst=True)

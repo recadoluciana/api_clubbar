@@ -14,7 +14,7 @@ from app.core.security import get_usuario_logado
 from app.core.config import UPLOAD_PRODUTOS
 from app.database import get_db
 from app.models.cardapio import (
-    Cardapio, CardapioItem, CardapioModelo, CardapioProgramacao, CardapioReajuste,
+    Cardapio, CardapioItem, CardapioLoja, CardapioModelo, CardapioProgramacao, CardapioReajuste,
     CardapioVersao, CardapioVersaoCategoria,
 )
 from app.models.categoria import Categoria
@@ -81,7 +81,10 @@ class ProdutoOrganizacaoIn(BaseModel):
     atualizar_preco_lojas: bool = False
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
-    vrprecoprod: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    # Valor, promoção e cashback pertencem ao item do cardápio, não ao
+    # cadastro mestre do produto. Os campos abaixo são mantidos apenas para
+    # compatibilidade com clientes antigos e são normalizados no endpoint.
+    vrprecoprod: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: str | None = Field(default=None, max_length=100)
     urlfotoproduto: str | None = Field(default=None, max_length=255)
@@ -113,8 +116,15 @@ class ProdutoOrganizacaoIn(BaseModel):
 
 
 class AssociarCardapioIn(BaseModel):
-    cardapiomodelo_id: int
+    cardapio_id: int | None = Field(default=None, gt=0)
+    cardapiomodelo_id: int | None = Field(default=None, gt=0)
     prioridade: int = Field(default=0, ge=0, le=999)
+
+    @model_validator(mode="after")
+    def validar_cardapio(self):
+        if self.cardapio_id is None and self.cardapiomodelo_id is None:
+            raise ValueError("Informe o cardápio a associar.")
+        return self
 
 
 class ItemIn(BaseModel):
@@ -124,6 +134,7 @@ class ItemIn(BaseModel):
     vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     dtinidesconto: datetime | None = None
     dtfimdesconto: datetime | None = None
+    pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
     sititem: Literal["ATIVO", "INATIVO"] = "ATIVO"
     idorditem: int = Field(default=1, ge=1)
 
@@ -214,7 +225,22 @@ def _cardapio(db: Session, cardapio_id: int, payload: dict | None = None) -> Car
     item = db.query(Cardapio).filter(Cardapio.cardapio_id == cardapio_id).first()
     if not item:
         raise HTTPException(404, "Cardápio não encontrado.")
-    _loja(db, item.loja_id, payload)
+    if payload is not None:
+        validar_gerenciamento_organizacao(payload, item.organizacao_id)
+        if int(payload.get("organizacao_id") or 0) != item.organizacao_id:
+            raise HTTPException(403, "A organização não pertence ao usuário.")
+    return item
+
+
+def _associacao(db: Session, loja_id: int, cardapio_id: int, payload: dict | None = None) -> CardapioLoja:
+    item = db.query(CardapioLoja).filter(
+        CardapioLoja.loja_id == loja_id,
+        CardapioLoja.cardapio_id == cardapio_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "Associação de cardápio não encontrada.")
+    if payload is not None:
+        _loja(db, loja_id, payload)
     return item
 
 
@@ -225,17 +251,21 @@ def _versao(db: Session, versao_id: int, payload: dict | None = None) -> tuple[C
     return versao, _cardapio(db, versao.cardapio_id, payload)
 
 
-def _saida_cardapio(db: Session, item: Cardapio) -> dict:
+def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None = None) -> dict:
     versoes = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == item.cardapio_id).order_by(CardapioVersao.nrversao.desc()).all()
     programacoes = db.query(CardapioProgramacao).filter(
-        CardapioProgramacao.cardapio_id == item.cardapio_id,
+        (CardapioProgramacao.cardapioloja_id == associacao.cardapioloja_id)
+        if associacao else (CardapioProgramacao.cardapio_id == item.cardapio_id),
         CardapioProgramacao.sitprogramacao == "ATIVA",
     ).order_by(CardapioProgramacao.dtinicio.asc(), CardapioProgramacao.hrinicio.asc()).all()
     return {
         "cardapio_id": item.cardapio_id, "organizacao_id": item.organizacao_id,
-        "loja_id": item.loja_id, "cardapiomodelo_id": item.cardapiomodelo_id,
+        "loja_id": associacao.loja_id if associacao else item.loja_id,
+        "cardapioloja_id": associacao.cardapioloja_id if associacao else None,
+        "cardapiomodelo_id": item.cardapiomodelo_id,
         "nmcardapio": item.nmcardapio,
-        "tipocardapio": item.tipocardapio, "prioridade": item.prioridade,
+        "tipocardapio": item.tipocardapio,
+        "prioridade": associacao.prioridade if associacao else item.prioridade,
         "sitcardapio": item.sitcardapio,
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
         "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
@@ -299,7 +329,7 @@ def _conteudo(
                 "cardapioitem_id": ci.cardapioitem_id,
                 "produto_id": produto.produto_id,
                 "organizacao_id": produto.organizacao_id,
-                "loja_id": cardapio.loja_id,
+                "loja_id": None,
                 "categoria_id": categoria.categoria_id,
                 "nmcategoria": categoria.nmcategoria,
                 "nmproduto": produto.nmproduto,
@@ -314,7 +344,7 @@ def _conteudo(
                 "tipodesconto": tipo,
                 "vrdesconto": float(desconto),
                 "descontoativo": ativo,
-                "pccashback": float(produto.pccashback) if produto.pccashback is not None else None,
+                "pccashback": float(ci.pccashback) if ci.pccashback is not None else None,
                 "dtinidesconto": ci.dtinidesconto,
                 "dtfimdesconto": ci.dtfimdesconto,
                 "dtcriacao": produto.dtcriacao,
@@ -342,7 +372,68 @@ def _conteudo(
 @router.get("/lojas/{loja_id}/cardapios")
 def listar(loja_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _loja(db, loja_id, payload)
-    return [_saida_cardapio(db, item) for item in db.query(Cardapio).filter(Cardapio.loja_id == loja_id).order_by(Cardapio.prioridade.desc(), Cardapio.nmcardapio).all()]
+    vinculos = db.query(CardapioLoja, Cardapio).join(
+        Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+    ).filter(
+        CardapioLoja.loja_id == loja_id,
+        CardapioLoja.sitassociacao == "ATIVA",
+    ).order_by(CardapioLoja.prioridade.desc(), Cardapio.nmcardapio).all()
+    return [_saida_cardapio(db, cardapio, vinculo) for vinculo, cardapio in vinculos]
+
+
+def _quantidade_itens_cardapio(db: Session, cardapio_id: int) -> int:
+    versao = db.query(CardapioVersao).filter(
+        CardapioVersao.cardapio_id == cardapio_id,
+    ).order_by(CardapioVersao.nrversao.desc()).first()
+    return (
+        db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao.cardapioversao_id).count()
+        if versao else 0
+    )
+
+
+@router.get("/organizacoes/{organizacao_id}/cardapios")
+def listar_cardapios_empresa(organizacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    cardapios = db.query(Cardapio).filter(
+        Cardapio.organizacao_id == organizacao_id,
+    ).order_by(Cardapio.nmcardapio).all()
+    resultado = []
+    for cardapio in cardapios:
+        lojas = db.query(CardapioLoja, Loja).join(Loja, Loja.loja_id == CardapioLoja.loja_id).filter(
+            CardapioLoja.cardapio_id == cardapio.cardapio_id,
+            CardapioLoja.sitassociacao == "ATIVA",
+        ).order_by(Loja.nmloja).all()
+        saida = _saida_cardapio(db, cardapio)
+        saida.update({
+            "quantidade_produtos": _quantidade_itens_cardapio(db, cardapio.cardapio_id),
+            "lojas": [{"loja_id": loja.loja_id, "nmfantasialoja": loja.nmloja, "cardapioloja_id": vinculo.cardapioloja_id} for vinculo, loja in lojas],
+        })
+        resultado.append(saida)
+    return resultado
+
+
+@router.post("/organizacoes/{organizacao_id}/cardapios", status_code=201)
+def criar_cardapio_empresa(organizacao_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    tipo = dados.tipocardapio.upper()
+    if tipo not in {"PRINCIPAL", "ESPECIAL"}:
+        raise HTTPException(422, "Tipo de cardápio inválido.")
+    nome = dados.nmcardapio.strip()
+    if db.query(Cardapio).filter(
+        Cardapio.organizacao_id == organizacao_id,
+        func.lower(Cardapio.nmcardapio) == nome.lower(),
+    ).first():
+        raise HTTPException(409, "Já existe um cardápio com esse nome na empresa.")
+    cardapio = Cardapio(
+        organizacao_id=organizacao_id,
+        nmcardapio=nome,
+        tipocardapio=tipo,
+        prioridade=dados.prioridade,
+    )
+    db.add(cardapio); db.flush()
+    versao = CardapioVersao(cardapio_id=cardapio.cardapio_id, nrversao=1)
+    db.add(versao); db.commit(); db.refresh(cardapio)
+    return _saida_cardapio(db, cardapio)
 
 
 @router.get("/organizacoes/{organizacao_id}/cardapios-padrao")
@@ -530,6 +621,11 @@ def criar_produto_organizacao(organizacao_id: int, dados: ProdutoOrganizacaoIn, 
     if existente:
         raise HTTPException(409, "Este produto já existe na organização.")
     campos = dados.model_dump(exclude={"atualizar_preco_lojas"})
+    campos.update({
+        "vrprecoprod": Decimal("0"), "tipodesconto": "NENHUM",
+        "vrdesconto": Decimal("0"), "pccashback": None,
+        "dtinidesconto": None, "dtfimdesconto": None,
+    })
     produto = Produto(organizacao_id=organizacao_id, **campos)
     db.add(produto)
     db.commit()
@@ -546,11 +642,14 @@ def alterar_produto_organizacao(organizacao_id: int, produto_id: int, dados: Pro
     ).first()
     if produto is None:
         raise HTTPException(404, "Produto não encontrado na organização.")
-    preco_anterior = Decimal(produto.vrprecoprod)
     for campo, valor in dados.model_dump(exclude={"atualizar_preco_lojas"}).items():
         setattr(produto, campo, valor)
-    if dados.atualizar_preco_lojas and dados.vrprecoprod != preco_anterior:
-        atualizar_preco_nas_lojas(db, organizacao_id, produto.produto_id, dados.vrprecoprod)
+    produto.vrprecoprod = Decimal("0")
+    produto.tipodesconto = "NENHUM"
+    produto.vrdesconto = Decimal("0")
+    produto.pccashback = None
+    produto.dtinidesconto = None
+    produto.dtfimdesconto = None
     db.commit()
     db.refresh(produto)
     return _saida_produto_organizacao(produto)
@@ -660,7 +759,7 @@ async def enviar_foto_produto_padrao(organizacao_id: int, modelo_id: int, foto: 
     return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
 
 
-def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) -> Cardapio:
+def _associar_modelo_legado(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) -> Cardapio:
     existente = db.query(Cardapio).filter(Cardapio.loja_id == loja.loja_id, Cardapio.cardapiomodelo_id == modelo.cardapiomodelo_id).first()
     if existente:
         return existente
@@ -687,11 +786,56 @@ def _associar(db: Session, loja: Loja, modelo: CardapioModelo, prioridade: int) 
 @router.post("/lojas/{loja_id}/cardapios/associar", status_code=201)
 def associar(loja_id: int, dados: AssociarCardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     loja = _loja(db, loja_id, payload)
+    if dados.cardapio_id is not None:
+        cardapio = db.query(Cardapio).filter(
+            Cardapio.cardapio_id == dados.cardapio_id,
+            Cardapio.organizacao_id == loja.organizacao_id,
+            Cardapio.sitcardapio == "ATIVO",
+        ).first()
+        if not cardapio:
+            raise HTTPException(404, "Cardápio não encontrado na organização.")
+        if cardapio.tipocardapio == "PRINCIPAL":
+            principal = db.query(CardapioLoja, Cardapio).join(
+                Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+            ).filter(
+                CardapioLoja.loja_id == loja.loja_id,
+                CardapioLoja.sitassociacao == "ATIVA",
+                Cardapio.tipocardapio == "PRINCIPAL",
+                Cardapio.cardapio_id != cardapio.cardapio_id,
+            ).first()
+            if principal:
+                raise HTTPException(409, "Este estabelecimento já possui um cardápio principal.")
+        vinculo = db.query(CardapioLoja).filter(
+            CardapioLoja.cardapio_id == cardapio.cardapio_id,
+            CardapioLoja.loja_id == loja.loja_id,
+        ).first()
+        if vinculo is None:
+            vinculo = CardapioLoja(
+                cardapio_id=cardapio.cardapio_id,
+                loja_id=loja.loja_id,
+                prioridade=dados.prioridade,
+            )
+            db.add(vinculo)
+        else:
+            vinculo.sitassociacao = "ATIVA"
+            vinculo.prioridade = dados.prioridade
+        db.commit(); db.refresh(vinculo)
+        return _saida_cardapio(db, cardapio, vinculo)
+
+    # Compatibilidade de leitura com a estrutura anterior. Novos fluxos usam
+    # cardapio_id e não criam cópias do catálogo por estabelecimento.
     modelo = db.query(CardapioModelo).filter(CardapioModelo.cardapiomodelo_id == dados.cardapiomodelo_id, CardapioModelo.organizacao_id == loja.organizacao_id, CardapioModelo.sitcardapio == "ATIVO").first()
     if not modelo: raise HTTPException(404, "Cardápio padrão não encontrado.")
     if not db.query(CardapioModeloProduto).join(CardapioModeloCategoria, CardapioModeloCategoria.cardapiomodelocategoria_id == CardapioModeloProduto.cardapiomodelocategoria_id).filter(CardapioModeloCategoria.cardapiomodelo_id == modelo.cardapiomodelo_id).first():
         raise HTTPException(422, "Adicione produtos ao cardápio padrão antes de utilizá-lo em uma loja.")
-    return _saida_cardapio(db, _associar(db, loja, modelo, dados.prioridade))
+    return _saida_cardapio(db, _associar_modelo_legado(db, loja, modelo, dados.prioridade))
+
+
+@router.delete("/lojas/{loja_id}/cardapios/{cardapio_id}/associacao", status_code=204)
+def remover_associacao(loja_id: int, cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    vinculo = _associacao(db, loja_id, cardapio_id, payload)
+    vinculo.sitassociacao = "INATIVA"
+    db.commit()
 
 
 @router.post("/lojas/{loja_id}/cardapios", status_code=201)
@@ -713,7 +857,7 @@ def nova_versao(cardapio_id: int, payload=Depends(get_usuario_logado), db: Sessi
             nc = CardapioVersaoCategoria(cardapioversao_id=nova.cardapioversao_id, categoria_id=cat.categoria_id, idordcategoria=cat.idordcategoria)
             db.add(nc); db.flush(); mapa[cat.cardapioversaocategoria_id] = nc.cardapioversaocategoria_id
         for item in db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == origem.cardapioversao_id).all():
-            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
     db.commit(); db.refresh(nova)
     return _conteudo(db, nova, cardapio, incluir_inativos=True)
 
@@ -744,7 +888,7 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
         vinculo = CardapioVersaoCategoria(cardapioversao_id=versao_id, categoria_id=categoria.categoria_id, idordcategoria=categoria.idordcategoria)
         db.add(vinculo); db.flush()
         for item in categoria.itens:
-            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
     db.commit()
     return _conteudo(db, versao, cardapio, incluir_inativos=True)
 
@@ -769,6 +913,41 @@ def _saida_programacao(item: CardapioProgramacao) -> dict:
         "hrfim": item.hrfim,
         "sitprogramacao": item.sitprogramacao,
     }
+
+
+@router.get("/lojas/{loja_id}/cardapios/{cardapio_id}/programacoes")
+def listar_programacoes_loja(loja_id: int, cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    vinculo = _associacao(db, loja_id, cardapio_id, payload)
+    itens = db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapioloja_id == vinculo.cardapioloja_id,
+        CardapioProgramacao.sitprogramacao == "ATIVA",
+    ).order_by(CardapioProgramacao.dtinicio.asc()).all()
+    return [_saida_programacao(item) for item in itens]
+
+
+@router.post("/lojas/{loja_id}/cardapios/{cardapio_id}/programacoes", status_code=201)
+def programar_loja(loja_id: int, cardapio_id: int, dados: ProgramacaoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    vinculo = _associacao(db, loja_id, cardapio_id, payload)
+    cardapio = _cardapio(db, cardapio_id, payload)
+    if cardapio.tipocardapio == "PRINCIPAL":
+        raise HTTPException(422, "O cardápio principal fica disponível continuamente e não utiliza programação.")
+    item = CardapioProgramacao(cardapioloja_id=vinculo.cardapioloja_id, **dados.model_dump())
+    db.add(item); db.commit(); db.refresh(item)
+    return _saida_programacao(item)
+
+
+@router.delete("/lojas/{loja_id}/cardapios/{cardapio_id}/programacoes/{programacao_id}")
+def remover_programacao_loja(loja_id: int, cardapio_id: int, programacao_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    vinculo = _associacao(db, loja_id, cardapio_id, payload)
+    item = db.query(CardapioProgramacao).filter(
+        CardapioProgramacao.cardapioprogramacao_id == programacao_id,
+        CardapioProgramacao.cardapioloja_id == vinculo.cardapioloja_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "Programação não encontrada.")
+    item.sitprogramacao = "INATIVA"
+    db.commit()
+    return {"mensagem": "Programação removida."}
 
 
 @router.get("/cardapios/{cardapio_id}/programacoes")
@@ -798,17 +977,26 @@ def remover_programacao(cardapio_id: int, programacao_id: int, payload=Depends(g
 @router.post("/cardapios/versoes/{versao_id}/publicar")
 def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     versao, cardapio = _versao(db, versao_id, payload)
-    if cardapio.loja_id is not None:
-        validar_publicacao_loja(db, cardapio.loja_id)
+    associacoes = db.query(CardapioLoja).filter(
+        CardapioLoja.cardapio_id == cardapio.cardapio_id,
+        CardapioLoja.sitassociacao == "ATIVA",
+    ).all()
+    for associacao in associacoes:
+        validar_publicacao_loja(db, associacao.loja_id)
     if versao.statusversao != "RASCUNHO":
         raise HTTPException(409, "Somente uma versão em rascunho pode ser publicada.")
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():
         raise HTTPException(422, "Inclua pelo menos um produto antes de publicar.")
-    if cardapio.tipocardapio == "ESPECIAL" and not db.query(CardapioProgramacao).filter(
-        CardapioProgramacao.cardapio_id == cardapio.cardapio_id,
-        CardapioProgramacao.sitprogramacao == "ATIVA",
-    ).first():
-        raise HTTPException(422, "Defina quando o cardápio especial será exibido antes de publicá-lo.")
+    if cardapio.tipocardapio == "ESPECIAL":
+        sem_programacao = [
+            associacao for associacao in associacoes
+            if not db.query(CardapioProgramacao).filter(
+                CardapioProgramacao.cardapioloja_id == associacao.cardapioloja_id,
+                CardapioProgramacao.sitprogramacao == "ATIVA",
+            ).first()
+        ]
+        if sem_programacao:
+            raise HTTPException(422, "Defina a programação do cardápio especial em cada loja associada antes de publicar.")
     versao.dtiniciovigencia, versao.dtfimvigencia = dados.dtinicio, dados.dtfim
     agora = _agora_brasilia()
     db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao == "PUBLICADA").update({"statusversao": "SUBSTITUIDA"}, synchronize_session=False)
@@ -892,19 +1080,27 @@ def _programacao_valida(item: CardapioProgramacao, agora: datetime) -> bool:
 def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
     _loja(db, loja_id)
     agora = _agora_brasilia()
-    cardapios = db.query(Cardapio).filter(Cardapio.loja_id == loja_id, Cardapio.sitcardapio == "ATIVO").order_by(Cardapio.prioridade.desc()).all()
+    cardapios = db.query(CardapioLoja, Cardapio).join(
+        Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+    ).filter(
+        CardapioLoja.loja_id == loja_id,
+        CardapioLoja.sitassociacao == "ATIVA",
+        Cardapio.sitcardapio == "ATIVO",
+    ).order_by(CardapioLoja.prioridade.desc()).all()
     candidatos = []
-    for cardapio in cardapios:
-        programacoes = db.query(CardapioProgramacao).filter(CardapioProgramacao.cardapio_id == cardapio.cardapio_id).all()
+    for associacao, cardapio in cardapios:
+        programacoes = db.query(CardapioProgramacao).filter(
+            CardapioProgramacao.cardapioloja_id == associacao.cardapioloja_id,
+        ).all()
         if cardapio.tipocardapio != "PRINCIPAL" and not any(_programacao_valida(p, agora) for p in programacoes):
             continue
         versao = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == cardapio.cardapio_id, CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]), func.coalesce(CardapioVersao.dtiniciovigencia, agora) <= agora).filter((CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora)).order_by(CardapioVersao.nrversao.desc()).first()
-        if versao: candidatos.append((cardapio, versao))
+        if versao: candidatos.append((associacao, cardapio, versao))
     if not candidatos:
         raise HTTPException(404, "Nenhum cardápio publicado para esta loja no momento.")
     # Um sazonal programado para este momento tem prioridade sobre o principal.
     # Assim, a programação permite alternar a vitrine da loja sem despublicar
     # definitivamente o cardápio principal.
-    sazonais = [item for item in candidatos if item[0].tipocardapio != "PRINCIPAL"]
+    sazonais = [item for item in candidatos if item[1].tipocardapio != "PRINCIPAL"]
     selecionado = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
-    return _conteudo(db, selecionado[1], selecionado[0])
+    return _conteudo(db, selecionado[2], selecionado[1])

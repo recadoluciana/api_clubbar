@@ -419,6 +419,7 @@ def _salvar_snapshot_checkout(
         db.add(CheckoutAsaasItem(
             checkout_asaas_id=checkout_asaas_id,
             produto_id=int(item['produto_id']),
+            cardapioitem_id=item.get('cardapioitem_id'),
             lote_id=item.get('lote_id'),
             idtipoproduto=str(item.get('idtipoproduto') or 'P'),
             nmproduto=str(item.get('nmproduto') or 'Produto'),
