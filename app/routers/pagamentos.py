@@ -38,6 +38,7 @@ from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
 from app.services.localidade_entrega_service import resolver_localidade_entrega
 from app.services.venda_service import criar_ou_obter_venda_idempotente, gerar_token_qr
+from app.services.pagamento_status_service import set_venda_como_paga
 
 from app.routers.produtos import calcular_preco_final
 
@@ -75,6 +76,98 @@ router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 def _exigir_valor_positivo(valor: float) -> None:
     if Decimal(str(valor)) <= 0:
         raise HTTPException(422, "O valor do pagamento deve ser maior que zero.")
+
+
+@router.post('/resgatar-cortesia')
+async def resgatar_cortesia_cliente(
+    payload: PagarNovoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Conclui um carrinho integralmente gratuito sem abrir o gateway."""
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if payload.usuario_id is not None or payload.origem_checkout != 'CLIENT':
+        raise HTTPException(status_code=403, detail='Origem de pagamento inválida')
+
+    try:
+        validar_publicacao_loja(db, payload.loja_id)
+        carrinho = get_carrinho(
+            db,
+            payload.cliente_id,
+            payload.loja_id,
+            payload.usuario_id,
+        )
+        if not carrinho or not carrinho.get('itens'):
+            raise HTTPException(status_code=400, detail='Carrinho vazio')
+
+        carrinho_id = int(carrinho.get('carrinho_id') or 0)
+        if not carrinho_id:
+            raise HTTPException(status_code=400, detail='Carrinho inválido')
+
+        itens_recalculados, total_recalculado = _recalcular_itens_carrinho(
+            db,
+            carrinho['itens'],
+            payload.loja_id,
+            payload.organizacao_id,
+        )
+        if not itens_recalculados:
+            raise HTTPException(status_code=400, detail='Carrinho vazio')
+        if Decimal(str(total_recalculado)) > 0:
+            raise HTTPException(
+                status_code=422,
+                detail='Este carrinho possui itens pagos e deve seguir para o pagamento.',
+            )
+
+        await _cancelar_tentativas_anteriores(db, carrinho_id)
+
+        carrinho_para_venda = dict(carrinho)
+        carrinho_para_venda['itens'] = itens_recalculados
+        carrinho_para_venda['total'] = 0
+        venda_criada = await criar_ou_obter_venda_idempotente(
+            db,
+            cliente_id=payload.cliente_id,
+            loja_id=payload.loja_id,
+            organizacao_id=payload.organizacao_id,
+            carrinho=carrinho_para_venda,
+            plataforma='WEB',
+            metodo_pagamento='OUTRO',
+        )
+        venda_id = int(venda_criada['venda_id'])
+        pagamento = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id == venda_id)
+            .order_by(PagVenda.pagvenda_id.desc())
+            .first()
+        )
+        if not pagamento:
+            raise HTTPException(status_code=500, detail='Não foi possível concluir a cortesia.')
+        pagamento.dsmetodopag = 'CORTESIA'
+        pagamento.vrpagvenda = 0
+
+        set_venda_como_paga(
+            db,
+            venda_id=venda_id,
+            gateway='CORTESIA',
+            payload={'id': f'CORTESIA-{venda_id}', 'status': 'PAID'},
+        )
+        db.commit()
+        return {
+            'ok': True,
+            'venda_id': venda_id,
+            'status': 'PAGA',
+            'total': 0,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        print('[CORTESIA][ERRO]', repr(exc))
+        print(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail='Não foi possível resgatar a cortesia.',
+        )
 
 
 def _valor_cashback_gerado(db: Session, venda_id: int | None) -> float:
