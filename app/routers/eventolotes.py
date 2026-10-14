@@ -26,6 +26,7 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.schemas.eventolote import (
     EventoLoteGlobalCreate,
     EventoLoteGlobalUpdate,
+    EventoLotePrecoIn,
     EventoLoteSetorIn,
     EventoLoteSetorUpdate,
 )
@@ -696,6 +697,91 @@ def atualizar_configuracao_setor(
         _sincronizar_precos_lote(db, lote_id, data.precos)
     db.commit()
     return {"mensagem": "Setor do lote atualizado com sucesso"}
+
+
+@router.post("/lotes/{lote_id}/modalidades", status_code=201)
+def adicionar_modalidade_ao_setor(
+    lote_id: int,
+    data: EventoLotePrecoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Inclui uma modalidade sem alterar os preços já vendidos no setor."""
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+    if not lote:
+        raise HTTPException(404, "Configuração do setor não encontrada")
+    global_ = _carregar_global(db, lote.loteglobal_id)
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
+
+    modalidade = (
+        db.query(ModalidadeIngresso)
+        .filter(
+            ModalidadeIngresso.modalidade_id == data.modalidade_id,
+            ModalidadeIngresso.situacao == "ATIVO",
+            or_(
+                ModalidadeIngresso.organizacao_id.is_(None),
+                ModalidadeIngresso.organizacao_id == evento.organizacao_id,
+            ),
+        )
+        .first()
+    )
+    if not modalidade:
+        raise HTTPException(422, "Modalidade inexistente ou indisponível para esta organização")
+    if (
+        db.query(EventoLotePreco.lotepreco_id)
+        .filter(
+            EventoLotePreco.lote_id == lote_id,
+            EventoLotePreco.modalidade_id == modalidade.modalidade_id,
+        )
+        .first()
+    ):
+        raise HTTPException(409, "Esta modalidade já está configurada neste setor")
+
+    evento_modalidade = (
+        db.query(EventoModalidade)
+        .filter(
+            EventoModalidade.evento_id == evento.evento_id,
+            EventoModalidade.modalidade_id == modalidade.modalidade_id,
+        )
+        .first()
+    )
+    if not evento_modalidade:
+        db.add(
+            EventoModalidade(
+                evento_id=evento.evento_id,
+                modalidade_id=modalidade.modalidade_id,
+            )
+        )
+        beneficios = (
+            db.query(ModalidadeBeneficio.beneficio_id)
+            .join(
+                BeneficioIngresso,
+                BeneficioIngresso.beneficio_id == ModalidadeBeneficio.beneficio_id,
+            )
+            .filter(
+                ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
+                BeneficioIngresso.situacao == "ATIVO",
+                or_(
+                    BeneficioIngresso.organizacao_id.is_(None),
+                    BeneficioIngresso.organizacao_id == evento.organizacao_id,
+                ),
+            )
+            .all()
+        )
+        db.add_all(
+            EventoModalidadeBeneficio(
+                evento_id=evento.evento_id,
+                modalidade_id=modalidade.modalidade_id,
+                beneficio_id=beneficio_id,
+            )
+            for (beneficio_id,) in beneficios
+        )
+
+    db.add(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, data)))
+    db.commit()
+    return {"mensagem": "Modalidade incluída no setor e habilitada para o evento."}
 
 
 @router.delete("/lotes/{lote_id}")
