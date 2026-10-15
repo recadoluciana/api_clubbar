@@ -27,6 +27,7 @@ from app.schemas.eventolote import (
     EventoLoteGlobalCreate,
     EventoLoteGlobalUpdate,
     EventoLotePrecoIn,
+    EventoLotePrecoSituacaoUpdate,
     EventoLoteSetorIn,
     EventoLoteSetorUpdate,
 )
@@ -817,6 +818,44 @@ def adicionar_modalidade_ao_setor(
     db.add(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, data)))
     db.commit()
     return {"mensagem": "Modalidade incluída no setor e habilitada para o evento."}
+
+
+@router.patch("/lotes/{lote_id}/modalidades/{lotepreco_id}/situacao")
+def alterar_situacao_modalidade_do_setor(
+    lote_id: int,
+    lotepreco_id: int,
+    data: EventoLotePrecoSituacaoUpdate,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Interrompe ou retoma novas vendas sem apagar o histórico da modalidade."""
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+    if not lote:
+        raise HTTPException(404, "Configuração do setor não encontrada")
+    global_ = _carregar_global(db, lote.loteglobal_id)
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
+    preco = (
+        db.query(EventoLotePreco)
+        .filter(
+            EventoLotePreco.lotepreco_id == lotepreco_id,
+            EventoLotePreco.lote_id == lote_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not preco:
+        raise HTTPException(404, "Modalidade não encontrada neste setor do lote")
+
+    preco.situacao = data.situacao
+    db.commit()
+    mensagem = (
+        "Vendas desta modalidade foram desativadas. Os ingressos e reservas existentes foram preservados."
+        if data.situacao == "INATIVO"
+        else "Vendas desta modalidade foram reativadas."
+    )
+    return {"mensagem": mensagem}
 
 
 @router.delete("/lotes/{lote_id}")

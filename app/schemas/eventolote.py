@@ -65,6 +65,10 @@ class EventoLoteSetorUpdate(BaseModel):
     precos: list[EventoLotePrecoIn] | None = None
 
 
+class EventoLotePrecoSituacaoUpdate(BaseModel):
+    situacao: Literal["ATIVO", "INATIVO"]
+
+
 # Nomes antigos mantidos como aliases de importação durante a transição dos
 # aplicativos Flutter. Não representam mais um lote independente por setor.
 EventoLoteCreate = EventoLoteGlobalCreate

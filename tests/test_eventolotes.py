@@ -10,7 +10,12 @@ from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.routers.eventolotes import _validar_data_limite_evento, _validar_setores_do_lote
-from app.schemas.eventolote import EventoLoteGlobalCreate, EventoLotePrecoIn, EventoLoteSetorIn
+from app.schemas.eventolote import (
+    EventoLoteGlobalCreate,
+    EventoLotePrecoIn,
+    EventoLotePrecoSituacaoUpdate,
+    EventoLoteSetorIn,
+)
 
 
 class ModeloLoteGlobalTest(unittest.TestCase):
@@ -79,7 +84,7 @@ class ModeloLoteGlobalTest(unittest.TestCase):
     def test_data_limite_pode_ser_igual_ao_inicio_do_evento(self):
         inicio = datetime(2026, 10, 3, 20, 0)
         _validar_data_limite_evento(
-            SimpleNamespace(dtinicioevento=inicio),
+            SimpleNamespace(dtinicioevento=inicio, dtfimevento=None),
             inicio,
         )
 
@@ -87,10 +92,14 @@ class ModeloLoteGlobalTest(unittest.TestCase):
         inicio = datetime(2026, 10, 3, 20, 0)
         with self.assertRaises(HTTPException) as erro:
             _validar_data_limite_evento(
-                SimpleNamespace(dtinicioevento=inicio),
+                SimpleNamespace(dtinicioevento=inicio, dtfimevento=None),
                 datetime(2026, 10, 3, 20, 1),
             )
         self.assertEqual(422, erro.exception.status_code)
+
+    def test_situacao_da_modalidade_aceita_ativar_e_inativar(self):
+        self.assertEqual("INATIVO", EventoLotePrecoSituacaoUpdate(situacao="INATIVO").situacao)
+        self.assertEqual("ATIVO", EventoLotePrecoSituacaoUpdate(situacao="ATIVO").situacao)
 
 
 if __name__ == "__main__":
