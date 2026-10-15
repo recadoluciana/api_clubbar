@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
@@ -64,6 +64,29 @@ def _hoje_brasil() -> date:
 def _agora_brasil() -> datetime:
     """Horário de Brasília para colunas DateTime sem fuso no banco."""
     return datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+
+
+def _filtro_ingresso_vigente(agora: datetime):
+    """Expressão SQL única para carteira e badge de ingressos disponíveis."""
+    fim_atracao = (
+        select(func.max(EventoAtracao.dtfimatracao))
+        .where(EventoAtracao.evento_id == Evento.evento_id)
+        .correlate(Evento)
+        .scalar_subquery()
+    )
+    return or_(
+        Evento.dtfimevento > agora,
+        and_(
+            Evento.dtfimevento.is_(None),
+            fim_atracao.is_not(None),
+            fim_atracao > agora,
+        ),
+        and_(
+            Evento.dtfimevento.is_(None),
+            fim_atracao.is_(None),
+            Evento.dtinicioevento >= agora - timedelta(hours=6),
+        ),
+    )
 
 
 def _produto_pendente_e_valido() -> list:
@@ -568,6 +591,7 @@ def listar_itens_nao_entregues(
     """
 
     hoje = _hoje_brasil()
+    agora = _agora_brasil()
 
     query = (
         db.query(
@@ -645,10 +669,7 @@ def listar_itens_nao_entregues(
                 (
                     (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
-                    & (
-                        Evento.dtinicioevento
-                        >= _agora_brasil() - timedelta(hours=6)
-                    )
+                    & _filtro_ingresso_vigente(agora)
                 ),
             )
         )
@@ -1438,6 +1459,7 @@ def get_qt_itens_naoentregues(
     - se loja_id > 0, filtra pela loja informada
     """
     try:
+        agora = _agora_brasil()
         query = (
             db.query(
                 func.coalesce(func.sum(ItVenda.qtitvenda), 0).label("qt_total"),
@@ -1474,7 +1496,7 @@ def get_qt_itens_naoentregues(
                     (
                         (ItVenda.tipoitem == "INGRESSO")
                         & (Evento.dtinicioevento.isnot(None))
-                        & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
+                        & _filtro_ingresso_vigente(agora)
                     ),
                 )
             )
@@ -1511,6 +1533,7 @@ def listar_lojas_com_retirada_pendente(
     """
     Retorna as lojas onde o cliente tem itens pendentes de retirada.
     """
+    agora = _agora_brasil()
 
     rows = (
         db.query(
@@ -1540,7 +1563,7 @@ def listar_lojas_com_retirada_pendente(
                 (
                     (ItVenda.tipoitem == "INGRESSO")
                     & (Evento.dtinicioevento.isnot(None))
-                    & (func.date(Evento.dtinicioevento) >= _hoje_brasil())
+                    & _filtro_ingresso_vigente(agora)
                 ),
             )
         )
