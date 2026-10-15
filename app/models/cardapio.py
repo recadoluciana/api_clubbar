@@ -25,7 +25,6 @@ class Cardapio(Base):
     # compartilhado sem copiar preços, promoções ou itens.
     nmcardapio = Column(String(120), nullable=False)
     tipocardapio = Column(Enum("PRINCIPAL", "ESPECIAL"), nullable=False, server_default="PRINCIPAL")
-    prioridade = Column(Integer, nullable=False, server_default="0")
     sitcardapio = Column(Enum("ATIVO", "INATIVO"), nullable=False, server_default="ATIVO")
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))

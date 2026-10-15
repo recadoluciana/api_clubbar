@@ -578,6 +578,13 @@ def remover_modelo_legado_de_cardapio() -> None:
                         conexao.execute(text(f"ALTER TABLE cardapio DROP INDEX `{indice}`"))
                     conexao.execute(text(f"ALTER TABLE cardapio DROP COLUMN `{coluna}`"))
 
+                # A prioridade é definida por loja em ``cardapioloja``. No
+                # catálogo compartilhado ela é redundante e podia confundir.
+                if "prioridade" in colunas:
+                    conexao.execute(
+                        text("ALTER TABLE cardapio DROP COLUMN `prioridade`")
+                    )
+
             # A ordem respeita as chaves estrangeiras do modelo substituído.
             for tabela in (
                 "cardapiomodeloproduto",

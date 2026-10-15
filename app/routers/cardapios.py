@@ -35,7 +35,6 @@ def _agora_brasilia() -> datetime:
 class CardapioIn(BaseModel):
     nmcardapio: str = Field(min_length=2, max_length=120)
     tipocardapio: str = "PRINCIPAL"
-    prioridade: int = Field(default=0, ge=0, le=999)
 
 
 class ProdutoOrganizacaoIn(BaseModel):
@@ -182,17 +181,20 @@ def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None
         if associacao else (CardapioProgramacao.cardapio_id == item.cardapio_id),
         CardapioProgramacao.sitprogramacao == "ATIVA",
     ).order_by(CardapioProgramacao.dtinicio.asc(), CardapioProgramacao.hrinicio.asc()).all()
-    return {
+    saida = {
         "cardapio_id": item.cardapio_id, "organizacao_id": item.organizacao_id,
         "loja_id": associacao.loja_id if associacao else None,
         "cardapioloja_id": associacao.cardapioloja_id if associacao else None,
         "nmcardapio": item.nmcardapio,
         "tipocardapio": item.tipocardapio,
-        "prioridade": associacao.prioridade if associacao else item.prioridade,
         "sitcardapio": item.sitcardapio,
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
         "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
     }
+    if associacao:
+        # A prioridade pertence ao vínculo com a loja, não ao catálogo da empresa.
+        saida["prioridade"] = associacao.prioridade
+    return saida
 
 
 def _preco_final_item(item: CardapioItem, agora: datetime) -> tuple[Decimal, bool]:
@@ -351,7 +353,6 @@ def criar_cardapio_empresa(organizacao_id: int, dados: CardapioIn, payload=Depen
         organizacao_id=organizacao_id,
         nmcardapio=nome,
         tipocardapio=tipo,
-        prioridade=dados.prioridade,
     )
     db.add(cardapio); db.flush()
     versao = CardapioVersao(cardapio_id=cardapio.cardapio_id, nrversao=1)
