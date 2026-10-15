@@ -12,6 +12,7 @@ from app.models.loja import Loja
 from app.models.itvenda import ItVenda
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
+from app.services.cortesia_produto_service import validar_cortesias_da_venda
 
 def set_venda_como_paga(
     db: Session,
@@ -70,6 +71,9 @@ def set_venda_como_paga(
     # idempotência
     if (pag.sitpagvenda or "").upper() == "PAGO" and (venda.sitvenda or "").upper() == "PAGA":
         return {"ok": True, "already_processed": True, "venda_id": venda_id}
+
+    if (venda.tipovenda or "").upper() == "PRODUTO":
+        validar_cortesias_da_venda(db, venda_id)
 
     # atualiza status
     pag.sitpagvenda = "PAGO"

@@ -456,6 +456,38 @@ def garantir_descontos_por_cardapio() -> None:
 
 
 @app.on_event("startup")
+def garantir_cortesias_por_cardapio() -> None:
+    """Adiciona o limite e o período de resgate das ofertas de cortesia."""
+    try:
+        inspector = inspect(engine)
+        if "cardapioitem" not in inspector.get_table_names():
+            return
+        colunas = {
+            coluna["name"] for coluna in inspector.get_columns("cardapioitem")
+        }
+        with engine.begin() as conexao:
+            if "qtcortesia" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN qtcortesia INT NULL "
+                    "AFTER dtfimdesconto"
+                ))
+            if "dtinicortesia" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN dtinicortesia DATETIME NULL "
+                    "AFTER qtcortesia"
+                ))
+            if "dtfimcortesia" not in colunas:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioitem ADD COLUMN dtfimcortesia DATETIME NULL "
+                    "AFTER dtinicortesia"
+                ))
+        logger.info("Limites de cortesia por item de cardápio verificados.")
+    except Exception:
+        logger.exception("Não foi possível preparar cortesias por cardápio")
+        raise
+
+
+@app.on_event("startup")
 def garantir_cardapios_compartilhados() -> None:
     """Prepara cardápios reutilizáveis e a associação independente por loja."""
     try:

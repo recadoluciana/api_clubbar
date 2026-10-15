@@ -330,6 +330,7 @@ def _recalcular_itens_carrinho(
         itens_recalculados.append(
             {
                 "produto_id"     : produto.produto_id,
+                "cardapioitem_id": it.get("cardapioitem_id"),
                 "lote_id"        : None,
                 "idtipoproduto"  : "P",
                 "nmproduto"      : produto.nmproduto,

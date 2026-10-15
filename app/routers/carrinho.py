@@ -21,6 +21,7 @@ from app.services.carrinho_service import (
     limpar_itens_indisponiveis,
     revalidar_precos_carrinho,
 )
+from app.services.cortesia_produto_service import validar_cortesia_disponivel
 from app.utils.datetime_utils import FUSO_BRASIL
 
 
@@ -92,6 +93,12 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             dtinidesconto=item_cardapio.dtinidesconto,
             dtfimdesconto=item_cardapio.dtfimdesconto,
         )
+        if vrunitario_final <= 0:
+            validar_cortesia_disponivel(
+                db,
+                cardapioitem_id=cardapioitem_id_final,
+                quantidade=int(payload.qt),
+            )
 
     # 2) carrinho aberto do cliente
     carr = (
