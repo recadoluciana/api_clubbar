@@ -1,4 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
+import secrets
+import string
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +8,7 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.core.security import get_operador_logado
+from app.core.security import get_operador_logado, hash_senha
 
 from app.models.itvenda import ItVenda
 from app.models.leadparceiro import LeadParceiro
@@ -27,6 +29,16 @@ router = APIRouter(
 )
 
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+_ALFABETO_SENHA_TEMPORARIA = (
+    string.ascii_uppercase.replace("I", "").replace("O", "")
+    + string.ascii_lowercase.replace("l", "").replace("o", "")
+    + "23456789"
+)
+
+
+def _gerar_senha_temporaria() -> str:
+    """Gera uma senha legível, exibida uma única vez ao operador Clubbar."""
+    return "".join(secrets.choice(_ALFABETO_SENHA_TEMPORARIA) for _ in range(10))
 
 
 def _limites_data_utc(data_local: date) -> tuple[datetime, datetime]:
@@ -553,6 +565,71 @@ def listar_usuarios_da_organizacao(
         }
         for usuario, nmloja in rows
     ]
+
+
+@router.get("/usuarios")
+def listar_usuarios(
+    organizacao_id: int | None = Query(default=None, ge=1),
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    """Lista todos os acessos da plataforma, opcionalmente por organização."""
+    consulta = (
+        db.query(Usuario, Organizacao.nmorganizacao, Loja.nmloja)
+        .join(Organizacao, Organizacao.organizacao_id == Usuario.organizacao_id)
+        .outerjoin(Loja, Loja.loja_id == Usuario.loja_id)
+    )
+    if organizacao_id is not None:
+        _organizacao_existe(db, organizacao_id)
+        consulta = consulta.filter(Usuario.organizacao_id == organizacao_id)
+
+    rows = consulta.order_by(
+        Organizacao.nmorganizacao.asc(),
+        Usuario.nmusuario.asc(),
+    ).all()
+    return [
+        {
+            "usuario_id": int(usuario.usuario_id),
+            "organizacao_id": int(usuario.organizacao_id),
+            "nmorganizacao": nmorganizacao,
+            "loja_id": int(usuario.loja_id) if usuario.loja_id else None,
+            "nmloja": nmloja,
+            "nmusuario": usuario.nmusuario,
+            "emailuser": usuario.emailuser,
+            "dscargo": usuario.dscargo,
+            "situsuario": usuario.situsuario,
+            "dtcriacao": usuario.dtcriacao,
+        }
+        for usuario, nmorganizacao, nmloja in rows
+    ]
+
+
+@router.post("/usuarios/{usuario_id}/resetar-senha")
+def resetar_senha_usuario(
+    usuario_id: int,
+    _: dict = Depends(get_operador_logado),
+    db: Session = Depends(get_db),
+):
+    """Redefine a senha e devolve a nova credencial somente nesta resposta."""
+    usuario = (
+        db.query(Usuario)
+        .filter(Usuario.usuario_id == usuario_id)
+        .with_for_update()
+        .first()
+    )
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+    senha_temporaria = _gerar_senha_temporaria()
+    usuario.senhahashuser = hash_senha(senha_temporaria)
+    db.commit()
+
+    return {
+        "usuario_id": int(usuario.usuario_id),
+        "nmusuario": usuario.nmusuario,
+        "emailuser": usuario.emailuser,
+        "senha_temporaria": senha_temporaria,
+    }
 
 
 @router.get("/vendas-hoje")
