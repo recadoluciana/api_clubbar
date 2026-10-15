@@ -37,6 +37,10 @@ class CardapioIn(BaseModel):
     tipocardapio: str = "PRINCIPAL"
 
 
+class CardapioAtualizarIn(BaseModel):
+    nmcardapio: str = Field(min_length=2, max_length=120)
+
+
 class ProdutoOrganizacaoIn(BaseModel):
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
@@ -331,7 +335,12 @@ def listar_cardapios_empresa(organizacao_id: int, payload=Depends(get_usuario_lo
         saida = _saida_cardapio(db, cardapio)
         saida.update({
             "quantidade_produtos": _quantidade_itens_cardapio(db, cardapio.cardapio_id),
-            "lojas": [{"loja_id": loja.loja_id, "nmfantasialoja": loja.nmloja, "cardapioloja_id": vinculo.cardapioloja_id} for vinculo, loja in lojas],
+            "lojas": [{
+                "loja_id": loja.loja_id,
+                "nmfantasialoja": loja.nmloja,
+                "cardapioloja_id": vinculo.cardapioloja_id,
+                "prioridade": vinculo.prioridade,
+            } for vinculo, loja in lojas],
         })
         resultado.append(saida)
     return resultado
@@ -357,6 +366,22 @@ def criar_cardapio_empresa(organizacao_id: int, dados: CardapioIn, payload=Depen
     db.add(cardapio); db.flush()
     versao = CardapioVersao(cardapio_id=cardapio.cardapio_id, nrversao=1)
     db.add(versao); db.commit(); db.refresh(cardapio)
+    return _saida_cardapio(db, cardapio)
+
+
+@router.put("/cardapios/{cardapio_id}")
+def atualizar_cardapio(cardapio_id: int, dados: CardapioAtualizarIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    cardapio = _cardapio(db, cardapio_id, payload)
+    nome = dados.nmcardapio.strip()
+    if db.query(Cardapio).filter(
+        Cardapio.organizacao_id == cardapio.organizacao_id,
+        func.lower(Cardapio.nmcardapio) == nome.lower(),
+        Cardapio.cardapio_id != cardapio.cardapio_id,
+    ).first():
+        raise HTTPException(409, "Já existe outro cardápio com esse nome na empresa.")
+    cardapio.nmcardapio = nome
+    db.commit()
+    db.refresh(cardapio)
     return _saida_cardapio(db, cardapio)
 
 
