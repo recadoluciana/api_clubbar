@@ -129,7 +129,7 @@ def _itens_cardapio_em_exibicao(db: Session, loja_id: int, agora: datetime) -> d
         CardapioLoja.loja_id == loja_id,
         CardapioLoja.sitassociacao == "ATIVA",
         Cardapio.sitcardapio == "ATIVO",
-    ).order_by(CardapioLoja.prioridade.desc()).all()
+    ).order_by(Cardapio.cardapio_id).all()
     candidatos: list[tuple[CardapioLoja, Cardapio, CardapioVersao]] = []
     for associacao, cardapio in cardapios:
         programacoes = db.query(CardapioProgramacao).filter(
@@ -153,7 +153,8 @@ def _itens_cardapio_em_exibicao(db: Session, loja_id: int, agora: datetime) -> d
     if not candidatos:
         return {}
     sazonais = [item for item in candidatos if item[1].tipocardapio != "PRINCIPAL"]
-    _, _, versao = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
+    # Há no máximo um principal e a API impede períodos especiais sobrepostos.
+    _, _, versao = (sazonais or candidatos)[0]
     itens = db.query(CardapioItem).filter(
         CardapioItem.cardapioversao_id == versao.cardapioversao_id,
         CardapioItem.sititem == "ATIVO",

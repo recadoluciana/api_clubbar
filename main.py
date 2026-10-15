@@ -471,7 +471,6 @@ def garantir_cardapios_compartilhados() -> None:
                 "CREATE TABLE IF NOT EXISTS cardapioloja ("
                 "cardapioloja_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
                 "cardapio_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, "
-                "prioridade INT NOT NULL DEFAULT 0, "
                 "sitassociacao ENUM('ATIVA','INATIVA') NOT NULL DEFAULT 'ATIVA', "
                 "dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
                 "dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
@@ -491,6 +490,13 @@ def garantir_cardapios_compartilhados() -> None:
                 conexao.execute(text(
                     "ALTER TABLE cardapioprogramacao MODIFY cardapio_id BIGINT NULL"
                 ))
+            colunas_cardapioloja = {
+                coluna["name"] for coluna in inspector.get_columns("cardapioloja")
+            }
+            if "prioridade" in colunas_cardapioloja:
+                conexao.execute(
+                    text("ALTER TABLE cardapioloja DROP COLUMN `prioridade`")
+                )
             colunas_checkout = {coluna["name"] for coluna in inspector.get_columns("checkout_asaas_item")}
             if "cardapioitem_id" not in colunas_checkout:
                 conexao.execute(text(

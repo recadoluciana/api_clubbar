@@ -332,7 +332,6 @@ async def cancelar_pix(
                     CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
                 )
                 .order_by(
-                    CardapioLoja.prioridade.desc(),
                     CardapioVersao.nrversao.desc(),
                 )
                 .first()

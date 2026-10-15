@@ -72,7 +72,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 CardapioItem.cardapioitem_id == payload.cardapioitem_id
             )
         item_cardapio = consulta_item.order_by(
-            CardapioLoja.prioridade.desc(), CardapioVersao.nrversao.desc()
+            CardapioVersao.nrversao.desc()
         ).first()
         if not item_cardapio:
             raise HTTPException(

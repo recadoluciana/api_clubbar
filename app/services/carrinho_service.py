@@ -49,7 +49,7 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
                 (CardapioVersao.dtiniciovigencia.is_(None)) | (CardapioVersao.dtiniciovigencia <= agora),
                 (CardapioVersao.dtfimvigencia.is_(None)) | (CardapioVersao.dtfimvigencia >= agora),
             )
-            .order_by(CardapioLoja.prioridade.desc(), CardapioVersao.nrversao.desc())
+            .order_by(CardapioVersao.nrversao.desc())
             .first()
         )
         if item_atual is None:

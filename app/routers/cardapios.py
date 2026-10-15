@@ -61,7 +61,6 @@ class ProdutoOrganizacaoIn(BaseModel):
 
 class AssociarCardapioIn(BaseModel):
     cardapio_id: int = Field(gt=0)
-    prioridade: int = Field(default=0, ge=0, le=999)
 
 
 class ItemIn(BaseModel):
@@ -116,8 +115,8 @@ class ProgramacaoIn(BaseModel):
     def validar_intervalo(self):
         if not self.dtinicio or not self.hrinicio:
             raise ValueError("Informe a data e o horário de início da exibição.")
-        if self.hrfim and not self.dtfim:
-            raise ValueError("Informe a data final ao definir o horário de encerramento.")
+        if not self.dtfim or not self.hrfim:
+            raise ValueError("Informe a data e o horário de fim da exibição.")
         if self.dtfim and self.dtinicio and self.dtfim < self.dtinicio:
             raise ValueError("A data final deve ser igual ou posterior à inicial.")
         if (
@@ -195,9 +194,6 @@ def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
         "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
     }
-    if associacao:
-        # A prioridade pertence ao vínculo com a loja, não ao catálogo da empresa.
-        saida["prioridade"] = associacao.prioridade
     return saida
 
 
@@ -306,7 +302,7 @@ def listar(loja_id: int, payload=Depends(get_usuario_logado), db: Session=Depend
     ).filter(
         CardapioLoja.loja_id == loja_id,
         CardapioLoja.sitassociacao == "ATIVA",
-    ).order_by(CardapioLoja.prioridade.desc(), Cardapio.nmcardapio).all()
+    ).order_by(Cardapio.nmcardapio).all()
     return [_saida_cardapio(db, cardapio, vinculo) for vinculo, cardapio in vinculos]
 
 
@@ -339,7 +335,13 @@ def listar_cardapios_empresa(organizacao_id: int, payload=Depends(get_usuario_lo
                 "loja_id": loja.loja_id,
                 "nmfantasialoja": loja.nmloja,
                 "cardapioloja_id": vinculo.cardapioloja_id,
-                "prioridade": vinculo.prioridade,
+                "programacoes": [
+                    _saida_programacao(programacao)
+                    for programacao in db.query(CardapioProgramacao).filter(
+                        CardapioProgramacao.cardapioloja_id == vinculo.cardapioloja_id,
+                        CardapioProgramacao.sitprogramacao == "ATIVA",
+                    ).order_by(CardapioProgramacao.dtinicio.asc()).all()
+                ],
             } for vinculo, loja in lojas],
         })
         resultado.append(saida)
@@ -493,12 +495,10 @@ def associar(loja_id: int, dados: AssociarCardapioIn, payload=Depends(get_usuari
         vinculo = CardapioLoja(
             cardapio_id=cardapio.cardapio_id,
             loja_id=loja.loja_id,
-            prioridade=dados.prioridade,
         )
         db.add(vinculo)
     else:
         vinculo.sitassociacao = "ATIVA"
-        vinculo.prioridade = dados.prioridade
     db.commit()
     db.refresh(vinculo)
     return _saida_cardapio(db, cardapio, vinculo)
@@ -514,7 +514,7 @@ def remover_associacao(loja_id: int, cardapio_id: int, payload=Depends(get_usuar
 @router.post("/lojas/{loja_id}/cardapios", status_code=201)
 def criar(loja_id: int, dados: CardapioIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     _loja(db, loja_id, payload)
-    raise HTTPException(403, "Crie o cardápio padrão no menu da empresa e associe-o à loja.")
+    raise HTTPException(403, "Crie o cardápio no menu da empresa e associe-o à loja.")
 
 
 @router.post("/cardapios/{cardapio_id}/nova-versao", status_code=201)
@@ -588,6 +588,50 @@ def _saida_programacao(item: CardapioProgramacao) -> dict:
     }
 
 
+def _inicio_programacao(item: ProgramacaoIn | CardapioProgramacao) -> datetime:
+    return datetime.combine(item.dtinicio, item.hrinicio)
+
+
+def _fim_programacao(item: ProgramacaoIn | CardapioProgramacao) -> datetime | None:
+    if item.dtfim is None:
+        return None
+    return datetime.combine(item.dtfim, item.hrfim or time.max)
+
+
+def _validar_sem_sobreposicao(
+    db: Session,
+    loja_id: int,
+    cardapio_id: int,
+    dados: ProgramacaoIn,
+) -> None:
+    """Impede dois cardápios especiais ativos no mesmo período da loja."""
+    inicio = _inicio_programacao(dados)
+    fim = _fim_programacao(dados)
+    programacoes = db.query(CardapioProgramacao, CardapioLoja, Cardapio).join(
+        CardapioLoja,
+        CardapioLoja.cardapioloja_id == CardapioProgramacao.cardapioloja_id,
+    ).join(
+        Cardapio,
+        Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+    ).filter(
+        CardapioLoja.loja_id == loja_id,
+        CardapioLoja.sitassociacao == "ATIVA",
+        Cardapio.cardapio_id != cardapio_id,
+        Cardapio.tipocardapio == "ESPECIAL",
+        CardapioProgramacao.sitprogramacao == "ATIVA",
+    ).all()
+    for existente, _, _ in programacoes:
+        inicio_existente = _inicio_programacao(existente)
+        fim_existente = _fim_programacao(existente)
+        if (fim is None or inicio_existente <= fim) and (
+            fim_existente is None or inicio <= fim_existente
+        ):
+            raise HTTPException(
+                409,
+                "Este período se sobrepõe a outro cardápio especial da loja.",
+            )
+
+
 @router.get("/lojas/{loja_id}/cardapios/{cardapio_id}/programacoes")
 def listar_programacoes_loja(loja_id: int, cardapio_id: int, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
     vinculo = _associacao(db, loja_id, cardapio_id, payload)
@@ -604,6 +648,7 @@ def programar_loja(loja_id: int, cardapio_id: int, dados: ProgramacaoIn, payload
     cardapio = _cardapio(db, cardapio_id, payload)
     if cardapio.tipocardapio == "PRINCIPAL":
         raise HTTPException(422, "O cardápio principal fica disponível continuamente e não utiliza programação.")
+    _validar_sem_sobreposicao(db, loja_id, cardapio_id, dados)
     item = CardapioProgramacao(cardapioloja_id=vinculo.cardapioloja_id, **dados.model_dump())
     db.add(item); db.commit(); db.refresh(item)
     return _saida_programacao(item)
@@ -759,7 +804,7 @@ def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
         CardapioLoja.loja_id == loja_id,
         CardapioLoja.sitassociacao == "ATIVA",
         Cardapio.sitcardapio == "ATIVO",
-    ).order_by(CardapioLoja.prioridade.desc()).all()
+    ).order_by(Cardapio.cardapio_id).all()
     candidatos = []
     for associacao, cardapio in cardapios:
         programacoes = db.query(CardapioProgramacao).filter(
@@ -771,9 +816,8 @@ def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
         if versao: candidatos.append((associacao, cardapio, versao))
     if not candidatos:
         raise HTTPException(404, "Nenhum cardápio publicado para esta loja no momento.")
-    # Um sazonal programado para este momento tem prioridade sobre o principal.
-    # Assim, a programação permite alternar a vitrine da loja sem despublicar
-    # definitivamente o cardápio principal.
+    # Um especial vigente substitui o único cardápio principal da loja.
+    # A validação de períodos impede mais de um especial vigente por vez.
     sazonais = [item for item in candidatos if item[1].tipocardapio != "PRINCIPAL"]
-    selecionado = max(sazonais or candidatos, key=lambda item: item[0].prioridade)
+    selecionado = (sazonais or candidatos)[0]
     return _conteudo(db, selecionado[2], selecionado[1])
