@@ -717,7 +717,10 @@ def atualizar_configuracao_setor(
         lote.situacao = data.situacao
     if data.precos is not None:
         if int(lote.qtvendidalote or 0) or quantidade_reservada(db, lote.lote_id):
-            raise HTTPException(409, "Não altere modalidades com vendas ou reservas. Configure o próximo lote.")
+            raise HTTPException(
+                409,
+                "Exclusão não permitida. Modalidade já possui vendas ou reservas.",
+            )
         _validar_modalidades_do_evento(db, evento.evento_id, data.precos)
         _validar_limites_modalidades(lote, data.precos)
         _sincronizar_precos_lote(db, lote_id, data.precos)
