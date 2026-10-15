@@ -197,6 +197,43 @@ def criar_personalizada(organizacao_id: int, dados: CategoriaPersonalizadaIn, pa
     return _saida(item)
 
 
+@router.patch("/organizacoes/{organizacao_id}/categorias/{categoria_id}")
+def editar_personalizada(
+    organizacao_id: int,
+    categoria_id: int,
+    dados: CategoriaPersonalizadaIn,
+    payload=Depends(get_usuario_logado),
+    db: Session=Depends(get_db),
+):
+    _validar_organizacao(payload, organizacao_id)
+    item = db.query(Categoria).filter(
+        Categoria.organizacao_id == organizacao_id,
+        Categoria.categoria_id == categoria_id,
+    ).first()
+    if item is None:
+        raise HTTPException(404, "Categoria não encontrada nesta organização.")
+    if item.categoriapadrao_id is not None:
+        raise HTTPException(
+            409,
+            "Categorias importadas das padrão não podem ter nome ou ícone alterados.",
+        )
+
+    nome = dados.nmcategoria.strip()
+    duplicada = db.query(Categoria).filter(
+        Categoria.organizacao_id == organizacao_id,
+        Categoria.nmcategoria == nome,
+        Categoria.categoria_id != categoria_id,
+    ).first()
+    if duplicada:
+        raise HTTPException(409, "Já existe uma categoria com este nome na organização.")
+
+    item.nmcategoria = nome
+    item.dsicone = (dados.dsicone or "more_horiz").strip()
+    db.commit()
+    db.refresh(item)
+    return _saida(item)
+
+
 @router.patch("/organizacoes/{organizacao_id}/categorias/{categoria_id}/situacao")
 def alterar_situacao_categoria_organizacao(
     organizacao_id: int,
