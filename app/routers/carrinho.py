@@ -53,6 +53,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Produto não encontrado ou inativo")
         produto_id_final = int(produto.produto_id)
         lote_id_final = None
+        agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
         consulta_item = (
             db.query(CardapioItem)
             .join(CardapioVersao, CardapioVersao.cardapioversao_id == CardapioItem.cardapioversao_id)
@@ -65,6 +66,10 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 CardapioLoja.sitassociacao == "ATIVA",
                 Cardapio.sitcardapio == "ATIVO",
                 CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
+                (CardapioVersao.dtiniciovigencia.is_(None))
+                | (CardapioVersao.dtiniciovigencia <= agora),
+                (CardapioVersao.dtfimvigencia.is_(None))
+                | (CardapioVersao.dtfimvigencia >= agora),
             )
         )
         if payload.cardapioitem_id:
@@ -283,6 +288,7 @@ def obter_itens_carrinho(
         db.query(
             ItCarrinho.itcarrinho_id,
             ItCarrinho.produto_id,
+            ItCarrinho.cardapioitem_id,
             Produto.nmproduto,
             Produto.dsproduto,
             ItCarrinho.vrunitario.label("vrprecoprod"),
@@ -317,6 +323,7 @@ def obter_itens_carrinho(
             {
                 "itcarrinho_id": i.itcarrinho_id,
                 "produto_id": i.produto_id,
+                "cardapioitem_id": i.cardapioitem_id,
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "idtipoproduto": tipo_produto,
@@ -348,16 +355,22 @@ def remover_uma_unidade(
     carrinho_id: int,
     produto_id: int,
     observacao: str = Query(""),
+    cardapioitem_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     observacao = (observacao or "").strip()
 
+    filtro_cardapio = ""
+    if cardapioitem_id is not None:
+        filtro_cardapio = "AND cardapioitem_id = :cardapioitem_id"
+
     res = db.execute(
-        text("""
+        text(f"""
             DELETE FROM itcarrinho
             WHERE carrinho_id = :cid
               AND produto_id = :pid
               AND COALESCE(dsobsitcar, '') = :observacao
+              {filtro_cardapio}
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
@@ -365,6 +378,7 @@ def remover_uma_unidade(
             "cid": carrinho_id,
             "pid": produto_id,
             "observacao": observacao,
+            "cardapioitem_id": cardapioitem_id,
         },
     )
     db.commit()
