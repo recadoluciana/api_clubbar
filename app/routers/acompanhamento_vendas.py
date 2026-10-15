@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
 from app.database import get_db
+from app.models.cliente import Cliente
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
@@ -241,3 +243,86 @@ def detalhe_vendas_evento(
         "valor_total": _dinheiro(sum(Decimal(str(item["valor_total"])) for item in lotes)),
         "lotes": lotes,
     }
+
+
+@router.get("/eventos/{evento_id}/ingressos")
+def listar_ingressos_vendidos_evento(
+    evento_id: int,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Lista os ingressos efetivamente vendidos, preservando o preço da compra."""
+    organizacao_id, loja_escopo = _escopo(usuario)
+    evento = db.query(Evento).filter(
+        Evento.evento_id == evento_id,
+        Evento.organizacao_id == organizacao_id,
+    ).first()
+    if not evento or (loja_escopo is not None and evento.loja_id != loja_escopo):
+        raise HTTPException(404, "Evento não encontrado")
+
+    rows = (
+        db.query(
+            ItVenda.itvenda_id,
+            ItVenda.qtitvenda,
+            ItVenda.vrunititvenda,
+            ItVenda.vrtaxaitvenda,
+            ItVenda.nmparticipante,
+            ItVenda.cpfparticipante,
+            ItVenda.nmmodalidadesnapshot,
+            Venda.venda_id,
+            Venda.dtcriacao.label("dtcompra"),
+            Cliente.nmcliente,
+            EventoLoteGlobal.nrlote,
+            EventoLoteGlobal.nmlote,
+            EventoSetor.nmsetor,
+            EventoLotePreco.nmpreco,
+            EventoLotePreco.tipopreco,
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(
+            EventoLoteGlobal,
+            EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id,
+        )
+        .outerjoin(
+            EventoSetor,
+            EventoSetor.eventosetor_id == EventoLote.eventosetor_id,
+        )
+        .outerjoin(
+            EventoLotePreco,
+            EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id,
+        )
+        .filter(
+            EventoLoteGlobal.evento_id == evento.evento_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "INGRESSO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+        .all()
+    )
+
+    return [
+        {
+            "itvenda_id": int(row.itvenda_id),
+            "quantidade": int(row.qtitvenda or 0),
+            "preco": _dinheiro(row.vrunititvenda),
+            "taxa": _dinheiro(row.vrtaxaitvenda),
+            "venda_id": int(row.venda_id),
+            "dtcompra": row.dtcompra,
+            "cliente": row.nmcliente or "Cliente não identificado",
+            "participante": row.nmparticipante or "Não informado",
+            "cpf_participante": row.cpfparticipante or "",
+            "numero_lote": int(row.nrlote),
+            "lote": row.nmlote or "Lote não informado",
+            "setor": row.nmsetor or "Setor único",
+            "modalidade": (
+                row.nmmodalidadesnapshot
+                or row.nmpreco
+                or row.tipopreco
+                or "Ingresso"
+            ),
+        }
+        for row in rows
+    ]
