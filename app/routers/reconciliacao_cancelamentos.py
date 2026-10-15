@@ -53,6 +53,26 @@ def _valor_item(item: ItVenda) -> float:
     )
 
 
+def _reativar_venda_sem_estorno(
+    venda: Venda,
+    itens: list[ItVenda],
+    pagamento: PagVenda,
+) -> None:
+    """Restaura integralmente uma venda cujo estorno não foi registrado.
+
+    O cancelamento é feito por transação. Portanto, ao desfazê-lo com
+    segurança, venda, pagamento e todos os itens precisam voltar ao estado
+    ativo; reativar somente os itens deixa a compra inutilizável ao cliente.
+    """
+    for item in itens:
+        item.sititvenda = "ATIVO"
+        item.dtcancelamento = None
+        item.vrreembolso = None
+        item.idreembolso = None
+    venda.sitvenda = "PAGA"
+    pagamento.sitpagvenda = "PAGO"
+
+
 def _pagamento_da_venda(db: Session, venda_id: int) -> PagVenda:
     pagamento = (
         db.query(PagVenda)
@@ -260,7 +280,9 @@ async def reativar(
                 "Conclua o cancelamento; não é seguro reativar os itens."
             ),
         )
-    for item in itens:
-        item.sititvenda = "ATIVO"
+    _reativar_venda_sem_estorno(venda, itens, pagamento)
     db.commit()
-    return {"ok": True, "mensagem": "Itens reativados: o Asaas não registrou estorno."}
+    return {
+        "ok": True,
+        "mensagem": "Compra reativada: o Asaas não registrou estorno.",
+    }
