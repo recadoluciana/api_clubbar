@@ -1265,7 +1265,13 @@ async def cancelar_transacao(
                 detail="O Asaas ainda não confirmou o cancelamento. Tente novamente mais tarde.",
             ) from exc
 
-    itens = db.query(ItVenda).filter(ItVenda.venda_id == venda_id, ItVenda.sititvenda == "ATIVO").all()
+    # Os itens foram bloqueados antes da chamada ao Asaas para impedir estorno
+    # duplicado. Com a confirmação recebida, eles precisam avançar para o
+    # estado final, e não permanecer como solicitação pendente.
+    itens = db.query(ItVenda).filter(
+        ItVenda.venda_id == venda_id,
+        ItVenda.sititvenda == "CANCELAMENTO_SOLICITADO",
+    ).all()
     saldo_a_distribuir = valor_reembolso
     lotes_cancelados: dict[int, int] = {}
     for indice, item in enumerate(itens):
