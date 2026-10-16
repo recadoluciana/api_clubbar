@@ -16,8 +16,6 @@ from app.models.eventolotepreco import EventoLotePreco
 from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
 from app.models.beneficioingresso import BeneficioIngresso
-from app.models.eventomodalidade import EventoModalidade
-from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.itcarrinho import ItCarrinho
@@ -60,21 +58,15 @@ def listar_modalidades_do_evento(
     db: Session = Depends(get_db),
 ):
     evento = _evento_do_usuario(db, evento_id, payload)
-    ids = [item[0] for item in db.query(EventoModalidade.modalidade_id).filter(
-        EventoModalidade.evento_id == evento.evento_id
-    ).all()]
     query = db.query(ModalidadeIngresso).filter(
         ModalidadeIngresso.situacao == "ATIVO",
-    )
-    if ids:
-        query = query.filter(ModalidadeIngresso.modalidade_id.in_(ids))
-    else:
-        # Eventos criados antes da configuração por modalidade continuam
-        # funcionando com o catálogo padrão até serem reconfigurados.
-        query = query.filter(
+        or_(
             ModalidadeIngresso.organizacao_id.is_(None),
-            ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
-        )
+            ModalidadeIngresso.organizacao_id == evento.organizacao_id,
+        ),
+    )
+    # Modalidades são escolhidas em cada setor/lote. Não há mais uma lista
+    # fixa no evento padrão que limite as opções disponíveis.
     modalidades = query.order_by(
         ModalidadeIngresso.nrordem, ModalidadeIngresso.nmmodalidade
     ).all()
@@ -269,40 +261,25 @@ def _sincronizar_precos_lote(db: Session, lote_id: int, precos) -> None:
 
 
 def _validar_modalidades_do_evento(db: Session, evento_id: int, precos) -> None:
-    """Impede que um setor use modalidades fora da configuração do evento."""
+    """Valida modalidades ativas disponíveis à organização do evento."""
+    evento = db.query(Evento).filter(Evento.evento_id == evento_id).first()
     permitidas = {
         item[0]
-        for item in db.query(EventoModalidade.modalidade_id)
-        .filter(EventoModalidade.evento_id == evento_id)
-        .all()
-    }
-    if not permitidas:
-        permitidas = {
-            item[0]
-            for item in db.query(ModalidadeIngresso.modalidade_id).filter(
+        for item in db.query(ModalidadeIngresso.modalidade_id).filter(
+            ModalidadeIngresso.situacao == "ATIVO",
+            or_(
                 ModalidadeIngresso.organizacao_id.is_(None),
-                ModalidadeIngresso.situacao == "ATIVO",
-                ModalidadeIngresso.tipomodalidade.in_(("PADRAO", "LEGAL")),
-            ).all()
-        }
+                ModalidadeIngresso.organizacao_id == evento.organizacao_id,
+            ),
+        ).all()
+    }
     recebidas = {int(item.modalidade_id) for item in precos}
     if not recebidas.issubset(permitidas):
         raise HTTPException(422, "Há modalidades que não foram habilitadas para este evento")
 
 
 def _beneficios_da_modalidade_no_evento(db: Session, evento_id: int, modalidade_id: int):
-    possui_configuracao = db.query(EventoModalidade).filter(
-        EventoModalidade.evento_id == evento_id
-    ).first()
     query = db.query(BeneficioIngresso).filter(BeneficioIngresso.situacao == "ATIVO")
-    if possui_configuracao:
-        return query.join(
-            EventoModalidadeBeneficio,
-            EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
-        ).filter(
-            EventoModalidadeBeneficio.evento_id == evento_id,
-            EventoModalidadeBeneficio.modalidade_id == modalidade_id,
-        ).order_by(BeneficioIngresso.nrordem).all()
     return query.join(
         ModalidadeBeneficio,
         ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
@@ -774,46 +751,6 @@ def adicionar_modalidade_ao_setor(
     ):
         raise HTTPException(409, "Esta modalidade já está configurada neste setor")
     _validar_limites_modalidades(lote, [data])
-
-    evento_modalidade = (
-        db.query(EventoModalidade)
-        .filter(
-            EventoModalidade.evento_id == evento.evento_id,
-            EventoModalidade.modalidade_id == modalidade.modalidade_id,
-        )
-        .first()
-    )
-    if not evento_modalidade:
-        db.add(
-            EventoModalidade(
-                evento_id=evento.evento_id,
-                modalidade_id=modalidade.modalidade_id,
-            )
-        )
-        beneficios = (
-            db.query(ModalidadeBeneficio.beneficio_id)
-            .join(
-                BeneficioIngresso,
-                BeneficioIngresso.beneficio_id == ModalidadeBeneficio.beneficio_id,
-            )
-            .filter(
-                ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
-                BeneficioIngresso.situacao == "ATIVO",
-                or_(
-                    BeneficioIngresso.organizacao_id.is_(None),
-                    BeneficioIngresso.organizacao_id == evento.organizacao_id,
-                ),
-            )
-            .all()
-        )
-        db.add_all(
-            EventoModalidadeBeneficio(
-                evento_id=evento.evento_id,
-                modalidade_id=modalidade.modalidade_id,
-                beneficio_id=beneficio_id,
-            )
-            for (beneficio_id,) in beneficios
-        )
 
     db.add(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, data)))
     db.commit()

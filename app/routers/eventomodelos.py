@@ -55,6 +55,19 @@ def _validar_titulo_evento(titulo: str) -> str:
     return titulo
 
 
+def _validar_contato_evento(
+    email: str | None,
+    whatsapp: str | None,
+) -> tuple[str | None, str | None]:
+    email = (email or "").strip() or None
+    whatsapp = (whatsapp or "").strip() or None
+    if not email and not whatsapp:
+        raise HTTPException(422, "Informe um e-mail ou WhatsApp para contato do evento.")
+    if email and "@" not in email:
+        raise HTTPException(422, "Informe um e-mail válido.")
+    return email, whatsapp
+
+
 def _commit_evento_modelo(db: Session) -> None:
     try:
         db.commit()
@@ -267,7 +280,7 @@ def listar(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     return [_item(db, x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org).order_by(EventoModelo.nmtituloevento).all()]
 
 @router.post("",status_code=201)
-def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str=Form("ATIVO"),vrprecolote:Decimal=Form(0),modalidades_json:str|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload)
     if organizacao_id!=org: raise HTTPException(403,"Organização inválida.")
     validar_gerenciamento_organizacao(payload,org)
@@ -285,17 +298,10 @@ def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento
         func.lower(EventoModelo.nmtituloevento) == titulo.lower(),
     ).first():
         raise HTTPException(409, "Já existe um evento padrão com este título. Edite o existente ou informe outro título.")
-    modalidades = None
-    if modalidades_json:
-        try:
-            modalidades = EventoModeloModalidadesIn.model_validate_json(modalidades_json)
-        except ValueError as exc:
-            raise HTTPException(422, "As modalidades selecionadas são inválidas.") from exc
-    x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,emailcontatoevento=(emailcontatoevento or "").strip() or None,whatsappevento=(whatsappevento or "").strip() or None,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento=statusevento.upper(),vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
+    email, whatsapp = _validar_contato_evento(emailcontatoevento, whatsappevento)
+    x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,emailcontatoevento=email,whatsappevento=whatsapp,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento="ATIVO",vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
     db.add(x)
     db.flush()
-    if modalidades is not None:
-        _salvar_modalidades_modelo(db, x, modalidades)
     _commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
@@ -305,9 +311,15 @@ def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|
     if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
     if nmtituloevento is not None:
         nmtituloevento = _validar_titulo_evento(nmtituloevento)
+    email, whatsapp = _validar_contato_evento(
+        emailcontatoevento if emailcontatoevento is not None else x.emailcontatoevento,
+        whatsappevento if whatsappevento is not None else x.whatsappevento,
+    )
     for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"emailcontatoevento":emailcontatoevento,"whatsappevento":whatsappevento,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"nrceplocalevento":nrceplocalevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
         if v is not None:setattr(x,k,v.upper() if k=="statusevento" else v)
     x.tipolocalevento=tipo
+    x.emailcontatoevento = email
+    x.whatsappevento = whatsapp
     if tipo=="ESTABELECIMENTO": x.nrceplocalevento=x.nmlocalevento=x.dsendlocevento=None
     elif not x.nrceplocalevento or not x.nmlocalevento or not x.dsendlocevento: raise HTTPException(422,"Informe CEP, nome e endereço do outro local.")
     if urlbannerevento and urlbannerevento.filename:x.urlbannerevento=salvar_banner_evento(urlbannerevento)
@@ -344,7 +356,9 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
         evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
         db.add(evento);db.flush()
-        modalidades_ids = _copiar_modalidades_para_evento(db, x.eventomodelo_id, evento.evento_id)
+        # Modalidades são configuradas por setor e lote após o agendamento;
+        # o evento padrão não restringe mais as opções disponíveis.
+        modalidades_ids = None
         inicio_atracao = inicio
         for padrao in atracoes_padrao:
             fim_atracao = inicio_atracao + timedelta(minutes=padrao.nrminutoduracao)

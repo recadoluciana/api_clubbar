@@ -15,8 +15,6 @@ from app.models.loja import Loja
 from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
 from app.models.beneficioingresso import BeneficioIngresso
-from app.models.eventomodalidade import EventoModalidade
-from app.models.eventomodalidadebeneficio import EventoModalidadeBeneficio
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.itvenda import ItVenda
 from app.models.venda import Venda
@@ -243,23 +241,11 @@ def beneficios_validos_para_reserva(db: Session, reserva: ReservaIngresso) -> di
     if not modalidade or not (modalidade.exigebeneficio or preco.aplicacotalegal):
         return {}
 
-    evento_configurado = db.query(EventoModalidade).filter(
-        EventoModalidade.evento_id == reserva.evento_id
-    ).first()
     query = db.query(BeneficioIngresso).filter(BeneficioIngresso.situacao == "ATIVO")
-    if evento_configurado:
-        query = query.join(
-            EventoModalidadeBeneficio,
-            EventoModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
-        ).filter(
-            EventoModalidadeBeneficio.evento_id == reserva.evento_id,
-            EventoModalidadeBeneficio.modalidade_id == modalidade.modalidade_id,
-        )
-    else:
-        query = query.join(
-            ModalidadeBeneficio,
-            ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
-        ).filter(ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id)
+    query = query.join(
+        ModalidadeBeneficio,
+        ModalidadeBeneficio.beneficio_id == BeneficioIngresso.beneficio_id,
+    ).filter(ModalidadeBeneficio.modalidade_id == modalidade.modalidade_id)
     return {beneficio.beneficio_id: beneficio for beneficio in query.all()}
 
 
