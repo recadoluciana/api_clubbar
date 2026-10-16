@@ -1,13 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.carrinho import Carrinho
 from app.models.cliente import Cliente
+from app.models.clienteasaas import ClienteAsaas
 from app.schemas.cliente import (
     AlterarSenhaClienteRequest,
     ClienteEnderecoCobrancaUpdate,
     ClientePerfilUpdate,
+    ExcluirContaClienteRequest,
 )
 from app.core.security import get_usuario_logado, verificar_senha, hash_senha
 
@@ -190,6 +195,61 @@ def atualizar_perfil_cliente(
         "ufcliente": cli.ufcliente,
         "idcidadeibge": cli.idcidadeibge,
     }
+
+
+@router.delete("/me", status_code=204)
+def excluir_minha_conta(
+    payload: ExcluirContaClienteRequest,
+    usuario=Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Exclui o acesso e anonimiza os dados pessoais do cliente."""
+    if usuario.get("role") != "cliente":
+        raise HTTPException(status_code=403, detail="Acesso permitido apenas para cliente")
+
+    cliente_id = int(usuario.get("sub") or 0)
+    cliente = db.query(Cliente).filter(Cliente.cliente_id == cliente_id).first()
+    if not cliente:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    if cliente.sitcliente != "ATIVO":
+        raise HTTPException(status_code=403, detail="Cliente inativo")
+    if not verificar_senha(payload.senha_atual, cliente.senhahashcli):
+        raise HTTPException(status_code=400, detail="A senha informada está incorreta.")
+
+    # Itens pendentes não poderão ser reutilizados após o encerramento.
+    db.query(Carrinho).filter(
+        Carrinho.cliente_id == cliente_id,
+        Carrinho.sitcarrinho == "ABERTO",
+    ).update({Carrinho.sitcarrinho: "FECHADO"}, synchronize_session=False)
+
+    # Remove o vínculo local com o intermediador de pagamento.
+    db.query(ClienteAsaas).filter(
+        ClienteAsaas.cliente_id == cliente_id,
+    ).delete(synchronize_session=False)
+
+    # Registros financeiros podem precisar ser mantidos por obrigação legal,
+    # mas não devem conservar os dados de identificação da conta excluída.
+    cliente.nmcliente = "Conta excluída"
+    cliente.emailcliente = (
+        f"conta-excluida-{cliente_id}-{secrets.token_hex(8)}@excluido.clubbar.invalid"
+    )
+    cliente.senhahashcli = hash_senha(secrets.token_urlsafe(32))
+    cliente.sitcliente = "EXCLUIDO"
+    cliente.emailconf = "N"
+    cliente.nrtelcliente = None
+    cliente.nrcpfcliente = None
+    cliente.idclienteasaas = None
+    cliente.endcliente = None
+    cliente.nrendcliente = None
+    cliente.complcliente = None
+    cliente.bairrocliente = None
+    cliente.cepcliente = None
+    cliente.cidadecliente = None
+    cliente.ufcliente = None
+    cliente.idcidadeibge = None
+    db.commit()
+
+    return Response(status_code=204)
 
 
 @router.put("/me/endereco-cobranca")

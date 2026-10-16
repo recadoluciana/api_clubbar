@@ -25,9 +25,15 @@ class ClienteEnderecoCobrancaUpdate(BaseModel):
     cidadecliente: str = Field(min_length=2, max_length=100)
     ufcliente: str = Field(min_length=2, max_length=2)
 
+
 class AlterarSenhaClienteRequest(BaseModel):
     senha_atual: str = Field(min_length=1)
     nova_senha: str = Field(min_length=6, max_length=100)
+
+
+class ExcluirContaClienteRequest(BaseModel):
+    senha_atual: str = Field(min_length=1, max_length=100)
+
 
 class EsqueciSenhaRequest(BaseModel):
     email: EmailStr
