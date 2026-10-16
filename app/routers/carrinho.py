@@ -94,6 +94,11 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             dtfimdesconto=item_cardapio.dtfimdesconto,
         )
         if vrunitario_final <= 0:
+            if int(payload.qt) != 1:
+                raise HTTPException(
+                    422,
+                    "Cortesia limitada a 1 unidade por transação.",
+                )
             validar_cortesia_disponivel(
                 db,
                 cardapioitem_id=cardapioitem_id_final,
@@ -121,6 +126,18 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         )
         db.add(carr)
         db.flush()
+
+    if vrunitario_final <= 0:
+        ja_adicionada = db.query(ItCarrinho.itcarrinho_id).filter(
+            ItCarrinho.carrinho_id == carr.carrinho_id,
+            ItCarrinho.cardapioitem_id == cardapioitem_id_final,
+            ItCarrinho.vrunitario <= 0,
+        ).first()
+        if ja_adicionada:
+            raise HTTPException(
+                409,
+                "Esta cortesia já está no carrinho. O limite é de 1 unidade por transação.",
+            )
 
     # 3) cada unidade ocupa uma linha. A API de consulta agrupa visualmente
     # produtos iguais que possuem a mesma observação.
@@ -400,7 +417,7 @@ def remover_uma_unidade(
 def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)):
     row = db.execute(
         text("""
-            SELECT itcarrinho_id
+            SELECT itcarrinho_id, vrunitario
             FROM itcarrinho
             WHERE itcarrinho_id = :itcarrinho_id
         """),
@@ -409,6 +426,11 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
 
     if not row:
         raise HTTPException(status_code=404, detail="Item do carrinho não encontrado")
+    if float(row.vrunitario or 0) <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Cortesia limitada a 1 unidade por transação.",
+        )
 
     db.execute(
         text("""

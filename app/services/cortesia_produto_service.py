@@ -109,6 +109,11 @@ def validar_cortesias_da_venda(db: Session, venda_id: int) -> None:
         .all()
     )
     for cardapioitem_id, quantidade in grupos:
+        if int(quantidade or 0) > 1:
+            raise HTTPException(
+                422,
+                "Cortesia limitada a 1 unidade por transação.",
+            )
         validar_cortesia_disponivel(
             db,
             cardapioitem_id=int(cardapioitem_id),

@@ -293,6 +293,11 @@ def criar_reserva(
     )
     if not preco:
         raise HTTPException(404, "Modalidade de preço não encontrada")
+    if Decimal(str(preco.vrpreco or 0)) <= 0 and quantidade != 1:
+        raise HTTPException(
+            422,
+            "Cortesia limitada a 1 ingresso por transação.",
+        )
 
     modalidade = db.query(ModalidadeIngresso).filter(
         ModalidadeIngresso.modalidade_id == preco.modalidade_id,
