@@ -446,7 +446,31 @@ def listar_lotes_disponiveis(evento_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Evento não encontrado")
     atual = lote_global_ativo(db, evento_id)
     if not atual:
-        return []
+        # Quando o último lote vigente esgota, não há um próximo lote para a
+        # função comercial retornar. Ainda assim, o cliente precisa visualizar
+        # lote, setor e modalidades para deixar clara a situação de esgotado.
+        # Não antecipamos um lote futuro: somente recuperamos o último lote
+        # ativo depois do início da venda.
+        agora = datetime.now()
+        ultimo_iniciado = (
+            db.query(EventoLoteGlobal)
+            .filter(
+                EventoLoteGlobal.evento_id == evento_id,
+                EventoLoteGlobal.situacao == "ATIVO",
+                or_(
+                    EventoLoteGlobal.dtiniciovenda.is_(None),
+                    EventoLoteGlobal.dtiniciovenda <= agora,
+                ),
+            )
+            .order_by(
+                EventoLoteGlobal.nrlote.desc(),
+                EventoLoteGlobal.loteglobal_id.desc(),
+            )
+            .first()
+        )
+        if not ultimo_iniciado:
+            return []
+        atual = ultimo_iniciado
     global_ = _carregar_global(db, atual.loteglobal_id)
     return [
         _saida_configuracao(db, configuracao, evento)
