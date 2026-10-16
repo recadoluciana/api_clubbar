@@ -43,7 +43,11 @@ def _inteiro_positivo(valor: object, nome: str) -> int:
     return convertido
 
 
-def _extrair_escopo(usuario: dict) -> tuple[int, int | None]:
+def _extrair_escopo(
+    usuario: dict,
+    *,
+    consolidado_por_organizacao: bool = False,
+) -> tuple[int, int | None]:
     if usuario.get("role") != "usuario" and usuario.get("tipo") != "usuario":
         raise HTTPException(status_code=403, detail="Acesso permitido apenas a usuários parceiros")
 
@@ -56,7 +60,7 @@ def _extrair_escopo(usuario: dict) -> tuple[int, int | None]:
             detail="O painel gerencial é exclusivo para SUPERADMIN, ADMIN e MANAGER",
         )
 
-    if cargo == "MANAGER":
+    if cargo == "MANAGER" and not consolidado_por_organizacao:
         return organizacao_id, _inteiro_positivo(usuario.get("loja_id"), "loja_id")
 
     # Administradores recebem a visão consolidada de toda a organização.
@@ -88,10 +92,14 @@ def _periodo_selecionado(ano: int | None, mes: int | None) -> tuple[date, date]:
 def painel_gerencial(
     ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
     mes: Annotated[int | None, Query(ge=1, le=12)] = None,
+    consolidado: bool = Query(False),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    organizacao_id, loja_id = _extrair_escopo(usuario)
+    organizacao_id, loja_id = _extrair_escopo(
+        usuario,
+        consolidado_por_organizacao=consolidado,
+    )
 
     primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
     inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
@@ -258,5 +266,67 @@ def painel_gerencial(
                 "valor": _dinheiro(row.valor),
             }
             for row in ingressos_rows
+        ],
+    }
+
+
+@router.get("/painel-gerencial/notificacoes-vendas")
+def notificacoes_vendas(
+    desde: datetime | None = None,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Retorna vendas pagas depois da última consulta do painel KPI.
+
+    O KPI é sempre consolidado pela organização, inclusive para o perfil
+    MANAGER. Sem `desde`, a rota apenas estabelece uma referência para evitar
+    avisos antigos logo ao abrir o painel.
+    """
+    organizacao_id, _ = _extrair_escopo(
+        usuario,
+        consolidado_por_organizacao=True,
+    )
+    referencia = datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+    if desde is None:
+        return {"referencia": referencia, "vendas": []}
+    if desde.tzinfo is not None:
+        desde = desde.astimezone(_FUSO_BRASIL).replace(tzinfo=None)
+
+    momento_venda = func.coalesce(Venda.dtultatu, Venda.dtcriacao)
+    quantidade = func.coalesce(ItVenda.qtitvenda, 1)
+    valor_bruto_item = quantidade * ItVenda.vrunititvenda
+    valor_liquido_item = case(
+        (ItVenda.tipoitem == "INGRESSO", valor_bruto_item),
+        else_=valor_bruto_item - func.coalesce(ItVenda.vrtaxaitvenda, 0),
+    )
+    vendas = (
+        db.query(
+            Venda.venda_id,
+            Venda.tipovenda,
+            momento_venda.label("momento"),
+            func.coalesce(func.sum(valor_liquido_item), 0).label("valor"),
+        )
+        .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
+        .filter(
+            Venda.organizacao_id == organizacao_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.sititvenda == "ATIVO",
+            momento_venda > desde,
+        )
+        .group_by(Venda.venda_id, Venda.tipovenda, Venda.dtultatu, Venda.dtcriacao)
+        .order_by(momento_venda.asc(), Venda.venda_id.asc())
+        .limit(30)
+        .all()
+    )
+    return {
+        "referencia": referencia,
+        "vendas": [
+            {
+                "venda_id": int(venda.venda_id),
+                "tipo": str(venda.tipovenda),
+                "valor": _dinheiro(venda.valor),
+                "momento": venda.momento,
+            }
+            for venda in vendas
         ],
     }
