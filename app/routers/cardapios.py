@@ -21,8 +21,10 @@ from app.models.cardapio import (
     CardapioVersao, CardapioVersaoCategoria,
 )
 from app.models.categoria import Categoria
+from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
+from app.models.venda import Venda
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.utils.datetime_utils import FUSO_BRASIL
 
@@ -288,6 +290,41 @@ def _preco_final_item(item: CardapioItem, agora: datetime) -> tuple[Decimal, boo
     return max(Decimal("0"), final).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ativo
 
 
+def _cortesia_disponivel_publicamente(
+    db: Session,
+    item: CardapioItem,
+    preco_final: Decimal,
+    agora: datetime,
+) -> bool | None:
+    """Retorna a disponibilidade de um produto gratuito no cardápio público."""
+    if preco_final > 0:
+        return None
+
+    limite = int(item.qtcortesia or 0)
+    if (
+        limite <= 0
+        or item.dtinicortesia is None
+        or item.dtfimcortesia is None
+        or agora < item.dtinicortesia
+        or agora > item.dtfimcortesia
+    ):
+        return False
+
+    resgatadas = (
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            ItVenda.cardapioitem_id == item.cardapioitem_id,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda == "PAGA",
+        )
+        .scalar()
+        or 0
+    )
+    return int(resgatadas) < limite
+
+
 def _conteudo(
     db: Session,
     versao: CardapioVersao,
@@ -336,6 +373,12 @@ def _conteudo(
                 "vrpreco": float(preco),
                 "vrprecoprod": float(preco),
                 "vrprecofinal": float(final),
+                "cortesia_disponivel": _cortesia_disponivel_publicamente(
+                    db,
+                    ci,
+                    final,
+                    agora,
+                ),
                 "sititem": ci.sititem,
                 "sitproduto": produto.sitproduto,
                 "tipodesconto": tipo,
