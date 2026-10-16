@@ -205,6 +205,29 @@ app.include_router(reconciliacao_cancelamentos.router)
 
 
 @app.on_event("startup")
+def garantir_preco_padrao_produto() -> None:
+    """Adiciona a sugestão de preço sem alterar os preços já nos cardápios."""
+    try:
+        inspector = inspect(engine)
+        if "produto" not in inspector.get_table_names():
+            return
+        colunas = {coluna["name"] for coluna in inspector.get_columns("produto")}
+        if "vrprecopadrao" in colunas:
+            return
+        with engine.begin() as conexao:
+            conexao.execute(
+                text(
+                    "ALTER TABLE produto "
+                    "ADD COLUMN vrprecopadrao DECIMAL(10,2) NOT NULL DEFAULT 0.00"
+                )
+            )
+        logger.info("Campo de preço padrão adicionado aos produtos.")
+    except Exception:
+        logger.exception("Não foi possível criar o campo de preço padrão do produto")
+        raise
+
+
+@app.on_event("startup")
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)

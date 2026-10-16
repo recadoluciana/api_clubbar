@@ -94,6 +94,9 @@ class CardapioAtualizarIn(BaseModel):
 class ProdutoOrganizacaoIn(BaseModel):
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
+    vrprecopadrao: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=10, decimal_places=2
+    )
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: str | None = Field(default=None, max_length=100)
     urlfotoproduto: str | None = Field(default=None, max_length=255)
@@ -474,6 +477,7 @@ def _saida_produto_organizacao(produto: Produto) -> dict:
         "organizacao_id": produto.organizacao_id,
         "nmproduto": produto.nmproduto,
         "dsproduto": produto.dsproduto,
+        "vrprecopadrao": float(produto.vrprecopadrao or 0),
         "sitproduto": produto.sitproduto,
         "skuproduto": produto.skuproduto,
         "urlfotoproduto": produto.urlfotoproduto,
