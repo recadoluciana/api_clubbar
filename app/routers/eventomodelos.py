@@ -213,6 +213,8 @@ def _validar_atracao_modelo(db, modelo, dados, ignorar_id=None):
     existentes = db.query(EventoModeloAtracao).filter(EventoModeloAtracao.eventomodelo_id == modelo.eventomodelo_id)
     if ignorar_id is not None:
         existentes = existentes.filter(EventoModeloAtracao.eventomodeloatracao_id != ignorar_id)
+    if existentes.filter(EventoModeloAtracao.atracao_id == dados["atracao_id"]).first():
+        raise HTTPException(409, "Esta atração já foi adicionada ao evento.")
     if existentes.filter(EventoModeloAtracao.ordem == dados["ordem"]).first():
         raise HTTPException(409, "Já existe uma atração com esta ordem.")
 

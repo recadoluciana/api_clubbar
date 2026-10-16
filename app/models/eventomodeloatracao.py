@@ -27,4 +27,9 @@ class EventoModeloAtracao(Base):
 
     __table_args__ = (
         UniqueConstraint("eventomodelo_id", "ordem", name="uq_eventomodeloatracao_ordem"),
+        UniqueConstraint(
+            "eventomodelo_id",
+            "atracao_id",
+            name="uq_eventomodeloatracao_atracao",
+        ),
     )
