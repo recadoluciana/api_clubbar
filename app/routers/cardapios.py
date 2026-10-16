@@ -2,8 +2,11 @@ from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 import os
 import uuid
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import requests
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, model_validator
 from typing import Literal
 from sqlalchemy import func
@@ -11,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.core.security import get_usuario_logado
-from app.core.config import UPLOAD_PRODUTOS
+from app.core.config import PIXABAY_API_KEY, UPLOAD_PRODUTOS
 from app.database import get_db
 from app.models.cardapio import (
     Cardapio, CardapioItem, CardapioLoja, CardapioProgramacao, CardapioReajuste,
@@ -25,6 +28,53 @@ from app.utils.datetime_utils import FUSO_BRASIL
 
 
 router = APIRouter(tags=["Cardápios"])
+
+_PIXABAY_URL = "https://pixabay.com/api/"
+_PIXABAY_HEADERS = {
+    "User-Agent": "Clubbar/1.0 (suporte@clubbar.com.br)",
+}
+
+
+def _consultar_pixabay(parametros: dict) -> dict:
+    if not PIXABAY_API_KEY:
+        raise HTTPException(
+            503,
+            "A busca de fotos padronizadas não está configurada.",
+        )
+    try:
+        resposta = requests.get(
+            _PIXABAY_URL,
+            params={"key": PIXABAY_API_KEY, **parametros},
+            headers=_PIXABAY_HEADERS,
+            timeout=12,
+        )
+    except requests.RequestException:
+        raise HTTPException(
+            503,
+            "Não foi possível consultar as fotos padronizadas agora.",
+        )
+    if resposta.status_code == 429:
+        raise HTTPException(
+            429,
+            "O limite de busca de fotos foi atingido. Tente novamente em instantes.",
+        )
+    if resposta.status_code != 200:
+        raise HTTPException(
+            502,
+            "Não foi possível consultar as fotos padronizadas agora.",
+        )
+    try:
+        return resposta.json()
+    except ValueError:
+        raise HTTPException(502, "Resposta inválida da busca de fotos.")
+
+
+def _url_pixabay_valida(url: str) -> bool:
+    parsed = urlparse(url)
+    dominio = (parsed.hostname or "").lower()
+    return parsed.scheme == "https" and (
+        dominio == "pixabay.com" or dominio.endswith(".pixabay.com")
+    )
 
 
 def _agora_brasilia() -> datetime:
@@ -436,6 +486,91 @@ def _validar_organizacao_do_produto(organizacao_id: int, payload: dict) -> None:
     validar_gerenciamento_organizacao(payload, organizacao_id)
     if int(payload.get("organizacao_id") or 0) != organizacao_id:
         raise HTTPException(403, "A organização não pertence ao usuário.")
+
+
+@router.get("/organizacoes/{organizacao_id}/produtos/fotos-pixabay")
+def buscar_fotos_padronizadas_pixabay(
+    organizacao_id: int,
+    busca: str = Query(min_length=2, max_length=100),
+    payload=Depends(get_usuario_logado),
+):
+    """Retorna opções de foto da Pixabay sem expor a chave ao aplicativo."""
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    termo = busca.strip()
+    if len(termo) < 2:
+        raise HTTPException(422, "Informe pelo menos dois caracteres para buscar a foto.")
+    dados = _consultar_pixabay({
+        "q": termo,
+        "lang": "pt",
+        "image_type": "photo",
+        "safesearch": "true",
+        "order": "popular",
+        "per_page": 24,
+    })
+    return {
+        "fotos": [
+            {
+                "foto_id": foto.get("id"),
+                "preview_url": foto.get("webformatURL") or foto.get("previewURL"),
+                "pagina_url": foto.get("pageURL"),
+                "autor": foto.get("user") or "Pixabay",
+                "tags": foto.get("tags") or "",
+            }
+            for foto in dados.get("hits", [])
+            if foto.get("id") and (foto.get("webformatURL") or foto.get("previewURL"))
+        ],
+    }
+
+
+@router.post("/organizacoes/{organizacao_id}/produtos/fotos-pixabay/{foto_id}")
+def importar_foto_padronizada_pixabay(
+    organizacao_id: int,
+    foto_id: int,
+    payload=Depends(get_usuario_logado),
+):
+    """Copia a foto selecionada para o volume do Clubbar, evitando hotlinking."""
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    if foto_id <= 0:
+        raise HTTPException(422, "Foto inválida.")
+    dados = _consultar_pixabay({"id": foto_id, "image_type": "photo"})
+    fotos = dados.get("hits", [])
+    if not fotos:
+        raise HTTPException(404, "A foto escolhida não foi encontrada.")
+    url = str(fotos[0].get("webformatURL") or "").strip()
+    if not _url_pixabay_valida(url):
+        raise HTTPException(502, "A foto escolhida não possui uma URL válida.")
+    try:
+        resposta = requests.get(
+            url,
+            headers=_PIXABAY_HEADERS,
+            timeout=20,
+            stream=True,
+            allow_redirects=False,
+        )
+    except requests.RequestException:
+        raise HTTPException(503, "Não foi possível baixar a foto escolhida.")
+    tipo_conteudo = resposta.headers.get("content-type", "").split(";", 1)[0]
+    extensoes = {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+    }
+    extensao = extensoes.get(tipo_conteudo)
+    if resposta.status_code != 200 or extensao is None:
+        raise HTTPException(502, "Não foi possível baixar a foto escolhida.")
+    limite = 5 * 1024 * 1024
+    conteudo = bytearray()
+    for bloco in resposta.iter_content(chunk_size=64 * 1024):
+        conteudo.extend(bloco)
+        if len(conteudo) > limite:
+            raise HTTPException(422, "A foto escolhida excede o limite de 5 MB.")
+    if not conteudo:
+        raise HTTPException(502, "Não foi possível baixar a foto escolhida.")
+    os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
+    nome = f"produto_pixabay_{uuid.uuid4().hex}{extensao}"
+    with open(os.path.join(UPLOAD_PRODUTOS, nome), "wb") as arquivo:
+        arquivo.write(conteudo)
+    return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
 
 
 @router.post("/organizacoes/{organizacao_id}/produtos", status_code=201)
