@@ -36,7 +36,7 @@ from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
 from app.services.evento_imagem_service import imagem_evento
 from app.services.evento_disponibilidade_service import (
-    validar_evento_unico_por_loja_data_local,
+    validar_evento_unico_por_loja_data,
 )
 from app.services.reserva_ingresso_service import (
     lote_global_ativo,
@@ -999,11 +999,10 @@ def atualizar_evento(
             valor is not None
             for valor in (loja_id, dtinicioevento, nmlocalevento, statusevento)
         ):
-            validar_evento_unico_por_loja_data_local(
+            validar_evento_unico_por_loja_data(
                 db,
                 loja_id=nova_loja_id,
                 inicio=novo_inicio,
-                local=novo_local,
                 ignorar_evento_id=evento.evento_id,
             )
 

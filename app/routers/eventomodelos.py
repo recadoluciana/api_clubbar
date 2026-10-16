@@ -14,7 +14,7 @@ from app.models.eventomodelo import EventoModelo
 from app.models.eventomodeloatracao import EventoModeloAtracao
 from app.services.agenda_service import obter_ou_criar_agenda
 from app.services.evento_disponibilidade_service import (
-    validar_evento_unico_por_loja_data_local,
+    validar_evento_unico_por_loja_data,
 )
 from app.models.eventoatracao import EventoAtracao
 from app.models.atracao import Atracao
@@ -349,11 +349,10 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
     for i in range(dados.repeticoes):
         inicio=_somar_mes(dados.dtinicio,i) if dados.recorrencia=="MENSAL" else dados.dtinicio+timedelta(days=i*(14 if dados.recorrencia=="QUINZENAL" else 7 if dados.recorrencia=="SEMANAL" else 0))
         local_evento = dados.local or x.nmlocalevento
-        validar_evento_unico_por_loja_data_local(
+        validar_evento_unico_por_loja_data(
             db,
             loja_id=loja.loja_id,
             inicio=inicio,
-            local=local_evento,
         )
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
         evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
