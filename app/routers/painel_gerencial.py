@@ -146,6 +146,11 @@ def painel_gerencial(
         filtros_mes.append(Venda.loja_id == loja_id)
 
     pedidos_mes = db.query(func.count(Venda.venda_id)).filter(*filtros_mes).scalar()
+    produtos_pagos_mes = (
+        db.query(func.count(Venda.venda_id))
+        .filter(*filtros_mes, Venda.tipovenda == "PRODUTO")
+        .scalar()
+    )
 
     quantidade = func.coalesce(ItVenda.qtitvenda, 1)
     valor_bruto_item = quantidade * ItVenda.vrunititvenda
@@ -265,6 +270,7 @@ def painel_gerencial(
         "total_produtos_mes": total_produtos_mes,
         "total_ingressos_mes": total_ingressos_mes,
         "pedidos_mes": int(pedidos_mes or 0),
+        "produtos_pagos_mes": int(produtos_pagos_mes or 0),
         "ingressos_vendidos_mes": int(ingressos_vendidos or 0),
         "participacao_lojas": participacao_lojas,
         "produtos_mais_vendidos": [
