@@ -34,7 +34,9 @@ from app.services.reserva_ingresso_service import (
     lote_global_ativo,
     quantidade_disponivel_configuracao,
     quantidade_disponivel_modalidade,
+    quantidade_reservada_modalidade,
     quantidade_reservada,
+    quantidade_vendida_modalidade,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
 from app.utils.datetime_utils import FUSO_BRASIL
@@ -804,6 +806,57 @@ def adicionar_modalidade_ao_setor(
     db.add(EventoLotePreco(lote_id=lote_id, **_dados_preco_catalogo(db, data)))
     db.commit()
     return {"mensagem": "Modalidade incluída no setor e habilitada para o evento."}
+
+
+@router.put("/lotes/{lote_id}/modalidades/{lotepreco_id}")
+def atualizar_modalidade_do_setor(
+    lote_id: int,
+    lotepreco_id: int,
+    data: EventoLotePrecoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Edita uma modalidade sem sincronizar nem excluir as outras do setor."""
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == lote_id).first()
+    if not lote:
+        raise HTTPException(404, "Configuração do setor não encontrada")
+    global_ = _carregar_global(db, lote.loteglobal_id)
+    validar_mutacao_loja(usuario, global_.organizacao_id, global_.loja_id)
+    evento = db.query(Evento).filter(Evento.evento_id == global_.evento_id).first()
+    validar_evento_editavel(evento)
+    preco = (
+        db.query(EventoLotePreco)
+        .filter(
+            EventoLotePreco.lotepreco_id == lotepreco_id,
+            EventoLotePreco.lote_id == lote_id,
+        )
+        .with_for_update()
+        .first()
+    )
+    if not preco:
+        raise HTTPException(404, "Modalidade não encontrada neste setor do lote")
+    if int(data.modalidade_id) != int(preco.modalidade_id):
+        raise HTTPException(422, "A modalidade não pode ser alterada nesta edição")
+
+    _validar_limites_modalidades(lote, [data])
+    limite_usado = (
+        quantidade_vendida_modalidade(db, preco.lotepreco_id)
+        + quantidade_reservada_modalidade(db, preco.lotepreco_id)
+    )
+    if data.qtlimitemodalidade is not None and int(data.qtlimitemodalidade) < limite_usado:
+        raise HTTPException(
+            422,
+            "O limite da modalidade não pode ser menor que as vendas e reservas existentes.",
+        )
+
+    dados = _dados_preco_catalogo(db, data)
+    preco.nmpreco = data.nmpreco.strip()
+    preco.vrpreco = dados["vrpreco"]
+    preco.qtlimitemodalidade = dados["qtlimitemodalidade"]
+    preco.nrminutosaposinicio = dados["nrminutosaposinicio"]
+    preco.travarentradaaposlimite = dados["travarentradaaposlimite"]
+    db.commit()
+    return {"mensagem": "Modalidade atualizada com sucesso"}
 
 
 @router.patch("/lotes/{lote_id}/modalidades/{lotepreco_id}/situacao")
