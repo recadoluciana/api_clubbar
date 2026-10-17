@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
@@ -198,17 +198,32 @@ def _dados_preco_catalogo(db: Session, preco) -> dict:
     ).first()
     if not modalidade:
         raise HTTPException(422, "Modalidade de ingresso inexistente ou inativa")
+    eh_cortesia = (modalidade.cdmodalidade or "").upper() == "CORTESIA"
+    if preco.travarentradaaposlimite and not eh_cortesia:
+        raise HTTPException(422, "A trava de entrada é permitida somente para cortesias.")
     return {
         "modalidade_id": modalidade.modalidade_id,
         "nmpreco": preco.nmpreco if modalidade.permitepersonalizarnome else modalidade.nmmodalidade,
         "tipopreco": modalidade.cdmodalidade,
         "vrpreco": preco.vrpreco,
         "qtlimitemodalidade": preco.qtlimitemodalidade,
+        "nrminutosaposinicio": preco.nrminutosaposinicio if eh_cortesia else None,
+        "travarentradaaposlimite": bool(preco.travarentradaaposlimite) if eh_cortesia else False,
         "aplicacotalegal": bool(modalidade.aplicacotalegal),
         "exigecomprovante": bool(modalidade.exigecomprovante),
         "situacao": preco.situacao,
         "nrordem": preco.nrordem,
     }
+
+
+def _limite_entrada_cortesia(evento: Evento, preco: EventoLotePreco) -> datetime | None:
+    if (
+        (preco.tipopreco or "").upper() != "CORTESIA"
+        or not preco.nrminutosaposinicio
+        or not evento.dtinicioevento
+    ):
+        return None
+    return evento.dtinicioevento + timedelta(minutes=int(preco.nrminutosaposinicio))
 
 
 def _validar_limites_modalidades(lote: EventoLote, precos) -> None:
@@ -342,6 +357,16 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                     int(preco.qtlimitemodalidade)
                     if preco.qtlimitemodalidade is not None
                     else None
+                ),
+                "nrminutosaposinicio": (
+                    int(preco.nrminutosaposinicio)
+                    if preco.nrminutosaposinicio is not None
+                    else None
+                ),
+                "travarentradaaposlimite": bool(preco.travarentradaaposlimite),
+                "horariolimiteentradacortesia": (
+                    _limite_entrada_cortesia(evento, preco).strftime("%H:%M")
+                    if _limite_entrada_cortesia(evento, preco) else None
                 ),
                 "qtdisponivelmodalidade": (
                     min(disponibilidade, quantidade_disponivel_modalidade(db, preco))

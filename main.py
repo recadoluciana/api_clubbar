@@ -392,6 +392,8 @@ def garantir_catalogo_ingressos() -> None:
             if "eventolotesetorpreco" in inspector.get_table_names():
                 adicionar_coluna("eventolotesetorpreco", "modalidade_id", "BIGINT NULL AFTER lote_id")
                 adicionar_coluna("eventolotesetorpreco", "qtlimitemodalidade", "BIGINT NULL AFTER vrpreco")
+                adicionar_coluna("eventolotesetorpreco", "nrminutosaposinicio", "INT NULL AFTER qtlimitemodalidade")
+                adicionar_coluna("eventolotesetorpreco", "travarentradaaposlimite", "TINYINT(1) NOT NULL DEFAULT 0 AFTER nrminutosaposinicio")
                 conexao.execute(text("""
                     UPDATE eventolotesetorpreco p JOIN modalidadeingresso m ON m.cdmodalidade=p.tipopreco
                     SET p.modalidade_id=m.modalidade_id WHERE p.modalidade_id IS NULL
@@ -983,6 +985,8 @@ def reconstruir_lotes_globais() -> None:
                       tipopreco VARCHAR(30) NOT NULL,
                       vrpreco DECIMAL(10,2) NOT NULL,
                       qtlimitemodalidade BIGINT NULL,
+                      nrminutosaposinicio INT NULL,
+                      travarentradaaposlimite BOOLEAN NOT NULL DEFAULT FALSE,
                       aplicacotalegal BOOLEAN NOT NULL DEFAULT FALSE,
                       exigecomprovante BOOLEAN NOT NULL DEFAULT FALSE,
                       situacao VARCHAR(10) NOT NULL DEFAULT 'ATIVO',

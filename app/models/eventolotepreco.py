@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -16,6 +16,9 @@ class EventoLotePreco(Base):
     # Limite comercial opcional da modalidade dentro da capacidade compartilhada
     # do setor no lote. Nulo significa que só se aplica o limite do setor.
     qtlimitemodalidade = Column(BigInteger, nullable=True)
+    # Regra exclusiva para cortesias: prazo contado a partir do início do evento.
+    nrminutosaposinicio = Column(Integer, nullable=True)
+    travarentradaaposlimite = Column(Boolean, nullable=False, server_default="0")
     aplicacotalegal = Column(Boolean, nullable=False, server_default="0")
     exigecomprovante = Column(Boolean, nullable=False, server_default="0")
     situacao = Column(String(10), nullable=False, server_default="ATIVO")

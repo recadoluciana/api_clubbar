@@ -443,6 +443,7 @@ def enviar_ingressos_confirmados(
           <p style='margin:0 0 4px;color:#444'><b>Participante:</b> {escape(item['participante'])}</p>
           <p style='margin:0 0 4px;color:#444'><b>Data:</b> {escape(item['data_evento'])}</p>
           <p style='margin:0 0 14px;color:#444'><b>Local:</b> {escape(item['local'])}</p>
+          {f"<p style='margin:0 0 14px;color:#b05b00;font-weight:bold'>{escape(item.get('aviso_entrada', ''))}</p>" if item.get('aviso_entrada') else ''}
           <img src='{escape(item['qr_url'], quote=True)}' width='260' height='260' alt='QR Code do ingresso' style='display:block;width:260px;max-width:100%;height:auto;margin:12px auto;background:#fff'>
           <a href='{escape(item['link'], quote=True)}' style='display:inline-block;padding:12px 18px;background:#16954a;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Abrir QR Code do ingresso</a>
         </div>

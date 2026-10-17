@@ -1,5 +1,6 @@
 """Página pública, não indexável, usada nos links de ingresso enviados ao cliente."""
 
+from datetime import timedelta
 from html import escape
 
 from fastapi import APIRouter, Depends
@@ -72,6 +73,10 @@ def exibir_ingresso(token: str, db: Session = Depends(get_db)):
     lote_texto = escape(lote.nmlote or "")
     setor_texto = escape(setor.nmsetor or "") if setor else ""
     modalidade = escape(preco.nmpreco or "") if preco else ""
+    aviso_entrada = ""
+    if preco and (preco.tipopreco or "").upper() == "CORTESIA" and preco.nrminutosaposinicio and evento.dtinicioevento:
+        limite = evento.dtinicioevento + timedelta(minutes=int(preco.nrminutosaposinicio))
+        aviso_entrada = f"Válido para entrada até as {limite.strftime('%H:%M')} horas."
     dados_qr = dados_qr_ingresso(item.qrtokenitvenda)
     bloco_qr = (
         "<div style='padding:18px;background:#fff;border-radius:14px;display:inline-block'>"
@@ -95,6 +100,7 @@ def exibir_ingresso(token: str, db: Session = Depends(get_db)):
             <p style='margin:6px 0'><b>Local:</b> {local}</p>
             {f"<p style='margin:6px 0;color:#555'>{endereco}</p>" if endereco else ""}
             {f"<p style='margin:16px 0;color:#6840c8;font-weight:bold'>{detalhes}</p>" if detalhes else ""}
+            {f"<p style='margin:16px 0;color:#b05b00;font-weight:bold'>{escape(aviso_entrada)}</p>" if aviso_entrada else ""}
             <div style='margin-top:24px'>{bloco_qr}</div>
           </section>
         </main></body></html>""",

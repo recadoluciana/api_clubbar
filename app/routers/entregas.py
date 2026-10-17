@@ -530,6 +530,34 @@ def _validar_data_do_ingresso(db: Session, evento: Evento | None, item: ItVenda)
         ),
     )
 
+def _limite_entrada_cortesia(evento: Evento | None, preco: EventoLotePreco | None) -> datetime | None:
+    if (
+        not evento
+        or not preco
+        or (preco.tipopreco or "").upper() != "CORTESIA"
+        or not preco.nrminutosaposinicio
+        or not evento.dtinicioevento
+    ):
+        return None
+    return evento.dtinicioevento + timedelta(minutes=int(preco.nrminutosaposinicio))
+
+
+def _validar_horario_entrada_cortesia(db: Session, evento: Evento | None, item: ItVenda) -> None:
+    if (item.tipoitem or "").upper() != "INGRESSO" or not item.lotepreco_id:
+        return
+    preco = db.query(EventoLotePreco).filter(
+        EventoLotePreco.lotepreco_id == item.lotepreco_id
+    ).first()
+    limite = _limite_entrada_cortesia(evento, preco)
+    if limite and preco and bool(preco.travarentradaaposlimite) and _agora_brasil() > limite:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Entrada não permitida. Ingresso válido apenas para entrada até as "
+                f"{limite.strftime('%H:%M')} horas."
+            ),
+        )
+
 
 def _formatar_endereco_estabelecimento(
     endereco: str | None,
@@ -627,6 +655,8 @@ def listar_itens_nao_entregues(
             PedidoEntrega.dtrecebimento.label('dtrecebimentoentrega'),
             EventoLotePreco.nmpreco.label("nmprecoingresso"),
             EventoLotePreco.tipopreco.label("tipoprecoingresso"),
+            EventoLotePreco.nrminutosaposinicio.label("nrminutosaposinicio"),
+            EventoLotePreco.travarentradaaposlimite.label("travarentradaaposlimite"),
             EventoSetor.nmsetor.label("nmsetoringresso"),
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -749,6 +779,12 @@ def listar_itens_nao_entregues(
             "tipopreco": row.tipoprecoingresso,
             "nmpreco": row.nmprecoingresso,
             "nmsetor": row.nmsetoringresso,
+            "horariolimiteentradacortesia": (
+                (row.dtinicioevento + timedelta(minutes=int(row.nrminutosaposinicio))).strftime("%H:%M")
+                if row.tipoprecoingresso == "CORTESIA" and row.dtinicioevento and row.nrminutosaposinicio
+                else None
+            ),
+            "travarentradaaposlimite": bool(row.travarentradaaposlimite),
             "tipobeneficio": row.tipobeneficio,
             "tipo_ingresso": _descricao_tipo_ingresso(
                 row.nmsetoringresso,
@@ -2190,6 +2226,11 @@ def buscar_item_por_token(
         "nmsetor": setor.nmsetor if setor else "",
         "nmpreco": preco.nmpreco if preco else "",
         "tipopreco": preco.tipopreco if preco else "",
+        "horariolimiteentradacortesia": (
+            _limite_entrada_cortesia(evento, preco).strftime("%H:%M")
+            if _limite_entrada_cortesia(evento, preco) else None
+        ),
+        "travarentradaaposlimite": bool(preco.travarentradaaposlimite) if preco else False,
 
         "qtitvenda": item.qtitvenda or 1,
         "dsobsitvenda": item.dsobsitvenda or "",
@@ -2362,6 +2403,7 @@ def entregar_produto_por_token(
         "I" if item.tipoitem == "INGRESSO" else "P",
     )
     _validar_data_do_ingresso(db, evento, item)
+    _validar_horario_entrada_cortesia(db, evento, item)
     if evento_id is not None and (evento is None or evento.evento_id != evento_id):
         raise HTTPException(
             status_code=409,

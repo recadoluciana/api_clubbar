@@ -10,10 +10,18 @@ class EventoLotePrecoIn(BaseModel):
     tipopreco: str | None = Field(default=None, max_length=40)
     vrpreco: float = Field(ge=0)
     qtlimitemodalidade: int | None = Field(default=None, gt=0)
+    nrminutosaposinicio: int | None = Field(default=None, ge=1, le=1440)
+    travarentradaaposlimite: bool = False
     aplicacotalegal: bool = False
     exigecomprovante: bool = False
     situacao: Literal["ATIVO", "INATIVO"] = "ATIVO"
     nrordem: int = Field(default=1, ge=1)
+
+    @model_validator(mode="after")
+    def prazo_de_entrada_valido(self):
+        if self.travarentradaaposlimite and not self.nrminutosaposinicio:
+            raise ValueError("Informe os minutos após o início para travar a entrada.")
+        return self
 
 class EventoLoteSetorIn(BaseModel):
     eventosetor_id: int
