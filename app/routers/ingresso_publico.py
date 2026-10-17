@@ -2,10 +2,8 @@
 
 from html import escape
 
-import qrcode
 from fastapi import APIRouter, Depends
-from fastapi.responses import HTMLResponse
-from qrcode.image.svg import SvgPathImage
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -16,24 +14,32 @@ from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.venda import Venda
+from app.services.ingresso_qrcode_service import dados_qr_ingresso, gerar_qr_png, gerar_qr_svg
 from app.utils.datetime_utils import formatar_data_br
 
 
 router = APIRouter(prefix="/publico/ingressos", tags=["Ingressos públicos"])
 
 
-def _svg_qr(dados: str) -> str:
-    qr = qrcode.QRCode(
-        version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=8,
-        border=4,
+def _buscar_ingresso(db: Session, token: str):
+    if len(token) < 24:
+        return None
+    return (
+        db.query(ItVenda, Venda, Evento, Loja, EventoLote, EventoLotePreco, EventoSetor)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
+        .filter(
+            ItVenda.qrtokenitvenda == token,
+            ItVenda.tipoitem == "INGRESSO",
+            Venda.sitvenda == "PAGA",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .first()
     )
-    qr.add_data(dados)
-    qr.make(fit=True)
-    imagem = qr.make_image(image_factory=SvgPathImage)
-    svg = imagem.to_string(encoding="unicode")
-    return svg.replace("<svg ", "<svg role='img' aria-label='QR Code do ingresso' ", 1)
 
 
 def _pagina_erro(mensagem: str, status_code: int) -> HTMLResponse:
@@ -52,31 +58,11 @@ def _pagina_erro(mensagem: str, status_code: int) -> HTMLResponse:
 @router.get("/{token}", response_class=HTMLResponse)
 def exibir_ingresso(token: str, db: Session = Depends(get_db)):
     """Mostra o QR por token opaco. Não expõe CPF, e-mail ou dados da conta."""
-    if len(token) < 24:
-        return _pagina_erro("Link de ingresso inválido.", 404)
-
-    registro = (
-        db.query(ItVenda, Venda, Evento, Loja, EventoLote, EventoLotePreco, EventoSetor)
-        .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .join(Loja, Loja.loja_id == Venda.loja_id)
-        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
-        .join(Evento, Evento.evento_id == EventoLote.evento_id)
-        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
-        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
-        .filter(
-            ItVenda.qrtokenitvenda == token,
-            ItVenda.tipoitem == "INGRESSO",
-            Venda.sitvenda == "PAGA",
-        )
-        .first()
-    )
+    registro = _buscar_ingresso(db, token)
     if not registro:
         return _pagina_erro("Ingresso não encontrado.", 404)
 
     item, _, evento, loja, lote, preco, setor = registro
-    if item.sititvenda != "ATIVO":
-        return _pagina_erro("Este ingresso foi cancelado.", 409)
-
     utilizado = (item.identregaitvenda or "NAO").upper() == "SIM"
     titulo = escape(evento.nmtituloevento or "Evento Clubbar")
     participante = escape(item.nmparticipante or "Participante")
@@ -86,10 +72,10 @@ def exibir_ingresso(token: str, db: Session = Depends(get_db)):
     lote_texto = escape(lote.nmlote or "")
     setor_texto = escape(setor.nmsetor or "") if setor else ""
     modalidade = escape(preco.nmpreco or "") if preco else ""
-    dados_qr = f"CLUBBAR-INGRESSO:{item.qrtokenitvenda}"
+    dados_qr = dados_qr_ingresso(item.qrtokenitvenda)
     bloco_qr = (
         "<div style='padding:18px;background:#fff;border-radius:14px;display:inline-block'>"
-        f"{_svg_qr(dados_qr)}</div><p style='font-weight:bold;color:#167c3e'>Apresente este QR Code na entrada.</p>"
+        f"{gerar_qr_svg(dados_qr)}</div><p style='font-weight:bold;color:#167c3e'>Apresente este QR Code na entrada.</p>"
         if not utilizado
         else "<p style='padding:12px;background:#ffe7e7;color:#ad1717;border-radius:10px;font-weight:bold'>Este ingresso já foi utilizado.</p>"
     )
@@ -113,4 +99,18 @@ def exibir_ingresso(token: str, db: Session = Depends(get_db)):
           </section>
         </main></body></html>""",
         headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
+    )
+
+
+@router.get("/{token}/qr.png")
+def baixar_qr_ingresso(token: str, db: Session = Depends(get_db)):
+    """Imagem anexável/exibível no e-mail para uso mesmo sem conexão."""
+    registro = _buscar_ingresso(db, token)
+    if not registro:
+        return _pagina_erro("Ingresso não encontrado.", 404)
+    item, *_ = registro
+    return Response(
+        content=gerar_qr_png(dados_qr_ingresso(item.qrtokenitvenda)),
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=86400", "X-Robots-Tag": "noindex, nofollow"},
     )

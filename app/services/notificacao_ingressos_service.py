@@ -9,6 +9,7 @@ from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.venda import Venda
 from app.services.email_service import enviar_ingressos_confirmados
+from app.services.ingresso_qrcode_service import dados_qr_ingresso
 from app.services.public_urls import url_api_publica
 from app.utils.datetime_utils import formatar_data_br
 
@@ -51,6 +52,8 @@ def enviar_ingressos_confirmados_da_venda(db: Session, venda_id: int) -> bool:
                 "data_evento": formatar_data_br(evento.dtinicioevento) or "A confirmar",
                 "local": evento.nmlocalevento or loja.nmloja or "A confirmar",
                 "link": f"{base_url}/publico/ingressos/{token}",
+                "qr_url": f"{base_url}/publico/ingressos/{token}/qr.png",
+                "dados_qr": dados_qr_ingresso(token),
             }
         )
 

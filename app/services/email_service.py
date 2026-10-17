@@ -1,5 +1,6 @@
 import os
 import smtplib
+from base64 import b64encode
 from email.message import EmailMessage
 from email.utils import parseaddr
 from html import escape
@@ -8,6 +9,7 @@ import httpx
 from fastapi import HTTPException
 from app.services.email_templates import template_email_clubbar
 from app.services.public_urls import url_partner_publico, url_site_publico
+from app.services.ingresso_qrcode_service import gerar_qr_png
 
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
@@ -21,17 +23,32 @@ SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes", "sim"}
 
 
-def _enviar_email(destinatario: str, assunto: str, html: str) -> None:
+def _enviar_email(
+    destinatario: str,
+    assunto: str,
+    html: str,
+    anexos: list[dict[str, object]] | None = None,
+) -> None:
     if not BREVO_API_KEY:
         raise HTTPException(status_code=500, detail="BREVO_API_KEY não configurada.")
+    corpo = {
+        "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
+        "to": [{"email": destinatario}],
+        "subject": assunto,
+        "htmlContent": html,
+    }
+    if anexos:
+        corpo["attachment"] = [
+            {
+                "name": str(anexo["nome"]),
+                "content": b64encode(bytes(anexo["conteudo"])).decode("ascii"),
+            }
+            for anexo in anexos
+        ]
+
     response = httpx.post(
         "https://api.brevo.com/v3/smtp/email",
-        json={
-            "sender": {"name": BREVO_FROM_NAME, "email": BREVO_FROM_EMAIL},
-            "to": [{"email": destinatario}],
-            "subject": assunto,
-            "htmlContent": html,
-        },
+        json=corpo,
         headers={
             "accept": "application/json",
             "content-type": "application/json",
@@ -43,10 +60,15 @@ def _enviar_email(destinatario: str, assunto: str, html: str) -> None:
         raise HTTPException(status_code=502, detail="Não foi possível enviar o e-mail.")
 
 
-def _enviar_email_smtp(destinatario: str, assunto: str, html: str) -> None:
+def _enviar_email_smtp(
+    destinatario: str,
+    assunto: str,
+    html: str,
+    anexos: list[dict[str, object]] | None = None,
+) -> None:
     """Envia avisos operacionais diretamente pelo servidor de e-mail do Clubbar."""
     if not all([SMTP_HOST, SMTP_USER, SMTP_PASSWORD]):
-        _enviar_email(destinatario, assunto, html)
+        _enviar_email(destinatario, assunto, html, anexos)
         return
 
     nome_remetente, email_remetente = parseaddr(SMTP_FROM)
@@ -57,6 +79,13 @@ def _enviar_email_smtp(destinatario: str, assunto: str, html: str) -> None:
     mensagem['To'] = destinatario
     mensagem.set_content('Este aviso do Clubbar contém uma versão em HTML.')
     mensagem.add_alternative(html, subtype='html')
+    for anexo in anexos or []:
+        mensagem.add_attachment(
+            bytes(anexo["conteudo"]),
+            maintype="image",
+            subtype="png",
+            filename=str(anexo["nome"]),
+        )
 
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as servidor:
         if SMTP_USE_TLS:
@@ -403,6 +432,7 @@ def enviar_ingressos_confirmados(
     if not destinatario or not ingressos:
         return
 
+    anexos: list[dict[str, object]] = []
     cartoes = "".join(
         f"""
         <div style='margin:16px 0;padding:18px;border:1px solid #e4e4e4;border-radius:12px'>
@@ -410,16 +440,25 @@ def enviar_ingressos_confirmados(
           <p style='margin:0 0 4px;color:#444'><b>Participante:</b> {escape(item['participante'])}</p>
           <p style='margin:0 0 4px;color:#444'><b>Data:</b> {escape(item['data_evento'])}</p>
           <p style='margin:0 0 14px;color:#444'><b>Local:</b> {escape(item['local'])}</p>
+          <img src='{escape(item['qr_url'], quote=True)}' width='260' height='260' alt='QR Code do ingresso' style='display:block;width:260px;max-width:100%;height:auto;margin:12px auto;background:#fff'>
           <a href='{escape(item['link'], quote=True)}' style='display:inline-block;padding:12px 18px;background:#16954a;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Abrir QR Code do ingresso</a>
         </div>
         """
-        for item in ingressos
+        for indice, item in enumerate(ingressos, start=1)
     )
+    for indice, item in enumerate(ingressos, start=1):
+        anexos.append(
+            {
+                "nome": f"ingresso-clubbar-{indice}.png",
+                "conteudo": gerar_qr_png(item["dados_qr"]),
+            }
+        )
     conteudo = f"""
     <p>Olá, <b>{escape(nome_cliente or 'cliente')}</b>.</p>
     <p>Seu pagamento/resgate foi confirmado. Apresente o QR Code abaixo na entrada do evento.</p>
     {cartoes}
-    <p style='color:#666;font-size:14px'>Cada link é pessoal. Não o encaminhe para pessoas que não devam usar o ingresso.</p>
+    <p style='color:#666;font-size:14px'>O QR Code já está nesta mensagem e também foi anexado como imagem PNG. Salve-o no seu celular antes de sair de casa para apresentá-lo mesmo sem internet.</p>
+    <p style='color:#666;font-size:14px'>Cada ingresso é pessoal. Não o encaminhe para pessoas que não devam usá-lo.</p>
     """
     _enviar_email_smtp(
         destinatario,
@@ -429,4 +468,5 @@ def enviar_ingressos_confirmados(
             subtitulo="Seu QR Code já está disponível.",
             conteudo_html=conteudo,
         ),
+        anexos,
     )
