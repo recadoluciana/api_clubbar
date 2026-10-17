@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 import os
 import uuid
@@ -31,6 +31,7 @@ from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.lojapoliticaingresso import LojaPoliticaIngresso
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
+from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.schemas.evento import EventoOutBR
 from app.core.config import UPLOAD_EVENTOS
@@ -452,6 +453,97 @@ def resumo_evento_para_ticketman(
     if resultado is None:
         raise HTTPException(404, "Evento não encontrado no estabelecimento.")
     return _resumo_leitor_ingressos(db, *resultado)
+
+
+@router.get("/{evento_id}/leitor-ingressos")
+def listar_ingressos_para_ticketman(
+    evento_id: int,
+    situacao: str = "VENDIDOS",
+    payload: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Lista os ingressos do evento para consulta operacional do Ticketman."""
+    usuario = _ticketman_logado(db, payload)
+    evento = (
+        db.query(Evento)
+        .filter(Evento.evento_id == evento_id, Evento.loja_id == usuario.loja_id)
+        .first()
+    )
+    if evento is None:
+        raise HTTPException(404, "Evento não encontrado no estabelecimento.")
+
+    situacao = situacao.strip().upper()
+    if situacao not in {"VENDIDOS", "VALIDADOS", "PENDENTES"}:
+        raise HTTPException(422, "Situação de ingresso inválida.")
+
+    filtros = [
+        EventoLote.evento_id == evento.evento_id,
+        ItVenda.tipoitem == "INGRESSO",
+        ItVenda.sititvenda == "ATIVO",
+        Venda.sitvenda == "PAGA",
+    ]
+    if situacao == "VALIDADOS":
+        filtros.append(ItVenda.identregaitvenda == "SIM")
+    elif situacao == "PENDENTES":
+        filtros.append(
+            or_(
+                ItVenda.identregaitvenda.is_(None),
+                ItVenda.identregaitvenda != "SIM",
+            )
+        )
+
+    rows = (
+        db.query(
+            ItVenda.itvenda_id,
+            ItVenda.qtitvenda,
+            ItVenda.nmparticipante,
+            ItVenda.cpfparticipante,
+            ItVenda.identregaitvenda,
+            ItVenda.dtentregaitvenda,
+            Venda.dtcriacao.label("dtcompra"),
+            Cliente.nmcliente,
+            EventoLoteGlobal.nrlote,
+            EventoLoteGlobal.nmlote,
+            EventoSetor.nmsetor,
+            EventoLotePreco.nmpreco,
+            EventoLotePreco.tipopreco,
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(EventoLoteGlobal, EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id)
+        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
+        .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .filter(*filtros)
+        .order_by(ItVenda.identregaitvenda.desc(), Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+        .all()
+    )
+
+    def _em_brasilia(valor: datetime | None) -> datetime | None:
+        if valor is None:
+            return None
+        return valor.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo"))
+
+    return {
+        "situacao": situacao,
+        "evento": evento.nmtituloevento,
+        "ingressos": [
+            {
+                "itvenda_id": int(row.itvenda_id),
+                "quantidade": int(row.qtitvenda or 1),
+                "participante": row.nmparticipante or "Não informado",
+                "cpf_participante": row.cpfparticipante or "",
+                "cliente": row.nmcliente or "Cliente não identificado",
+                "lote": row.nmlote or f"Lote {row.nrlote or ''}".strip(),
+                "setor": row.nmsetor or "Setor único",
+                "modalidade": row.nmpreco or row.tipopreco or "Ingresso",
+                "validado": row.identregaitvenda == "SIM",
+                "data_compra": _em_brasilia(row.dtcompra),
+                "data_validacao": _em_brasilia(row.dtentregaitvenda),
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/lojas/{loja_id}/proximos", response_model=list[EventoOutBR])

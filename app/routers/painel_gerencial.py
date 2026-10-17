@@ -33,6 +33,24 @@ def _inicio_local_em_utc_naive(data_local: date) -> datetime:
     ).replace(tzinfo=None)
 
 
+def _referencia_utc() -> datetime:
+    """Instante de referência serializável com o fuso UTC explícito."""
+    return datetime.now(timezone.utc)
+
+
+def _desde_em_utc_naive(desde: datetime) -> datetime:
+    """Normaliza a referência recebida para comparação com colunas UTC-naive.
+
+    Referências antigas do KPI não tinham sufixo de fuso e representavam o
+    horário brasileiro. Mantemos essa compatibilidade durante a atualização.
+    """
+    if desde.tzinfo is None:
+        return desde.replace(tzinfo=_FUSO_BRASIL).astimezone(timezone.utc).replace(
+            tzinfo=None
+        )
+    return desde.astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _inteiro_positivo(valor: object, nome: str) -> int:
     try:
         convertido = int(valor)  # type: ignore[arg-type]
@@ -286,11 +304,10 @@ def notificacoes_vendas(
         usuario,
         consolidado_por_organizacao=True,
     )
-    referencia = datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+    referencia = _referencia_utc()
     if desde is None:
         return {"referencia": referencia, "vendas": []}
-    if desde.tzinfo is not None:
-        desde = desde.astimezone(_FUSO_BRASIL).replace(tzinfo=None)
+    desde = _desde_em_utc_naive(desde)
 
     momento_venda = func.coalesce(Venda.dtultatu, Venda.dtcriacao)
     quantidade = func.coalesce(ItVenda.qtitvenda, 1)
@@ -325,7 +342,9 @@ def notificacoes_vendas(
                 "venda_id": int(venda.venda_id),
                 "tipo": str(venda.tipovenda),
                 "valor": _dinheiro(venda.valor),
-                "momento": venda.momento,
+                # As vendas são registradas em UTC. O sufixo explícito evita
+                # que o app interprete este valor como horário local.
+                "momento": venda.momento.replace(tzinfo=timezone.utc),
             }
             for venda in vendas
         ],
