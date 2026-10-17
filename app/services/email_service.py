@@ -386,3 +386,47 @@ def enviar_email_codigo(destinatario: str, codigo: str):
             status_code=502,
             detail='Não foi possível enviar o e-mail de recuperação.',
         )
+
+
+def enviar_ingressos_confirmados(
+    *,
+    destinatario: str,
+    nome_cliente: str,
+    ingressos: list[dict[str, str]],
+) -> None:
+    """Entrega os links individuais de QR Code depois da confirmação da venda.
+
+    O QR não é anexado como imagem: cada botão abre uma página pública protegida
+    pelo token aleatório do próprio ingresso. Assim o cliente também consegue
+    recuperar o ingresso pelo e-mail sem depender de instalar o aplicativo.
+    """
+    if not destinatario or not ingressos:
+        return
+
+    cartoes = "".join(
+        f"""
+        <div style='margin:16px 0;padding:18px;border:1px solid #e4e4e4;border-radius:12px'>
+          <p style='margin:0 0 8px;font-size:18px'><b>{escape(item['evento'])}</b></p>
+          <p style='margin:0 0 4px;color:#444'><b>Participante:</b> {escape(item['participante'])}</p>
+          <p style='margin:0 0 4px;color:#444'><b>Data:</b> {escape(item['data_evento'])}</p>
+          <p style='margin:0 0 14px;color:#444'><b>Local:</b> {escape(item['local'])}</p>
+          <a href='{escape(item['link'], quote=True)}' style='display:inline-block;padding:12px 18px;background:#16954a;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold'>Abrir QR Code do ingresso</a>
+        </div>
+        """
+        for item in ingressos
+    )
+    conteudo = f"""
+    <p>Olá, <b>{escape(nome_cliente or 'cliente')}</b>.</p>
+    <p>Seu pagamento/resgate foi confirmado. Apresente o QR Code abaixo na entrada do evento.</p>
+    {cartoes}
+    <p style='color:#666;font-size:14px'>Cada link é pessoal. Não o encaminhe para pessoas que não devam usar o ingresso.</p>
+    """
+    _enviar_email_smtp(
+        destinatario,
+        "Seus ingressos Clubbar estão prontos",
+        template_email_clubbar(
+            titulo="Ingresso confirmado",
+            subtitulo="Seu QR Code já está disponível.",
+            conteudo_html=conteudo,
+        ),
+    )

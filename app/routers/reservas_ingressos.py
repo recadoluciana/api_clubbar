@@ -16,6 +16,7 @@ from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesRes
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
+from app.services.notificacao_ingressos_service import enviar_ingressos_confirmados_da_venda
 from app.services.cortesia_evento_service import (
     bloquear_evento_para_cortesia,
     eh_modalidade_cortesia,
@@ -124,6 +125,12 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
     if float(reserva.vrtotal or 0) == 0:
         resultado_gratuito = finalizar_reserva_gratuita(db, reserva_id=reserva_id)
     db.commit()
+    if resultado_gratuito and not resultado_gratuito.get("already_processed"):
+        try:
+            enviar_ingressos_confirmados_da_venda(db, int(resultado_gratuito["venda_id"]))
+        except Exception as exc:
+            # A emissão nunca pode falhar porque o e-mail está indisponível.
+            print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
     return {**_saida(reserva), **(resultado_gratuito or {})}
 
 
@@ -243,6 +250,11 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
     if pagamento:
         resultado = finalizar_reserva_paga(db, reserva_id=reserva_id, checkout_id=checkout.checkout_asaas_id, pagamento=pagamento)
         db.commit()
+        if not resultado.get("already_processed"):
+            try:
+                enviar_ingressos_confirmados_da_venda(db, int(resultado["venda_id"]))
+            except Exception as exc:
+                print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
         return {**_saida(reserva), **resultado, "status_pagamento": "PAGO"}
     if reserva.dtexpiracao <= datetime.now():
         if checkout.payment_id:

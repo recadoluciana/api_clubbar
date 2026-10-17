@@ -23,3 +23,13 @@ def url_partner_publico() -> str:
 
 def url_logo_email() -> str:
     return f"{url_site_publico()}/assets/images/logo.png"
+
+
+def url_api_publica() -> str:
+    """URL estável usada em links que serão recebidos fora do aplicativo."""
+    configurada = os.getenv("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
+    if configurada:
+        return configurada
+    if ambiente_desenvolvimento():
+        return "https://apiclubbar-desenvolvimento.up.railway.app"
+    return "https://api.clubbar.com.br"
