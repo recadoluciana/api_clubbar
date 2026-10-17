@@ -14,7 +14,10 @@ from app.services.ingresso_qrcode_service import gerar_qr_png
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 BREVO_FROM_EMAIL = os.getenv("BREVO_FROM_EMAIL")
-BREVO_FROM_NAME = os.getenv("BREVO_FROM_NAME", "Clubbar")
+# A marca é escrita oficialmente como Clubbar em todas as comunicações.
+# Não usamos uma variável de ambiente aqui para evitar que uma configuração
+# antiga volte a alterar a grafia do remetente.
+BREVO_FROM_NAME = "Clubbar"
 SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "").strip()
@@ -71,11 +74,11 @@ def _enviar_email_smtp(
         _enviar_email(destinatario, assunto, html, anexos)
         return
 
-    nome_remetente, email_remetente = parseaddr(SMTP_FROM)
+    _, email_remetente = parseaddr(SMTP_FROM)
     email_remetente = email_remetente or SMTP_USER
     mensagem = EmailMessage()
     mensagem['Subject'] = assunto
-    mensagem['From'] = f'{nome_remetente} <{email_remetente}>' if nome_remetente else email_remetente
+    mensagem['From'] = f'Clubbar <{email_remetente}>'
     mensagem['To'] = destinatario
     mensagem.set_content('Este aviso do Clubbar contém uma versão em HTML.')
     mensagem.add_alternative(html, subtype='html')
