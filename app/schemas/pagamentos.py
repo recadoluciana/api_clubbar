@@ -73,6 +73,13 @@ class PagarNovoOut(BaseModel):
     status: str
 
 
+class ResgatarCortesiaProdutoIn(BaseModel):
+    cliente_id: int
+    organizacao_id: int
+    loja_id: int
+    cardapioitem_id: int
+
+
 class CriarPedidoEntregaIn(BaseModel):
     cliente_id: int
     organizacao_id: int

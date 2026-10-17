@@ -59,6 +59,34 @@ def _quantidade_resgatada(
     return int(consulta.scalar() or 0)
 
 
+def validar_cliente_sem_cortesia_pendente(
+    db: Session,
+    *,
+    cliente_id: int,
+    ignorar_venda_id: int | None = None,
+) -> None:
+    """Impede que um cliente acumule cortesias de produto não retiradas."""
+    consulta = (
+        db.query(ItVenda.itvenda_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            Venda.cliente_id == cliente_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+            ItVenda.identregaitvenda == "NAO",
+            ItVenda.vrunititvenda <= 0,
+        )
+    )
+    if ignorar_venda_id is not None:
+        consulta = consulta.filter(ItVenda.venda_id != ignorar_venda_id)
+    if consulta.first():
+        raise HTTPException(
+            409,
+            "Você já possui uma cortesia pendente na sua carteira. Retire-a antes de resgatar outra.",
+        )
+
+
 def validar_cortesia_disponivel(
     db: Session,
     *,
@@ -108,6 +136,22 @@ def validar_cortesias_da_venda(db: Session, venda_id: int) -> None:
         .order_by(ItVenda.cardapioitem_id)
         .all()
     )
+    total_cortesias = sum(int(quantidade or 0) for _, quantidade in grupos)
+    if total_cortesias > 1:
+        raise HTTPException(
+            422,
+            "Cortesia limitada a 1 unidade por resgate.",
+        )
+
+    if grupos:
+        venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+        if venda and venda.cliente_id:
+            validar_cliente_sem_cortesia_pendente(
+                db,
+                cliente_id=int(venda.cliente_id),
+                ignorar_venda_id=venda_id,
+            )
+
     for cardapioitem_id, quantidade in grupos:
         if int(quantidade or 0) > 1:
             raise HTTPException(

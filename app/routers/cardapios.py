@@ -290,26 +290,21 @@ def _preco_final_item(item: CardapioItem, agora: datetime) -> tuple[Decimal, boo
     return max(Decimal("0"), final).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ativo
 
 
-def _cortesia_disponivel_publicamente(
+def _dados_cortesia_publica(
     db: Session,
     item: CardapioItem,
     preco_final: Decimal,
     agora: datetime,
-) -> bool | None:
-    """Retorna a disponibilidade de um produto gratuito no cardápio público."""
+) -> dict[str, int | bool | None]:
+    """Retorna disponibilidade e saldo de um produto gratuito no cardápio público."""
     if preco_final > 0:
-        return None
+        return {
+            "cortesia_disponivel": None,
+            "qtcortesiasresgatadas": None,
+            "qtcortesiasrestantes": None,
+        }
 
     limite = int(item.qtcortesia or 0)
-    if (
-        limite <= 0
-        or item.dtinicortesia is None
-        or item.dtfimcortesia is None
-        or agora < item.dtinicortesia
-        or agora > item.dtfimcortesia
-    ):
-        return False
-
     resgatadas = (
         db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -322,7 +317,19 @@ def _cortesia_disponivel_publicamente(
         .scalar()
         or 0
     )
-    return int(resgatadas) < limite
+    restantes = max(0, limite - int(resgatadas))
+    disponivel = (
+        limite > 0
+        and item.dtinicortesia is not None
+        and item.dtfimcortesia is not None
+        and item.dtinicortesia <= agora <= item.dtfimcortesia
+        and restantes > 0
+    )
+    return {
+        "cortesia_disponivel": disponivel,
+        "qtcortesiasresgatadas": int(resgatadas),
+        "qtcortesiasrestantes": restantes,
+    }
 
 
 def _conteudo(
@@ -359,6 +366,12 @@ def _conteudo(
             tipo = ci.tipodesconto or "NENHUM"
             desconto = Decimal(ci.vrdesconto or 0)
             final, ativo = _preco_final_item(ci, agora)
+            dados_cortesia = _dados_cortesia_publica(
+                db,
+                ci,
+                final,
+                agora,
+            )
             produtos.append({
                 "cardapioitem_id": ci.cardapioitem_id,
                 "produto_id": produto.produto_id,
@@ -373,12 +386,7 @@ def _conteudo(
                 "vrpreco": float(preco),
                 "vrprecoprod": float(preco),
                 "vrprecofinal": float(final),
-                "cortesia_disponivel": _cortesia_disponivel_publicamente(
-                    db,
-                    ci,
-                    final,
-                    agora,
-                ),
+                **dados_cortesia,
                 "sititem": ci.sititem,
                 "sitproduto": produto.sitproduto,
                 "tipodesconto": tipo,

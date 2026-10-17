@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.security import get_usuario_logado
 from app.core.cliente_auth import exigir_cliente_autenticado
-from app.schemas.pagamentos import CriarPedidoEntregaIn, PagarNovoIn
+from app.schemas.pagamentos import (
+    CriarPedidoEntregaIn,
+    PagarNovoIn,
+    ResgatarCortesiaProdutoIn,
+)
 
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
@@ -40,7 +44,12 @@ from app.services.localidade_entrega_service import resolver_localidade_entrega
 from app.services.venda_service import criar_ou_obter_venda_idempotente, gerar_token_qr
 from app.services.pagamento_status_service import set_venda_como_paga
 
-from app.routers.produtos import calcular_preco_final
+from app.routers.produtos import calcular_preco_final, _itens_cardapio_em_exibicao
+from app.services.cortesia_produto_service import (
+    validar_cliente_sem_cortesia_pendente,
+    validar_cortesia_disponivel,
+)
+from app.utils.datetime_utils import FUSO_BRASIL
 
 from app.services.asaas_service import (
     obter_ou_criar_customer_asaas,
@@ -76,6 +85,150 @@ router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 def _exigir_valor_positivo(valor: float) -> None:
     if Decimal(str(valor)) <= 0:
         raise HTTPException(422, "O valor do pagamento deve ser maior que zero.")
+
+
+@router.post('/resgatar-cortesia-produto')
+async def resgatar_cortesia_produto_direta(
+    payload: ResgatarCortesiaProdutoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Resgata uma cortesia diretamente na carteira, sem usar o carrinho."""
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+
+    try:
+        validar_publicacao_loja(db, payload.loja_id)
+        loja = (
+            db.query(Loja)
+            .filter(
+                Loja.loja_id == payload.loja_id,
+                Loja.organizacao_id == payload.organizacao_id,
+            )
+            .first()
+        )
+        if not loja:
+            raise HTTPException(status_code=404, detail='Estabelecimento não encontrado.')
+
+        # O bloqueio da conta do cliente serializa resgates simultâneos e
+        # garante a regra de uma cortesia pendente por vez.
+        cliente = (
+            db.query(Cliente)
+            .filter(Cliente.cliente_id == payload.cliente_id)
+            .with_for_update()
+            .first()
+        )
+        if not cliente:
+            raise HTTPException(status_code=404, detail='Cliente não encontrado.')
+        validar_cliente_sem_cortesia_pendente(
+            db,
+            cliente_id=payload.cliente_id,
+        )
+
+        agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+        itens_visiveis = _itens_cardapio_em_exibicao(db, payload.loja_id, agora)
+        item_visivel = None
+        for candidato in itens_visiveis.values():
+            if int(candidato.cardapioitem_id) == payload.cardapioitem_id:
+                item_visivel = candidato
+                break
+        if not item_visivel:
+            raise HTTPException(status_code=404, detail='Produto não está disponível neste cardápio.')
+
+        item = (
+            db.query(CardapioItem)
+            .filter(CardapioItem.cardapioitem_id == payload.cardapioitem_id)
+            .with_for_update()
+            .first()
+        )
+        produto = (
+            db.query(Produto)
+            .filter(
+                Produto.produto_id == item.produto_id,
+                Produto.organizacao_id == payload.organizacao_id,
+                Produto.sitproduto == 'ATIVO',
+            )
+            .first()
+            if item
+            else None
+        )
+        if not item or not produto:
+            raise HTTPException(status_code=404, detail='Produto não encontrado.')
+
+        preco_final, _ = calcular_preco_final(
+            item.vrpreco,
+            tipodesconto=item.tipodesconto,
+            vrdesconto=item.vrdesconto,
+            dtinidesconto=item.dtinidesconto,
+            dtfimdesconto=item.dtfimdesconto,
+        )
+        if Decimal(str(preco_final)) > 0:
+            raise HTTPException(status_code=409, detail='Este produto não é uma cortesia disponível.')
+
+        validar_cortesia_disponivel(
+            db,
+            cardapioitem_id=payload.cardapioitem_id,
+            quantidade=1,
+            bloquear_item=True,
+        )
+
+        venda = Venda(
+            loja_id=payload.loja_id,
+            organizacao_id=payload.organizacao_id,
+            cliente_id=payload.cliente_id,
+            tipovenda='PRODUTO',
+            dsplataforma='OUTROS',
+            sitvenda='PENDENTE',
+            totalvenda=0,
+        )
+        db.add(venda)
+        db.flush()
+
+        item_venda = ItVenda(
+            venda_id=venda.venda_id,
+            tipoitem='PRODUTO',
+            produto_id=produto.produto_id,
+            cardapioitem_id=item.cardapioitem_id,
+            qtitvenda=1,
+            vrunititvenda=0,
+            identregaitvenda='NAO',
+            qrtokenitvenda=gerar_token_qr(),
+        )
+        db.add(item_venda)
+        db.flush()
+
+        pagamento = PagVenda(
+            venda_id=venda.venda_id,
+            dsmetodopag='CORTESIA',
+            vrpagvenda=0,
+            sitpagvenda='PENDENTE',
+            reference_id=f'CORTESIA-{venda.venda_id}',
+            provedor='CORTESIA',
+        )
+        db.add(pagamento)
+        db.flush()
+
+        set_venda_como_paga(
+            db,
+            venda_id=int(venda.venda_id),
+            gateway='CORTESIA',
+            payload={'id': f'CORTESIA-{venda.venda_id}', 'status': 'PAID'},
+            finalizar_carrinho=False,
+        )
+        db.commit()
+        return {
+            'ok': True,
+            'venda_id': int(venda.venda_id),
+            'itvenda_id': int(item_venda.itvenda_id),
+            'status': 'PAGA',
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        print('[CORTESIA_DIRETA][ERRO]', repr(exc))
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail='Não foi possível resgatar a cortesia.')
 
 
 @router.post('/resgatar-cortesia')
