@@ -138,13 +138,19 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
 
     cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
     if not cli:
-        raise HTTPException(status_code=401,detail="E-mail ou senha inválidos",)
+        raise HTTPException(
+            status_code=404,
+            detail="E-mail digitado não encontrado. Verifique o e-mail informado.",
+        )
 
     if cli.sitcliente != "ATIVO":
         raise HTTPException(status_code=403, detail="Cliente inativo")
 
     if not verificar_senha(data.senha, cli.senhahashcli):
-        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
+        raise HTTPException(
+            status_code=401,
+            detail="Senha não está correta. Verifique e tente novamente.",
+        )
 
     token = criar_jwt({"sub": str(cli.cliente_id), "role": "cliente"},expires_delta=timedelta(days=1000))
 
