@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
 from app.database import get_db
+from app.models.cliente import Cliente
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
+from app.models.eventolotepreco import EventoLotePreco
+from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
@@ -291,6 +295,196 @@ def painel_gerencial(
             }
             for row in ingressos_rows
         ],
+    }
+
+
+@router.get("/painel-gerencial/detalhes-vendas")
+def detalhes_vendas(
+    tipo: str = Query(pattern="^(PRODUTOS|INGRESSOS)$"),
+    ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
+    mes: Annotated[int | None, Query(ge=1, le=12)] = None,
+    limite: Annotated[int, Query(ge=1, le=1000)] = 500,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Lista os itens vendidos no período exibido pelo painel KPI.
+
+    O KPI é consolidado por organização, inclusive para o perfil MANAGER. Os
+    dados retornados são apenas operacionais: não incluem QR Codes, senhas,
+    links de pagamento nem identificadores de transação.
+    """
+    organizacao_id, _ = _extrair_escopo(
+        usuario,
+        consolidado_por_organizacao=True,
+    )
+    primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
+    inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
+    fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
+    filtros = [
+        Venda.organizacao_id == organizacao_id,
+        Venda.sitvenda == "PAGA",
+        Venda.dtcriacao >= inicio_mes,
+        Venda.dtcriacao < fim_exclusivo,
+        ItVenda.sititvenda == "ATIVO",
+    ]
+
+    if tipo == "PRODUTOS":
+        rows = (
+            db.query(
+                ItVenda.itvenda_id,
+                ItVenda.qtitvenda,
+                ItVenda.vrunititvenda,
+                ItVenda.vrtaxaitvenda,
+                ItVenda.identregaitvenda,
+                ItVenda.dtentregaitvenda,
+                ItVenda.nmuserentregaitvenda,
+                ItVenda.idcontrolebar,
+                ItVenda.nrmesa,
+                Venda.venda_id,
+                Venda.dtcriacao.label("dtcompra"),
+                Loja.nmloja,
+                Cliente.nmcliente,
+                Cliente.emailcliente,
+                Cliente.nrtelcliente,
+                Produto.nmproduto,
+            )
+            .join(Venda, Venda.venda_id == ItVenda.venda_id)
+            .join(Loja, Loja.loja_id == Venda.loja_id)
+            .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
+            .join(Produto, Produto.produto_id == ItVenda.produto_id)
+            .filter(*filtros, ItVenda.tipoitem == "PRODUTO")
+            .order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+            .limit(limite)
+            .all()
+        )
+        itens = []
+        for row in rows:
+            quantidade = int(row.qtitvenda or 0)
+            itens.append(
+                {
+                    "itvenda_id": int(row.itvenda_id),
+                    "venda_id": int(row.venda_id),
+                    "produto": row.nmproduto,
+                    "loja": row.nmloja,
+                    "cliente": row.nmcliente or "Cliente não identificado",
+                    "email_cliente": row.emailcliente or "",
+                    "telefone_cliente": row.nrtelcliente or "",
+                    "quantidade": quantidade,
+                    "preco_unitario": _dinheiro(row.vrunititvenda),
+                    "taxa": _dinheiro(row.vrtaxaitvenda),
+                    "valor_total": _dinheiro(
+                        Decimal(str(row.vrunititvenda or 0)) * quantidade
+                    ),
+                    "data_compra": row.dtcompra.replace(tzinfo=timezone.utc),
+                    "retirado": (row.identregaitvenda or "NAO").upper() == "SIM",
+                    "data_retirada": (
+                        row.dtentregaitvenda.replace(tzinfo=timezone.utc)
+                        if row.dtentregaitvenda
+                        else None
+                    ),
+                    "responsavel_retirada": row.nmuserentregaitvenda or "",
+                    "cortesia": Decimal(str(row.vrunititvenda or 0)) <= 0,
+                    "situacao_bar": str(row.idcontrolebar or "PENDENTE"),
+                    "mesa": row.nrmesa or "",
+                }
+            )
+    else:
+        rows = (
+            db.query(
+                ItVenda.itvenda_id,
+                ItVenda.qtitvenda,
+                ItVenda.vrunititvenda,
+                ItVenda.vrtaxaitvenda,
+                ItVenda.identregaitvenda,
+                ItVenda.dtentregaitvenda,
+                ItVenda.nmparticipante,
+                ItVenda.cpfparticipante,
+                ItVenda.nmmodalidadesnapshot,
+                Venda.venda_id,
+                Venda.dtcriacao.label("dtcompra"),
+                Loja.nmloja,
+                Cliente.nmcliente,
+                Cliente.emailcliente,
+                Cliente.nrtelcliente,
+                Evento.nmtituloevento,
+                Evento.dtinicioevento,
+                EventoLoteGlobal.nrlote,
+                EventoLoteGlobal.nmlote,
+                EventoSetor.nmsetor,
+                EventoLotePreco.nmpreco,
+                EventoLotePreco.tipopreco,
+            )
+            .join(Venda, Venda.venda_id == ItVenda.venda_id)
+            .join(Loja, Loja.loja_id == Venda.loja_id)
+            .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
+            .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+            .join(
+                EventoLoteGlobal,
+                EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id,
+            )
+            .join(Evento, Evento.evento_id == EventoLoteGlobal.evento_id)
+            .outerjoin(
+                EventoSetor,
+                EventoSetor.eventosetor_id == EventoLote.eventosetor_id,
+            )
+            .outerjoin(
+                EventoLotePreco,
+                EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id,
+            )
+            .filter(
+                *filtros,
+                ItVenda.tipoitem == "INGRESSO",
+                Evento.organizacao_id == organizacao_id,
+            )
+            .order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+            .limit(limite)
+            .all()
+        )
+        itens = []
+        for row in rows:
+            quantidade = int(row.qtitvenda or 0)
+            itens.append(
+                {
+                    "itvenda_id": int(row.itvenda_id),
+                    "venda_id": int(row.venda_id),
+                    "evento": row.nmtituloevento,
+                    # A programação do evento é um horário civil brasileiro.
+                    "data_evento": row.dtinicioevento,
+                    "loja": row.nmloja,
+                    "cliente": row.nmcliente or "Cliente não identificado",
+                    "email_cliente": row.emailcliente or "",
+                    "telefone_cliente": row.nrtelcliente or "",
+                    "participante": row.nmparticipante or "Não informado",
+                    "cpf_participante": row.cpfparticipante or "",
+                    "lote": f"{int(row.nrlote)}º • {row.nmlote or 'Lote não informado'}",
+                    "setor": row.nmsetor or "Setor único",
+                    "modalidade": (
+                        row.nmmodalidadesnapshot
+                        or row.nmpreco
+                        or row.tipopreco
+                        or "Ingresso"
+                    ),
+                    "quantidade": quantidade,
+                    "preco_unitario": _dinheiro(row.vrunititvenda),
+                    "taxa": _dinheiro(row.vrtaxaitvenda),
+                    "valor_total": _dinheiro(
+                        Decimal(str(row.vrunititvenda or 0)) * quantidade
+                    ),
+                    "data_compra": row.dtcompra.replace(tzinfo=timezone.utc),
+                    "utilizado": (row.identregaitvenda or "NAO").upper() == "SIM",
+                    "data_validacao": (
+                        row.dtentregaitvenda.replace(tzinfo=timezone.utc)
+                        if row.dtentregaitvenda
+                        else None
+                    ),
+                }
+            )
+
+    return {
+        "tipo": tipo,
+        "periodo": {"inicio": primeiro_dia, "fim": ultimo_dia},
+        "itens": itens,
+        "limite": limite,
     }
 
 
