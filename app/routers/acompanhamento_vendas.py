@@ -3,7 +3,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
@@ -16,6 +16,7 @@ from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvenda import ItVenda
 from app.models.loja import Loja
+from app.models.pagvenda import PagVenda
 from app.models.produto import Produto
 from app.models.venda import Venda
 
@@ -196,6 +197,222 @@ def listar_compras_produtos(
             }
         )
     return {"itens": itens, "limite": limite}
+
+
+def _valor_enum(valor):
+    return getattr(valor, "value", valor)
+
+
+@router.get("/clientes")
+def listar_clientes_com_compras(
+    busca: str | None = Query(default=None, max_length=160),
+    limite: int = Query(default=1000, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Lista os clientes que já compraram na organização e seus históricos.
+
+    A tabela ``cliente`` é global na plataforma. Por isso, o Partner só recebe
+    clientes associados a vendas da própria organização (ou da própria loja,
+    quando o usuário é MANAGER). Dados de autenticação e links de pagamento
+    não são devolvidos deliberadamente.
+    """
+    organizacao_id, loja_escopo = _escopo(usuario)
+
+    consulta_clientes = (
+        db.query(Cliente)
+        .join(Venda, Venda.cliente_id == Cliente.cliente_id)
+        .filter(Venda.organizacao_id == organizacao_id)
+    )
+    if loja_escopo is not None:
+        consulta_clientes = consulta_clientes.filter(Venda.loja_id == loja_escopo)
+
+    termo = (busca or "").strip()
+    if termo:
+        padrao = f"%{termo}%"
+        consulta_clientes = consulta_clientes.filter(
+            or_(
+                Cliente.nmcliente.ilike(padrao),
+                Cliente.emailcliente.ilike(padrao),
+                Cliente.nrtelcliente.ilike(padrao),
+                Cliente.nrcpfcliente.ilike(padrao),
+            )
+        )
+
+    clientes = (
+        consulta_clientes.distinct()
+        .order_by(Cliente.nmcliente.asc(), Cliente.cliente_id.asc())
+        .limit(limite)
+        .all()
+    )
+    cliente_ids = [int(cliente.cliente_id) for cliente in clientes]
+    if not cliente_ids:
+        return {"clientes": [], "total_clientes": 0, "limite": limite}
+
+    consulta_vendas = (
+        db.query(Venda, Loja.nmloja)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .filter(
+            Venda.organizacao_id == organizacao_id,
+            Venda.cliente_id.in_(cliente_ids),
+        )
+    )
+    if loja_escopo is not None:
+        consulta_vendas = consulta_vendas.filter(Venda.loja_id == loja_escopo)
+    vendas_linhas = consulta_vendas.order_by(
+        Venda.dtcriacao.desc(), Venda.venda_id.desc()
+    ).all()
+    venda_ids = [int(venda.venda_id) for venda, _ in vendas_linhas]
+
+    itens_por_venda: dict[int, list[dict]] = {venda_id: [] for venda_id in venda_ids}
+    pagamentos_por_venda: dict[int, list[dict]] = {
+        venda_id: [] for venda_id in venda_ids
+    }
+    if venda_ids:
+        itens = (
+            db.query(ItVenda, Produto.nmproduto)
+            .outerjoin(Produto, Produto.produto_id == ItVenda.produto_id)
+            .filter(ItVenda.venda_id.in_(venda_ids))
+            .order_by(ItVenda.venda_id.asc(), ItVenda.itvenda_id.asc())
+            .all()
+        )
+        for item, nmproduto in itens:
+            itens_por_venda[int(item.venda_id)].append(
+                {
+                    "itvenda_id": int(item.itvenda_id),
+                    "tipoitem": _valor_enum(item.tipoitem),
+                    "produto_id": int(item.produto_id) if item.produto_id else None,
+                    "nmproduto": nmproduto or "",
+                    "cardapioitem_id": int(item.cardapioitem_id)
+                    if item.cardapioitem_id
+                    else None,
+                    "qtitvenda": int(item.qtitvenda or 0),
+                    "vrunititvenda": _dinheiro(item.vrunititvenda),
+                    "identregaitvenda": _valor_enum(item.identregaitvenda),
+                    "dtentregaitvenda": item.dtentregaitvenda,
+                    "idcontrolebar": _valor_enum(item.idcontrolebar),
+                    "nrmesa": item.nrmesa or "",
+                    "userentregaitvenda": int(item.userentregaitvenda)
+                    if item.userentregaitvenda
+                    else None,
+                    "nmuserentregaitvenda": item.nmuserentregaitvenda or "",
+                    "dsobsitvenda": item.dsobsitvenda or "",
+                    "dtcriacao": item.dtcriacao,
+                    "dtexpiraitvenda": item.dtexpiraitvenda,
+                    "nmparticipante": item.nmparticipante or "",
+                    "cpfparticipante": item.cpfparticipante or "",
+                    "lote_id": int(item.lote_id) if item.lote_id else None,
+                    "lotepreco_id": int(item.lotepreco_id)
+                    if item.lotepreco_id
+                    else None,
+                    "modalidade_id": int(item.modalidade_id)
+                    if item.modalidade_id
+                    else None,
+                    "beneficio_id": int(item.beneficio_id)
+                    if item.beneficio_id
+                    else None,
+                    "tipobeneficio": item.tipobeneficio or "",
+                    "nmmodalidadesnapshot": item.nmmodalidadesnapshot or "",
+                    "nmbeneficiosnapshot": item.nmbeneficiosnapshot or "",
+                    "pctaxaitvenda": _dinheiro(item.pctaxaitvenda),
+                    "vrtaxaitvenda": _dinheiro(item.vrtaxaitvenda),
+                    "sititvenda": _valor_enum(item.sititvenda),
+                    "dtcancelamento": item.dtcancelamento,
+                    "vrreembolso": _dinheiro(item.vrreembolso),
+                    "idreembolso": item.idreembolso or "",
+                    "dtultatu": item.dtultatu,
+                }
+            )
+
+        pagamentos = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id.in_(venda_ids))
+            .order_by(PagVenda.venda_id.asc(), PagVenda.pagvenda_id.asc())
+            .all()
+        )
+        for pagamento in pagamentos:
+            pagamentos_por_venda[int(pagamento.venda_id)].append(
+                {
+                    "pagvenda_id": int(pagamento.pagvenda_id),
+                    "dsmetodopag": pagamento.dsmetodopag,
+                    "vrpagvenda": _dinheiro(pagamento.vrpagvenda),
+                    "sitpagvenda": _valor_enum(pagamento.sitpagvenda),
+                    "idtransacaopagvenda": pagamento.idtransacaopagvenda or "",
+                    "dtconftranspagvenda": pagamento.dtconftranspagvenda,
+                    "provedor": pagamento.provedor or "",
+                    "reference_id": pagamento.reference_id or "",
+                    "checkout_id": pagamento.checkout_id or "",
+                    "dtcriacao": pagamento.dtcriacao,
+                }
+            )
+
+    compras_por_cliente: dict[int, list[dict]] = {
+        cliente_id: [] for cliente_id in cliente_ids
+    }
+    for venda, nmloja in vendas_linhas:
+        venda_id = int(venda.venda_id)
+        compras_por_cliente[int(venda.cliente_id)].append(
+            {
+                "venda_id": venda_id,
+                "organizacao_id": int(venda.organizacao_id),
+                "loja_id": int(venda.loja_id),
+                "nmloja": nmloja,
+                "carrinho_id": int(venda.carrinho_id) if venda.carrinho_id else None,
+                "reserva_ingresso_id": int(venda.reserva_ingresso_id)
+                if venda.reserva_ingresso_id
+                else None,
+                "usuario_id": int(venda.usuario_id) if venda.usuario_id else None,
+                "tipovenda": _valor_enum(venda.tipovenda),
+                "dsplataforma": _valor_enum(venda.dsplataforma),
+                "sitvenda": _valor_enum(venda.sitvenda),
+                "totalvenda": _dinheiro(venda.totalvenda),
+                "dtcriacao": venda.dtcriacao,
+                "dtultatu": venda.dtultatu,
+                "itens": itens_por_venda[venda_id],
+                "pagamentos": pagamentos_por_venda[venda_id],
+            }
+        )
+
+    resposta = []
+    for cliente in clientes:
+        cliente_id = int(cliente.cliente_id)
+        compras = compras_por_cliente[cliente_id]
+        resposta.append(
+            {
+                "cliente": {
+                    "cliente_id": cliente_id,
+                    "nmcliente": cliente.nmcliente,
+                    "emailcliente": cliente.emailcliente,
+                    "sitcliente": cliente.sitcliente,
+                    "emailconf": cliente.emailconf,
+                    "dtcriacao": cliente.dtcriacao,
+                    "cliente_padrao": cliente.cliente_padrao,
+                    "dtultatu": cliente.dtultatu,
+                    "nrtelcliente": cliente.nrtelcliente or "",
+                    "nrcpfcliente": cliente.nrcpfcliente or "",
+                    "idclienteasaas": cliente.idclienteasaas or "",
+                    "endcliente": cliente.endcliente or "",
+                    "nrendcliente": cliente.nrendcliente or "",
+                    "complcliente": cliente.complcliente or "",
+                    "bairrocliente": cliente.bairrocliente or "",
+                    "cepcliente": cliente.cepcliente or "",
+                    "cidadecliente": cliente.cidadecliente or "",
+                    "ufcliente": cliente.ufcliente or "",
+                    "idcidadeibge": int(cliente.idcidadeibge)
+                    if cliente.idcidadeibge
+                    else None,
+                },
+                "resumo": {
+                    "quantidade_compras": len(compras),
+                    "valor_total_compras": _dinheiro(
+                        sum(Decimal(str(compra["totalvenda"])) for compra in compras)
+                    ),
+                    "ultima_compra": compras[0]["dtcriacao"] if compras else None,
+                },
+                "compras": compras,
+            }
+        )
+    return {"clientes": resposta, "total_clientes": len(resposta), "limite": limite}
 
 
 @router.get("/eventos")
