@@ -357,12 +357,15 @@ def listar_ingressos_vendidos_evento(
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
             ItVenda.vrtaxaitvenda,
+            ItVenda.identregaitvenda,
+            ItVenda.dtentregaitvenda,
             ItVenda.nmparticipante,
             ItVenda.cpfparticipante,
             ItVenda.nmmodalidadesnapshot,
             Venda.venda_id,
             Venda.dtcriacao.label("dtcompra"),
             Cliente.nmcliente,
+            Cliente.nrtelcliente,
             EventoLoteGlobal.nrlote,
             EventoLoteGlobal.nmlote,
             EventoSetor.nmsetor,
@@ -403,6 +406,7 @@ def listar_ingressos_vendidos_evento(
             "venda_id": int(row.venda_id),
             "dtcompra": row.dtcompra,
             "cliente": row.nmcliente or "Cliente não identificado",
+            "telefone_cliente": row.nrtelcliente or "",
             "participante": row.nmparticipante or "Não informado",
             "cpf_participante": row.cpfparticipante or "",
             "numero_lote": int(row.nrlote),
@@ -414,6 +418,8 @@ def listar_ingressos_vendidos_evento(
                 or row.tipopreco
                 or "Ingresso"
             ),
+            "utilizado": (row.identregaitvenda or "NAO").upper() == "SIM",
+            "dtvalidacao": row.dtentregaitvenda,
         }
         for row in rows
     ]
