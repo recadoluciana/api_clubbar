@@ -504,21 +504,32 @@ def _fim_efetivo_evento(db: Session, evento: Evento | None) -> datetime | None:
 
 
 def _validar_data_do_ingresso(db: Session, evento: Evento | None, item: ItVenda) -> None:
-    """Garante que o ingresso seja validado somente no dia do evento."""
+    """Garante que o ingresso seja validado durante a realização do evento.
+
+    Eventos iniciados à noite podem terminar após meia-noite. Por isso, além
+    do próprio dia de início, a validação permanece liberada até o término
+    efetivo configurado do evento (ou o término estimado quando necessário).
+    """
     if (item.tipoitem or "").upper() != "INGRESSO" or not evento:
         return
     if not evento.dtinicioevento:
         return
 
+    agora = _agora_brasil()
     fim_evento = _fim_efetivo_evento(db, evento)
-    if fim_evento is not None and _agora_brasil() >= fim_evento:
+    if fim_evento is not None and agora >= fim_evento:
         raise HTTPException(
             status_code=409,
             detail="Este ingresso pertence a um evento já encerrado e não pode mais ser utilizado.",
         )
 
-    data_evento = evento.dtinicioevento.date()
-    if data_evento == _hoje_brasil():
+    # Mantém a operação normal no próprio dia do evento e, se ele avançar
+    # pela madrugada, continua aceitando até o horário de encerramento.
+    if agora.date() == evento.dtinicioevento.date():
+        return
+    if agora > evento.dtinicioevento and (
+        fim_evento is None or agora < fim_evento
+    ):
         return
 
     data_formatada = evento.dtinicioevento.strftime("%d/%m/%Y às %H:%M")
