@@ -467,6 +467,24 @@ def detalhe_vendas_evento(
     ).first()
     if not evento or (loja_escopo is not None and evento.loja_id != loja_escopo):
         raise HTTPException(404, "Evento não encontrado")
+
+    quantidade_pendente = int(
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .filter(
+            EventoLote.evento_id == evento.evento_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "INGRESSO",
+            ItVenda.sititvenda == "ATIVO",
+            or_(
+                ItVenda.identregaitvenda.is_(None),
+                ItVenda.identregaitvenda != "SIM",
+            ),
+        )
+        .scalar()
+        or 0
+    )
     quantidade = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda), else_=0)), 0)
     valor = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda * ItVenda.vrunititvenda), else_=0)), 0)
     rows = db.query(
@@ -545,6 +563,7 @@ def detalhe_vendas_evento(
         "evento_id": evento.evento_id, "nmtituloevento": evento.nmtituloevento,
         "dtinicioevento": evento.dtinicioevento,
         "quantidade_vendida": quantidade_total,
+        "quantidade_pendente": quantidade_pendente,
         "capacidade_total": capacidade_total,
         "quantidade_restante": quantidade_restante,
         "percentual_ocupacao": percentual_ocupacao,
