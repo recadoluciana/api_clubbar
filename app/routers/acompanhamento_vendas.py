@@ -210,22 +210,24 @@ def listar_clientes_com_compras(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Lista os clientes que já compraram na organização e seus históricos.
+    """Lista clientes e seus históricos de consumo na organização.
 
     A tabela ``cliente`` é global na plataforma. Por isso, o Partner só recebe
-    clientes associados a vendas da própria organização (ou da própria loja,
-    quando o usuário é MANAGER). Dados de autenticação e links de pagamento
-    não são devolvidos deliberadamente.
+    todos os cadastros sem compra para o perfil SUPERADMIN. Os demais perfis
+    recebem apenas clientes associados a vendas da própria organização (ou da
+    própria loja, quando o usuário é MANAGER). Dados de autenticação e links
+    de pagamento não são devolvidos deliberadamente.
     """
     organizacao_id, loja_escopo = _escopo(usuario)
+    superadmin = str(usuario.get("dscargo") or "").upper() == "SUPERADMIN"
 
-    consulta_clientes = (
-        db.query(Cliente)
-        .join(Venda, Venda.cliente_id == Cliente.cliente_id)
-        .filter(Venda.organizacao_id == organizacao_id)
-    )
-    if loja_escopo is not None:
-        consulta_clientes = consulta_clientes.filter(Venda.loja_id == loja_escopo)
+    consulta_clientes = db.query(Cliente)
+    if not superadmin:
+        consulta_clientes = consulta_clientes.join(
+            Venda, Venda.cliente_id == Cliente.cliente_id
+        ).filter(Venda.organizacao_id == organizacao_id)
+        if loja_escopo is not None:
+            consulta_clientes = consulta_clientes.filter(Venda.loja_id == loja_escopo)
 
     termo = (busca or "").strip()
     if termo:
