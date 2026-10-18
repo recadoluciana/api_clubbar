@@ -93,7 +93,7 @@ async def resgatar_cortesia_produto_direta(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Resgata uma cortesia diretamente na carteira, sem usar o carrinho."""
+    """Resgata uma cortesia diretamente na carteira, sem exibir o carrinho ao cliente."""
     exigir_cliente_autenticado(usuario, payload.cliente_id)
 
     try:
@@ -171,10 +171,24 @@ async def resgatar_cortesia_produto_direta(
             bloquear_item=True,
         )
 
+        # Toda venda de produto precisa estar vinculada a um carrinho no banco.
+        # Criamos um carrinho técnico, já fechado na confirmação, para que o
+        # resgate direto não apareça no carrinho aberto do cliente nem viole a
+        # regra de integridade ``chk_venda_origem`` da tabela de vendas.
+        carrinho_resgate = Carrinho(
+            organizacao_id=payload.organizacao_id,
+            loja_id=payload.loja_id,
+            cliente_id=payload.cliente_id,
+            sitcarrinho='ABERTO',
+        )
+        db.add(carrinho_resgate)
+        db.flush()
+
         venda = Venda(
             loja_id=payload.loja_id,
             organizacao_id=payload.organizacao_id,
             cliente_id=payload.cliente_id,
+            carrinho_id=int(carrinho_resgate.carrinho_id),
             tipovenda='PRODUTO',
             dsplataforma='OUTROS',
             sitvenda='PENDENTE',
@@ -212,7 +226,7 @@ async def resgatar_cortesia_produto_direta(
             venda_id=int(venda.venda_id),
             gateway='CORTESIA',
             payload={'id': f'CORTESIA-{venda.venda_id}', 'status': 'PAID'},
-            finalizar_carrinho=False,
+            finalizar_carrinho=True,
         )
         db.commit()
         return {
