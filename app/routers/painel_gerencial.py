@@ -275,6 +275,9 @@ def painel_gerencial(
         "total_ingressos_mes": total_ingressos_mes,
         "pedidos_mes": int(pedidos_mes or 0),
         "produtos_pagos_mes": int(produtos_pagos_mes or 0),
+        "produtos_vendidos_mes": sum(
+            int(row.quantidade or 0) for row in produtos_rows
+        ),
         "ingressos_vendidos_mes": int(ingressos_vendidos or 0),
         "participacao_lojas": participacao_lojas,
         "produtos_mais_vendidos": [
