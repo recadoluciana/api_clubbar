@@ -17,6 +17,7 @@ _CAMPOS_DATA_OPERACIONAL = {
     "dtcancelamento",
     "dtconfirmacao",
     "dtconftranspagvenda",
+    "dtcompra",
     "dtconversao",
     "dtcriacao",
     "dtdisponibilizacao",
@@ -27,13 +28,19 @@ _CAMPOS_DATA_OPERACIONAL = {
     "dtliberacao",
     "dtmovimento",
     "dtpagamento",
+    "dtpreparacao",
+    "dtretirada",
     "dtpublicacao",
     "dtultatu",
     "dtultima_mensagem",
     "dtultimaverificacao",
     "dtultimoacesso",
     "dtutilizacao",
+    "dtvalidacao",
     "dtvenda",
+    "data_compra",
+    "data_expiracao",
+    "data_validacao",
 }
 
 
