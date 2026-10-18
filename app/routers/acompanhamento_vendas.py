@@ -107,6 +107,97 @@ def produtos_pendentes(
     }
 
 
+@router.get("/produtos")
+def listar_compras_produtos(
+    situacao: str = Query(default="TODOS", pattern="^(TODOS|PENDENTES|RETIRADOS)$"),
+    loja_id: int | None = Query(default=None, ge=1),
+    limite: int = Query(default=500, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Lista compras pagas de produtos e sua situação de retirada.
+
+    O resultado é deliberadamente detalhado por item de venda: assim o
+    parceiro consegue identificar o cliente, o produto comprado e a baixa
+    realizada na portaria ou no balcão, sem misturar itens já retirados aos
+    que ainda estão na carteira.
+    """
+    organizacao_id, loja_escopo = _escopo(usuario)
+    _validar_loja(db, organizacao_id, loja_escopo, loja_id)
+    loja_final = loja_escopo or loja_id
+
+    query = (
+        db.query(
+            ItVenda.itvenda_id,
+            ItVenda.qtitvenda,
+            ItVenda.vrunititvenda,
+            ItVenda.identregaitvenda,
+            ItVenda.dtentregaitvenda,
+            ItVenda.nmuserentregaitvenda,
+            Venda.venda_id,
+            Venda.dtcriacao.label("dtcompra"),
+            Loja.loja_id,
+            Loja.nmloja,
+            Cliente.cliente_id,
+            Cliente.nmcliente,
+            Cliente.emailcliente,
+            Produto.produto_id,
+            Produto.nmproduto,
+            Produto.urlfotoproduto,
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
+        .join(Produto, Produto.produto_id == ItVenda.produto_id)
+        .filter(
+            Venda.organizacao_id == organizacao_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+    )
+    if loja_final is not None:
+        query = query.filter(Venda.loja_id == loja_final)
+    if situacao == "PENDENTES":
+        query = query.filter(ItVenda.identregaitvenda != "SIM")
+    elif situacao == "RETIRADOS":
+        query = query.filter(ItVenda.identregaitvenda == "SIM")
+
+    rows = (
+        query.order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+        .limit(limite)
+        .all()
+    )
+    itens = []
+    for row in rows:
+        retirado = (row.identregaitvenda or "NAO").upper() == "SIM"
+        quantidade = int(row.qtitvenda or 0)
+        preco_unitario = _dinheiro(row.vrunititvenda)
+        itens.append(
+            {
+                "itvenda_id": int(row.itvenda_id),
+                "venda_id": int(row.venda_id),
+                "loja_id": int(row.loja_id),
+                "nmloja": row.nmloja,
+                "cliente_id": int(row.cliente_id) if row.cliente_id else None,
+                "nmcliente": row.nmcliente or "Cliente não identificado",
+                "emailcliente": row.emailcliente or "",
+                "produto_id": int(row.produto_id),
+                "nmproduto": row.nmproduto,
+                "urlfotoproduto": row.urlfotoproduto or "",
+                "quantidade": quantidade,
+                "preco_unitario": preco_unitario,
+                "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
+                "dtcompra": row.dtcompra,
+                "retirado": retirado,
+                "dtretirada": row.dtentregaitvenda,
+                "responsavel_retirada": row.nmuserentregaitvenda or "",
+                "cortesia": Decimal(str(row.vrunititvenda or 0)) <= 0,
+            }
+        )
+    return {"itens": itens, "limite": limite}
+
+
 @router.get("/eventos")
 def eventos_vendas(
     periodo: str = Query(default="FUTUROS", pattern="^(FUTUROS|REALIZADOS|TODOS)$"),
