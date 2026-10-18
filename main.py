@@ -69,6 +69,7 @@ from app.routers import catalogo_ingressos
 from app.routers import campanhas_doacao
 from app.routers import reconciliacao_cancelamentos
 from app.routers import ingresso_publico
+from app.routers import produto_publico
 
 
 app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
@@ -204,6 +205,7 @@ app.include_router(catalogo_ingressos.router)
 app.include_router(campanhas_doacao.router)
 app.include_router(reconciliacao_cancelamentos.router)
 app.include_router(ingresso_publico.router)
+app.include_router(produto_publico.router)
 
 
 @app.on_event("startup")

@@ -28,6 +28,7 @@ from app.services.asaas_service import buscar_customer_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
 from app.services.notificacao_ingressos_service import enviar_ingressos_confirmados_da_venda
+from app.services.notificacao_produtos_service import enviar_produtos_confirmados_da_venda
 from app.core.config import (
     ASAAS_API_KEY,
     ASAAS_WEBHOOK_TOKEN,
@@ -428,6 +429,12 @@ async def asaas_webhook(
             except Exception as exc:
                 # O Asaas não deve reenviar o webhook por uma falha de e-mail.
                 print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
+        elif not resultado.get("already_processed") and resultado.get("venda_id"):
+            try:
+                enviar_produtos_confirmados_da_venda(db, int(resultado["venda_id"]))
+            except Exception as exc:
+                # O Asaas não deve reenviar o webhook por uma falha de e-mail.
+                print("[PRODUTO] Não foi possível enviar e-mail:", repr(exc))
 
         return {
             "ok": True,

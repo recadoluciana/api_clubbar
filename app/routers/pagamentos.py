@@ -43,6 +43,7 @@ from app.services.cliente_service import get_cliente
 from app.services.localidade_entrega_service import resolver_localidade_entrega
 from app.services.venda_service import criar_ou_obter_venda_idempotente, gerar_token_qr
 from app.services.pagamento_status_service import set_venda_como_paga
+from app.services.notificacao_produtos_service import enviar_produtos_confirmados_da_venda
 
 from app.routers.produtos import calcular_preco_final, _itens_cardapio_em_exibicao
 from app.services.cortesia_produto_service import (
@@ -85,6 +86,14 @@ router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 def _exigir_valor_positivo(valor: float) -> None:
     if Decimal(str(valor)) <= 0:
         raise HTTPException(422, "O valor do pagamento deve ser maior que zero.")
+
+
+def _enviar_confirmacao_produtos_sem_bloquear(db: Session, venda_id: int) -> None:
+    """O e-mail é complementar: uma falha nele não altera a venda já paga."""
+    try:
+        enviar_produtos_confirmados_da_venda(db, venda_id)
+    except Exception as exc:
+        print("[PRODUTO] Não foi possível enviar e-mail:", repr(exc))
 
 
 @router.post('/resgatar-cortesia-produto')
@@ -221,7 +230,7 @@ async def resgatar_cortesia_produto_direta(
         db.add(pagamento)
         db.flush()
 
-        set_venda_como_paga(
+        resultado_pagamento = set_venda_como_paga(
             db,
             venda_id=int(venda.venda_id),
             gateway='CORTESIA',
@@ -229,6 +238,8 @@ async def resgatar_cortesia_produto_direta(
             finalizar_carrinho=True,
         )
         db.commit()
+        if not resultado_pagamento.get('already_processed'):
+            _enviar_confirmacao_produtos_sem_bloquear(db, int(venda.venda_id))
         return {
             'ok': True,
             'venda_id': int(venda.venda_id),
@@ -311,13 +322,15 @@ async def resgatar_cortesia_cliente(
         pagamento.dsmetodopag = 'CORTESIA'
         pagamento.vrpagvenda = 0
 
-        set_venda_como_paga(
+        resultado_pagamento = set_venda_como_paga(
             db,
             venda_id=venda_id,
             gateway='CORTESIA',
             payload={'id': f'CORTESIA-{venda_id}', 'status': 'PAID'},
         )
         db.commit()
+        if not resultado_pagamento.get('already_processed'):
+            _enviar_confirmacao_produtos_sem_bloquear(db, venda_id)
         return {
             'ok': True,
             'venda_id': venda_id,
@@ -1218,7 +1231,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                 is not None
             )
             if possui_snapshot:
-                await criar_venda_paga_por_checkout_snapshot(
+                resultado_venda = await criar_venda_paga_por_checkout_snapshot(
                     db,
                     checkout_asaas_id=checkout.checkout_asaas_id,
                     origem_confirmacao='CONSULTA',
@@ -1232,10 +1245,18 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                     gateway="ASAAS",
                     pagamento=pagamento,
                 )
-                checkout.venda_id = resultado_venda.get('venda_id')
+            checkout.venda_id = resultado_venda.get('venda_id')
             checkout.status = "PAID"
             checkout.payment_id = str(pagamento.get("id") or "") or None
             db.commit()
+            if (
+                not checkout.reserva_ingresso_id
+                and not resultado_venda.get('already_processed')
+                and resultado_venda.get('venda_id')
+            ):
+                _enviar_confirmacao_produtos_sem_bloquear(
+                    db, int(resultado_venda['venda_id'])
+                )
             if (
                 str(pagamento.get("billingType") or "").upper()
                 in {"CREDIT_CARD", "DEBIT_CARD"}

@@ -6,7 +6,9 @@ from fastapi import HTTPException
 from app.services.email_service import (
     enviar_confirmacao_cadastro_lead,
     enviar_email_codigo,
+    enviar_produtos_confirmados,
 )
+from app.services.ingresso_qrcode_service import dados_qr_produto
 
 
 class RespostaBrevoFalsa:
@@ -16,6 +18,36 @@ class RespostaBrevoFalsa:
 
 
 class EmailServiceTest(unittest.TestCase):
+    @patch('app.services.email_service._enviar_email_smtp')
+    def test_produtos_confirmados_incluem_qr_no_email_e_anexo(self, enviar):
+        enviar_produtos_confirmados(
+            destinatario='cliente@example.com',
+            nome_cliente='Ana',
+            produtos=[
+                {
+                    'produto': 'Água',
+                    'loja': 'Remelexo Brasil',
+                    'qr_url': 'https://api.clubbar.com.br/publico/produtos/token/qr.png',
+                    'dados_qr': dados_qr_produto('token'),
+                }
+            ],
+        )
+
+        destinatario, assunto, html, anexos = enviar.call_args.args
+        self.assertEqual('cliente@example.com', destinatario)
+        self.assertIn('produtos Clubbar', assunto)
+        self.assertIn('Água', html)
+        self.assertIn('Remelexo Brasil', html)
+        self.assertIn('/publico/produtos/token/qr.png', html)
+        self.assertEqual('produto-clubbar-1.png', anexos[0]['nome'])
+        self.assertTrue(anexos[0]['conteudo'])
+
+    def test_qr_de_produto_usa_prefixo_esperado_pelo_leitor(self):
+        self.assertEqual(
+            'CLUBBAR-PRODUTO:token-seguro',
+            dados_qr_produto('token-seguro'),
+        )
+
     @patch('app.services.email_service._enviar_email')
     def test_confirmacao_cadastro_inclui_lead_e_estabelecimentos(self, enviar):
         enviar_confirmacao_cadastro_lead(

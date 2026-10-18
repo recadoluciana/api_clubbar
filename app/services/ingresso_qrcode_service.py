@@ -10,6 +10,11 @@ def dados_qr_ingresso(token: str) -> str:
     return f"CLUBBAR-INGRESSO:{token}"
 
 
+def dados_qr_produto(token: str) -> str:
+    """Conteúdo padronizado do QR apresentado para retirada de produtos."""
+    return f"CLUBBAR-PRODUTO:{token}"
+
+
 def _qr(dados: str) -> qrcode.QRCode:
     qr = qrcode.QRCode(
         version=None,
