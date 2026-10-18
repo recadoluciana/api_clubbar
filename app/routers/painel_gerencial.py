@@ -571,7 +571,7 @@ def notificacoes_vendas(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Retorna vendas pagas depois da última consulta do painel KPI.
+    """Retorna vendas novas ou canceladas depois da última consulta do KPI.
 
     O KPI é sempre consolidado pela organização, inclusive para o perfil
     MANAGER. Sem `desde`, a rota apenas estabelece uma referência para evitar
@@ -587,27 +587,19 @@ def notificacoes_vendas(
     desde = _desde_em_utc_naive(desde)
 
     momento_venda = func.coalesce(Venda.dtultatu, Venda.dtcriacao)
-    quantidade = func.coalesce(ItVenda.qtitvenda, 1)
-    valor_bruto_item = quantidade * ItVenda.vrunititvenda
-    valor_liquido_item = case(
-        (ItVenda.tipoitem == "INGRESSO", valor_bruto_item),
-        else_=valor_bruto_item - func.coalesce(ItVenda.vrtaxaitvenda, 0),
-    )
-    vendas = (
+    movimentacoes = (
         db.query(
             Venda.venda_id,
             Venda.tipovenda,
+            Venda.sitvenda,
             momento_venda.label("momento"),
-            func.coalesce(func.sum(valor_liquido_item), 0).label("valor"),
+            func.coalesce(Venda.totalvenda, 0).label("valor"),
         )
-        .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
         .filter(
             Venda.organizacao_id == organizacao_id,
-            Venda.sitvenda == "PAGA",
-            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda.in_(("PAGA", "CANCELADA")),
             momento_venda > desde,
         )
-        .group_by(Venda.venda_id, Venda.tipovenda, Venda.dtultatu, Venda.dtcriacao)
         .order_by(momento_venda.asc(), Venda.venda_id.asc())
         .limit(30)
         .all()
@@ -616,13 +608,18 @@ def notificacoes_vendas(
         "referencia": referencia,
         "vendas": [
             {
-                "venda_id": int(venda.venda_id),
-                "tipo": str(venda.tipovenda),
-                "valor": _dinheiro(venda.valor),
+                "venda_id": int(movimentacao.venda_id),
+                "evento": (
+                    "CANCELAMENTO"
+                    if movimentacao.sitvenda == "CANCELADA"
+                    else "VENDA"
+                ),
+                "tipo": str(movimentacao.tipovenda),
+                "valor": _dinheiro(movimentacao.valor),
                 # As vendas são registradas em UTC. O sufixo explícito evita
                 # que o app interprete este valor como horário local.
-                "momento": venda.momento.replace(tzinfo=timezone.utc),
+                "momento": movimentacao.momento.replace(tzinfo=timezone.utc),
             }
-            for venda in vendas
+            for movimentacao in movimentacoes
         ],
     }
