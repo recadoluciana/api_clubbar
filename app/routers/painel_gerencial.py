@@ -110,10 +110,32 @@ def _periodo_selecionado(ano: int | None, mes: int | None) -> tuple[date, date]:
     return primeiro_dia, proximo_mes - timedelta(days=1)
 
 
+def _periodo_consulta(
+    ano: int | None,
+    mes: int | None,
+    data_inicio: date | None,
+    data_fim: date | None,
+) -> tuple[date, date]:
+    if data_inicio is None and data_fim is None:
+        return _periodo_selecionado(ano, mes)
+    if data_inicio is None or data_fim is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe a data inicial e a data final do período.",
+        )
+    if data_inicio > data_fim:
+        raise HTTPException(status_code=422, detail="Período de consulta inválido.")
+    if data_fim > _hoje_local():
+        raise HTTPException(status_code=422, detail="Não é permitido consultar data futura.")
+    return data_inicio, data_fim
+
+
 @router.get("/painel-gerencial", response_model=PainelGerencialOut)
 def painel_gerencial(
     ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
     mes: Annotated[int | None, Query(ge=1, le=12)] = None,
+    data_inicio: date | None = Query(default=None),
+    data_fim: date | None = Query(default=None),
     consolidado: bool = Query(False),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -123,7 +145,9 @@ def painel_gerencial(
         consolidado_por_organizacao=consolidado,
     )
 
-    primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
+    primeiro_dia, ultimo_dia = _periodo_consulta(
+        ano, mes, data_inicio, data_fim
+    )
     inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
     hoje = _hoje_local()
     inicio_hoje = _inicio_local_em_utc_naive(hoje)
@@ -189,13 +213,53 @@ def painel_gerencial(
         Venda, Venda.venda_id == ItVenda.venda_id
     ).filter(*filtros_hoje, ItVenda.sititvenda == "ATIVO").scalar()
 
-    ingressos_vendidos = db.query(
-        func.coalesce(func.sum(ItVenda.qtitvenda), 0)
-    ).join(Venda, Venda.venda_id == ItVenda.venda_id).filter(
+    resumo_quantidades = db.query(
+        func.coalesce(
+            func.sum(case((eh_produto, quantidade), else_=0)), 0
+        ).label("produtos_vendidos"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_produto, ItVenda.identregaitvenda == "SIM"), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("produtos_entregues"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_produto, ItVenda.identregaitvenda != "SIM"), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("produtos_pendentes"),
+        func.coalesce(
+            func.sum(case((eh_ingresso, quantidade), else_=0)), 0
+        ).label("ingressos_vendidos"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_ingresso, ItVenda.identregaitvenda == "SIM"), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("ingressos_validados"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_ingresso, ItVenda.identregaitvenda != "SIM"), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("ingressos_pendentes"),
+    ).select_from(ItVenda).join(Venda, Venda.venda_id == ItVenda.venda_id).filter(
         *filtros_mes,
-        ItVenda.lote_id.isnot(None),
         ItVenda.sititvenda == "ATIVO",
-    ).scalar()
+    ).one()
 
     participacao_rows = db.query(
         Venda.loja_id,
@@ -275,10 +339,12 @@ def painel_gerencial(
         "total_ingressos_mes": total_ingressos_mes,
         "pedidos_mes": int(pedidos_mes or 0),
         "produtos_pagos_mes": int(produtos_pagos_mes or 0),
-        "produtos_vendidos_mes": sum(
-            int(row.quantidade or 0) for row in produtos_rows
-        ),
-        "ingressos_vendidos_mes": int(ingressos_vendidos or 0),
+        "produtos_vendidos_mes": int(resumo_quantidades.produtos_vendidos or 0),
+        "produtos_entregues": int(resumo_quantidades.produtos_entregues or 0),
+        "produtos_pendentes": int(resumo_quantidades.produtos_pendentes or 0),
+        "ingressos_vendidos_mes": int(resumo_quantidades.ingressos_vendidos or 0),
+        "ingressos_validados": int(resumo_quantidades.ingressos_validados or 0),
+        "ingressos_pendentes": int(resumo_quantidades.ingressos_pendentes or 0),
         "participacao_lojas": participacao_lojas,
         "produtos_mais_vendidos": [
             {
@@ -306,6 +372,8 @@ def detalhes_vendas(
     tipo: str = Query(pattern="^(PRODUTOS|INGRESSOS)$"),
     ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
     mes: Annotated[int | None, Query(ge=1, le=12)] = None,
+    data_inicio: date | None = Query(default=None),
+    data_fim: date | None = Query(default=None),
     limite: Annotated[int, Query(ge=1, le=1000)] = 500,
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -320,7 +388,9 @@ def detalhes_vendas(
         usuario,
         consolidado_por_organizacao=True,
     )
-    primeiro_dia, ultimo_dia = _periodo_selecionado(ano, mes)
+    primeiro_dia, ultimo_dia = _periodo_consulta(
+        ano, mes, data_inicio, data_fim
+    )
     inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
     fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
     filtros = [
@@ -349,6 +419,7 @@ def detalhes_vendas(
                 Cliente.nmcliente,
                 Cliente.emailcliente,
                 Cliente.nrtelcliente,
+                Cliente.nrcpfcliente,
                 Produto.nmproduto,
             )
             .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -372,6 +443,7 @@ def detalhes_vendas(
                     "cliente": row.nmcliente or "Cliente não identificado",
                     "email_cliente": row.emailcliente or "",
                     "telefone_cliente": row.nrtelcliente or "",
+                    "cpf_cliente": row.nrcpfcliente or "",
                     "quantidade": quantidade,
                     "preco_unitario": _dinheiro(row.vrunititvenda),
                     "taxa": _dinheiro(row.vrtaxaitvenda),
@@ -409,6 +481,7 @@ def detalhes_vendas(
                 Cliente.nmcliente,
                 Cliente.emailcliente,
                 Cliente.nrtelcliente,
+                Cliente.nrcpfcliente,
                 Evento.nmtituloevento,
                 Evento.dtinicioevento,
                 EventoLoteGlobal.nrlote,
@@ -457,6 +530,7 @@ def detalhes_vendas(
                     "cliente": row.nmcliente or "Cliente não identificado",
                     "email_cliente": row.emailcliente or "",
                     "telefone_cliente": row.nrtelcliente or "",
+                    "cpf_cliente": row.nrcpfcliente or "",
                     "participante": row.nmparticipante or "Não informado",
                     "cpf_participante": row.cpfparticipante or "",
                     "lote": f"{int(row.nrlote)}º • {row.nmlote or 'Lote não informado'}",

@@ -38,7 +38,11 @@ class PainelGerencialOut(BaseModel):
     pedidos_mes: int
     produtos_pagos_mes: int
     produtos_vendidos_mes: int
+    produtos_entregues: int
+    produtos_pendentes: int
     ingressos_vendidos_mes: int
+    ingressos_validados: int
+    ingressos_pendentes: int
     participacao_lojas: list[ParticipacaoLoja]
     produtos_mais_vendidos: list[ProdutoMaisVendido]
     ingressos_mais_vendidos: list[IngressoMaisVendido]
