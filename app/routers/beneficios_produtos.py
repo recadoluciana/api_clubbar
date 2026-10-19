@@ -304,11 +304,26 @@ def resgatar_cortesia(campanha_id: int, dados: GiroIn, usuario: dict = Depends(g
     if pendente: raise HTTPException(409, "Você já possui uma cortesia aguardando retirada.")
     resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=100, situacao="DISPONIVEL")
     db.add(resgate); db.flush()
+    loja = db.query(Loja).filter(
+        Loja.loja_id == campanha.loja_id,
+        Loja.organizacao_id == campanha.organizacao_id,
+    ).first()
+    dias_validade = int(getattr(loja, "nrdiavalidade", 0) or 0) if loja else 0
+    controla_validade = (
+        (getattr(loja, "idvalidadeprod", "S") or "S").upper() == "S"
+        if loja
+        else True
+    )
+    data_expira = (
+        agora.date() + timedelta(days=dias_validade)
+        if controla_validade and dias_validade > 0
+        else None
+    )
     carrinho = Carrinho(organizacao_id=campanha.organizacao_id, loja_id=campanha.loja_id, cliente_id=dados.cliente_id, sitcarrinho="ABERTO")
     db.add(carrinho); db.flush()
     venda = Venda(loja_id=campanha.loja_id, organizacao_id=campanha.organizacao_id, cliente_id=dados.cliente_id, carrinho_id=carrinho.carrinho_id, tipovenda="PRODUTO", dsplataforma="OUTROS", sitvenda="PENDENTE", totalvenda=0)
     db.add(venda); db.flush()
-    db.add(ItVenda(venda_id=venda.venda_id, tipoitem="PRODUTO", produto_id=campanha.produto_id, beneficioprodutoresgate_id=resgate.beneficioprodutoresgate_id, qtitvenda=1, vrunititvenda=0, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr()))
+    db.add(ItVenda(venda_id=venda.venda_id, tipoitem="PRODUTO", produto_id=campanha.produto_id, beneficioprodutoresgate_id=resgate.beneficioprodutoresgate_id, qtitvenda=1, vrunititvenda=0, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), dtexpiraitvenda=data_expira))
     db.add(PagVenda(venda_id=venda.venda_id, dsmetodopag="CORTESIA", vrpagvenda=0, sitpagvenda="PENDENTE", reference_id=f"CORTESIA-{venda.venda_id}", provedor="CORTESIA"))
     db.flush()
     # Não passa pela validação legada de cortesias do cardápio: esta campanha
