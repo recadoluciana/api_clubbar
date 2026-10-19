@@ -35,7 +35,20 @@ from app.utils.datetime_utils import iso_utc
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
 
-def _saida(reserva: ReservaIngresso) -> dict:
+def _beneficio_saida(beneficio) -> dict:
+    return {
+        "beneficio_id": beneficio.beneficio_id,
+        "cdbeneficio": beneficio.cdbeneficio,
+        "nmbeneficio": beneficio.nmbeneficio,
+        "exigecomprovante": bool(beneficio.exigecomprovante),
+    }
+
+
+def _saida(db: Session, reserva: ReservaIngresso) -> dict:
+    # A relação de benefícios precisa ser a mesma que será validada quando os
+    # participantes forem informados. Assim o app não exibe uma opção antiga
+    # ou pertencente a outra modalidade e depois a recusa no checkout.
+    beneficios_validos = beneficios_validos_para_reserva(db, reserva)
     return {
         "reserva_ingresso_id": reserva.reserva_ingresso_id,
         "organizacao_id": reserva.organizacao_id,
@@ -54,6 +67,10 @@ def _saida(reserva: ReservaIngresso) -> dict:
         "status": reserva.sitreserva,
         "data_expiracao": iso_utc(reserva.dtexpiracao),
         "venda_id": reserva.venda_id,
+        "beneficios_validos": [
+            _beneficio_saida(beneficio)
+            for beneficio in beneficios_validos.values()
+        ],
     }
 
 
@@ -64,7 +81,7 @@ def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db), usua
         reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id, lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id, tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
         db.commit()
         db.refresh(reserva)
-        return _saida(reserva)
+        return _saida(db, reserva)
     except HTTPException:
         db.rollback()
         raise
@@ -131,7 +148,7 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         except Exception as exc:
             # A emissão nunca pode falhar porque o e-mail está indisponível.
             print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
-    return {**_saida(reserva), **(resultado_gratuito or {})}
+    return {**_saida(db, reserva), **(resultado_gratuito or {})}
 
 
 @router.delete("/{reserva_id}")
@@ -237,10 +254,10 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
     if not reserva:
         raise HTTPException(404, "Reserva não encontrada")
     if reserva.venda_id:
-        return {**_saida(reserva), "status_pagamento": "PAGO"}
+        return {**_saida(db, reserva), "status_pagamento": "PAGO"}
     checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.reserva_ingresso_id == reserva_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).first()
     if not checkout:
-        return {**_saida(reserva), "status_pagamento": "PENDENTE"}
+        return {**_saida(db, reserva), "status_pagamento": "PENDENTE"}
     api_key_consulta = ASAAS_API_KEY
     if checkout.asaas_wallet_loja:
         api_key_consulta, _ = obter_conta_asaas_da_loja(db, checkout.loja_id)
@@ -255,10 +272,10 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
                 enviar_ingressos_confirmados_da_venda(db, int(resultado["venda_id"]))
             except Exception as exc:
                 print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
-        return {**_saida(reserva), **resultado, "status_pagamento": "PAGO"}
+        return {**_saida(db, reserva), **resultado, "status_pagamento": "PAGO"}
     if reserva.dtexpiracao <= datetime.now():
         if checkout.payment_id:
             await cancelar_pagamento_asaas(checkout.payment_id, api_key_consulta)
         checkout.status = "EXPIRED"
         reserva.sitreserva = "EXPIRADA"; db.commit()
-    return {**_saida(reserva), "status_pagamento": "PENDENTE"}
+    return {**_saida(db, reserva), "status_pagamento": "PENDENTE"}
