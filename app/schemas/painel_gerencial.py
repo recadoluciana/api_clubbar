@@ -48,7 +48,8 @@ class EventoEmAndamentoOut(BaseModel):
     inicio: datetime
     fim: datetime
     ingressos: OperacaoEventoItem
-    produtos: OperacaoEventoItem
+    produtos_normais: OperacaoEventoItem
+    produtos_cortesias: OperacaoEventoItem
     receita_total: float
 
 

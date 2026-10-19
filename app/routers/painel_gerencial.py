@@ -223,6 +223,8 @@ def _resumo_operacao_produtos(
     evento: Evento,
     fim_evento: datetime,
     agora: datetime,
+    *,
+    cortesia: bool,
 ) -> dict:
     """Produtos vendidos/resgatados durante a janela operacional do evento.
 
@@ -255,6 +257,9 @@ def _resumo_operacao_produtos(
     receita = Decimal("0")
     hoje = agora.date()
     for linha in linhas:
+        eh_cortesia = Decimal(str(linha.vrunititvenda or 0)) <= 0
+        if eh_cortesia != cortesia:
+            continue
         quantidade = int(linha.qtitvenda or 0)
         vendidos += quantidade
         receita += (
@@ -313,7 +318,12 @@ def eventos_em_andamento(
         if fim <= agora:
             continue
         ingressos = _resumo_operacao_ingressos(db, evento, agora)
-        produtos = _resumo_operacao_produtos(db, evento, fim, agora)
+        produtos_normais = _resumo_operacao_produtos(
+            db, evento, fim, agora, cortesia=False
+        )
+        produtos_cortesias = _resumo_operacao_produtos(
+            db, evento, fim, agora, cortesia=True
+        )
         resposta.append(
             {
                 "evento_id": int(evento.evento_id),
@@ -322,10 +332,12 @@ def eventos_em_andamento(
                 "inicio": evento.dtinicioevento,
                 "fim": fim,
                 "ingressos": ingressos,
-                "produtos": produtos,
+                "produtos_normais": produtos_normais,
+                "produtos_cortesias": produtos_cortesias,
                 "receita_total": _dinheiro(
                     Decimal(str(ingressos["receita"]))
-                    + Decimal(str(produtos["receita"]))
+                    + Decimal(str(produtos_normais["receita"]))
+                    + Decimal(str(produtos_cortesias["receita"]))
                 ),
             }
         )
