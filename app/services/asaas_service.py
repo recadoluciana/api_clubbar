@@ -13,6 +13,19 @@ import unicodedata
 
 from app.core.config import APP_ENV, PUBLIC_API_BASE_URL
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3")
+VALOR_MINIMO_COBRANCA_ASAAS = 5.0
+
+
+def _validar_valor_minimo_checkout(valor: float) -> None:
+    """Evita expor o erro técnico do Asaas para valores abaixo do mínimo."""
+    if round(float(valor), 2) < VALOR_MINIMO_COBRANCA_ASAAS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "O valor mínimo para pagamento é R$ 5,00. "
+                "Adicione mais itens ao pedido e tente novamente."
+            ),
+        )
 
 
 def criar_referencia_checkout_asaas(carrinho_id: int) -> str:
@@ -471,6 +484,7 @@ async def criar_checkout_asaas(
     max_installment_count: int = 1,
     minutes_to_expire: int = 10,
 ):
+    _validar_valor_minimo_checkout(valor)
     nome_limpo = (nome_cliente or "").strip()
 
     if not nome_limpo:
