@@ -81,7 +81,11 @@ def _validar_escopo(db: Session, dados: CampanhaIn, usuario: dict) -> None:
 @router.get("/lojas/{loja_id}")
 def listar_campanhas(loja_id: int, organizacao_id: int, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     validar_mutacao_loja(usuario, organizacao_id, loja_id)
-    itens = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.loja_id == loja_id, BeneficioProdutoCampanha.organizacao_id == organizacao_id).order_by(BeneficioProdutoCampanha.dthrinicio.desc()).all()
+    itens = db.query(BeneficioProdutoCampanha).filter(
+        BeneficioProdutoCampanha.loja_id == loja_id,
+        BeneficioProdutoCampanha.organizacao_id == organizacao_id,
+        BeneficioProdutoCampanha.situacao == "ATIVA",
+    ).order_by(BeneficioProdutoCampanha.dthrinicio.desc()).all()
     produtos = {int(p.produto_id): p.nmproduto for p in db.query(Produto).filter(Produto.produto_id.in_([i.produto_id for i in itens] or [-1])).all()}
     return [_campanha_out(i, resgates=int(db.query(func.count(BeneficioProdutoResgate.beneficioprodutoresgate_id)).filter(BeneficioProdutoResgate.campanha_id == i.beneficioprodutocampanha_id).scalar() or 0), nmproduto=produtos.get(int(i.produto_id), "Produto")) for i in itens]
 
