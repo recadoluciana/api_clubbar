@@ -24,7 +24,8 @@ from app.services.pagamento_status_service import set_venda_como_paga
 from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(prefix="/beneficios-produtos", tags=["Benefícios de produtos"])
-PERCENTUAIS_ROLETA = (10, 20, 0, 30, 50)
+# Promoção atual: os prêmios da roleta são sorteados apenas entre 10% e 20%.
+PERCENTUAIS_ROLETA = (10, 20)
 
 
 def _agora() -> datetime:
