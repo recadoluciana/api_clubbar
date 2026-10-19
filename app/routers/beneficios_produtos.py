@@ -140,15 +140,12 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
     campanha = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id).with_for_update().first()
     if not campanha or campanha.tipo != "ROLETA" or campanha.situacao != "ATIVA" or not (campanha.dthrinicio <= agora <= campanha.dthrfim):
         raise HTTPException(409, "Esta roleta não está disponível agora.")
-    inicio_dia = agora.replace(hour=0, minute=0, second=0, microsecond=0)
-    usados_cliente = int(db.query(func.count(BeneficioProdutoResgate.beneficioprodutoresgate_id)).filter(BeneficioProdutoResgate.campanha_id == campanha_id, BeneficioProdutoResgate.cliente_id == dados.cliente_id, BeneficioProdutoResgate.dtresgate >= inicio_dia).scalar() or 0)
-    if usados_cliente >= int(campanha.limite_cliente_dia or 1): raise HTTPException(409, "Você já girou esta roleta hoje.")
     total = int(db.query(func.count(BeneficioProdutoResgate.beneficioprodutoresgate_id)).filter(BeneficioProdutoResgate.campanha_id == campanha_id).scalar() or 0)
     if campanha.qtlimite is not None and total >= campanha.qtlimite: raise HTTPException(409, "Esta promoção já atingiu o limite.")
     percentual = secrets.choice(PERCENTUAIS_ROLETA)
     resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=percentual, situacao="DISPONIVEL", dtexpiracao=agora + timedelta(minutes=20))
     db.add(resgate); db.commit(); db.refresh(resgate)
-    return {"resgate_id": int(resgate.beneficioprodutoresgate_id), "percentual_desconto": percentual, "expira_em": resgate.dtexpiracao, "mensagem": f"Você ganhou {percentual}% de desconto!" if percentual else "Desta vez não houve desconto. Tente novamente amanhã."}
+    return {"resgate_id": int(resgate.beneficioprodutoresgate_id), "percentual_desconto": percentual, "expira_em": resgate.dtexpiracao, "mensagem": f"Você ganhou {percentual}% de desconto!" if percentual else "Desta vez não houve desconto. Você pode tentar novamente!"}
 
 
 @router.post("/{campanha_id}/resgatar-cortesia")
