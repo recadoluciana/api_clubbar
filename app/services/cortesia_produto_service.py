@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models.cardapio import CardapioItem
@@ -63,9 +63,11 @@ def validar_cliente_sem_cortesia_pendente(
     db: Session,
     *,
     cliente_id: int,
+    produto_id: int,
     ignorar_venda_id: int | None = None,
 ) -> None:
-    """Impede que um cliente acumule cortesias de produto não retiradas."""
+    """Impede uma segunda cortesia válida e não retirada do mesmo produto."""
+    hoje = datetime.now(FUSO_BRASIL).date()
     consulta = (
         db.query(ItVenda.itvenda_id)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -73,9 +75,14 @@ def validar_cliente_sem_cortesia_pendente(
             Venda.cliente_id == cliente_id,
             Venda.sitvenda == "PAGA",
             ItVenda.tipoitem == "PRODUTO",
+            ItVenda.produto_id == produto_id,
             ItVenda.sititvenda == "ATIVO",
             ItVenda.identregaitvenda == "NAO",
             ItVenda.vrunititvenda <= 0,
+            or_(
+                ItVenda.dtexpiraitvenda.is_(None),
+                ItVenda.dtexpiraitvenda >= hoje,
+            ),
         )
     )
     if ignorar_venda_id is not None:
@@ -83,7 +90,7 @@ def validar_cliente_sem_cortesia_pendente(
     if consulta.first():
         raise HTTPException(
             409,
-            "Você já possui uma cortesia pendente na sua carteira. Retire-a antes de resgatar outra.",
+            "Você já possui uma cortesia deste produto válida e aguardando retirada.",
         )
 
 
@@ -143,20 +150,24 @@ def validar_cortesias_da_venda(db: Session, venda_id: int) -> None:
             "Cortesia limitada a 1 unidade por resgate.",
         )
 
-    if grupos:
-        venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
-        if venda and venda.cliente_id:
-            validar_cliente_sem_cortesia_pendente(
-                db,
-                cliente_id=int(venda.cliente_id),
-                ignorar_venda_id=venda_id,
-            )
-
     for cardapioitem_id, quantidade in grupos:
         if int(quantidade or 0) > 1:
             raise HTTPException(
                 422,
                 "Cortesia limitada a 1 unidade por transação.",
+            )
+        venda = db.query(Venda).filter(Venda.venda_id == venda_id).first()
+        produto_id = (
+            db.query(CardapioItem.produto_id)
+            .filter(CardapioItem.cardapioitem_id == cardapioitem_id)
+            .scalar()
+        )
+        if venda and venda.cliente_id and produto_id:
+            validar_cliente_sem_cortesia_pendente(
+                db,
+                cliente_id=int(venda.cliente_id),
+                produto_id=int(produto_id),
+                ignorar_venda_id=venda_id,
             )
         validar_cortesia_disponivel(
             db,

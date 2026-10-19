@@ -92,7 +92,8 @@ def _total_resgates_validos(db: Session, campanha_id: int) -> int:
 
 
 def _tem_cortesia_pendente(db: Session, *, cliente_id: int, produto_id: int) -> bool:
-    """Cortesia já emitida, paga e ainda não retirada para o mesmo produto."""
+    """Cortesia válida, já emitida e ainda não retirada para o mesmo produto."""
+    hoje = _agora().date()
     return (
         db.query(ItVenda.itvenda_id)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
@@ -104,6 +105,7 @@ def _tem_cortesia_pendente(db: Session, *, cliente_id: int, produto_id: int) -> 
             ItVenda.sititvenda == "ATIVO",
             ItVenda.identregaitvenda == "NAO",
             ItVenda.vrunititvenda <= 0,
+            (ItVenda.dtexpiraitvenda.is_(None) | (ItVenda.dtexpiraitvenda >= hoje)),
         )
         .first()
         is not None
@@ -194,7 +196,19 @@ def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_us
     for item in itens:
         usados = _total_resgates_validos(db, int(item.beneficioprodutocampanha_id))
         if item.qtlimite is not None and usados >= item.qtlimite: continue
-        retorno.append(_campanha_out(item, resgates=usados))
+        oferta = _campanha_out(item, resgates=usados)
+        if item.tipo == "CORTESIA":
+            cortesia_pendente = _tem_cortesia_pendente(
+                db,
+                cliente_id=cliente_id,
+                produto_id=int(item.produto_id),
+            )
+            oferta["disponivel_para_cliente"] = not cortesia_pendente
+            if cortesia_pendente:
+                oferta["motivo_indisponibilidade"] = (
+                    "Você já possui uma cortesia válida deste produto aguardando retirada."
+                )
+        retorno.append(oferta)
     return retorno
 
 
@@ -300,8 +314,10 @@ def resgatar_cortesia(campanha_id: int, dados: GiroIn, usuario: dict = Depends(g
         raise HTTPException(409, "Esta cortesia não está disponível agora.")
     total = _total_resgates_validos(db, campanha_id)
     if campanha.qtlimite is not None and total >= campanha.qtlimite: raise HTTPException(409, "As cortesias desta campanha terminaram.")
-    pendente = db.query(BeneficioProdutoResgate).filter(BeneficioProdutoResgate.cliente_id == dados.cliente_id, BeneficioProdutoResgate.situacao == "DISPONIVEL", BeneficioProdutoResgate.percentual_desconto == 100).first()
-    if pendente: raise HTTPException(409, "Você já possui uma cortesia aguardando retirada.")
+    if _tem_cortesia_pendente(
+        db, cliente_id=dados.cliente_id, produto_id=int(campanha.produto_id)
+    ):
+        raise HTTPException(409, "Você já possui uma cortesia válida deste produto aguardando retirada.")
     resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=100, situacao="DISPONIVEL")
     db.add(resgate); db.flush()
     loja = db.query(Loja).filter(

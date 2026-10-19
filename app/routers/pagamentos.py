@@ -128,11 +128,6 @@ async def resgatar_cortesia_produto_direta(
         )
         if not cliente:
             raise HTTPException(status_code=404, detail='Cliente não encontrado.')
-        validar_cliente_sem_cortesia_pendente(
-            db,
-            cliente_id=payload.cliente_id,
-        )
-
         agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
         itens_visiveis = _itens_cardapio_em_exibicao(db, payload.loja_id, agora)
         item_visivel = None
@@ -162,6 +157,12 @@ async def resgatar_cortesia_produto_direta(
         )
         if not item or not produto:
             raise HTTPException(status_code=404, detail='Produto não encontrado.')
+
+        validar_cliente_sem_cortesia_pendente(
+            db,
+            cliente_id=payload.cliente_id,
+            produto_id=int(produto.produto_id),
+        )
 
         preco_final, _ = calcular_preco_final(
             item.vrpreco,
