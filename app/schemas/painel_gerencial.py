@@ -40,6 +40,7 @@ class PainelGerencialOut(BaseModel):
     produtos_vendidos_mes: int
     produtos_entregues: int
     produtos_pendentes: int
+    produtos_retirados_periodo: int
     ingressos_vendidos_mes: int
     ingressos_validados: int
     ingressos_pendentes: int

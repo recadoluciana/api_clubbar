@@ -15,8 +15,25 @@ class QueryFalsa:
         self.filtros = filtros
 
     def filter(self, *criterios):
-        self.filtros.extend(str(criterio) for criterio in criterios)
+        self.filtros.extend(self._descrever_criterio(criterio) for criterio in criterios)
         return self
+
+    @staticmethod
+    def _descrever_criterio(criterio):
+        """Registra as colunas filtradas sem compilar expressões ORM.
+
+        A compilação completa inicializa relacionamentos fora do escopo deste
+        teste unitário (por exemplo, EventoAtracao).
+        """
+        clausulas = getattr(criterio, "clauses", None)
+        if clausulas is not None:
+            return " ".join(
+                QueryFalsa._descrever_criterio(clausula) for clausula in clausulas
+            )
+        coluna = getattr(criterio, "left", criterio)
+        tabela = getattr(getattr(coluna, "table", None), "name", "")
+        nome = getattr(coluna, "name", "")
+        return f"{tabela}.{nome}".strip(".")
 
     def join(self, *args, **kwargs):
         return self
@@ -61,9 +78,18 @@ class PainelGerencialTest(unittest.TestCase):
                 SimpleNamespace(loja_id=2, nmloja="Loja B"),
             ],
             3,
+            3,
             SimpleNamespace(produtos=Decimal("95.00"), ingressos=Decimal("200.00")),
             Decimal("115.00"),
-            4,
+            SimpleNamespace(
+                produtos_vendidos=5,
+                produtos_entregues=3,
+                produtos_pendentes=2,
+                ingressos_vendidos=4,
+                ingressos_validados=2,
+                ingressos_pendentes=2,
+            ),
+            2,
             [
                 SimpleNamespace(loja_id=1, valor=Decimal("220.00")),
                 SimpleNamespace(loja_id=2, valor=Decimal("75.00")),
@@ -94,7 +120,13 @@ class PainelGerencialTest(unittest.TestCase):
             "loja_id": None,
         }
 
-        dados = painel_gerencial(db=banco, usuario=usuario)
+        dados = painel_gerencial(
+            data_inicio=None,
+            data_fim=None,
+            consolidado=False,
+            db=banco,
+            usuario=usuario,
+        )
 
         self.assertEqual({"inicio": date(2026, 8, 1), "fim": date(2026, 8, 4)}, dados["periodo"])
         self.assertEqual(115.0, dados["total_hoje"])
@@ -106,6 +138,7 @@ class PainelGerencialTest(unittest.TestCase):
             dados["total_produtos_mes"] + dados["total_ingressos_mes"],
         )
         self.assertEqual(3, dados["pedidos_mes"])
+        self.assertEqual(2, dados["produtos_retirados_periodo"])
         self.assertEqual(4, dados["ingressos_vendidos_mes"])
         self.assertEqual(74.58, dados["participacao_lojas"][0]["percentual"])
         self.assertEqual("Cerveja", dados["produtos_mais_vendidos"][0]["nome"])
@@ -120,8 +153,17 @@ class PainelGerencialTest(unittest.TestCase):
         banco = BancoFalso([
             [SimpleNamespace(loja_id=4, nmloja="Loja Gerenciada")],
             0,
+            0,
             SimpleNamespace(produtos=Decimal("0"), ingressos=Decimal("0")),
             Decimal("0"),
+            SimpleNamespace(
+                produtos_vendidos=0,
+                produtos_entregues=0,
+                produtos_pendentes=0,
+                ingressos_vendidos=0,
+                ingressos_validados=0,
+                ingressos_pendentes=0,
+            ),
             0,
             [],
             [],
@@ -135,14 +177,20 @@ class PainelGerencialTest(unittest.TestCase):
             "loja_id": 4,
         }
 
-        dados = painel_gerencial(db=banco, usuario=usuario)
+        dados = painel_gerencial(
+            data_inicio=None,
+            data_fim=None,
+            consolidado=False,
+            db=banco,
+            usuario=usuario,
+        )
 
         self.assertEqual(4, dados["participacao_lojas"][0]["loja_id"])
         filtros = " ".join(filtro for query in banco.filtros_por_query for filtro in query)
         self.assertIn("loja.loja_id", filtros)
         self.assertIn("venda.loja_id", filtros)
         self.assertIn("venda.loja_id", filtros)
-        self.assertIn("eventoloteglobal.loja_id", filtros)
+        self.assertIn("evento.loja_id", filtros)
 
     def test_cargo_sem_loja_no_jwt_recebe_403(self):
         banco = BancoFalso([])
@@ -155,7 +203,13 @@ class PainelGerencialTest(unittest.TestCase):
         }
 
         with self.assertRaises(HTTPException) as erro:
-            painel_gerencial(db=banco, usuario=usuario)
+            painel_gerencial(
+                data_inicio=None,
+                data_fim=None,
+                consolidado=False,
+                db=banco,
+                usuario=usuario,
+            )
 
         self.assertEqual(403, erro.exception.status_code)
         self.assertEqual("Token sem loja_id válido", erro.exception.detail)

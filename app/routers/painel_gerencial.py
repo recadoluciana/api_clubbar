@@ -261,6 +261,29 @@ def painel_gerencial(
         ItVenda.sititvenda == "ATIVO",
     ).one()
 
+    # Este indicador é operacional e não é subconjunto das compras do
+    # período: uma água comprada ontem pode ser retirada hoje. Por isso, sua
+    # data de referência é a retirada, enquanto "Produtos" continua usando a
+    # data da venda.
+    filtros_retiradas_periodo = [
+        Venda.organizacao_id == organizacao_id,
+        Venda.sitvenda == "PAGA",
+        ItVenda.tipoitem == "PRODUTO",
+        ItVenda.sititvenda == "ATIVO",
+        ItVenda.identregaitvenda == "SIM",
+        ItVenda.dtentregaitvenda >= inicio_mes,
+        ItVenda.dtentregaitvenda < fim_exclusivo,
+    ]
+    if loja_id is not None:
+        filtros_retiradas_periodo.append(Venda.loja_id == loja_id)
+    produtos_retirados_periodo = (
+        db.query(func.coalesce(func.sum(quantidade), 0))
+        .select_from(ItVenda)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(*filtros_retiradas_periodo)
+        .scalar()
+    )
+
     participacao_rows = db.query(
         Venda.loja_id,
         func.coalesce(func.sum(valor_liquido_item), 0).label("valor"),
@@ -342,6 +365,7 @@ def painel_gerencial(
         "produtos_vendidos_mes": int(resumo_quantidades.produtos_vendidos or 0),
         "produtos_entregues": int(resumo_quantidades.produtos_entregues or 0),
         "produtos_pendentes": int(resumo_quantidades.produtos_pendentes or 0),
+        "produtos_retirados_periodo": int(produtos_retirados_periodo or 0),
         "ingressos_vendidos_mes": int(resumo_quantidades.ingressos_vendidos or 0),
         "ingressos_validados": int(resumo_quantidades.ingressos_validados or 0),
         "ingressos_pendentes": int(resumo_quantidades.ingressos_pendentes or 0),
@@ -369,7 +393,7 @@ def painel_gerencial(
 
 @router.get("/painel-gerencial/detalhes-vendas")
 def detalhes_vendas(
-    tipo: str = Query(pattern="^(PRODUTOS|INGRESSOS)$"),
+    tipo: str = Query(pattern="^(PRODUTOS|INGRESSOS|RETIRADAS)$"),
     ano: Annotated[int | None, Query(ge=2000, le=2200)] = None,
     mes: Annotated[int | None, Query(ge=1, le=12)] = None,
     data_inicio: date | None = Query(default=None),
@@ -378,7 +402,7 @@ def detalhes_vendas(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Lista os itens vendidos no período exibido pelo painel KPI.
+    """Lista vendas ou retiradas no período exibido pelo painel KPI.
 
     O KPI é consolidado por organização, inclusive para o perfil MANAGER. Os
     dados retornados são apenas operacionais: não incluem QR Codes, senhas,
@@ -396,12 +420,23 @@ def detalhes_vendas(
     filtros = [
         Venda.organizacao_id == organizacao_id,
         Venda.sitvenda == "PAGA",
-        Venda.dtcriacao >= inicio_mes,
-        Venda.dtcriacao < fim_exclusivo,
         ItVenda.sititvenda == "ATIVO",
     ]
 
-    if tipo == "PRODUTOS":
+    if tipo == "RETIRADAS":
+        filtros.extend([
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.identregaitvenda == "SIM",
+            ItVenda.dtentregaitvenda >= inicio_mes,
+            ItVenda.dtentregaitvenda < fim_exclusivo,
+        ])
+    else:
+        filtros.extend([
+            Venda.dtcriacao >= inicio_mes,
+            Venda.dtcriacao < fim_exclusivo,
+        ])
+
+    if tipo in {"PRODUTOS", "RETIRADAS"}:
         rows = (
             db.query(
                 ItVenda.itvenda_id,
@@ -427,7 +462,12 @@ def detalhes_vendas(
             .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
             .join(Produto, Produto.produto_id == ItVenda.produto_id)
             .filter(*filtros, ItVenda.tipoitem == "PRODUTO")
-            .order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+            .order_by(
+                ItVenda.dtentregaitvenda.desc()
+                if tipo == "RETIRADAS"
+                else Venda.dtcriacao.desc(),
+                ItVenda.itvenda_id.desc(),
+            )
             .limit(limite)
             .all()
         )
