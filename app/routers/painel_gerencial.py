@@ -11,6 +11,7 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.cliente import Cliente
 from app.models.evento import Evento
+from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
@@ -19,7 +20,7 @@ from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.venda import Venda
-from app.schemas.painel_gerencial import PainelGerencialOut
+from app.schemas.painel_gerencial import EventoEmAndamentoOut, PainelGerencialOut
 
 
 router = APIRouter(tags=["Painel gerencial"])
@@ -128,6 +129,205 @@ def _periodo_consulta(
     if data_fim > _hoje_local():
         raise HTTPException(status_code=422, detail="Não é permitido consultar data futura.")
     return data_inicio, data_fim
+
+
+def _local_em_utc_naive(momento_local: datetime) -> datetime:
+    """Converte horários operacionais do evento (Brasília) para UTC no banco."""
+    return momento_local.replace(tzinfo=_FUSO_BRASIL).astimezone(timezone.utc).replace(
+        tzinfo=None
+    )
+
+
+def _fim_evento_operacional(db: Session, evento: Evento) -> datetime:
+    """Usa o fim configurado, a última atração ou o prazo padrão de seis horas."""
+    if evento.dtfimevento:
+        return evento.dtfimevento
+    fim_programacao = (
+        db.query(func.max(EventoAtracao.dtfimatracao))
+        .filter(EventoAtracao.evento_id == evento.evento_id)
+        .scalar()
+    )
+    return fim_programacao or evento.dtinicioevento + timedelta(hours=6)
+
+
+def _resumo_operacao_ingressos(
+    db: Session,
+    evento: Evento,
+    agora: datetime,
+) -> dict:
+    linhas = (
+        db.query(
+            ItVenda.qtitvenda,
+            ItVenda.vrunititvenda,
+            ItVenda.identregaitvenda,
+            EventoLotePreco.nrminutosaposinicio,
+            EventoLotePreco.travarentradaaposlimite,
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(
+            EventoLotePreco,
+            EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id,
+        )
+        .filter(
+            EventoLote.evento_id == evento.evento_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "INGRESSO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .all()
+    )
+    vendidos = validados = pendentes = expirados = 0
+    receita = Decimal("0")
+    for linha in linhas:
+        quantidade = int(linha.qtitvenda or 0)
+        vendidos += quantidade
+        receita += Decimal(str(linha.vrunititvenda or 0)) * quantidade
+        if linha.identregaitvenda == "SIM":
+            validados += quantidade
+            continue
+        minutos = linha.nrminutosaposinicio
+        limite = (
+            evento.dtinicioevento + timedelta(minutes=int(minutos))
+            if linha.travarentradaaposlimite and minutos is not None
+            else None
+        )
+        if limite is not None and agora > limite:
+            expirados += quantidade
+        else:
+            pendentes += quantidade
+
+    capacidade = evento.qtcapacidadeevento
+    if capacidade is None:
+        capacidade = (
+            db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
+            .filter(
+                EventoSetor.evento_id == evento.evento_id,
+                EventoSetor.sitsetor == "ATIVO",
+            )
+            .scalar()
+        )
+    return {
+        "disponibilizados": int(capacidade or 0),
+        "vendidos_resgatados": vendidos,
+        "validados_entregues": validados,
+        "pendentes": pendentes,
+        "expirados": expirados,
+        "receita": _dinheiro(receita),
+    }
+
+
+def _resumo_operacao_produtos(
+    db: Session,
+    evento: Evento,
+    fim_evento: datetime,
+    agora: datetime,
+) -> dict:
+    """Produtos vendidos/resgatados durante a janela operacional do evento.
+
+    O cardápio atual não possui estoque por unidade, por isso o número de
+    disponibilizados fica nulo em vez de sugerir uma quantidade inexistente.
+    """
+    inicio_utc = _local_em_utc_naive(evento.dtinicioevento)
+    fim_utc = _local_em_utc_naive(min(fim_evento, agora))
+    linhas = (
+        db.query(
+            ItVenda.qtitvenda,
+            ItVenda.vrunititvenda,
+            ItVenda.vrtaxaitvenda,
+            ItVenda.identregaitvenda,
+            ItVenda.dtexpiraitvenda,
+        )
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            Venda.organizacao_id == evento.organizacao_id,
+            Venda.loja_id == evento.loja_id,
+            Venda.sitvenda == "PAGA",
+            Venda.dtcriacao >= inicio_utc,
+            Venda.dtcriacao <= fim_utc,
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.sititvenda == "ATIVO",
+        )
+        .all()
+    )
+    vendidos = entregues = pendentes = expirados = 0
+    receita = Decimal("0")
+    hoje = agora.date()
+    for linha in linhas:
+        quantidade = int(linha.qtitvenda or 0)
+        vendidos += quantidade
+        receita += (
+            Decimal(str(linha.vrunititvenda or 0))
+            * quantidade
+            - Decimal(str(linha.vrtaxaitvenda or 0))
+        )
+        if linha.identregaitvenda == "SIM":
+            entregues += quantidade
+        elif linha.dtexpiraitvenda is not None and linha.dtexpiraitvenda < hoje:
+            expirados += quantidade
+        else:
+            pendentes += quantidade
+    return {
+        "disponibilizados": None,
+        "vendidos_resgatados": vendidos,
+        "validados_entregues": entregues,
+        "pendentes": pendentes,
+        "expirados": expirados,
+        "receita": _dinheiro(receita),
+    }
+
+
+@router.get("/painel-gerencial/eventos-em-andamento", response_model=list[EventoEmAndamentoOut])
+def eventos_em_andamento(
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Painel operacional em tempo real dos eventos que ainda não terminaram."""
+    organizacao_id, loja_id = _extrair_escopo(
+        usuario,
+        consolidado_por_organizacao=True,
+    )
+    agora = datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+    eventos_query = db.query(Evento, Loja.nmloja).join(
+        Loja, Loja.loja_id == Evento.loja_id
+    ).filter(
+        Evento.organizacao_id == organizacao_id,
+        Evento.statusevento == "ATIVO",
+        Evento.dtinicioevento <= agora,
+        or_(
+            Evento.dtfimevento > agora,
+            and_(
+                Evento.dtfimevento.is_(None),
+                Evento.dtinicioevento >= agora - timedelta(hours=24),
+            ),
+        ),
+    )
+    if loja_id is not None:
+        eventos_query = eventos_query.filter(Evento.loja_id == loja_id)
+
+    resposta = []
+    for evento, nome_loja in eventos_query.order_by(Evento.dtinicioevento.asc()).all():
+        fim = _fim_evento_operacional(db, evento)
+        if fim <= agora:
+            continue
+        ingressos = _resumo_operacao_ingressos(db, evento, agora)
+        produtos = _resumo_operacao_produtos(db, evento, fim, agora)
+        resposta.append(
+            {
+                "evento_id": int(evento.evento_id),
+                "nome": evento.nmtituloevento,
+                "loja": nome_loja,
+                "inicio": evento.dtinicioevento,
+                "fim": fim,
+                "ingressos": ingressos,
+                "produtos": produtos,
+                "receita_total": _dinheiro(
+                    Decimal(str(ingressos["receita"]))
+                    + Decimal(str(produtos["receita"]))
+                ),
+            }
+        )
+    return resposta
 
 
 @router.get("/painel-gerencial", response_model=PainelGerencialOut)

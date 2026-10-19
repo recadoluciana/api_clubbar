@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -27,6 +27,28 @@ class IngressoMaisVendido(BaseModel):
     nome: str
     quantidade: int
     valor: float
+
+
+class OperacaoEventoItem(BaseModel):
+    # Produtos ainda não possuem controle de estoque por unidade no cardápio.
+    # Por isso, esse campo pode ser nulo apenas para produtos.
+    disponibilizados: int | None
+    vendidos_resgatados: int
+    validados_entregues: int
+    pendentes: int
+    expirados: int
+    receita: float
+
+
+class EventoEmAndamentoOut(BaseModel):
+    evento_id: int
+    nome: str
+    loja: str
+    inicio: datetime
+    fim: datetime
+    ingressos: OperacaoEventoItem
+    produtos: OperacaoEventoItem
+    receita_total: float
 
 
 class PainelGerencialOut(BaseModel):
