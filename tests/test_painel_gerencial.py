@@ -83,9 +83,11 @@ class PainelGerencialTest(unittest.TestCase):
             Decimal("115.00"),
             SimpleNamespace(
                 produtos_vendidos=5,
+                produtos_cortesias=2,
                 produtos_entregues=3,
                 produtos_pendentes=2,
                 ingressos_vendidos=4,
+                ingressos_cortesias=1,
                 ingressos_validados=2,
                 ingressos_pendentes=2,
             ),
@@ -138,6 +140,7 @@ class PainelGerencialTest(unittest.TestCase):
             dados["total_produtos_mes"] + dados["total_ingressos_mes"],
         )
         self.assertEqual(3, dados["pedidos_mes"])
+        self.assertEqual(2, dados["produtos_cortesias_mes"])
         self.assertEqual(2, dados["produtos_retirados_periodo"])
         self.assertEqual(4, dados["ingressos_vendidos_mes"])
         self.assertEqual(74.58, dados["participacao_lojas"][0]["percentual"])
@@ -158,9 +161,11 @@ class PainelGerencialTest(unittest.TestCase):
             Decimal("0"),
             SimpleNamespace(
                 produtos_vendidos=0,
+                produtos_cortesias=0,
                 produtos_entregues=0,
                 produtos_pendentes=0,
                 ingressos_vendidos=0,
+                ingressos_cortesias=0,
                 ingressos_validados=0,
                 ingressos_pendentes=0,
             ),

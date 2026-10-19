@@ -215,8 +215,23 @@ def painel_gerencial(
 
     resumo_quantidades = db.query(
         func.coalesce(
-            func.sum(case((eh_produto, quantidade), else_=0)), 0
+            func.sum(
+                case(
+                    (and_(eh_produto, ItVenda.vrunititvenda > 0), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
         ).label("produtos_vendidos"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_produto, ItVenda.vrunititvenda <= 0), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("produtos_cortesias"),
         func.coalesce(
             func.sum(
                 case(
@@ -236,8 +251,23 @@ def painel_gerencial(
             0,
         ).label("produtos_pendentes"),
         func.coalesce(
-            func.sum(case((eh_ingresso, quantidade), else_=0)), 0
+            func.sum(
+                case(
+                    (and_(eh_ingresso, ItVenda.vrunititvenda > 0), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
         ).label("ingressos_vendidos"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (and_(eh_ingresso, ItVenda.vrunititvenda <= 0), quantidade),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("ingressos_cortesias"),
         func.coalesce(
             func.sum(
                 case(
@@ -363,10 +393,12 @@ def painel_gerencial(
         "pedidos_mes": int(pedidos_mes or 0),
         "produtos_pagos_mes": int(produtos_pagos_mes or 0),
         "produtos_vendidos_mes": int(resumo_quantidades.produtos_vendidos or 0),
+        "produtos_cortesias_mes": int(resumo_quantidades.produtos_cortesias or 0),
         "produtos_entregues": int(resumo_quantidades.produtos_entregues or 0),
         "produtos_pendentes": int(resumo_quantidades.produtos_pendentes or 0),
         "produtos_retirados_periodo": int(produtos_retirados_periodo or 0),
         "ingressos_vendidos_mes": int(resumo_quantidades.ingressos_vendidos or 0),
+        "ingressos_cortesias_mes": int(resumo_quantidades.ingressos_cortesias or 0),
         "ingressos_validados": int(resumo_quantidades.ingressos_validados or 0),
         "ingressos_pendentes": int(resumo_quantidades.ingressos_pendentes or 0),
         "participacao_lojas": participacao_lojas,
