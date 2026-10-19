@@ -53,6 +53,15 @@ class EventoEmAndamentoOut(BaseModel):
     receita_total: float
 
 
+class EventoCockpitOut(BaseModel):
+    evento_id: int
+    nome: str
+    loja: str
+    inicio: datetime
+    fim: datetime
+    ingressos: OperacaoEventoItem
+
+
 class PainelGerencialOut(BaseModel):
     periodo: PainelPeriodo
     total_hoje: float

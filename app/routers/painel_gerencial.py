@@ -20,7 +20,11 @@ from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.venda import Venda
-from app.schemas.painel_gerencial import EventoEmAndamentoOut, PainelGerencialOut
+from app.schemas.painel_gerencial import (
+    EventoCockpitOut,
+    EventoEmAndamentoOut,
+    PainelGerencialOut,
+)
 
 
 router = APIRouter(tags=["Painel gerencial"])
@@ -339,6 +343,46 @@ def eventos_em_andamento(
                     + Decimal(str(produtos_normais["receita"]))
                     + Decimal(str(produtos_cortesias["receita"]))
                 ),
+            }
+        )
+    return resposta
+
+
+@router.get("/painel-gerencial/cockpit-eventos", response_model=list[EventoCockpitOut])
+def cockpit_eventos(
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Resumo de ingressos dos eventos programados para o dia atual no Brasil."""
+    organizacao_id, loja_id = _extrair_escopo(
+        usuario,
+        consolidado_por_organizacao=True,
+    )
+    hoje = _hoje_local()
+    inicio_dia = datetime.combine(hoje, time.min)
+    fim_dia = inicio_dia + timedelta(days=1)
+    agora = datetime.now(_FUSO_BRASIL).replace(tzinfo=None)
+    eventos_query = db.query(Evento, Loja.nmloja).join(
+        Loja, Loja.loja_id == Evento.loja_id
+    ).filter(
+        Evento.organizacao_id == organizacao_id,
+        Evento.statusevento == "ATIVO",
+        Evento.dtinicioevento >= inicio_dia,
+        Evento.dtinicioevento < fim_dia,
+    )
+    if loja_id is not None:
+        eventos_query = eventos_query.filter(Evento.loja_id == loja_id)
+
+    resposta = []
+    for evento, nome_loja in eventos_query.order_by(Evento.dtinicioevento.asc()).all():
+        resposta.append(
+            {
+                "evento_id": int(evento.evento_id),
+                "nome": evento.nmtituloevento,
+                "loja": nome_loja,
+                "inicio": evento.dtinicioevento,
+                "fim": _fim_evento_operacional(db, evento),
+                "ingressos": _resumo_operacao_ingressos(db, evento, agora),
             }
         )
     return resposta
