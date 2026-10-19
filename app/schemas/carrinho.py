@@ -11,6 +11,7 @@ class AddItemIn(BaseModel):
 
     produto_id: Optional[int] = None
     cardapioitem_id: Optional[int] = None
+    beneficio_resgate_id: Optional[int] = None
     lote_id: Optional[int] = None
 
     qt: int = Field(ge=1, le=999, default=1)

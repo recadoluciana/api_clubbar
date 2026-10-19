@@ -511,6 +511,7 @@ def _recalcular_itens_carrinho(
             {
                 "produto_id"     : produto.produto_id,
                 "cardapioitem_id": it.get("cardapioitem_id"),
+                "beneficio_resgate_id": it.get("beneficio_resgate_id"),
                 "lote_id"        : None,
                 "idtipoproduto"  : "P",
                 "nmproduto"      : produto.nmproduto,

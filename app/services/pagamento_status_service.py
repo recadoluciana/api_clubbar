@@ -12,6 +12,7 @@ from app.models.loja import Loja
 from app.models.itvenda import ItVenda
 from app.models.carrinho import Carrinho
 from app.models.itcarrinho import ItCarrinho
+from app.models.beneficio_produto import BeneficioProdutoResgate
 from app.services.cortesia_produto_service import validar_cortesias_da_venda
 
 def set_venda_como_paga(
@@ -88,6 +89,16 @@ def set_venda_como_paga(
     # venda
     venda.sitvenda = "PAGA"
     venda.dtultatu = datetime.now()
+    # Prêmios da roleta somente são consumidos depois da confirmação real do
+    # pagamento; uma tentativa de checkout abandonada não elimina o prêmio.
+    db.query(BeneficioProdutoResgate).filter(
+        BeneficioProdutoResgate.beneficioprodutoresgate_id.in_(
+            db.query(ItVenda.beneficioprodutoresgate_id).filter(
+                ItVenda.venda_id == venda_id,
+                ItVenda.beneficioprodutoresgate_id.is_not(None),
+            )
+        )
+    ).update({"situacao": "USADO", "venda_id": venda_id}, synchronize_session=False)
 
     # Ingressos não expiram. Produtos expiram somente quando a loja
     # mantém o controle de validade habilitado.

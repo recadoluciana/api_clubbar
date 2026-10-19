@@ -14,6 +14,7 @@ from app.models.eventolote import EventoLote
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.evento import Evento
 from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioVersao
+from app.models.beneficio_produto import BeneficioProdutoResgate, BeneficioProdutoCampanha
 
 from app.schemas.carrinho import AddItemIn, AddItemOut, CarrinhoItemAgrupadoOut,LojaCarrinhoOut,AlterarParticipanteIn
 from app.services.carrinho_service import (
@@ -93,6 +94,22 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             dtinidesconto=item_cardapio.dtinidesconto,
             dtfimdesconto=item_cardapio.dtfimdesconto,
         )
+        beneficio_resgate_id_final = None
+        if payload.beneficio_resgate_id is not None:
+            if int(payload.qt) != 1:
+                raise HTTPException(422, "O benefício da roleta vale para uma unidade.")
+            resgate = db.query(BeneficioProdutoResgate).filter(
+                BeneficioProdutoResgate.beneficioprodutoresgate_id == payload.beneficio_resgate_id,
+                BeneficioProdutoResgate.cliente_id == payload.cliente_id,
+                BeneficioProdutoResgate.produto_id == produto_id_final,
+                BeneficioProdutoResgate.situacao == "DISPONIVEL",
+            ).with_for_update().first()
+            campanha = db.query(BeneficioProdutoCampanha).filter(
+                BeneficioProdutoCampanha.beneficioprodutocampanha_id == resgate.campanha_id).first() if resgate else None
+            if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (resgate.dtexpiracao and resgate.dtexpiracao < agora):
+                raise HTTPException(409, "O benefício não está mais disponível. Gire a roleta novamente.")
+            vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
+            beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
         if vrunitario_final <= 0:
             if int(payload.qt) != 1:
                 raise HTTPException(
@@ -146,6 +163,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             carrinho_id=int(carr.carrinho_id),
             produto_id=produto_id_final,
             cardapioitem_id=cardapioitem_id_final,
+            beneficioprodutoresgate_id=beneficio_resgate_id_final,
             vrunitario=vrunitario_final,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,

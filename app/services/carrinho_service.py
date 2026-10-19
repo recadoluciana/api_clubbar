@@ -37,6 +37,10 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
     itens = db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho.carrinho_id).all()
     alteracoes = []
     for item in itens:
+        # O prêmio já foi sorteado e fica congelado por poucos minutos. Não o
+        # substituímos por regras posteriores do cardápio durante a compra.
+        if getattr(item, "beneficioprodutoresgate_id", None):
+            continue
         produto = db.query(Produto).filter(Produto.produto_id == item.produto_id).first()
         if not produto or (produto.sitproduto or "").upper() != "ATIVO":
             continue
@@ -253,12 +257,14 @@ def get_carrinho(
 
         observacao = (getattr(it, "dsobsitcar", None) or "").strip()
         cardapioitem_id = getattr(it, "cardapioitem_id", None)
-        chave = (int(it.produto_id), cardapioitem_id, observacao, vrprecoprod)
+        beneficio_resgate_id = getattr(it, "beneficioprodutoresgate_id", None)
+        chave = (int(it.produto_id), cardapioitem_id, observacao, vrprecoprod, beneficio_resgate_id)
         if chave not in itens_agrupados:
             itens_agrupados[chave] = {
                 "itcarrinho_id": it.itcarrinho_id,
                 "produto_id": it.produto_id,
                 "cardapioitem_id": cardapioitem_id,
+                "beneficio_resgate_id": beneficio_resgate_id,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,
