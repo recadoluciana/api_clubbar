@@ -209,6 +209,7 @@ def _resumo_operacao_ingressos(
         )
     return {
         "disponibilizados": int(capacidade or 0),
+        "disponiveis": max(0, int(capacidade or 0) - vendidos),
         "vendidos_resgatados": vendidos,
         "validados_entregues": validados,
         "pendentes": pendentes,
@@ -269,6 +270,7 @@ def _resumo_operacao_produtos(
             pendentes += quantidade
     return {
         "disponibilizados": None,
+        "disponiveis": None,
         "vendidos_resgatados": vendidos,
         "validados_entregues": entregues,
         "pendentes": pendentes,

@@ -33,6 +33,7 @@ class OperacaoEventoItem(BaseModel):
     # Produtos ainda não possuem controle de estoque por unidade no cardápio.
     # Por isso, esse campo pode ser nulo apenas para produtos.
     disponibilizados: int | None
+    disponiveis: int | None
     vendidos_resgatados: int
     validados_entregues: int
     pendentes: int
