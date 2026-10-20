@@ -66,6 +66,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 CardapioItem.sititem == "ATIVO",
                 CardapioLoja.loja_id == payload.loja_id,
                 CardapioLoja.sitassociacao == "ATIVA",
+                CardapioLoja.vendas_habilitadas.is_(True),
                 Cardapio.sitcardapio == "ATIVO",
                 CardapioVersao.statusversao.in_(["PUBLICADA", "PROGRAMADA"]),
                 (CardapioVersao.dtiniciovigencia.is_(None))
@@ -82,9 +83,22 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             CardapioVersao.nrversao.desc()
         ).first()
         if not item_cardapio:
+            vendas_desabilitadas = db.query(CardapioLoja).join(
+                Cardapio, Cardapio.cardapio_id == CardapioLoja.cardapio_id,
+            ).filter(
+                CardapioLoja.loja_id == payload.loja_id,
+                CardapioLoja.sitassociacao == "ATIVA",
+                Cardapio.sitcardapio == "ATIVO",
+                CardapioLoja.vendas_habilitadas.is_(False),
+            ).first()
             raise HTTPException(
                 status_code=409,
-                detail="Este produto não está disponível em um cardápio publicado.",
+                detail=(
+                    "Este estabelecimento ainda está implantando o seu cardápio. "
+                    "Logo estará disponível para vendas."
+                    if vendas_desabilitadas
+                    else "Este produto não está disponível em um cardápio publicado."
+                ),
             )
         cardapioitem_id_final = int(item_cardapio.cardapioitem_id)
         vrunitario_final, _ = calcular_preco_final(

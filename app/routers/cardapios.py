@@ -114,6 +114,10 @@ class AssociarCardapioIn(BaseModel):
     cardapio_id: int = Field(gt=0)
 
 
+class VendasCardapioIn(BaseModel):
+    vendas_habilitadas: bool
+
+
 class ItemIn(BaseModel):
     produto_id: int
     vrpreco: Decimal = Field(gt=0)
@@ -242,6 +246,9 @@ def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None
         "nmcardapio": item.nmcardapio,
         "tipocardapio": item.tipocardapio,
         "sitcardapio": item.sitcardapio,
+        "vendas_habilitadas": (
+            bool(associacao.vendas_habilitadas) if associacao else None
+        ),
         "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
         "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
     }
@@ -389,6 +396,7 @@ def listar_cardapios_empresa(organizacao_id: int, payload=Depends(get_usuario_lo
                 "loja_id": loja.loja_id,
                 "nmfantasialoja": loja.nmloja,
                 "cardapioloja_id": vinculo.cardapioloja_id,
+                "vendas_habilitadas": bool(vinculo.vendas_habilitadas),
                 "programacoes": [
                     _saida_programacao(programacao)
                     for programacao in db.query(CardapioProgramacao).filter(
@@ -649,6 +657,28 @@ def remover_associacao(loja_id: int, cardapio_id: int, payload=Depends(get_usuar
     vinculo = _associacao(db, loja_id, cardapio_id, payload)
     vinculo.sitassociacao = "INATIVA"
     db.commit()
+
+
+@router.put("/lojas/{loja_id}/cardapios/{cardapio_id}/vendas")
+def configurar_vendas(
+    loja_id: int,
+    cardapio_id: int,
+    dados: VendasCardapioIn,
+    payload=Depends(get_usuario_logado),
+    db: Session=Depends(get_db),
+):
+    vinculo = _associacao(db, loja_id, cardapio_id, payload)
+    vinculo.vendas_habilitadas = dados.vendas_habilitadas
+    db.commit()
+    db.refresh(vinculo)
+    return {
+        "vendas_habilitadas": bool(vinculo.vendas_habilitadas),
+        "mensagem": (
+            "Vendas pelo app habilitadas."
+            if vinculo.vendas_habilitadas
+            else "Cardápio mantido para visualização e vendas presenciais."
+        ),
+    }
 
 
 @router.post("/lojas/{loja_id}/cardapios", status_code=201)
@@ -960,4 +990,8 @@ def cardapio_publicado(loja_id: int, db: Session=Depends(get_db)):
     # A validação de períodos impede mais de um especial vigente por vez.
     sazonais = [item for item in candidatos if item[1].tipocardapio != "PRINCIPAL"]
     selecionado = (sazonais or candidatos)[0]
-    return _conteudo(db, selecionado[2], selecionado[1])
+    conteudo = _conteudo(db, selecionado[2], selecionado[1])
+    conteudo["vendas_habilitadas"] = bool(
+        selecionado[0].vendas_habilitadas
+    )
+    return conteudo

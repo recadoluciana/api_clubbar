@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, CHAR, Column, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Time, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, CHAR, Column, Date, DateTime, Enum, ForeignKey, Integer, Numeric, String, Time, UniqueConstraint, text
 
 from app.database import Base
 
@@ -36,6 +36,7 @@ class CardapioLoja(Base):
     cardapio_id = Column(BigInteger, ForeignKey("cardapio.cardapio_id", ondelete="CASCADE"), nullable=False, index=True)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
     sitassociacao = Column(Enum("ATIVA", "INATIVA"), nullable=False, server_default="ATIVA")
+    vendas_habilitadas = Column(Boolean, nullable=False, server_default=text("1"))
     dtcriacao = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     dtultatu = Column(DateTime, nullable=True, server_onupdate=text("CURRENT_TIMESTAMP"))
 

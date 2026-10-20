@@ -554,6 +554,7 @@ def garantir_cardapios_compartilhados() -> None:
                 "cardapioloja_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
                 "cardapio_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, "
                 "sitassociacao ENUM('ATIVA','INATIVA') NOT NULL DEFAULT 'ATIVA', "
+                "vendas_habilitadas TINYINT(1) NOT NULL DEFAULT 1, "
                 "dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, "
                 "dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
                 "UNIQUE KEY uk_cardapioloja_cardapio_loja (cardapio_id, loja_id), "
@@ -575,6 +576,12 @@ def garantir_cardapios_compartilhados() -> None:
             colunas_cardapioloja = {
                 coluna["name"] for coluna in inspector.get_columns("cardapioloja")
             }
+            if "vendas_habilitadas" not in colunas_cardapioloja:
+                conexao.execute(text(
+                    "ALTER TABLE cardapioloja "
+                    "ADD COLUMN vendas_habilitadas TINYINT(1) NOT NULL DEFAULT 1 "
+                    "AFTER sitassociacao"
+                ))
             if "prioridade" in colunas_cardapioloja:
                 conexao.execute(
                     text("ALTER TABLE cardapioloja DROP COLUMN `prioridade`")
