@@ -36,6 +36,7 @@ from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
+from app.models.reserva_ingresso import ReservaIngresso
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 
 from app.services.carrinho_service import get_carrinho
@@ -94,6 +95,36 @@ def _enviar_confirmacao_produtos_sem_bloquear(db: Session, venda_id: int) -> Non
         enviar_produtos_confirmados_da_venda(db, venda_id)
     except Exception as exc:
         print("[PRODUTO] Não foi possível enviar e-mail:", repr(exc))
+
+
+def _sincronizar_checkout_de_reserva_confirmada(
+    db: Session, checkout: CheckoutAsaas
+) -> bool:
+    """Fecha tentativas antigas de ingresso que já possuem uma venda.
+
+    Versões anteriores finalizavam a reserva, mas podiam deixar o checkout
+    correspondente como ``PENDING``. Isso fazia a reconciliação de abertura
+    do Client anunciar a mesma confirmação a cada recarregamento.
+    """
+    reserva_id = getattr(checkout, "reserva_ingresso_id", None)
+    if not reserva_id:
+        return False
+
+    reserva = (
+        db.query(ReservaIngresso)
+        .filter(ReservaIngresso.reserva_ingresso_id == reserva_id)
+        .first()
+    )
+    venda_id = getattr(reserva, "venda_id", None) if reserva else None
+    if not venda_id:
+        return False
+
+    checkout.venda_id = venda_id
+    checkout.status = "PAID"
+    if not getattr(checkout, "dtconfirmacao", None):
+        checkout.dtconfirmacao = datetime.now()
+    db.commit()
+    return True
 
 
 @router.post('/resgatar-cortesia-produto')
@@ -1332,6 +1363,11 @@ async def reconciliar_pagamentos_pendentes_asaas(
     confirmados = []
     for checkout in pendentes:
         try:
+            # Corrige registros legados de ingressos já vendidos sem tratá-los
+            # como uma nova confirmação. Assim o aviso é exibido somente na
+            # primeira conciliação real do pagamento.
+            if _sincronizar_checkout_de_reserva_confirmada(db, checkout):
+                continue
             if checkout.reserva_ingresso_id:
                 from app.routers.reservas_ingressos import status_reserva
 
