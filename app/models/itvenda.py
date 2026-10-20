@@ -19,6 +19,12 @@ class ItVenda(Base):
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id", ondelete="RESTRICT", onupdate="RESTRICT"), nullable=True)
     cardapioitem_id = Column(BigInteger, ForeignKey("cardapioitem.cardapioitem_id", ondelete="SET NULL"), nullable=True)
     beneficioprodutoresgate_id = Column(BigInteger, ForeignKey("beneficioprodutoresgate.beneficioprodutoresgate_id"), nullable=True, index=True)
+    beneficioprodutocampanha_id = Column(
+        BigInteger,
+        ForeignKey("beneficioprodutocampanha.beneficioprodutocampanha_id"),
+        nullable=True,
+        index=True,
+    )
 
     qtitvenda = Column(Integer, nullable=False, server_default="1")
     vrunititvenda = Column(Numeric(10, 2), nullable=False)

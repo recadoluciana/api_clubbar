@@ -13,6 +13,7 @@ from app.models.cardapio import (
     CardapioVersao,
     CardapioVersaoCategoria,
 )
+from app.models.beneficio_produto import BeneficioProdutoCampanha
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
 from decimal import Decimal
 from app.utils.datetime_utils import FUSO_BRASIL
@@ -39,7 +40,10 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
     for item in itens:
         # O prêmio já foi sorteado e fica congelado por poucos minutos. Não o
         # substituímos por regras posteriores do cardápio durante a compra.
-        if getattr(item, "beneficioprodutoresgate_id", None):
+        if (
+            getattr(item, "beneficioprodutoresgate_id", None)
+            or getattr(item, "beneficioprodutocampanha_id", None)
+        ):
             continue
         produto = db.query(Produto).filter(Produto.produto_id == item.produto_id).first()
         if not produto or (produto.sitproduto or "").upper() != "ATIVO":
@@ -219,6 +223,19 @@ def get_carrinho(
         .all()
     )
     map_prod = {p.produto_id: p for p in produtos}
+    campanha_ids = list({
+        int(it.beneficioprodutocampanha_id)
+        for it in itens_car
+        if getattr(it, "beneficioprodutocampanha_id", None)
+    })
+    campanhas = {
+        int(campanha.beneficioprodutocampanha_id): campanha
+        for campanha in db.query(BeneficioProdutoCampanha).filter(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id.in_(
+                campanha_ids or [-1]
+            )
+        ).all()
+    }
 
     itens_agrupados = {}
     qt_total = 0
@@ -258,13 +275,21 @@ def get_carrinho(
         observacao = (getattr(it, "dsobsitcar", None) or "").strip()
         cardapioitem_id = getattr(it, "cardapioitem_id", None)
         beneficio_resgate_id = getattr(it, "beneficioprodutoresgate_id", None)
-        chave = (int(it.produto_id), cardapioitem_id, observacao, vrprecoprod, beneficio_resgate_id)
+        campanha_id = getattr(it, "beneficioprodutocampanha_id", None)
+        campanha = campanhas.get(int(campanha_id)) if campanha_id else None
+        chave = (
+            int(it.produto_id), cardapioitem_id, observacao, vrprecoprod,
+            beneficio_resgate_id, campanha_id,
+        )
         if chave not in itens_agrupados:
             itens_agrupados[chave] = {
                 "itcarrinho_id": it.itcarrinho_id,
                 "produto_id": it.produto_id,
                 "cardapioitem_id": cardapioitem_id,
                 "beneficio_resgate_id": beneficio_resgate_id,
+                "campanha_id": campanha_id,
+                "qtitenspacote": int(campanha.qtitenspacote) if campanha else None,
+                "vrpacote": float(campanha.vrpacote) if campanha and campanha.vrpacote is not None else None,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,

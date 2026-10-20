@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
+from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy import delete
@@ -9,12 +11,174 @@ from sqlalchemy.orm import Session
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
+from app.models.beneficio_produto import BeneficioProdutoCampanha
+from app.utils.datetime_utils import FUSO_BRASIL
 
 import uuid
 
 
 def gerar_token_qr() -> str:
     return uuid.uuid4().hex
+
+
+_CENTAVOS = Decimal("0.01")
+
+
+def ratear_em_centavos(valor_total: Any, quantidade: int) -> list[Decimal]:
+    """Rateia um total em fichas sem perder nem criar um centavo.
+
+    Ex.: R$ 40,00 em 3 fichas resulta em 13,34 + 13,33 + 13,33.
+    """
+    if quantidade < 1:
+        raise ValueError("A quantidade para rateio deve ser maior que zero.")
+    centavos = int(
+        (Decimal(str(valor_total or 0)) * 100).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    base, resto = divmod(centavos, quantidade)
+    return [
+        (Decimal(base + (1 if indice < resto else 0)) / 100).quantize(_CENTAVOS)
+        for indice in range(quantidade)
+    ]
+
+
+def validar_limite_pacotes(
+    db: Session,
+    *,
+    campanha: BeneficioProdutoCampanha,
+    quantidade_pacotes: int,
+) -> None:
+    """Garante o limite da campanha usando pacotes, nunca as fichas geradas."""
+    campanha = (
+        db.query(BeneficioProdutoCampanha)
+        .filter(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id
+            == campanha.beneficioprodutocampanha_id
+        )
+        .with_for_update()
+        .first()
+    )
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+    if (
+        not campanha
+        or campanha.tipo != "PACOTE"
+        or campanha.situacao != "ATIVA"
+        or not (campanha.dthrinicio <= agora <= campanha.dthrfim)
+    ):
+        raise HTTPException(409, "Esta promoção não está mais disponível.")
+    if campanha.qtlimite is None:
+        return
+    fichas_vendidas = int(
+        db.query(ItVenda.itvenda_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            ItVenda.beneficioprodutocampanha_id
+            == campanha.beneficioprodutocampanha_id,
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda.in_(("PENDENTE", "PAGA")),
+        )
+        .count()
+        or 0
+    )
+    pacotes_vendidos = fichas_vendidas // int(campanha.qtitenspacote or 1)
+    if pacotes_vendidos + quantidade_pacotes > int(campanha.qtlimite):
+        raise HTTPException(409, "Esta promoção já atingiu a quantidade disponível.")
+
+
+def adicionar_itens_produto_venda(
+    db: Session,
+    *,
+    venda_id: int,
+    itens: list[Dict[str, Any]],
+) -> None:
+    """Cria fichas de produto, expandindo promoções em pacote em fichas unitárias."""
+    campanhas_ids = {
+        int(item["campanha_id"])
+        for item in itens
+        if item.get("campanha_id") is not None
+    }
+    campanhas = {
+        int(campanha.beneficioprodutocampanha_id): campanha
+        for campanha in db.query(BeneficioProdutoCampanha).filter(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id.in_(
+                campanhas_ids or {-1}
+            )
+        ).all()
+    }
+
+    for item in itens:
+        produto_id = int(item["produto_id"])
+        quantidade_linhas = int(
+            item.get("qtitcarrinho") or item.get("qt") or 1
+        )
+        campanha_id = item.get("campanha_id")
+        campanha = campanhas.get(int(campanha_id)) if campanha_id else None
+
+        if campanha and campanha.tipo == "PACOTE":
+            fichas_por_pacote = int(campanha.qtitenspacote or 0)
+            if fichas_por_pacote < 2:
+                raise HTTPException(409, "A promoção em pacote está inválida.")
+            validar_limite_pacotes(
+                db,
+                campanha=campanha,
+                quantidade_pacotes=quantidade_linhas,
+            )
+            valores = ratear_em_centavos(
+                item.get("vrunitario"), fichas_por_pacote
+            )
+            taxas = ratear_em_centavos(
+                item.get("vrtaxaitvenda"), fichas_por_pacote
+            )
+            for _ in range(quantidade_linhas):
+                for indice in range(fichas_por_pacote):
+                    db.add(
+                        ItVenda(
+                            venda_id=venda_id,
+                            tipoitem="PRODUTO",
+                            produto_id=produto_id,
+                            cardapioitem_id=item.get("cardapioitem_id"),
+                            beneficioprodutoresgate_id=item.get("beneficio_resgate_id"),
+                            beneficioprodutocampanha_id=int(
+                                campanha.beneficioprodutocampanha_id
+                            ),
+                            qtitvenda=1,
+                            vrunititvenda=valores[indice],
+                            dsobsitvenda=item.get("dsobsitcar"),
+                            identregaitvenda="NAO",
+                            qrtokenitvenda=gerar_token_qr(),
+                            dtexpiraitvenda=None,
+                            nmparticipante=item.get("nmparticipante"),
+                            cpfparticipante=item.get("cpfparticipante"),
+                            lote_id=None,
+                            pctaxaitvenda=item.get("pctaxaitvenda"),
+                            vrtaxaitvenda=taxas[indice],
+                        )
+                    )
+            continue
+
+        for _ in range(quantidade_linhas):
+            db.add(
+                ItVenda(
+                    venda_id=venda_id,
+                    tipoitem="PRODUTO",
+                    produto_id=produto_id,
+                    cardapioitem_id=item.get("cardapioitem_id"),
+                    beneficioprodutoresgate_id=item.get("beneficio_resgate_id"),
+                    beneficioprodutocampanha_id=campanha_id,
+                    qtitvenda=1,
+                    vrunititvenda=item.get("vrunitario", 0),
+                    dsobsitvenda=item.get("dsobsitcar"),
+                    identregaitvenda="NAO",
+                    qrtokenitvenda=gerar_token_qr(),
+                    dtexpiraitvenda=None,
+                    nmparticipante=item.get("nmparticipante"),
+                    cpfparticipante=item.get("cpfparticipante"),
+                    lote_id=None,
+                    pctaxaitvenda=item.get("pctaxaitvenda"),
+                    vrtaxaitvenda=item.get("vrtaxaitvenda"),
+                )
+            )
 
 
 async def criar_ou_obter_venda_idempotente(
@@ -92,38 +256,7 @@ async def criar_ou_obter_venda_idempotente(
 
     def _sync_itens_venda(venda_id: int) -> None:
         db.execute(delete(ItVenda).where(ItVenda.venda_id == venda_id))
-
-        for it in itens:
-            produto_id = int(it["produto_id"])
-            qtd = int(it.get("qtitcarrinho") or it.get("qt") or 1)
-            vr_unit = float(it.get("vrunitario", 0) or 0)
-            dsobsitcar = it.get("dsobsitcar")
-            
-            print("ITEM VENDA =", it)
-
-            for _ in range(qtd):
-                db.add(
-                    ItVenda(
-                    venda_id=venda_id,
-                    tipoitem="PRODUTO",
-                    produto_id=produto_id,
-                    cardapioitem_id=it.get("cardapioitem_id"),
-                    beneficioprodutoresgate_id=it.get("beneficio_resgate_id"),
-                    qtitvenda=1,
-                    vrunititvenda=vr_unit,
-                    dsobsitvenda=dsobsitcar,
-                    identregaitvenda="NAO",
-                    qrtokenitvenda=gerar_token_qr(),
-                    # A validade é definida somente após a confirmação
-                    # do pagamento, conforme a configuração da loja.
-                    dtexpiraitvenda=None,
-                    nmparticipante=it.get("nmparticipante"),
-                    cpfparticipante=it.get("cpfparticipante"),
-                    lote_id=None,
-                    pctaxaitvenda=it.get("pctaxaitvenda"),
-                    vrtaxaitvenda=it.get("vrtaxaitvenda"),
-                    )
-                )
+        adicionar_itens_produto_venda(db, venda_id=venda_id, itens=itens)
 
     if venda:
         venda.tipovenda = "PRODUTO"

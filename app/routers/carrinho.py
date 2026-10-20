@@ -109,6 +109,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             dtfimdesconto=item_cardapio.dtfimdesconto,
         )
         beneficio_resgate_id_final = None
+        campanha_id_final = None
         if payload.beneficio_resgate_id is not None:
             if int(payload.qt) != 1:
                 raise HTTPException(422, "O benefício da roleta vale para uma unidade.")
@@ -124,6 +125,30 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 raise HTTPException(409, "O benefício não está mais disponível. Gire a roleta novamente.")
             vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
             beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
+        if payload.campanha_id is not None:
+            campanha_pacote = (
+                db.query(BeneficioProdutoCampanha)
+                .filter(
+                    BeneficioProdutoCampanha.beneficioprodutocampanha_id
+                    == payload.campanha_id,
+                    BeneficioProdutoCampanha.tipo == "PACOTE",
+                    BeneficioProdutoCampanha.produto_id == produto_id_final,
+                    BeneficioProdutoCampanha.loja_id == payload.loja_id,
+                    BeneficioProdutoCampanha.organizacao_id
+                    == payload.organizacao_id,
+                    BeneficioProdutoCampanha.situacao == "ATIVA",
+                    BeneficioProdutoCampanha.dthrinicio <= agora,
+                    BeneficioProdutoCampanha.dthrfim >= agora,
+                )
+                .with_for_update()
+                .first()
+            )
+            if not campanha_pacote:
+                raise HTTPException(409, "Esta promoção não está mais disponível.")
+            if payload.beneficio_resgate_id is not None:
+                raise HTTPException(422, "Não combine a promoção em pacote com a roleta.")
+            vrunitario_final = campanha_pacote.vrpacote
+            campanha_id_final = int(campanha_pacote.beneficioprodutocampanha_id)
         if vrunitario_final <= 0:
             if int(payload.qt) != 1:
                 raise HTTPException(
@@ -178,6 +203,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             produto_id=produto_id_final,
             cardapioitem_id=cardapioitem_id_final,
             beneficioprodutoresgate_id=beneficio_resgate_id_final,
+            beneficioprodutocampanha_id=campanha_id_final,
             vrunitario=vrunitario_final,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,
@@ -345,6 +371,7 @@ def obter_itens_carrinho(
             ItCarrinho.itcarrinho_id,
             ItCarrinho.produto_id,
             ItCarrinho.cardapioitem_id,
+            ItCarrinho.beneficioprodutocampanha_id,
             Produto.nmproduto,
             Produto.dsproduto,
             ItCarrinho.vrunitario.label("vrprecoprod"),
@@ -358,6 +385,21 @@ def obter_itens_carrinho(
         .filter(ItCarrinho.carrinho_id == carrinho.carrinho_id)
         .all()
     )
+    campanha_ids = {
+        int(item.beneficioprodutocampanha_id)
+        for item in itens_db
+        if item.beneficioprodutocampanha_id is not None
+    }
+    campanhas = {
+        int(campanha.beneficioprodutocampanha_id): campanha
+        for campanha in db.query(BeneficioProdutoCampanha)
+        .filter(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id.in_(
+                campanha_ids or {-1}
+            )
+        )
+        .all()
+    }
 
     itens = []
     total = 0.0
@@ -374,12 +416,21 @@ def obter_itens_carrinho(
         qt_total += qt
 
         tipo_produto = "P"
+        campanha_id = i.beneficioprodutocampanha_id
+        campanha = campanhas.get(int(campanha_id)) if campanha_id else None
 
         itens.append(
             {
                 "itcarrinho_id": i.itcarrinho_id,
                 "produto_id": i.produto_id,
                 "cardapioitem_id": i.cardapioitem_id,
+                "campanha_id": campanha_id,
+                "qtitenspacote": int(campanha.qtitenspacote)
+                if campanha and campanha.qtitenspacote
+                else None,
+                "vrpacote": float(campanha.vrpacote)
+                if campanha and campanha.vrpacote is not None
+                else None,
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "idtipoproduto": tipo_produto,
@@ -412,6 +463,7 @@ def remover_uma_unidade(
     produto_id: int,
     observacao: str = Query(""),
     cardapioitem_id: int | None = Query(None),
+    campanha_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     observacao = (observacao or "").strip()
@@ -419,6 +471,11 @@ def remover_uma_unidade(
     filtro_cardapio = ""
     if cardapioitem_id is not None:
         filtro_cardapio = "AND cardapioitem_id = :cardapioitem_id"
+    filtro_campanha = (
+        "AND beneficioprodutocampanha_id = :campanha_id"
+        if campanha_id is not None
+        else "AND beneficioprodutocampanha_id IS NULL"
+    )
 
     res = db.execute(
         text(f"""
@@ -427,6 +484,7 @@ def remover_uma_unidade(
               AND produto_id = :pid
               AND COALESCE(dsobsitcar, '') = :observacao
               {filtro_cardapio}
+              {filtro_campanha}
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
@@ -435,6 +493,7 @@ def remover_uma_unidade(
             "pid": produto_id,
             "observacao": observacao,
             "cardapioitem_id": cardapioitem_id,
+            "campanha_id": campanha_id,
         },
     )
     db.commit()
@@ -472,6 +531,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 cardapioitem_id,
                 vrunitario,
                 lote_id,
+                beneficioprodutocampanha_id,
                 qtitcarrinho,
                 dsobsitcar
             )
@@ -481,6 +541,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 cardapioitem_id,
                 vrunitario,
                 lote_id,
+                beneficioprodutocampanha_id,
                 1,
                 dsobsitcar
             FROM itcarrinho
@@ -518,6 +579,7 @@ def get_itens_carrinho(
 
             ItCarrinho.produto_id.label("produto_id"),
             obs_norm.label("dsobsitcar"),
+            ItCarrinho.beneficioprodutocampanha_id.label("campanha_id"),
             func.sum(ItCarrinho.qtitcarrinho).label("qtitcarrinho"),
 
             Produto.nmproduto.label("nmproduto"),
@@ -542,6 +604,7 @@ def get_itens_carrinho(
 
             ItCarrinho.produto_id,
             obs_norm,
+            ItCarrinho.beneficioprodutocampanha_id,
 
             Produto.nmproduto,
             ItCarrinho.vrunitario,
@@ -560,6 +623,7 @@ def get_itens_carrinho(
             "carrinho_id": r.carrinho_id,
             "produto_id": r.produto_id,
             "dsobsitcar": r.dsobsitcar,
+            "campanha_id": r.campanha_id,
             "qtitcarrinho": int(r.qtitcarrinho or 0),
             "nmproduto": r.nmproduto,
             "vrprecoprod": float(r.vrprecoprod) if r.vrprecoprod is not None else None,

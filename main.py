@@ -582,6 +582,34 @@ def garantir_cardapios_compartilhados() -> None:
                     "ADD COLUMN vendas_habilitadas TINYINT(1) NOT NULL DEFAULT 1 "
                     "AFTER sitassociacao"
                 ))
+            if "beneficioprodutocampanha" in tabelas:
+                colunas_campanha = {
+                    coluna["name"]
+                    for coluna in inspector.get_columns("beneficioprodutocampanha")
+                }
+                if "qtitenspacote" not in colunas_campanha:
+                    conexao.execute(text(
+                        "ALTER TABLE beneficioprodutocampanha "
+                        "ADD COLUMN qtitenspacote INT NULL AFTER limite_cliente_dia"
+                    ))
+                if "vrpacote" not in colunas_campanha:
+                    conexao.execute(text(
+                        "ALTER TABLE beneficioprodutocampanha "
+                        "ADD COLUMN vrpacote DECIMAL(10,2) NULL AFTER qtitenspacote"
+                    ))
+            if "itcarrinho" in tabelas:
+                colunas_itcarrinho = {
+                    coluna["name"] for coluna in inspector.get_columns("itcarrinho")
+                }
+                if "beneficioprodutocampanha_id" not in colunas_itcarrinho:
+                    conexao.execute(text(
+                        "ALTER TABLE itcarrinho "
+                        "ADD COLUMN beneficioprodutocampanha_id BIGINT NULL, "
+                        "ADD KEY ix_itcarrinho_campanha (beneficioprodutocampanha_id), "
+                        "ADD CONSTRAINT fk_itcarrinho_campanha FOREIGN KEY "
+                        "(beneficioprodutocampanha_id) REFERENCES beneficioprodutocampanha "
+                        "(beneficioprodutocampanha_id)"
+                    ))
             if "prioridade" in colunas_cardapioloja:
                 conexao.execute(
                     text("ALTER TABLE cardapioloja DROP COLUMN `prioridade`")
@@ -601,6 +629,25 @@ def garantir_cardapios_compartilhados() -> None:
                     "ADD KEY ix_itvenda_cardapioitem (cardapioitem_id), "
                     "ADD CONSTRAINT fk_itvenda_cardapioitem FOREIGN KEY (cardapioitem_id) "
                     "REFERENCES cardapioitem(cardapioitem_id) ON DELETE SET NULL"
+                ))
+            if "beneficioprodutocampanha_id" not in colunas_itvenda:
+                conexao.execute(text(
+                    "ALTER TABLE itvenda "
+                    "ADD COLUMN beneficioprodutocampanha_id BIGINT NULL, "
+                    "ADD KEY ix_itvenda_campanha (beneficioprodutocampanha_id), "
+                    "ADD CONSTRAINT fk_itvenda_campanha FOREIGN KEY "
+                    "(beneficioprodutocampanha_id) REFERENCES beneficioprodutocampanha "
+                    "(beneficioprodutocampanha_id)"
+                ))
+            if "beneficioprodutocampanha_id" not in colunas_checkout:
+                conexao.execute(text(
+                    "ALTER TABLE checkout_asaas_item "
+                    "ADD COLUMN beneficioprodutocampanha_id BIGINT NULL, "
+                    "ADD KEY ix_checkout_asaas_item_campanha "
+                    "(beneficioprodutocampanha_id), "
+                    "ADD CONSTRAINT fk_checkout_asaas_item_campanha FOREIGN KEY "
+                    "(beneficioprodutocampanha_id) REFERENCES beneficioprodutocampanha "
+                    "(beneficioprodutocampanha_id)"
                 ))
                 conexao.execute(text(
                     "ALTER TABLE cardapioprogramacao ADD COLUMN cardapioloja_id BIGINT NULL "

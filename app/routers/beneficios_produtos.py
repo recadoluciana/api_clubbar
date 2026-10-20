@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
@@ -39,18 +40,28 @@ class CampanhaIn(BaseModel):
     organizacao_id: int
     loja_id: int
     produto_id: int
-    tipo: str = Field(pattern="^(CORTESIA|ROLETA)$")
+    tipo: str = Field(pattern="^(CORTESIA|ROLETA|PACOTE)$")
     nmcampanha: str = Field(min_length=2, max_length=120)
     dthrinicio: datetime
     dthrfim: datetime
     qtlimite: int | None = Field(default=None, ge=1)
     limite_cliente_dia: int = Field(default=1, ge=1, le=10)
+    qtitenspacote: int | None = Field(default=None, ge=2, le=99)
+    vrpacote: Decimal | None = Field(
+        default=None, gt=0, max_digits=10, decimal_places=2,
+    )
     situacao: str = Field(default="ATIVA", pattern="^(ATIVA|INATIVA)$")
 
     @model_validator(mode="after")
     def periodo_valido(self):
         if self.dthrfim <= self.dthrinicio:
             raise ValueError("O fim da campanha deve ser posterior ao início.")
+        if self.tipo == "PACOTE":
+            if self.qtitenspacote is None or self.vrpacote is None:
+                raise ValueError("Informe a quantidade e o preço da promoção em pacote.")
+        else:
+            self.qtitenspacote = None
+            self.vrpacote = None
         return self
 
 
@@ -65,6 +76,8 @@ def _campanha_out(item: BeneficioProdutoCampanha, *, resgates: int | None = None
         "produto_id": int(item.produto_id), "tipo": item.tipo, "nmcampanha": item.nmcampanha,
         "dthrinicio": item.dthrinicio, "dthrfim": item.dthrfim, "qtlimite": item.qtlimite,
         "limite_cliente_dia": int(item.limite_cliente_dia or 1), "situacao": item.situacao,
+        "qtitenspacote": int(item.qtitenspacote) if item.qtitenspacote else None,
+        "vrpacote": float(item.vrpacote) if item.vrpacote is not None else None,
     }
     if resgates is not None:
         dados["resgates"] = resgates
@@ -89,6 +102,26 @@ def _total_resgates_validos(db: Session, campanha_id: int) -> int:
         .scalar()
         or 0
     )
+
+
+def _total_pacotes_vendidos(
+    db: Session, campanha: BeneficioProdutoCampanha,
+) -> int:
+    """Cada pacote gera uma ficha por unidade; conta os pacotes, não fichas."""
+    unidades = int(campanha.qtitenspacote or 1)
+    fichas = int(
+        db.query(func.count(ItVenda.itvenda_id))
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            ItVenda.beneficioprodutocampanha_id
+            == campanha.beneficioprodutocampanha_id,
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda.in_(("PENDENTE", "PAGA")),
+        )
+        .scalar()
+        or 0
+    )
+    return fichas // unidades
 
 
 def _tem_cortesia_pendente(db: Session, *, cliente_id: int, produto_id: int) -> bool:
@@ -154,7 +187,18 @@ def listar_campanhas(loja_id: int, organizacao_id: int, usuario: dict = Depends(
         BeneficioProdutoCampanha.situacao == "ATIVA",
     ).order_by(BeneficioProdutoCampanha.dthrinicio.desc()).all()
     produtos = {int(p.produto_id): p.nmproduto for p in db.query(Produto).filter(Produto.produto_id.in_([i.produto_id for i in itens] or [-1])).all()}
-    return [_campanha_out(i, resgates=_total_resgates_validos(db, int(i.beneficioprodutocampanha_id)), nmproduto=produtos.get(int(i.produto_id), "Produto")) for i in itens]
+    return [
+        _campanha_out(
+            i,
+            resgates=(
+                _total_pacotes_vendidos(db, i)
+                if i.tipo == "PACOTE"
+                else _total_resgates_validos(db, int(i.beneficioprodutocampanha_id))
+            ),
+            nmproduto=produtos.get(int(i.produto_id), "Produto"),
+        )
+        for i in itens
+    ]
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -194,7 +238,11 @@ def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_us
     itens = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.loja_id == loja_id, BeneficioProdutoCampanha.situacao == "ATIVA", BeneficioProdutoCampanha.dthrinicio <= agora, BeneficioProdutoCampanha.dthrfim >= agora).all()
     retorno = []
     for item in itens:
-        usados = _total_resgates_validos(db, int(item.beneficioprodutocampanha_id))
+        usados = (
+            _total_pacotes_vendidos(db, item)
+            if item.tipo == "PACOTE"
+            else _total_resgates_validos(db, int(item.beneficioprodutocampanha_id))
+        )
         if item.qtlimite is not None and usados >= item.qtlimite: continue
         oferta = _campanha_out(item, resgates=usados)
         if item.tipo == "CORTESIA":

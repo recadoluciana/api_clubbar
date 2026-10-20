@@ -15,6 +15,12 @@ class ItCarrinho(Base):
         index=True,
     )
     beneficioprodutoresgate_id = Column(BigInteger, ForeignKey("beneficioprodutoresgate.beneficioprodutoresgate_id"), nullable=True, index=True)
+    beneficioprodutocampanha_id = Column(
+        BigInteger,
+        ForeignKey("beneficioprodutocampanha.beneficioprodutocampanha_id"),
+        nullable=True,
+        index=True,
+    )
     vrunitario = Column(Numeric(10, 2), nullable=False)
     qtitcarrinho = Column(Integer, nullable=False, default=1)
     dsobsitcar = Column(String(255), nullable=True)

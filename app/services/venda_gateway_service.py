@@ -18,6 +18,7 @@ from app.models.pedidoentrega import PedidoEntrega
 from app.models.venda import Venda
 from app.services.carrinho_service import get_carrinho
 from app.services.venda_service import (
+    adicionar_itens_produto_venda,
     criar_ou_obter_venda_idempotente,
     gerar_token_qr,
 )
@@ -480,24 +481,25 @@ async def criar_venda_paga_por_checkout_snapshot(
     db.add(venda)
     db.flush()
 
-    for item in itens:
-        for _ in range(int(item.quantidade or 1)):
-            db.add(ItVenda(
-                venda_id=venda.venda_id,
-                tipoitem="PRODUTO",
-                produto_id=item.produto_id,
-                cardapioitem_id=item.cardapioitem_id,
-                lote_id=None,
-                qtitvenda=1,
-                vrunititvenda=item.vrunitario,
-                dsobsitvenda=item.dsobsitem,
-                identregaitvenda="NAO",
-                qrtokenitvenda=gerar_token_qr(),
-                nmparticipante=item.nmparticipante,
-                cpfparticipante=item.cpfparticipante,
-                pctaxaitvenda=item.pctaxaitvenda,
-                vrtaxaitvenda=item.vrtaxaitvenda,
-            ))
+    adicionar_itens_produto_venda(
+        db,
+        venda_id=int(venda.venda_id),
+        itens=[
+            {
+                "produto_id": item.produto_id,
+                "cardapioitem_id": item.cardapioitem_id,
+                "campanha_id": item.beneficioprodutocampanha_id,
+                "qtitcarrinho": item.quantidade,
+                "vrunitario": item.vrunitario,
+                "dsobsitcar": item.dsobsitem,
+                "nmparticipante": item.nmparticipante,
+                "cpfparticipante": item.cpfparticipante,
+                "pctaxaitvenda": item.pctaxaitvenda,
+                "vrtaxaitvenda": item.vrtaxaitvenda,
+            }
+            for item in itens
+        ],
+    )
 
     pag = PagVenda(
         venda_id=venda.venda_id,
