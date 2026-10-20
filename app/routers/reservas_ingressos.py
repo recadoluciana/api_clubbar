@@ -57,7 +57,7 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
         "evento_id": reserva.evento_id,
         "lote_id": reserva.lote_id,
         "lotepreco_id": reserva.lotepreco_id,
-        "beneficio_id": reserva.beneficio_id,
+        "beneficio_id": getattr(reserva, "beneficio_id", None),
         "tipo_beneficio": reserva.tipobeneficio,
         "quantidade": reserva.qtreservada,
         "valor_unitario": float(reserva.vrunitario),

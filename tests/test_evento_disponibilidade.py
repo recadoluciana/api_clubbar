@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from app.services.evento_disponibilidade_service import (
-    validar_evento_unico_por_loja_data_local,
+    validar_evento_unico_por_loja_data,
 )
 
 
@@ -31,27 +31,25 @@ class _BancoFalso:
 
 
 class EventoDisponibilidadeTest(unittest.TestCase):
-    def test_permite_quando_nao_existe_evento_no_mesmo_local(self):
+    def test_permite_quando_nao_existe_evento_na_mesma_loja(self):
         banco = _BancoFalso(None)
 
-        validar_evento_unico_por_loja_data_local(
+        validar_evento_unico_por_loja_data(
             banco,
             loja_id=3,
             inicio=datetime(2026, 10, 11, 20),
-            local="Salão Principal",
         )
 
-        self.assertEqual(len(banco.consulta.filtros), 4)
+        self.assertEqual(len(banco.consulta.filtros), 3)
 
-    def test_rejeita_evento_existente_na_mesma_data_e_local(self):
+    def test_rejeita_evento_existente_na_mesma_data_e_loja(self):
         banco = _BancoFalso(SimpleNamespace(nmtituloevento="Forró do X"))
 
         with self.assertRaises(HTTPException) as erro:
-            validar_evento_unico_por_loja_data_local(
+            validar_evento_unico_por_loja_data(
                 banco,
                 loja_id=3,
                 inicio=datetime(2026, 10, 11, 20),
-                local="Salão Principal",
             )
 
         self.assertEqual(erro.exception.status_code, 409)
@@ -61,15 +59,14 @@ class EventoDisponibilidadeTest(unittest.TestCase):
     def test_ignora_o_proprio_evento_ao_validar_edicao(self):
         banco = _BancoFalso(None)
 
-        validar_evento_unico_por_loja_data_local(
+        validar_evento_unico_por_loja_data(
             banco,
             loja_id=3,
             inicio=datetime(2026, 10, 11, 20),
-            local="Salão Principal",
             ignorar_evento_id=7,
         )
 
-        self.assertEqual(len(banco.consulta.filtros), 5)
+        self.assertEqual(len(banco.consulta.filtros), 4)
 
 
 if __name__ == "__main__":

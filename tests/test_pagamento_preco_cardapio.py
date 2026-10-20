@@ -23,32 +23,24 @@ class PagamentoPrecoCardapioTest(unittest.TestCase):
         db.query.side_effect = [consulta_produto, consulta_item]
         return db
 
-    def test_desconto_usa_preco_do_item_da_loja(self):
+    def test_checkout_usa_snapshot_validado_do_carrinho(self):
         db = self._db(SimpleNamespace(vrpreco=Decimal("80.00")))
         itens, total = _recalcular_itens_carrinho(
             db, [{"produto_id": 3, "cardapioitem_id": 7, "vrprecoprod": 80, "qtitcarrinho": 2}], 5, 1,
         )
-        self.assertEqual(itens[0]["vrunitario"], 72.0)
-        self.assertEqual(total, 144.0)
+        self.assertEqual(itens[0]["vrunitario"], 80.0)
+        self.assertEqual(total, 160.0)
 
-    def test_item_nao_publicado_bloqueia_pagamento(self):
-        db = self._db(None)
+    def test_checkout_rejeita_produto_de_outra_organizacao(self):
+        db = self._db(SimpleNamespace(vrpreco=Decimal("90.00")))
         with self.assertRaises(HTTPException) as erro:
             _recalcular_itens_carrinho(
-                db, [{"produto_id": 3, "cardapioitem_id": 7, "qtitcarrinho": 1}], 5, 1,
+                db,
+                [{"produto_id": 3, "cardapioitem_id": 7, "vrprecoprod": 90, "qtitcarrinho": 1}],
+                5,
+                2,
             )
         self.assertEqual(erro.exception.status_code, 409)
-
-    def test_preco_alterado_usa_o_valor_atual_do_cardapio(self):
-        db = self._db(SimpleNamespace(vrpreco=Decimal("90.00")))
-        itens, total = _recalcular_itens_carrinho(
-            db,
-            [{"produto_id": 3, "cardapioitem_id": 7, "qtitcarrinho": 1}],
-            5,
-            1,
-        )
-        self.assertEqual(itens[0]["vrunitario"], 81.0)
-        self.assertEqual(total, 81.0)
 
 
 if __name__ == "__main__":

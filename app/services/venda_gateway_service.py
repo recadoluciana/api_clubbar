@@ -487,8 +487,8 @@ async def criar_venda_paga_por_checkout_snapshot(
         itens=[
             {
                 "produto_id": item.produto_id,
-                "cardapioitem_id": item.cardapioitem_id,
-                "campanha_id": item.beneficioprodutocampanha_id,
+                "cardapioitem_id": getattr(item, "cardapioitem_id", None),
+                "campanha_id": getattr(item, "beneficioprodutocampanha_id", None),
                 "qtitcarrinho": item.quantidade,
                 "vrunitario": item.vrunitario,
                 "dsobsitcar": item.dsobsitem,

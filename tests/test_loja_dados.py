@@ -19,9 +19,11 @@ class LojaDadosTest(unittest.TestCase):
             complementoloja=None, cidade_id=1, nmcidade="Cidade",
             urllogoloja=None, urlfachadaloja=None,
             vrtaxaprod=5, vrtaxaing=10, vrtaxaminimaingresso=2.99,
+            emailorganizacao=None, telorganizacao=None, email_lead=None,
+            telefone_lead=None, permiteentrega=False,
         )
         consulta = Mock()
-        consulta.join.return_value.outerjoin.return_value.filter.return_value.first.return_value = row
+        consulta.join.return_value.outerjoin.return_value.outerjoin.return_value.filter.return_value.first.return_value = row
         db = Mock()
         db.query.side_effect = lambda *args: colunas.extend(args) or consulta
         request = Request({"type": "http", "scheme": "https", "server": ("localhost", 443), "path": "/lojas/dados_loja/4", "headers": []})

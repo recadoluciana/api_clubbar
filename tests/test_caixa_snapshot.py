@@ -12,6 +12,7 @@ from app.models.loja import Loja
 from app.models.pagvenda import PagVenda
 from app.models.venda import Venda
 from app.models.cashback_movimento import CashbackMovimento
+from app.models.beneficio_produto import BeneficioProdutoCampanha
 from app.services.venda_gateway_service import criar_venda_paga_por_checkout_snapshot
 
 
@@ -62,6 +63,8 @@ class _Db:
             return _Query(self.venda)
         if model is CashbackMovimento:
             return _Query(None)
+        if model is BeneficioProdutoCampanha:
+            return _Query([])
         raise AssertionError(f"Consulta inesperada: {model}")
 
     def add(self, objeto):
@@ -90,10 +93,13 @@ class CaixaSnapshotTest(unittest.IsolatedAsyncioTestCase):
             pix_qr_code_id='qr_123',
             dsorigemconfirmacao=None,
             dtconfirmacao=None,
+            dadosentrega=None,
         )
         item = SimpleNamespace(
             checkout_asaas_item_id=1,
             produto_id=5,
+            cardapioitem_id=None,
+            beneficioprodutocampanha_id=None,
             lote_id=None,
             quantidade=2,
             vrunitario=Decimal("12.50"),
