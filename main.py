@@ -369,7 +369,7 @@ def garantir_catalogo_ingressos() -> None:
                 INSERT INTO modalidadeingresso
                   (cdmodalidade,nmmodalidade,tipomodalidade,aplicacotalegal,exigebeneficio,exigecomprovante,permitepersonalizarnome,nrordem) VALUES
                   ('INTEIRA','Inteira','PADRAO',FALSE,FALSE,FALSE,FALSE,1),
-                  ('MEIA_LEGAL','Meia-entrada','LEGAL',TRUE,TRUE,TRUE,FALSE,2),
+                  ('MEIA_LEGAL','Meia-entrada (estudantes, PCD e jovens de baixa renda)','LEGAL',TRUE,TRUE,TRUE,FALSE,2),
                   ('MEIA_IDOSO','Meia-entrada (idosos, professores e outros)','LEGAL',FALSE,TRUE,TRUE,FALSE,3),
                   ('SOCIAL','Ingresso social','COMERCIAL',FALSE,FALSE,TRUE,TRUE,4),
                   ('CORTESIA','Cortesia','COMERCIAL',FALSE,FALSE,FALSE,TRUE,5),
@@ -412,6 +412,11 @@ def garantir_catalogo_ingressos() -> None:
                     UPDATE eventolotesetorpreco
                     SET nmpreco='Meia-entrada (idosos, professores e outros)'
                     WHERE tipopreco='MEIA_IDOSO' AND nmpreco='Pessoa idosa'
+                """))
+                conexao.execute(text("""
+                    UPDATE eventolotesetorpreco
+                    SET nmpreco='Meia-entrada (estudantes, PCD e jovens de baixa renda)'
+                    WHERE tipopreco='MEIA_LEGAL' AND nmpreco='Meia-entrada'
                 """))
                 conexao.execute(text("ALTER TABLE eventolotesetorpreco MODIFY modalidade_id BIGINT NOT NULL"))
                 fks = {fk.get("name") for fk in inspect(engine).get_foreign_keys("eventolotesetorpreco")}

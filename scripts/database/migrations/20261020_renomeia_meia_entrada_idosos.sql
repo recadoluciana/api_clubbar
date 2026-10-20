@@ -3,6 +3,10 @@ UPDATE modalidadeingresso
 SET nmmodalidade = 'Meia-entrada (idosos, professores e outros)'
 WHERE cdmodalidade = 'MEIA_IDOSO';
 
+UPDATE modalidadeingresso
+SET nmmodalidade = 'Meia-entrada (estudantes, PCD e jovens de baixa renda)'
+WHERE cdmodalidade = 'MEIA_LEGAL';
+
 UPDATE beneficioingresso
 SET nmbeneficio = 'Meia-entrada (idosos, professores e outros)'
 WHERE cdbeneficio = 'IDOSO';
@@ -12,3 +16,7 @@ WHERE cdbeneficio = 'IDOSO';
 UPDATE eventolotesetorpreco
 SET nmpreco = 'Meia-entrada (idosos, professores e outros)'
 WHERE tipopreco = 'MEIA_IDOSO' AND nmpreco = 'Pessoa idosa';
+
+UPDATE eventolotesetorpreco
+SET nmpreco = 'Meia-entrada (estudantes, PCD e jovens de baixa renda)'
+WHERE tipopreco = 'MEIA_LEGAL' AND nmpreco = 'Meia-entrada';
