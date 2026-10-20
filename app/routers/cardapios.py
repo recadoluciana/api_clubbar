@@ -21,10 +21,8 @@ from app.models.cardapio import (
     CardapioVersao, CardapioVersaoCategoria,
 )
 from app.models.categoria import Categoria
-from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
-from app.models.venda import Venda
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.utils.datetime_utils import FUSO_BRASIL
 
@@ -120,14 +118,11 @@ class AssociarCardapioIn(BaseModel):
 
 class ItemIn(BaseModel):
     produto_id: int
-    vrpreco: Decimal = Field(ge=0)
+    vrpreco: Decimal = Field(gt=0)
     tipodesconto: Literal["NENHUM", "PERCENTUAL", "VALOR"] = "NENHUM"
     vrdesconto: Decimal = Field(default=Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     dtinidesconto: datetime | None = None
     dtfimdesconto: datetime | None = None
-    qtcortesia: int | None = Field(default=None, ge=1)
-    dtinicortesia: datetime | None = None
-    dtfimcortesia: datetime | None = None
     pccashback: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
     sititem: Literal["ATIVO", "INATIVO"] = "ATIVO"
     idorditem: int = Field(default=1, ge=1)
@@ -138,28 +133,12 @@ class ItemIn(BaseModel):
             self.vrdesconto = Decimal("0")
             self.dtinidesconto = None
             self.dtfimdesconto = None
-        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto > 100:
-            raise ValueError("O desconto percentual não pode ultrapassar 100%.")
-        elif self.tipodesconto == "VALOR" and self.vrdesconto > self.vrpreco:
-            raise ValueError("O desconto não pode superar o preço do produto.")
+        elif self.tipodesconto == "PERCENTUAL" and self.vrdesconto >= 100:
+            raise ValueError("O desconto percentual deve ser menor que 100%.")
+        elif self.tipodesconto == "VALOR" and self.vrdesconto >= self.vrpreco:
+            raise ValueError("O desconto deve ser menor que o preço do produto.")
         if self.dtinidesconto and self.dtfimdesconto and self.dtfimdesconto < self.dtinidesconto:
             raise ValueError("O fim do desconto deve ser posterior ao início.")
-        eh_cortesia = (
-            self.vrpreco == 0
-            or (self.tipodesconto == "PERCENTUAL" and self.vrdesconto == 100)
-            or (self.tipodesconto == "VALOR" and self.vrdesconto == self.vrpreco)
-        )
-        if eh_cortesia:
-            if self.qtcortesia is None:
-                raise ValueError("Informe a quantidade de cortesias disponibilizadas.")
-            if self.dtinicortesia is None or self.dtfimcortesia is None:
-                raise ValueError("Informe o período de disponibilidade das cortesias.")
-            if self.dtfimcortesia <= self.dtinicortesia:
-                raise ValueError("O fim das cortesias deve ser posterior ao início.")
-        else:
-            self.qtcortesia = None
-            self.dtinicortesia = None
-            self.dtfimcortesia = None
         return self
 
 
@@ -290,48 +269,6 @@ def _preco_final_item(item: CardapioItem, agora: datetime) -> tuple[Decimal, boo
     return max(Decimal("0"), final).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP), ativo
 
 
-def _dados_cortesia_publica(
-    db: Session,
-    item: CardapioItem,
-    preco_final: Decimal,
-    agora: datetime,
-) -> dict[str, int | bool | None]:
-    """Retorna disponibilidade e saldo de um produto gratuito no cardápio público."""
-    if preco_final > 0:
-        return {
-            "cortesia_disponivel": None,
-            "qtcortesiasresgatadas": None,
-            "qtcortesiasrestantes": None,
-        }
-
-    limite = int(item.qtcortesia or 0)
-    resgatadas = (
-        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
-        .join(Venda, Venda.venda_id == ItVenda.venda_id)
-        .filter(
-            ItVenda.cardapioitem_id == item.cardapioitem_id,
-            ItVenda.tipoitem == "PRODUTO",
-            ItVenda.sititvenda == "ATIVO",
-            Venda.sitvenda == "PAGA",
-        )
-        .scalar()
-        or 0
-    )
-    restantes = max(0, limite - int(resgatadas))
-    disponivel = (
-        limite > 0
-        and item.dtinicortesia is not None
-        and item.dtfimcortesia is not None
-        and item.dtinicortesia <= agora <= item.dtfimcortesia
-        and restantes > 0
-    )
-    return {
-        "cortesia_disponivel": disponivel,
-        "qtcortesiasresgatadas": int(resgatadas),
-        "qtcortesiasrestantes": restantes,
-    }
-
-
 def _conteudo(
     db: Session,
     versao: CardapioVersao,
@@ -366,12 +303,6 @@ def _conteudo(
             tipo = ci.tipodesconto or "NENHUM"
             desconto = Decimal(ci.vrdesconto or 0)
             final, ativo = _preco_final_item(ci, agora)
-            dados_cortesia = _dados_cortesia_publica(
-                db,
-                ci,
-                final,
-                agora,
-            )
             produtos.append({
                 "cardapioitem_id": ci.cardapioitem_id,
                 "produto_id": produto.produto_id,
@@ -386,7 +317,9 @@ def _conteudo(
                 "vrpreco": float(preco),
                 "vrprecoprod": float(preco),
                 "vrprecofinal": float(final),
-                **dados_cortesia,
+                "cortesia_disponivel": None,
+                "qtcortesiasresgatadas": None,
+                "qtcortesiasrestantes": None,
                 "sititem": ci.sititem,
                 "sitproduto": produto.sitproduto,
                 "tipodesconto": tipo,
@@ -395,9 +328,6 @@ def _conteudo(
                 "pccashback": float(ci.pccashback) if ci.pccashback is not None else None,
                 "dtinidesconto": ci.dtinidesconto,
                 "dtfimdesconto": ci.dtfimdesconto,
-                "qtcortesia": ci.qtcortesia,
-                "dtinicortesia": ci.dtinicortesia,
-                "dtfimcortesia": ci.dtfimcortesia,
                 "dtcriacao": produto.dtcriacao,
                 "dtultatu": produto.dtultatu,
                 "idorditem": ci.idorditem,
@@ -742,7 +672,7 @@ def nova_versao(cardapio_id: int, payload=Depends(get_usuario_logado), db: Sessi
             nc = CardapioVersaoCategoria(cardapioversao_id=nova.cardapioversao_id, categoria_id=cat.categoria_id, idordcategoria=cat.idordcategoria)
             db.add(nc); db.flush(); mapa[cat.cardapioversaocategoria_id] = nc.cardapioversaocategoria_id
         for item in db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == origem.cardapioversao_id).all():
-            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, qtcortesia=item.qtcortesia, dtinicortesia=item.dtinicortesia, dtfimcortesia=item.dtfimcortesia, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=nova.cardapioversao_id, cardapioversaocategoria_id=mapa[item.cardapioversaocategoria_id], produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
     db.commit(); db.refresh(nova)
     return _conteudo(db, nova, cardapio, incluir_inativos=True)
 
@@ -773,7 +703,7 @@ def salvar_conteudo(versao_id: int, dados: ConteudoVersaoIn, payload=Depends(get
         vinculo = CardapioVersaoCategoria(cardapioversao_id=versao_id, categoria_id=categoria.categoria_id, idordcategoria=categoria.idordcategoria)
         db.add(vinculo); db.flush()
         for item in categoria.itens:
-            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, qtcortesia=item.qtcortesia, dtinicortesia=item.dtinicortesia, dtfimcortesia=item.dtfimcortesia, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
+            db.add(CardapioItem(cardapioversao_id=versao_id, cardapioversaocategoria_id=vinculo.cardapioversaocategoria_id, produto_id=item.produto_id, vrpreco=item.vrpreco, tipodesconto=item.tipodesconto, vrdesconto=item.vrdesconto, dtinidesconto=item.dtinidesconto, dtfimdesconto=item.dtfimdesconto, pccashback=item.pccashback, sititem=item.sititem, idorditem=item.idorditem))
     db.commit()
     return _conteudo(db, versao, cardapio, incluir_inativos=True)
 

@@ -14,16 +14,8 @@ from app.utils.datetime_utils import FUSO_BRASIL
 
 
 def item_eh_cortesia(item: CardapioItem) -> bool:
-    """Indica se a regra comercial do item reduz seu preço a zero."""
-    preco = Decimal(str(item.vrpreco or 0))
-    if preco <= 0:
-        return True
-
-    tipo = (item.tipodesconto or "NENHUM").upper()
-    desconto = Decimal(str(item.vrdesconto or 0))
-    return (tipo == "PERCENTUAL" and desconto >= Decimal("100")) or (
-        tipo == "VALOR" and desconto >= preco
-    )
+    """Cortesias são emitidas exclusivamente pelas campanhas da loja."""
+    return False
 
 
 def _validar_periodo_e_limite(item: CardapioItem) -> None:

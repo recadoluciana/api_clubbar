@@ -487,8 +487,8 @@ def garantir_descontos_por_cardapio() -> None:
 
 
 @app.on_event("startup")
-def garantir_cortesias_por_cardapio() -> None:
-    """Adiciona o limite e o período de resgate das ofertas de cortesia."""
+def remover_cortesias_legadas_do_cardapio() -> None:
+    """Remove a configuração legada de cortesia e itens gratuitos do cardápio."""
     try:
         inspector = inspect(engine)
         if "cardapioitem" not in inspector.get_table_names():
@@ -497,24 +497,30 @@ def garantir_cortesias_por_cardapio() -> None:
             coluna["name"] for coluna in inspector.get_columns("cardapioitem")
         }
         with engine.begin() as conexao:
-            if "qtcortesia" not in colunas:
+            # Itens gratuitos e descontos que zeravam o preço pertenciam ao
+            # fluxo legado. Os benefícios passam a ser definidos somente nas
+            # campanhas. As vendas históricas permanecem por ON DELETE SET NULL.
+            conexao.execute(text(
+                "DELETE FROM cardapioitem "
+                "WHERE vrpreco <= 0 "
+                "OR (tipodesconto = 'PERCENTUAL' AND vrdesconto >= 100) "
+                "OR (tipodesconto = 'VALOR' AND vrdesconto >= vrpreco)"
+            ))
+            if "qtcortesia" in colunas:
                 conexao.execute(text(
-                    "ALTER TABLE cardapioitem ADD COLUMN qtcortesia INT NULL "
-                    "AFTER dtfimdesconto"
+                    "ALTER TABLE cardapioitem DROP COLUMN qtcortesia"
                 ))
-            if "dtinicortesia" not in colunas:
+            if "dtinicortesia" in colunas:
                 conexao.execute(text(
-                    "ALTER TABLE cardapioitem ADD COLUMN dtinicortesia DATETIME NULL "
-                    "AFTER qtcortesia"
+                    "ALTER TABLE cardapioitem DROP COLUMN dtinicortesia"
                 ))
-            if "dtfimcortesia" not in colunas:
+            if "dtfimcortesia" in colunas:
                 conexao.execute(text(
-                    "ALTER TABLE cardapioitem ADD COLUMN dtfimcortesia DATETIME NULL "
-                    "AFTER dtinicortesia"
+                    "ALTER TABLE cardapioitem DROP COLUMN dtfimcortesia"
                 ))
-        logger.info("Limites de cortesia por item de cardápio verificados.")
+        logger.info("Cortesias legadas por item de cardápio removidas.")
     except Exception:
-        logger.exception("Não foi possível preparar cortesias por cardápio")
+        logger.exception("Não foi possível remover cortesias legadas do cardápio")
         raise
 
 
