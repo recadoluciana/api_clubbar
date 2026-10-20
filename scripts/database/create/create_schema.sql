@@ -1671,12 +1671,12 @@ INSERT INTO beneficioingresso (beneficio_id, cdbeneficio, nmbeneficio, exigecomp
   (2, 'JOVEM_BAIXA_RENDA', 'Jovem de baixa renda', TRUE, 2),
   (3, 'PCD', 'Pessoa com deficiência', TRUE, 3),
   (4, 'ACOMPANHANTE_PCD', 'Acompanhante de PcD', TRUE, 4),
-  (5, 'IDOSO', 'Pessoa idosa', TRUE, 5);
+  (5, 'IDOSO', 'Meia-entrada (idosos, professores e outros)', TRUE, 5);
 
 INSERT INTO modalidadeingresso (modalidade_id, cdmodalidade, nmmodalidade, tipomodalidade, aplicacotalegal, exigebeneficio, exigecomprovante, permitepersonalizarnome, nrordem) VALUES
   (1, 'INTEIRA', 'Inteira', 'PADRAO', FALSE, FALSE, FALSE, FALSE, 1),
   (2, 'MEIA_LEGAL', 'Meia-entrada', 'LEGAL', TRUE, TRUE, TRUE, FALSE, 2),
-  (3, 'MEIA_IDOSO', 'Pessoa idosa', 'LEGAL', FALSE, TRUE, TRUE, FALSE, 3),
+  (3, 'MEIA_IDOSO', 'Meia-entrada (idosos, professores e outros)', 'LEGAL', FALSE, TRUE, TRUE, FALSE, 3),
   (4, 'SOCIAL', 'Ingresso social', 'COMERCIAL', FALSE, FALSE, TRUE, TRUE, 4),
   (5, 'CORTESIA', 'Cortesia', 'COMERCIAL', FALSE, FALSE, FALSE, TRUE, 5),
   (6, 'OUTRO', 'Outra modalidade', 'COMERCIAL', FALSE, FALSE, FALSE, TRUE, 6);

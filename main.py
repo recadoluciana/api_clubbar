@@ -362,7 +362,7 @@ def garantir_catalogo_ingressos() -> None:
                 INSERT INTO beneficioingresso (cdbeneficio,nmbeneficio,exigecomprovante,nrordem) VALUES
                   ('ESTUDANTE','Estudante',TRUE,1),('JOVEM_BAIXA_RENDA','Jovem de baixa renda',TRUE,2),
                   ('PCD','Pessoa com deficiência',TRUE,3),('ACOMPANHANTE_PCD','Acompanhante de PcD',TRUE,4),
-                  ('IDOSO','Pessoa idosa',TRUE,5)
+                  ('IDOSO','Meia-entrada (idosos, professores e outros)',TRUE,5)
                 ON DUPLICATE KEY UPDATE nmbeneficio=VALUES(nmbeneficio)
             """))
             conexao.execute(text("""
@@ -370,7 +370,7 @@ def garantir_catalogo_ingressos() -> None:
                   (cdmodalidade,nmmodalidade,tipomodalidade,aplicacotalegal,exigebeneficio,exigecomprovante,permitepersonalizarnome,nrordem) VALUES
                   ('INTEIRA','Inteira','PADRAO',FALSE,FALSE,FALSE,FALSE,1),
                   ('MEIA_LEGAL','Meia-entrada','LEGAL',TRUE,TRUE,TRUE,FALSE,2),
-                  ('MEIA_IDOSO','Pessoa idosa','LEGAL',FALSE,TRUE,TRUE,FALSE,3),
+                  ('MEIA_IDOSO','Meia-entrada (idosos, professores e outros)','LEGAL',FALSE,TRUE,TRUE,FALSE,3),
                   ('SOCIAL','Ingresso social','COMERCIAL',FALSE,FALSE,TRUE,TRUE,4),
                   ('CORTESIA','Cortesia','COMERCIAL',FALSE,FALSE,FALSE,TRUE,5),
                   ('OUTRO','Outra modalidade','COMERCIAL',FALSE,FALSE,FALSE,TRUE,6)
