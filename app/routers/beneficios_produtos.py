@@ -170,6 +170,26 @@ def _tem_desconto_recente(db: Session, *, cliente_id: int, produto_id: int, agor
     )
 
 
+def _proxima_rodada_roleta(giros: list, agora: datetime) -> datetime | None:
+    """Retorna a liberação após o segundo giro feito dentro de 24 horas."""
+    if len(giros) < MAX_GIROS_POR_PRODUTO_EM_24H:
+        return None
+    ultimo_giro, penultimo_giro = giros[:MAX_GIROS_POR_PRODUTO_EM_24H]
+    proxima_rodada = ultimo_giro.dtresgate + timedelta(hours=JANELA_GIRO_HORAS)
+    if penultimo_giro.dtresgate < ultimo_giro.dtresgate - timedelta(
+        hours=JANELA_GIRO_HORAS
+    ):
+        return None
+    return proxima_rodada if agora < proxima_rodada else None
+
+
+def _texto_tempo_restante(data_final: datetime, agora: datetime) -> str:
+    segundos = max(0, int((data_final - agora).total_seconds()))
+    horas, restante = divmod(segundos, 3600)
+    minutos, segundos = divmod(restante, 60)
+    return f"{horas:02}h {minutos:02}min {segundos:02}s"
+
+
 def _validar_escopo(db: Session, dados: CampanhaIn, usuario: dict) -> None:
     loja = db.query(Loja).filter(Loja.loja_id == dados.loja_id, Loja.organizacao_id == dados.organizacao_id).first()
     produto = db.query(Produto).filter(Produto.produto_id == dados.produto_id, Produto.organizacao_id == dados.organizacao_id, Produto.sitproduto == "ATIVO").first()
@@ -256,6 +276,27 @@ def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_us
                 oferta["motivo_indisponibilidade"] = (
                     "Você já possui uma cortesia válida deste produto aguardando retirada."
                 )
+        elif item.tipo == "ROLETA":
+            ultimos_giros = (
+                db.query(BeneficioProdutoResgate)
+                .join(
+                    BeneficioProdutoCampanha,
+                    BeneficioProdutoCampanha.beneficioprodutocampanha_id
+                    == BeneficioProdutoResgate.campanha_id,
+                )
+                .filter(
+                    BeneficioProdutoResgate.cliente_id == cliente_id,
+                    BeneficioProdutoResgate.produto_id == item.produto_id,
+                    BeneficioProdutoCampanha.tipo == "ROLETA",
+                )
+                .order_by(BeneficioProdutoResgate.dtresgate.desc())
+                .limit(MAX_GIROS_POR_PRODUTO_EM_24H)
+                .all()
+            )
+            proxima_rodada = _proxima_rodada_roleta(ultimos_giros, agora)
+            oferta["proxima_rodada_em"] = (
+                proxima_rodada.isoformat() if proxima_rodada else None
+            )
         retorno.append(oferta)
     return retorno
 
@@ -320,21 +361,12 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
         .limit(MAX_GIROS_POR_PRODUTO_EM_24H)
         .all()
     )
-    ultimo_giro = ultimos_dois_giros[0] if ultimos_dois_giros else None
-    dois_giros_na_mesma_janela = (
-        len(ultimos_dois_giros) == MAX_GIROS_POR_PRODUTO_EM_24H
-        and ultimo_giro is not None
-        and ultimos_dois_giros[1].dtresgate
-        >= ultimo_giro.dtresgate - timedelta(hours=JANELA_GIRO_HORAS)
-    )
-    if (
-        dois_giros_na_mesma_janela
-        and ultimo_giro is not None
-        and agora < ultimo_giro.dtresgate + timedelta(hours=JANELA_GIRO_HORAS)
-    ):
+    proxima_rodada = _proxima_rodada_roleta(ultimos_dois_giros, agora)
+    if proxima_rodada:
         raise HTTPException(
             409,
-            "Você já usou suas duas tentativas para este produto. Tente novamente 24 horas após o último giro.",
+            "Você já usou suas duas tentativas para este produto. "
+            f"Próxima rodada em {_texto_tempo_restante(proxima_rodada, agora)}.",
         )
 
     # O segundo giro substitui o prêmio ainda disponível do primeiro. Assim,
