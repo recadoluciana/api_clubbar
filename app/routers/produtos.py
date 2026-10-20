@@ -276,6 +276,7 @@ def atualizar_produto(
     categoria_id: int | None = Form(None),
     nmproduto: str | None = Form(None),
     dsproduto: str | None = Form(None),
+    vrprecoprod: float | None = Form(None),
     sitproduto: str | None = Form(None),
     urlfotoproduto: UploadFile | None = File(None),
     db: Session = Depends(get_db),
@@ -320,6 +321,14 @@ def atualizar_produto(
 
         if dsproduto is not None:
             produto.dsproduto = dsproduto
+
+        if vrprecoprod is not None:
+            if vrprecoprod <= 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Informe um preço padrão maior que zero.",
+                )
+            produto.vrprecopadrao = vrprecoprod
 
         if sitproduto is not None:
             produto.sitproduto = sitproduto
@@ -436,6 +445,7 @@ async def criar_produto(
     categoria_id: int | None = Form(None),
     nmproduto: str = Form(...),
     dsproduto: str = Form(""),
+    vrprecoprod: float = Form(...),
     sitproduto: str = Form(...),
     idtipoproduto: str = Form(...),
     lote_id: int | None = Form(None),
@@ -448,6 +458,12 @@ async def criar_produto(
 
     if not nmproduto:
         raise HTTPException(status_code=400, detail="Nome do produto é obrigatório.")
+
+    if vrprecoprod <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe um preço padrão maior que zero.",
+        )
 
     if categoria_id:
         categoria = db.query(Categoria).filter(
@@ -494,6 +510,7 @@ async def criar_produto(
         organizacao_id=organizacao_id,
         nmproduto=nmproduto,
         dsproduto=dsproduto,
+        vrprecopadrao=vrprecoprod,
         sitproduto=sitproduto,
         urlfotoproduto=url_foto,
     )

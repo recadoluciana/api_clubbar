@@ -212,22 +212,28 @@ app.include_router(beneficios_produtos.router)
 
 @app.on_event("startup")
 def garantir_preco_padrao_produto() -> None:
-    """Adiciona a sugestão de preço sem alterar os preços já nos cardápios."""
+    """Mantém um preço padrão válido para cada produto mestre."""
     try:
         inspector = inspect(engine)
         if "produto" not in inspector.get_table_names():
             return
         colunas = {coluna["name"] for coluna in inspector.get_columns("produto")}
-        if "vrprecopadrao" in colunas:
-            return
         with engine.begin() as conexao:
-            conexao.execute(
-                text(
-                    "ALTER TABLE produto "
-                    "ADD COLUMN vrprecopadrao DECIMAL(10,2) NOT NULL DEFAULT 0.00"
+            if "vrprecopadrao" not in colunas:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE produto "
+                        "ADD COLUMN vrprecopadrao DECIMAL(10,2) NOT NULL DEFAULT 5.00"
+                    )
                 )
-            )
-        logger.info("Campo de preço padrão adicionado aos produtos.")
+            conexao.execute(text(
+                "UPDATE produto SET vrprecopadrao = 5.00 "
+                "WHERE vrprecopadrao IS NULL OR vrprecopadrao <= 0"
+            ))
+            conexao.execute(text(
+                "ALTER TABLE produto ALTER COLUMN vrprecopadrao SET DEFAULT 5.00"
+            ))
+        logger.info("Preço padrão dos produtos verificado.")
     except Exception:
         logger.exception("Não foi possível criar o campo de preço padrão do produto")
         raise
@@ -488,7 +494,7 @@ def garantir_descontos_por_cardapio() -> None:
 
 @app.on_event("startup")
 def remover_cortesias_legadas_do_cardapio() -> None:
-    """Remove a configuração legada de cortesia e itens gratuitos do cardápio."""
+    """Remove apenas a configuração legada, preservando os produtos do cardápio."""
     try:
         inspector = inspect(engine)
         if "cardapioitem" not in inspector.get_table_names():
@@ -497,13 +503,18 @@ def remover_cortesias_legadas_do_cardapio() -> None:
             coluna["name"] for coluna in inspector.get_columns("cardapioitem")
         }
         with engine.begin() as conexao:
-            # Itens gratuitos e descontos que zeravam o preço pertenciam ao
-            # fluxo legado. Os benefícios passam a ser definidos somente nas
-            # campanhas. As vendas históricas permanecem por ON DELETE SET NULL.
+            # Benefícios são definidos somente nas campanhas. Para preservar o
+            # cardápio, os preços legados zerados recebem o valor padrão mínimo
+            # e descontos integrais são removidos, sem mexer nas vendas.
             conexao.execute(text(
-                "DELETE FROM cardapioitem "
-                "WHERE vrpreco <= 0 "
-                "OR (tipodesconto = 'PERCENTUAL' AND vrdesconto >= 100) "
+                "UPDATE cardapioitem SET vrpreco = 5.00 "
+                "WHERE vrpreco IS NULL OR vrpreco <= 0"
+            ))
+            conexao.execute(text(
+                "UPDATE cardapioitem "
+                "SET tipodesconto = 'NENHUM', vrdesconto = 0.00, "
+                "dtinidesconto = NULL, dtfimdesconto = NULL "
+                "WHERE (tipodesconto = 'PERCENTUAL' AND vrdesconto >= 100) "
                 "OR (tipodesconto = 'VALOR' AND vrdesconto >= vrpreco)"
             ))
             if "qtcortesia" in colunas:

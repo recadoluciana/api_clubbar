@@ -12,7 +12,7 @@ class Produto(Base):
     # Valor sugerido ao incluir o produto em um cardápio. O preço de venda
     # continua sendo o do CardapioItem (vrpreco), que é independente.
     vrprecopadrao = Column(
-        Numeric(10, 2), nullable=False, server_default=text("0.00")
+        Numeric(10, 2), nullable=False, server_default=text("5.00")
     )
     sitproduto = Column(Enum("ATIVO", "INATIVO", name="sitproduto_enum"), nullable=False, server_default="ATIVO")
     skuproduto = Column(String(100), nullable=True)

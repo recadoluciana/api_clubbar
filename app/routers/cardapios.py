@@ -94,9 +94,7 @@ class CardapioAtualizarIn(BaseModel):
 class ProdutoOrganizacaoIn(BaseModel):
     nmproduto: str = Field(min_length=2, max_length=100)
     dsproduto: str | None = Field(default=None, max_length=255)
-    vrprecopadrao: Decimal = Field(
-        default=Decimal("0"), ge=0, max_digits=10, decimal_places=2
-    )
+    vrprecopadrao: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
     sitproduto: Literal["ATIVO", "INATIVO"] = "ATIVO"
     skuproduto: str | None = Field(default=None, max_length=100)
     urlfotoproduto: str | None = Field(default=None, max_length=255)
