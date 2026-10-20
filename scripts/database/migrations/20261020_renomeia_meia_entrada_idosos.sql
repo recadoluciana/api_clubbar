@@ -6,3 +6,9 @@ WHERE cdmodalidade = 'MEIA_IDOSO';
 UPDATE beneficioingresso
 SET nmbeneficio = 'Meia-entrada (idosos, professores e outros)'
 WHERE cdbeneficio = 'IDOSO';
+
+-- Os lotes já publicados guardam uma cópia do nome da modalidade.
+-- Não altera snapshots de vendas e ingressos já emitidos.
+UPDATE eventolotesetorpreco
+SET nmpreco = 'Meia-entrada (idosos, professores e outros)'
+WHERE tipopreco = 'MEIA_IDOSO' AND nmpreco = 'Pessoa idosa';

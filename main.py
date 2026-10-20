@@ -408,6 +408,11 @@ def garantir_catalogo_ingressos() -> None:
                     UPDATE eventolotesetorpreco p JOIN modalidadeingresso m ON m.cdmodalidade=p.tipopreco
                     SET p.modalidade_id=m.modalidade_id WHERE p.modalidade_id IS NULL
                 """))
+                conexao.execute(text("""
+                    UPDATE eventolotesetorpreco
+                    SET nmpreco='Meia-entrada (idosos, professores e outros)'
+                    WHERE tipopreco='MEIA_IDOSO' AND nmpreco='Pessoa idosa'
+                """))
                 conexao.execute(text("ALTER TABLE eventolotesetorpreco MODIFY modalidade_id BIGINT NOT NULL"))
                 fks = {fk.get("name") for fk in inspect(engine).get_foreign_keys("eventolotesetorpreco")}
                 if "fk_eventolotesetorpreco_modalidade" not in fks:
