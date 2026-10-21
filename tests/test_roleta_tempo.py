@@ -31,6 +31,14 @@ class PromocaoPercentualTest(unittest.TestCase):
         with self.assertRaises(ValidationError):
             CampanhaIn(**self._dados(percentual_desconto=100))
 
+    def test_campanha_pode_nao_ter_data_final(self):
+        campanha = CampanhaIn(**self._dados(dthrfim=None))
+        self.assertIsNone(campanha.dthrfim)
+
+    def test_data_final_deve_ser_posterior_ao_inicio(self):
+        with self.assertRaises(ValidationError):
+            CampanhaIn(**self._dados(dthrfim=datetime(2026, 10, 20, 10, 0)))
+
 
 if __name__ == "__main__":
     unittest.main()

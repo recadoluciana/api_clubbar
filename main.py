@@ -239,6 +239,30 @@ def garantir_preco_padrao_produto() -> None:
 
 
 @app.on_event("startup")
+def permitir_campanhas_sem_data_fim() -> None:
+    """Permite campanhas contínuas sem alterar as campanhas já programadas."""
+    try:
+        if engine.dialect.name != "mysql":
+            return
+        inspector = inspect(engine)
+        if "beneficioprodutocampanha" not in inspector.get_table_names():
+            return
+        colunas = {
+            coluna["name"]: coluna
+            for coluna in inspector.get_columns("beneficioprodutocampanha")
+        }
+        if "dthrfim" in colunas and not colunas["dthrfim"].get("nullable", False):
+            with engine.begin() as conexao:
+                conexao.execute(text(
+                    "ALTER TABLE beneficioprodutocampanha MODIFY dthrfim DATETIME NULL"
+                ))
+        logger.info("Período opcional das campanhas de produto verificado.")
+    except Exception:
+        logger.exception("Não foi possível preparar o período das campanhas de produto")
+        raise
+
+
+@app.on_event("startup")
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)

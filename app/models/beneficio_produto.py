@@ -15,7 +15,8 @@ class BeneficioProdutoCampanha(Base):
     tipo = Column(String(20), nullable=False)  # CORTESIA | PERCENTUAL | PACOTE
     nmcampanha = Column(String(120), nullable=False)
     dthrinicio = Column(DateTime, nullable=False)
-    dthrfim = Column(DateTime, nullable=False)
+    # Sem data de fim, a campanha permanece ativa até ser inativada pelo parceiro.
+    dthrfim = Column(DateTime, nullable=True)
     qtlimite = Column(Integer, nullable=True)
     limite_cliente_dia = Column(Integer, nullable=False, default=1)
     # Usado somente em campanhas do tipo PACOTE. Ex.: 3 cervejas por R$ 40.

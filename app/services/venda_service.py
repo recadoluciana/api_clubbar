@@ -64,7 +64,11 @@ def validar_limite_pacotes(
         not campanha
         or campanha.tipo != "PACOTE"
         or campanha.situacao != "ATIVA"
-        or not (campanha.dthrinicio <= agora <= campanha.dthrfim)
+        or campanha.dthrinicio > agora
+        or (
+            campanha.dthrfim is not None
+            and campanha.dthrfim < agora
+        )
     ):
         raise HTTPException(409, "Esta promoção não está mais disponível.")
     if campanha.qtlimite is None:
@@ -107,7 +111,11 @@ def validar_limite_promocao_percentual(
         not campanha
         or campanha.tipo != "PERCENTUAL"
         or campanha.situacao != "ATIVA"
-        or not (campanha.dthrinicio <= agora <= campanha.dthrfim)
+        or campanha.dthrinicio > agora
+        or (
+            campanha.dthrfim is not None
+            and campanha.dthrfim < agora
+        )
     ):
         raise HTTPException(409, "Esta promoção não está mais disponível.")
     if campanha.qtlimite is None:

@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.core.cliente_auth import exigir_cliente_autenticado
@@ -35,7 +35,7 @@ class CampanhaIn(BaseModel):
     tipo: str = Field(pattern="^(CORTESIA|PERCENTUAL|PACOTE)$")
     nmcampanha: str = Field(min_length=2, max_length=120)
     dthrinicio: datetime
-    dthrfim: datetime
+    dthrfim: datetime | None = None
     qtlimite: int | None = Field(default=None, ge=1)
     limite_cliente_dia: int = Field(default=1, ge=1, le=10)
     qtitenspacote: int | None = Field(default=None, ge=2, le=99)
@@ -49,7 +49,7 @@ class CampanhaIn(BaseModel):
 
     @model_validator(mode="after")
     def periodo_valido(self):
-        if self.dthrfim <= self.dthrinicio:
+        if self.dthrfim is not None and self.dthrfim <= self.dthrinicio:
             raise ValueError("O fim da campanha deve ser posterior ao início.")
         if self.tipo == "PACOTE":
             if self.qtitenspacote is None or self.vrpacote is None:
@@ -71,6 +71,21 @@ class GiroIn(BaseModel):
     cliente_id: int
 
 
+def _status_periodo(item: BeneficioProdutoCampanha, agora: datetime | None = None) -> str:
+    agora = agora or _agora()
+    if item.situacao != "ATIVA":
+        return "INATIVA"
+    if item.dthrinicio > agora:
+        return "AGENDADA"
+    if item.dthrfim is not None and item.dthrfim < agora:
+        return "ENCERRADA"
+    return "ATIVA"
+
+
+def _periodo_ativo(item: BeneficioProdutoCampanha, agora: datetime | None = None) -> bool:
+    return _status_periodo(item, agora) == "ATIVA"
+
+
 def _campanha_out(item: BeneficioProdutoCampanha, *, resgates: int | None = None, nmproduto: str | None = None) -> dict:
     dados = {
         "campanha_id": int(item.beneficioprodutocampanha_id),
@@ -78,6 +93,7 @@ def _campanha_out(item: BeneficioProdutoCampanha, *, resgates: int | None = None
         "produto_id": int(item.produto_id), "tipo": item.tipo, "nmcampanha": item.nmcampanha,
         "dthrinicio": item.dthrinicio, "dthrfim": item.dthrfim, "qtlimite": item.qtlimite,
         "limite_cliente_dia": int(item.limite_cliente_dia or 1), "situacao": item.situacao,
+        "status_periodo": _status_periodo(item),
         "qtitenspacote": int(item.qtitenspacote) if item.qtitenspacote else None,
         "vrpacote": float(item.vrpacote) if item.vrpacote is not None else None,
         "percentual_desconto": (
@@ -242,7 +258,10 @@ def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_us
         BeneficioProdutoCampanha.situacao == "ATIVA",
         BeneficioProdutoCampanha.tipo.in_(("CORTESIA", "PERCENTUAL", "PACOTE")),
         BeneficioProdutoCampanha.dthrinicio <= agora,
-        BeneficioProdutoCampanha.dthrfim >= agora,
+        or_(
+            BeneficioProdutoCampanha.dthrfim.is_(None),
+            BeneficioProdutoCampanha.dthrfim >= agora,
+        ),
     ).all()
     retorno = []
     for item in itens:
@@ -276,7 +295,11 @@ def resgatar_cortesia(campanha_id: int, dados: GiroIn, usuario: dict = Depends(g
     exigir_cliente_autenticado(usuario, dados.cliente_id)
     agora = _agora()
     campanha = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id).with_for_update().first()
-    if not campanha or campanha.tipo != "CORTESIA" or campanha.situacao != "ATIVA" or not (campanha.dthrinicio <= agora <= campanha.dthrfim):
+    if (
+        not campanha
+        or campanha.tipo != "CORTESIA"
+        or not _periodo_ativo(campanha, agora)
+    ):
         raise HTTPException(409, "Esta cortesia não está disponível agora.")
     total = _total_resgates_validos(db, campanha_id)
     if campanha.qtlimite is not None and total >= campanha.qtlimite: raise HTTPException(409, "As cortesias desta campanha terminaram.")

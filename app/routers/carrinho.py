@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import Query
 
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from app.database import get_db
@@ -138,7 +138,10 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                     == payload.organizacao_id,
                     BeneficioProdutoCampanha.situacao == "ATIVA",
                     BeneficioProdutoCampanha.dthrinicio <= agora,
-                    BeneficioProdutoCampanha.dthrfim >= agora,
+                    or_(
+                        BeneficioProdutoCampanha.dthrfim.is_(None),
+                        BeneficioProdutoCampanha.dthrfim >= agora,
+                    ),
                 )
                 .with_for_update()
                 .first()
