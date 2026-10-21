@@ -1,27 +1,35 @@
 import unittest
 from datetime import datetime, timedelta
-from types import SimpleNamespace
 
-from app.routers.beneficios_produtos import _proxima_rodada_roleta, _texto_tempo_restante
+from pydantic import ValidationError
+
+from app.routers.beneficios_produtos import CampanhaIn
 
 
-class RoletaTempoTest(unittest.TestCase):
-    def test_informa_liberacao_apos_segundo_giro_na_mesma_janela(self):
-        agora = datetime(2026, 10, 20, 15, 30, 0)
-        ultimo = SimpleNamespace(dtresgate=agora - timedelta(minutes=10))
-        penultimo = SimpleNamespace(dtresgate=agora - timedelta(hours=1))
+class PromocaoPercentualTest(unittest.TestCase):
+    def _dados(self, **sobrescritos):
+        dados = {
+            "organizacao_id": 1,
+            "loja_id": 1,
+            "produto_id": 1,
+            "tipo": "PERCENTUAL",
+            "nmcampanha": "Desconto direto",
+            "dthrinicio": datetime(2026, 10, 20, 10, 0),
+            "dthrfim": datetime(2026, 10, 21, 10, 0),
+            "percentual_desconto": 20,
+        }
+        dados.update(sobrescritos)
+        return dados
 
-        proxima = _proxima_rodada_roleta([ultimo, penultimo], agora)
+    def test_promocao_percentual_exige_um_percentual_valido(self):
+        campanha = CampanhaIn(**self._dados())
+        self.assertEqual(campanha.percentual_desconto, 20)
 
-        self.assertEqual(agora + timedelta(hours=23, minutes=50), proxima)
-        self.assertEqual("23h 50min 00s", _texto_tempo_restante(proxima, agora))
+        with self.assertRaises(ValidationError):
+            CampanhaIn(**self._dados(percentual_desconto=None))
 
-    def test_nao_bloqueia_giros_separados_por_mais_de_24_horas(self):
-        agora = datetime(2026, 10, 20, 15, 30, 0)
-        ultimo = SimpleNamespace(dtresgate=agora - timedelta(minutes=10))
-        penultimo = SimpleNamespace(dtresgate=agora - timedelta(hours=25))
-
-        self.assertIsNone(_proxima_rodada_roleta([ultimo, penultimo], agora))
+        with self.assertRaises(ValidationError):
+            CampanhaIn(**self._dados(percentual_desconto=100))
 
 
 if __name__ == "__main__":

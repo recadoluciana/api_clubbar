@@ -290,6 +290,7 @@ def get_carrinho(
                 "campanha_id": campanha_id,
                 "qtitenspacote": int(campanha.qtitenspacote) if campanha else None,
                 "vrpacote": float(campanha.vrpacote) if campanha and campanha.vrpacote is not None else None,
+                "tipo_campanha": campanha.tipo if campanha else None,
                 "nmproduto": nmproduto,
                 "vrprecoprod": vrprecoprod,
                 "qtitcarrinho": qt_aux,

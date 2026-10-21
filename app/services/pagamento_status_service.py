@@ -89,8 +89,8 @@ def set_venda_como_paga(
     # venda
     venda.sitvenda = "PAGA"
     venda.dtultatu = datetime.now()
-    # Prêmios da roleta somente são consumidos depois da confirmação real do
-    # pagamento; uma tentativa de checkout abandonada não elimina o prêmio.
+    # Benefícios resgatados somente são consumidos depois da confirmação real
+    # do pagamento; uma tentativa de checkout abandonada não os elimina.
     db.query(BeneficioProdutoResgate).filter(
         BeneficioProdutoResgate.beneficioprodutoresgate_id.in_(
             db.query(ItVenda.beneficioprodutoresgate_id).filter(

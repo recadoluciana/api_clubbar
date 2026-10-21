@@ -112,7 +112,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         campanha_id_final = None
         if payload.beneficio_resgate_id is not None:
             if int(payload.qt) != 1:
-                raise HTTPException(422, "O benefício da roleta vale para uma unidade.")
+                raise HTTPException(422, "O benefício resgatado vale para uma unidade.")
             resgate = db.query(BeneficioProdutoResgate).filter(
                 BeneficioProdutoResgate.beneficioprodutoresgate_id == payload.beneficio_resgate_id,
                 BeneficioProdutoResgate.cliente_id == payload.cliente_id,
@@ -122,16 +122,16 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             campanha = db.query(BeneficioProdutoCampanha).filter(
                 BeneficioProdutoCampanha.beneficioprodutocampanha_id == resgate.campanha_id).first() if resgate else None
             if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (resgate.dtexpiracao and resgate.dtexpiracao < agora):
-                raise HTTPException(409, "O benefício não está mais disponível. Gire a roleta novamente.")
+                raise HTTPException(409, "O benefício não está mais disponível.")
             vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
             beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
         if payload.campanha_id is not None:
-            campanha_pacote = (
+            campanha_promocional = (
                 db.query(BeneficioProdutoCampanha)
                 .filter(
                     BeneficioProdutoCampanha.beneficioprodutocampanha_id
                     == payload.campanha_id,
-                    BeneficioProdutoCampanha.tipo == "PACOTE",
+                    BeneficioProdutoCampanha.tipo.in_(("PACOTE", "PERCENTUAL")),
                     BeneficioProdutoCampanha.produto_id == produto_id_final,
                     BeneficioProdutoCampanha.loja_id == payload.loja_id,
                     BeneficioProdutoCampanha.organizacao_id
@@ -143,12 +143,22 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 .with_for_update()
                 .first()
             )
-            if not campanha_pacote:
+            if not campanha_promocional:
                 raise HTTPException(409, "Esta promoção não está mais disponível.")
             if payload.beneficio_resgate_id is not None:
-                raise HTTPException(422, "Não combine a promoção em pacote com a roleta.")
-            vrunitario_final = campanha_pacote.vrpacote
-            campanha_id_final = int(campanha_pacote.beneficioprodutocampanha_id)
+                raise HTTPException(422, "Não combine promoções com um benefício resgatado.")
+            if campanha_promocional.tipo == "PACOTE":
+                vrunitario_final = campanha_promocional.vrpacote
+            else:
+                percentual = float(campanha_promocional.percentual_desconto or 0)
+                if percentual <= 0 or percentual >= 100:
+                    raise HTTPException(409, "O percentual desta promoção é inválido.")
+                vrunitario_final = round(
+                    vrunitario_final * (1 - percentual / 100), 2
+                )
+            campanha_id_final = int(
+                campanha_promocional.beneficioprodutocampanha_id
+            )
         if vrunitario_final <= 0:
             if int(payload.qt) != 1:
                 raise HTTPException(
@@ -431,6 +441,7 @@ def obter_itens_carrinho(
                 "vrpacote": float(campanha.vrpacote)
                 if campanha and campanha.vrpacote is not None
                 else None,
+                "tipo_campanha": campanha.tipo if campanha else None,
                 "nmproduto": i.nmproduto,
                 "dsproduto": i.dsproduto,
                 "idtipoproduto": tipo_produto,

@@ -86,6 +86,48 @@ def validar_limite_pacotes(
         raise HTTPException(409, "Esta promoção já atingiu a quantidade disponível.")
 
 
+def validar_limite_promocao_percentual(
+    db: Session,
+    *,
+    campanha: BeneficioProdutoCampanha,
+    quantidade: int,
+) -> None:
+    """Garante o limite de unidades de uma promoção percentual no pagamento."""
+    campanha = (
+        db.query(BeneficioProdutoCampanha)
+        .filter(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id
+            == campanha.beneficioprodutocampanha_id
+        )
+        .with_for_update()
+        .first()
+    )
+    agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+    if (
+        not campanha
+        or campanha.tipo != "PERCENTUAL"
+        or campanha.situacao != "ATIVA"
+        or not (campanha.dthrinicio <= agora <= campanha.dthrfim)
+    ):
+        raise HTTPException(409, "Esta promoção não está mais disponível.")
+    if campanha.qtlimite is None:
+        return
+    unidades_vendidas = int(
+        db.query(ItVenda.itvenda_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(
+            ItVenda.beneficioprodutocampanha_id
+            == campanha.beneficioprodutocampanha_id,
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda.in_(("PENDENTE", "PAGA")),
+        )
+        .count()
+        or 0
+    )
+    if unidades_vendidas + quantidade > int(campanha.qtlimite):
+        raise HTTPException(409, "Esta promoção já atingiu a quantidade disponível.")
+
+
 def adicionar_itens_produto_venda(
     db: Session,
     *,
@@ -156,6 +198,13 @@ def adicionar_itens_produto_venda(
                         )
                     )
             continue
+
+        if campanha and campanha.tipo == "PERCENTUAL":
+            validar_limite_promocao_percentual(
+                db,
+                campanha=campanha,
+                quantidade=quantidade_linhas,
+            )
 
         for _ in range(quantidade_linhas):
             db.add(

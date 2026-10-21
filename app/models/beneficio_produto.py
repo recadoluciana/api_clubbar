@@ -12,7 +12,7 @@ class BeneficioProdutoCampanha(Base):
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False, index=True)
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False, index=True)
-    tipo = Column(String(20), nullable=False)  # CORTESIA | ROLETA | PACOTE
+    tipo = Column(String(20), nullable=False)  # CORTESIA | PERCENTUAL | PACOTE
     nmcampanha = Column(String(120), nullable=False)
     dthrinicio = Column(DateTime, nullable=False)
     dthrfim = Column(DateTime, nullable=False)
@@ -21,6 +21,8 @@ class BeneficioProdutoCampanha(Base):
     # Usado somente em campanhas do tipo PACOTE. Ex.: 3 cervejas por R$ 40.
     qtitenspacote = Column(Integer, nullable=True)
     vrpacote = Column(Numeric(10, 2), nullable=True)
+    # Usado somente em campanhas do tipo PERCENTUAL. Ex.: 20 significa 20% OFF.
+    percentual_desconto = Column(Numeric(5, 2), nullable=True)
     situacao = Column(String(20), nullable=False, default="ATIVA")
     dtcriacao = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtultatu = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
