@@ -1157,6 +1157,35 @@ def normalizar_capacidade_por_setor_nos_lotes() -> None:
         raise
 
 
+# As verificações de esquema abaixo são compatíveis com instância única, mas
+# algumas delas também atualizam dados legados. Em réplicas, executá-las ao
+# mesmo tempo poderia causar deadlock no MySQL durante uma inicialização.
+_startup_handlers_originais = list(app.router.on_startup)
+app.router.on_startup.clear()
+
+
+def executar_inicializacao_serializada() -> None:
+    if engine.dialect.name != "mysql":
+        for handler in _startup_handlers_originais:
+            handler()
+        return
+
+    with engine.connect() as conexao_bloqueio:
+        bloqueado = conexao_bloqueio.execute(
+            text("SELECT GET_LOCK('clubbar_startup_schema', 120)")
+        ).scalar()
+        if bloqueado != 1:
+            raise RuntimeError("Não foi possível obter o bloqueio de inicialização do banco.")
+        try:
+            for handler in _startup_handlers_originais:
+                handler()
+        finally:
+            conexao_bloqueio.execute(text("SELECT RELEASE_LOCK('clubbar_startup_schema')"))
+
+
+app.add_event_handler("startup", executar_inicializacao_serializada)
+
+
 @app.get("/health")
 def health():
     banco_online = False
