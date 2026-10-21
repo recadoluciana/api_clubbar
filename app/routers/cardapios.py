@@ -24,6 +24,7 @@ from app.models.categoria import Categoria
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
+from app.services.storage_service import salvar_bytes
 from app.utils.datetime_utils import FUSO_BRASIL
 
 
@@ -557,11 +558,12 @@ def importar_foto_padronizada_pixabay(
             raise HTTPException(422, "A foto escolhida excede o limite de 5 MB.")
     if not conteudo:
         raise HTTPException(502, "Não foi possível baixar a foto escolhida.")
-    os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
     nome = f"produto_pixabay_{uuid.uuid4().hex}{extensao}"
-    with open(os.path.join(UPLOAD_PRODUTOS, nome), "wb") as arquivo:
-        arquivo.write(conteudo)
-    return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
+    return {
+        "urlfotoproduto": salvar_bytes(
+            f"produtos/{nome}", bytes(conteudo), tipo_conteudo
+        )
+    }
 
 
 @router.post("/organizacoes/{organizacao_id}/produtos", status_code=201)
@@ -607,11 +609,12 @@ async def enviar_foto_produto_organizacao(organizacao_id: int, foto: UploadFile 
     conteudo = await foto.read(5 * 1024 * 1024 + 1)
     if not conteudo or len(conteudo) > 5 * 1024 * 1024:
         raise HTTPException(422, "A foto deve ter até 5 MB.")
-    os.makedirs(UPLOAD_PRODUTOS, exist_ok=True)
     nome = f"produto_{uuid.uuid4().hex}{extensao}"
-    with open(os.path.join(UPLOAD_PRODUTOS, nome), "wb") as arquivo:
-        arquivo.write(conteudo)
-    return {"urlfotoproduto": f"/uploads/produtos/{nome}"}
+    return {
+        "urlfotoproduto": salvar_bytes(
+            f"produtos/{nome}", conteudo, foto.content_type
+        )
+    }
 
 
 @router.post("/lojas/{loja_id}/cardapios/associar", status_code=201)

@@ -15,6 +15,7 @@ from app.models.estado import Estado
 from app.models.organizacao import Organizacao
 from app.models.produto import Produto
 from app.core.config import UPLOAD_LOJAS
+from app.services.storage_service import salvar_arquivo
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.models.cashback_config import CashbackConfig
@@ -326,12 +327,9 @@ def salvar_logo_loja(arquivo: UploadFile | None) -> str | None:
 
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-    caminho_fisico = UPLOAD_LOJAS / nome_arquivo
-
-    with open(caminho_fisico, "wb") as buffer:
-        shutil.copyfileobj(arquivo.file, buffer)
-
-    return f"/uploads/lojas/{nome_arquivo}"
+    return salvar_arquivo(
+        f"lojas/{nome_arquivo}", arquivo.file, arquivo.content_type
+    )
 
 
 @router.get("/listar_todas")

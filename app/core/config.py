@@ -107,6 +107,18 @@ UPLOAD_ATRACOES = UPLOAD_DIR / "atracoes"
 UPLOAD_CAMPANHAS = UPLOAD_DIR / "campanhas"
 UPLOAD_MATERIAIS_LEAD = UPLOAD_DIR / "materiais-lead"
 
+# Armazenamento de objetos S3. Em produção, os uploads usam o bucket e a API
+# continua expondo as URLs estáveis em /uploads/. Sem estas credenciais, o
+# comportamento local baseado em diretório é preservado para desenvolvimento.
+STORAGE_S3_ENDPOINT = os.getenv("STORAGE_S3_ENDPOINT", "").strip()
+STORAGE_S3_ACCESS_KEY_ID = os.getenv("STORAGE_S3_ACCESS_KEY_ID", "").strip()
+STORAGE_S3_SECRET_ACCESS_KEY = os.getenv("STORAGE_S3_SECRET_ACCESS_KEY", "").strip()
+STORAGE_S3_BUCKET = os.getenv("STORAGE_S3_BUCKET", "").strip()
+STORAGE_S3_REGION = os.getenv("STORAGE_S3_REGION", "auto").strip() or "auto"
+STORAGE_S3_ADDRESSING_STYLE = (
+    os.getenv("STORAGE_S3_ADDRESSING_STYLE", "virtual").strip() or "virtual"
+)
+
 UPLOAD_PRODUTOS.mkdir(parents=True, exist_ok=True)
 UPLOAD_LOJAS.mkdir(parents=True, exist_ok=True)
 UPLOAD_EVENTOS.mkdir(parents=True, exist_ok=True)

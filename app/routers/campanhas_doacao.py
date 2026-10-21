@@ -17,6 +17,7 @@ from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.core.config import ASAAS_API_KEY, UPLOAD_CAMPANHAS
+from app.services.storage_service import salvar_arquivo
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.evento import Evento
@@ -153,9 +154,7 @@ def _salvar_logo(arquivo: UploadFile) -> str:
     if extensao not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(422, "Use uma imagem JPG, PNG ou WebP.")
     nome = f"campanha_{uuid.uuid4().hex}{extensao}"
-    with open(UPLOAD_CAMPANHAS / nome, "wb") as destino:
-        shutil.copyfileobj(arquivo.file, destino)
-    return f"/uploads/campanhas/{nome}"
+    return salvar_arquivo(f"campanhas/{nome}", arquivo.file, arquivo.content_type)
 
 
 def _loja_gerenciavel(db: Session, loja_id: int, usuario: dict) -> Loja:

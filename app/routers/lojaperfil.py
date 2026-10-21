@@ -9,6 +9,7 @@ from app.models.lojaconteudo import LojaConteudo
 from app.models.lojapoliticaingresso import LojaPoliticaIngresso
 from app.schemas.lojaperfil import LojaConteudoIn, LojaPoliticaIngressoIn
 from app.core.config import UPLOAD_LOJAS
+from app.services.storage_service import salvar_arquivo
 from app.core.permissoes_loja import validar_mutacao_loja
 router=APIRouter(prefix="/lojas",tags=["Perfil completo da loja"])
 def _loja(db,loja_id,payload,mutacao=False):
@@ -45,8 +46,7 @@ def upload_conteudo(loja_id:int,arquivo:UploadFile=File(...),payload=Depends(get
     _loja(db,loja_id,payload,True);ext=os.path.splitext(arquivo.filename or "")[1].lower()
     if ext not in {".jpg",".jpeg",".png",".webp"}:raise HTTPException(422,"Use uma imagem JPG, PNG ou WebP.")
     nome=f"conteudo_{loja_id}_{uuid.uuid4().hex}{ext}"
-    with open(UPLOAD_LOJAS/nome,"wb") as destino:shutil.copyfileobj(arquivo.file,destino)
-    return {"url":f"/uploads/lojas/{nome}"}
+    return {"url":salvar_arquivo(f"lojas/{nome}",arquivo.file,arquivo.content_type)}
 @router.delete("/{loja_id}/conteudo", status_code=204)
 def excluir_conteudo(loja_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     _loja(db,loja_id,payload,True);x=db.query(LojaConteudo).filter(LojaConteudo.loja_id==loja_id).first()

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from app.core.config import UPLOAD_ATRACOES
+from app.services.storage_service import salvar_arquivo
 from app.core.security import get_operador_logado, get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.database import get_db
@@ -43,8 +44,7 @@ def _banner(arquivo):
     ext = os.path.splitext(arquivo.filename)[1].lower()
     if ext not in {".jpg", ".jpeg", ".png", ".webp"}: raise HTTPException(422, "Use uma imagem JPG, PNG ou WebP.")
     nome = f"{uuid.uuid4().hex}{ext}"
-    with open(UPLOAD_ATRACOES / nome, "wb") as destino: shutil.copyfileobj(arquivo.file, destino)
-    return f"/uploads/atracoes/{nome}"
+    return salvar_arquivo(f"atracoes/{nome}", arquivo.file, arquivo.content_type)
 
 def _item(a):
     estilos = [

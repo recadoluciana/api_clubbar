@@ -18,6 +18,7 @@ from app.models.loja import Loja
 from app.models.organizacao import Organizacao
 from app.models.venda import Venda
 from app.core.config import UPLOAD_PRODUTOS
+from app.services.storage_service import salvar_arquivo, salvar_bytes
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_gerenciamento_organizacao, validar_mutacao_loja
 from app.utils.datetime_utils import FUSO_BRASIL
@@ -297,12 +298,11 @@ def atualizar_produto(
 
             extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
             nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-            caminho_arquivo = UPLOAD_PRODUTOS / nome_arquivo
-
-            with open(caminho_arquivo, "wb") as buffer:
-                shutil.copyfileobj(urlfotoproduto.file, buffer)
-
-            produto.urlfotoproduto = f"/uploads/produtos/{nome_arquivo}"
+            produto.urlfotoproduto = salvar_arquivo(
+                f"produtos/{nome_arquivo}",
+                urlfotoproduto.file,
+                urlfotoproduto.content_type,
+            )
 
         if categoria_id is not None:
             categoria = db.query(Categoria).filter(
@@ -498,13 +498,12 @@ async def criar_produto(
 
         extensao = os.path.splitext(urlfotoproduto.filename)[1].lower()
         nome_arquivo_foto = f"{uuid.uuid4().hex}{extensao}"
-        caminho = UPLOAD_PRODUTOS / nome_arquivo_foto
-
         conteudo = await urlfotoproduto.read()
-        with open(caminho, "wb") as f:
-            f.write(conteudo)
-
-        url_foto = f"/uploads/produtos/{nome_arquivo_foto}"
+        url_foto = salvar_bytes(
+            f"produtos/{nome_arquivo_foto}",
+            conteudo,
+            urlfotoproduto.content_type,
+        )
 
     novo_produto = Produto(
         organizacao_id=organizacao_id,

@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import uuid
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_operador_logado
 from app.core.config import UPLOAD_MATERIAIS_LEAD
+from app.services.storage_service import salvar_arquivo
 from app.database import get_db
 from app.models.leadagendamento import LeadAgendamento
 from app.models.leadmaterial import LeadMaterial
@@ -169,20 +171,22 @@ def upload_material(
     if extensao not in permitidas:
         raise HTTPException(status_code=400, detail='Formato nao permitido. Envie PDF, imagem ou documento Office.')
     nome = f'{uuid.uuid4().hex}{extensao}'
-    destino = UPLOAD_MATERIAIS_LEAD / nome
     try:
-        with destino.open('wb') as saida:
-            shutil.copyfileobj(arquivo.file, saida)
-        if destino.stat().st_size > 20 * 1024 * 1024:
-            destino.unlink(missing_ok=True)
+        conteudo = arquivo.file.read(20 * 1024 * 1024 + 1)
+        if len(conteudo) > 20 * 1024 * 1024:
             raise HTTPException(status_code=413, detail='O arquivo deve ter no maximo 20 MB.')
+        url_arquivo = salvar_arquivo(
+            f'materiais-lead/{nome}',
+            io.BytesIO(conteudo),
+            arquivo.content_type,
+        )
         item = LeadMaterial(
             leadparceiro_id=lead_id,
             leadestabelecimento_id=leadestabelecimento_id,
             titulo=titulo.strip(),
             descricao=descricao.strip() if descricao else None,
             tipo=tipo,
-            urlarquivo=f'/uploads/materiais-lead/{nome}',
+            urlarquivo=url_arquivo,
         )
         db.add(item)
         db.commit()

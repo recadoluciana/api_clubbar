@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
@@ -18,6 +18,7 @@ from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
 from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
+from app.services.storage_service import obter_arquivo
 
 from app.routers import cidades
 from app.routers import localidades
@@ -149,8 +150,6 @@ logger.info("Diretório de uploads publicado em /uploads: %s", UPLOAD_DIR)
 
 os.makedirs("app/static", exist_ok=True)
 os.makedirs("app/static/assets", exist_ok=True)
-
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.mount("/assets", StaticFiles(directory="app/static/assets"), name="assets")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -1185,6 +1184,22 @@ def serve_flutter():
 @app.get("/favicon.png")
 def serve_favicon():
     return FileResponse("app/static/favicon.png")
+
+
+@app.get("/uploads/{chave:path}")
+def servir_upload(chave: str):
+    try:
+        arquivo = obter_arquivo(chave)
+    except ValueError:
+        return JSONResponse(status_code=404, content={"detail": "Arquivo não encontrado."})
+    if arquivo is None:
+        return JSONResponse(status_code=404, content={"detail": "Arquivo não encontrado."})
+    conteudo, content_type = arquivo
+    return Response(
+        content=conteudo,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 @app.get("/.well-known/assetlinks.json")
 def assetlinks():

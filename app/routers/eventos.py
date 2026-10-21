@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
+from app.services.storage_service import salvar_arquivo
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.services.agenda_service import obter_ou_criar_agenda
@@ -215,12 +216,9 @@ def salvar_banner_evento(arquivo: UploadFile | None) -> str | None:
 
     extensao = os.path.splitext(arquivo.filename)[1].lower()
     nome_arquivo = f"{uuid.uuid4().hex}{extensao}"
-    caminho_fisico = UPLOAD_EVENTOS / nome_arquivo
-
-    with open(caminho_fisico, "wb") as buffer:
-        shutil.copyfileobj(arquivo.file, buffer)
-
-    return f"/uploads/eventos/{nome_arquivo}"
+    return salvar_arquivo(
+        f"eventos/{nome_arquivo}", arquivo.file, arquivo.content_type
+    )
 
 
 def evento_to_out_br(
