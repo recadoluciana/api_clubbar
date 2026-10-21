@@ -233,6 +233,78 @@ def _versao(db: Session, versao_id: int, payload: dict | None = None) -> tuple[C
     return versao, _cardapio(db, versao.cardapio_id, payload)
 
 
+def _assinatura_conteudo_versao(
+    db: Session,
+    versao: CardapioVersao,
+) -> tuple:
+    """Representação estável do conteúdo configurável de uma versão."""
+    categorias = (
+        db.query(CardapioVersaoCategoria)
+        .filter(
+            CardapioVersaoCategoria.cardapioversao_id
+            == versao.cardapioversao_id,
+        )
+        .order_by(
+            CardapioVersaoCategoria.idordcategoria,
+            CardapioVersaoCategoria.categoria_id,
+        )
+        .all()
+    )
+    assinatura = []
+    for categoria in categorias:
+        itens = (
+            db.query(CardapioItem)
+            .filter(
+                CardapioItem.cardapioversaocategoria_id
+                == categoria.cardapioversaocategoria_id,
+            )
+            .order_by(CardapioItem.idorditem, CardapioItem.produto_id)
+            .all()
+        )
+        assinatura.append(
+            (
+                categoria.categoria_id,
+                categoria.idordcategoria,
+                tuple(
+                    (
+                        item.produto_id,
+                        item.vrpreco,
+                        item.tipodesconto,
+                        item.vrdesconto,
+                        item.dtinidesconto,
+                        item.dtfimdesconto,
+                        item.pccashback,
+                        item.sititem,
+                        item.idorditem,
+                    )
+                    for item in itens
+                ),
+            )
+        )
+    return tuple(assinatura)
+
+
+def _versao_possui_alteracoes(
+    db: Session,
+    versao: CardapioVersao,
+) -> bool:
+    """Informa se o rascunho difere da última versão que foi publicada."""
+    referencia = (
+        db.query(CardapioVersao)
+        .filter(
+            CardapioVersao.cardapio_id == versao.cardapio_id,
+            CardapioVersao.cardapioversao_id != versao.cardapioversao_id,
+            CardapioVersao.statusversao.in_(("PUBLICADA", "PROGRAMADA")),
+        )
+        .order_by(CardapioVersao.nrversao.desc())
+        .first()
+    )
+    assinatura = _assinatura_conteudo_versao(db, versao)
+    if referencia is None:
+        return bool(assinatura)
+    return assinatura != _assinatura_conteudo_versao(db, referencia)
+
+
 def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None = None) -> dict:
     versoes = db.query(CardapioVersao).filter(CardapioVersao.cardapio_id == item.cardapio_id).order_by(CardapioVersao.nrversao.desc()).all()
     programacoes = db.query(CardapioProgramacao).filter(
@@ -250,7 +322,18 @@ def _saida_cardapio(db: Session, item: Cardapio, associacao: CardapioLoja | None
         "vendas_habilitadas": (
             bool(associacao.vendas_habilitadas) if associacao else None
         ),
-        "versoes": [{"cardapioversao_id": v.cardapioversao_id, "nrversao": v.nrversao, "statusversao": v.statusversao, "dtiniciovigencia": v.dtiniciovigencia, "dtfimvigencia": v.dtfimvigencia} for v in versoes],
+        "versoes": [{
+            "cardapioversao_id": v.cardapioversao_id,
+            "nrversao": v.nrversao,
+            "statusversao": v.statusversao,
+            "dtiniciovigencia": v.dtiniciovigencia,
+            "dtfimvigencia": v.dtfimvigencia,
+            "possui_alteracoes": (
+                _versao_possui_alteracoes(db, v)
+                if v.statusversao == "RASCUNHO"
+                else False
+            ),
+        } for v in versoes],
         "programacoes": [_saida_programacao(programacao) for programacao in programacoes],
     }
     return saida
@@ -352,6 +435,11 @@ def _conteudo(
         "cardapioversao_id": versao.cardapioversao_id,
         "nrversao": versao.nrversao,
         "statusversao": versao.statusversao,
+        "possui_alteracoes": (
+            _versao_possui_alteracoes(db, versao)
+            if versao.statusversao == "RASCUNHO"
+            else False
+        ),
         "categorias": saida,
     }
 
@@ -876,6 +964,8 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
         validar_publicacao_loja(db, associacao.loja_id)
     if versao.statusversao != "RASCUNHO":
         raise HTTPException(409, "Somente uma versão em rascunho pode ser publicada.")
+    if not _versao_possui_alteracoes(db, versao):
+        raise HTTPException(409, "Faça uma alteração antes de publicar o cardápio.")
     if not db.query(CardapioItem).filter(CardapioItem.cardapioversao_id == versao_id, CardapioItem.sititem == "ATIVO").first():
         raise HTTPException(422, "Inclua pelo menos um produto antes de publicar.")
     if cardapio.tipocardapio == "ESPECIAL":
