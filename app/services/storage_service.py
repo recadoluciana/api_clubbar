@@ -40,13 +40,17 @@ def armazenamento_remoto_habilitado() -> bool:
 def _cliente_s3():
     if not armazenamento_remoto_habilitado():
         return None
+    estilo_enderecamento = {
+        "virtual-host": "virtual",
+        "virtual_host": "virtual",
+    }.get(STORAGE_S3_ADDRESSING_STYLE.lower(), STORAGE_S3_ADDRESSING_STYLE.lower())
     return boto3.client(
         "s3",
         endpoint_url=STORAGE_S3_ENDPOINT,
         aws_access_key_id=STORAGE_S3_ACCESS_KEY_ID,
         aws_secret_access_key=STORAGE_S3_SECRET_ACCESS_KEY,
         region_name=STORAGE_S3_REGION,
-        config=Config(s3={"addressing_style": STORAGE_S3_ADDRESSING_STYLE}),
+        config=Config(s3={"addressing_style": estilo_enderecamento}),
     )
 
 
