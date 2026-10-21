@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from pydantic import ValidationError
 
-from app.routers.beneficios_produtos import CampanhaIn
+from app.routers.beneficios_produtos import CampanhaIn, _periodos_se_sobrepoem
 
 
 class PromocaoPercentualTest(unittest.TestCase):
@@ -38,6 +38,31 @@ class PromocaoPercentualTest(unittest.TestCase):
     def test_data_final_deve_ser_posterior_ao_inicio(self):
         with self.assertRaises(ValidationError):
             CampanhaIn(**self._dados(dthrfim=datetime(2026, 10, 20, 10, 0)))
+
+    def test_periodos_que_se_cruzam_nao_podem_coexistir(self):
+        inicio = datetime(2026, 10, 20, 10, 0)
+        fim = inicio + timedelta(hours=2)
+
+        self.assertTrue(
+            _periodos_se_sobrepoem(
+                inicio,
+                fim,
+                inicio + timedelta(hours=1),
+                fim + timedelta(hours=1),
+            )
+        )
+        self.assertTrue(_periodos_se_sobrepoem(inicio, None, fim, None))
+
+    def test_periodos_separados_podem_coexistir(self):
+        inicio = datetime(2026, 10, 20, 10, 0)
+        self.assertFalse(
+            _periodos_se_sobrepoem(
+                inicio,
+                inicio + timedelta(hours=1),
+                inicio + timedelta(hours=2),
+                None,
+            )
+        )
 
 
 if __name__ == "__main__":

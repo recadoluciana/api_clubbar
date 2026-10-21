@@ -86,6 +86,66 @@ def _periodo_ativo(item: BeneficioProdutoCampanha, agora: datetime | None = None
     return _status_periodo(item, agora) == "ATIVA"
 
 
+def _periodos_se_sobrepoem(
+    inicio_a: datetime,
+    fim_a: datetime | None,
+    inicio_b: datetime,
+    fim_b: datetime | None,
+) -> bool:
+    """Retorna se dois intervalos inclusivos de campanha se cruzam."""
+    return (
+        (fim_a is None or inicio_b <= fim_a)
+        and (fim_b is None or inicio_a <= fim_b)
+    )
+
+
+def _validar_nao_sobrepoe_campanha(
+    db: Session,
+    dados: CampanhaIn,
+    *,
+    campanha_id_atual: int | None = None,
+) -> None:
+    """Evita que o Client receba duas ofertas equivalentes para o mesmo produto."""
+    if dados.situacao != "ATIVA":
+        return
+
+    filtros = [
+        BeneficioProdutoCampanha.organizacao_id == dados.organizacao_id,
+        BeneficioProdutoCampanha.loja_id == dados.loja_id,
+        BeneficioProdutoCampanha.produto_id == dados.produto_id,
+        BeneficioProdutoCampanha.tipo == dados.tipo,
+        BeneficioProdutoCampanha.situacao == "ATIVA",
+        or_(
+            BeneficioProdutoCampanha.dthrfim.is_(None),
+            BeneficioProdutoCampanha.dthrfim >= dados.dthrinicio,
+        ),
+    ]
+    if dados.dthrfim is not None:
+        filtros.append(BeneficioProdutoCampanha.dthrinicio <= dados.dthrfim)
+    if campanha_id_atual is not None:
+        filtros.append(
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id
+            != campanha_id_atual
+        )
+
+    conflito = db.query(BeneficioProdutoCampanha).filter(*filtros).first()
+    if not conflito:
+        return
+
+    tipos = {
+        "CORTESIA": "cortesia",
+        "PERCENTUAL": "promoção percentual",
+        "PACOTE": "promoção por quantidade",
+    }
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"Já existe uma campanha de {tipos[dados.tipo]} ativa para este produto "
+            "no período informado. Altere o período ou edite a campanha existente."
+        ),
+    )
+
+
 def _campanha_out(item: BeneficioProdutoCampanha, *, resgates: int | None = None, nmproduto: str | None = None) -> dict:
     dados = {
         "campanha_id": int(item.beneficioprodutocampanha_id),
@@ -222,6 +282,7 @@ def listar_campanhas(loja_id: int, organizacao_id: int, usuario: dict = Depends(
 @router.post("", status_code=status.HTTP_201_CREATED)
 def criar_campanha(dados: CampanhaIn, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     _validar_escopo(db, dados, usuario)
+    _validar_nao_sobrepoe_campanha(db, dados)
     item = BeneficioProdutoCampanha(**dados.model_dump())
     db.add(item); db.commit(); db.refresh(item)
     return _campanha_out(item, resgates=0)
@@ -232,6 +293,11 @@ def editar_campanha(campanha_id: int, dados: CampanhaIn, usuario: dict = Depends
     item = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id).first()
     if not item: raise HTTPException(404, "Campanha não encontrada.")
     _validar_escopo(db, dados, usuario)
+    _validar_nao_sobrepoe_campanha(
+        db,
+        dados,
+        campanha_id_atual=campanha_id,
+    )
     for chave, valor in dados.model_dump().items(): setattr(item, chave, valor)
     db.commit(); db.refresh(item)
     return _campanha_out(item)
