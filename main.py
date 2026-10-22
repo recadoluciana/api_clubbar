@@ -263,6 +263,33 @@ def permitir_campanhas_sem_data_fim() -> None:
 
 
 @app.on_event("startup")
+def garantir_classificacao_etaria_evento() -> None:
+    """Adiciona a classificação etária sem exigir execução manual de SQL."""
+    try:
+        inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        with engine.begin() as conexao:
+            for tabela in ("eventomodelo", "evento"):
+                if tabela not in tabelas:
+                    continue
+                colunas = {
+                    coluna["name"] for coluna in inspector.get_columns(tabela)
+                }
+                if "classificacaoetaria" not in colunas:
+                    conexao.execute(
+                        text(
+                            f"ALTER TABLE `{tabela}` ADD COLUMN "
+                            "`classificacaoetaria` VARCHAR(80) NOT NULL "
+                            "DEFAULT 'Livre'"
+                        )
+                    )
+        logger.info("Classificação etária dos eventos verificada.")
+    except Exception:
+        logger.exception("Não foi possível garantir a classificação etária dos eventos.")
+        raise
+
+
+@app.on_event("startup")
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)
