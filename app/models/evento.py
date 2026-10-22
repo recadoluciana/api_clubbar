@@ -18,6 +18,7 @@ class Evento(Base):
     eventomodelo_id = Column(BigInteger, ForeignKey("eventomodelo.eventomodelo_id", ondelete="RESTRICT", onupdate="CASCADE"), nullable=False, index=True)
 
     nmtituloevento = Column(String(120), nullable=False)
+    classificacaoetaria = Column(String(80), nullable=False, server_default="Livre")
     dtinicioevento = Column(DateTime, nullable=False)
     dtfimevento = Column(DateTime, nullable=True)
     # É a lotação autorizada para esta ocorrência na agenda, não para o

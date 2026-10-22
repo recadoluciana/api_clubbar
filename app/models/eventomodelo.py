@@ -7,6 +7,7 @@ class EventoModelo(Base):
     eventomodelo_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
     nmtituloevento = Column(String(120), nullable=False)
+    classificacaoetaria = Column(String(80), nullable=False, server_default="Livre")
     dsdescevento = Column(Text)
     dspoliticacancelamento = Column(Text)
     emailcontatoevento = Column(String(255), nullable=True)

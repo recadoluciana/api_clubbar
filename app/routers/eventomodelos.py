@@ -83,7 +83,7 @@ def _org(payload):
     except (KeyError, TypeError, ValueError): raise HTTPException(403, "Organização não identificada.")
 
 def _item(db, x):
-    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":0,"nmtituloevento":x.nmtituloevento,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"emailcontatoevento":x.emailcontatoevento,"whatsappevento":x.whatsappevento,"tipolocalevento":x.tipolocalevento,"nrceplocalevento":x.nrceplocalevento,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":imagem_evento_modelo(db, x),"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0)}
+    return {"evento_id":x.eventomodelo_id,"eventomodelo_id":x.eventomodelo_id,"organizacao_id":x.organizacao_id,"loja_id":0,"nmtituloevento":x.nmtituloevento,"classificacaoetaria":x.classificacaoetaria,"dsdescevento":x.dsdescevento,"dspoliticacancelamento":x.dspoliticacancelamento,"emailcontatoevento":x.emailcontatoevento,"whatsappevento":x.whatsappevento,"tipolocalevento":x.tipolocalevento,"nrceplocalevento":x.nrceplocalevento,"dtinicioevento":None,"dtfimevento":None,"nmlocalevento":x.nmlocalevento,"dsendlocevento":x.dsendlocevento,"urlbannerevento":imagem_evento_modelo(db, x),"statusevento":x.statusevento,"vrprecolote":float(x.vrprecolote or 0)}
 
 def _modelo(db,id,org):
     x=db.query(EventoModelo).filter(EventoModelo.eventomodelo_id==id,EventoModelo.organizacao_id==org).first()
@@ -282,7 +282,7 @@ def listar(payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     return [_item(db, x) for x in db.query(EventoModelo).filter(EventoModelo.organizacao_id==org).order_by(EventoModelo.nmtituloevento).all()]
 
 @router.post("",status_code=201)
-def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),classificacaoetaria:str=Form("Livre"),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str=Form("ESTABELECIMENTO"),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),vrprecolote:Decimal=Form(0),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     org=_org(payload)
     if organizacao_id!=org: raise HTTPException(403,"Organização inválida.")
     validar_gerenciamento_organizacao(payload,org)
@@ -301,13 +301,15 @@ def criar(organizacao_id:int=Form(...),nmtituloevento:str=Form(...),dsdescevento
     ).first():
         raise HTTPException(409, "Já existe um evento padrão com este título. Edite o existente ou informe outro título.")
     email, whatsapp = _validar_contato_evento(emailcontatoevento, whatsappevento)
-    x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,emailcontatoevento=email,whatsappevento=whatsapp,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento="ATIVO",vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
+    classificacaoetaria = classificacaoetaria.strip() or "Livre"
+    if len(classificacaoetaria) > 80: raise HTTPException(422,"A classificação etária deve ter no máximo 80 caracteres.")
+    x=EventoModelo(organizacao_id=org,nmtituloevento=titulo,classificacaoetaria=classificacaoetaria,dsdescevento=dsdescevento,dspoliticacancelamento=dspoliticacancelamento,emailcontatoevento=email,whatsappevento=whatsapp,tipolocalevento=tipo,nrceplocalevento=nrceplocalevento if tipo=="OUTRO" else None,nmlocalevento=nmlocalevento if tipo=="OUTRO" else None,dsendlocevento=dsendlocevento if tipo=="OUTRO" else None,statusevento="ATIVO",vrprecolote=vrprecolote,urlbannerevento=salvar_banner_evento(urlbannerevento))
     db.add(x)
     db.flush()
     _commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
 @router.put("/{modelo_id}")
-def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str|None=Form(None),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),classificacaoetaria:str|None=Form(None),dsdescevento:str|None=Form(None),dspoliticacancelamento:str|None=Form(None),emailcontatoevento:str|None=Form(None),whatsappevento:str|None=Form(None),tipolocalevento:str|None=Form(None),nrceplocalevento:str|None=Form(None),nmlocalevento:str|None=Form(None),dsendlocevento:str|None=Form(None),statusevento:str|None=Form(None),vrprecolote:Decimal|None=Form(None),urlbannerevento:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_gerenciamento_organizacao(payload,x.organizacao_id)
     tipo=(tipolocalevento or x.tipolocalevento).strip().upper()
     if tipo not in {"ESTABELECIMENTO","OUTRO"}: raise HTTPException(422,"Tipo de local inválido.")
@@ -317,7 +319,10 @@ def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),dsdescevento:str|
         emailcontatoevento if emailcontatoevento is not None else x.emailcontatoevento,
         whatsappevento if whatsappevento is not None else x.whatsappevento,
     )
-    for k,v in {"nmtituloevento":nmtituloevento,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"emailcontatoevento":emailcontatoevento,"whatsappevento":whatsappevento,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"nrceplocalevento":nrceplocalevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
+    if classificacaoetaria is not None:
+        classificacaoetaria = classificacaoetaria.strip() or "Livre"
+        if len(classificacaoetaria) > 80: raise HTTPException(422,"A classificação etária deve ter no máximo 80 caracteres.")
+    for k,v in {"nmtituloevento":nmtituloevento,"classificacaoetaria":classificacaoetaria,"dsdescevento":dsdescevento,"dspoliticacancelamento":dspoliticacancelamento,"emailcontatoevento":emailcontatoevento,"whatsappevento":whatsappevento,"nmlocalevento":nmlocalevento,"dsendlocevento":dsendlocevento,"nrceplocalevento":nrceplocalevento,"statusevento":statusevento,"vrprecolote":vrprecolote}.items():
         if v is not None:setattr(x,k,v.upper() if k=="statusevento" else v)
     x.tipolocalevento=tipo
     x.emailcontatoevento = email
@@ -355,7 +360,7 @@ def agendar(modelo_id:int,dados:AgendarEventoModeloIn,payload=Depends(get_usuari
             inicio=inicio,
         )
         agenda = obter_ou_criar_agenda(db, x.organizacao_id, loja.loja_id, inicio)
-        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
+        evento=Evento(organizacao_id=x.organizacao_id,loja_id=loja.loja_id,agendamensal_id=agenda.agendamensal_id,eventomodelo_id=x.eventomodelo_id,nmtituloevento=x.nmtituloevento,classificacaoetaria=x.classificacaoetaria,dsdescevento=x.dsdescevento,dspoliticacancelamento=x.dspoliticacancelamento,dtinicioevento=inicio,dtfimevento=inicio+duracao if duracao else None,qtcapacidadeevento=dados.capacidade,nmlocalevento=local_evento,dsendlocevento=dados.endereco or x.dsendlocevento,urlbannerevento=x.urlbannerevento,statusevento="RASCUNHO")
         db.add(evento);db.flush()
         # Modalidades são configuradas por setor e lote após o agendamento;
         # o evento padrão não restringe mais as opções disponíveis.
