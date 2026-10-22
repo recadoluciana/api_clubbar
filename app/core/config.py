@@ -86,6 +86,32 @@ PUBLIC_PARTNER_BASE_URL = (
 
 PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").strip().rstrip("/")
 
+# Railway Buckets expose these official S3-compatible variable names when
+# credentials are attached to a service. Keep the STORAGE_S3_* names as an
+# override for local/custom deployments, but use the official names by
+# default so the access key, secret, endpoint and bucket come from the same
+# Railway credential set.
+STORAGE_S3_ENDPOINT = (
+    os.getenv("ENDPOINT") or os.getenv("STORAGE_S3_ENDPOINT") or ""
+).strip()
+STORAGE_S3_ACCESS_KEY_ID = (
+    os.getenv("ACCESS_KEY_ID") or os.getenv("STORAGE_S3_ACCESS_KEY_ID") or ""
+).strip()
+STORAGE_S3_SECRET_ACCESS_KEY = (
+    os.getenv("SECRET_ACCESS_KEY")
+    or os.getenv("STORAGE_S3_SECRET_ACCESS_KEY")
+    or ""
+).strip()
+STORAGE_S3_BUCKET = (
+    os.getenv("BUCKET") or os.getenv("STORAGE_S3_BUCKET") or ""
+).strip()
+STORAGE_S3_REGION = (
+    os.getenv("REGION") or os.getenv("STORAGE_S3_REGION") or "auto"
+).strip()
+STORAGE_S3_ADDRESSING_STYLE = (
+    os.getenv("STORAGE_S3_ADDRESSING_STYLE") or "virtual-host"
+).strip()
+
 
 BASE_DIR = os.path.dirname(
     os.path.dirname(
