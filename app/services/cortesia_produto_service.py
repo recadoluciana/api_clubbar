@@ -36,13 +36,25 @@ def _quantidade_resgatada(
     cardapioitem_id: int,
     ignorar_venda_id: int | None = None,
 ) -> int:
+    produto_id = (
+        db.query(CardapioItem.produto_id)
+        .filter(CardapioItem.cardapioitem_id == cardapioitem_id)
+        .scalar()
+    )
+    if not produto_id:
+        return 0
+
     consulta = (
         db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .filter(
-            ItVenda.cardapioitem_id == cardapioitem_id,
+            # O ID do item muda quando o cardápio ganha uma nova versão.
+            # O limite configurado é da cortesia do produto, então resgates
+            # de versões anteriores também reduzem o saldo disponível.
+            ItVenda.produto_id == produto_id,
             ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
+            ItVenda.vrunititvenda <= 0,
             Venda.sitvenda == "PAGA",
         )
     )

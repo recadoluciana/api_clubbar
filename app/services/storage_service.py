@@ -7,13 +7,14 @@ faz o proxy de leitura do bucket privado, evitando expor credenciais ao app.
 from __future__ import annotations
 
 import io
+import logging
 import mimetypes
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
 import boto3
 from botocore.client import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.core.config import (
     STORAGE_S3_ACCESS_KEY_ID,
@@ -24,6 +25,8 @@ from app.core.config import (
     STORAGE_S3_SECRET_ACCESS_KEY,
     UPLOAD_DIR,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def armazenamento_remoto_habilitado() -> bool:
@@ -93,10 +96,17 @@ def obter_arquivo(chave: str) -> tuple[bytes, str] | None:
             resposta = cliente.get_object(Bucket=STORAGE_S3_BUCKET, Key=chave)
             tipo = resposta.get("ContentType") or mimetypes.guess_type(chave)[0]
             return resposta["Body"].read(), tipo or "application/octet-stream"
-        except ClientError as erro:
-            codigo = str(erro.response.get("Error", {}).get("Code", ""))
+        except (BotoCoreError, ClientError) as erro:
+            resposta = getattr(erro, "response", {}) or {}
+            codigo = str(resposta.get("Error", {}).get("Code", ""))
+            # Se o bucket estiver temporariamente indisponível ou retornar
+            # InternalError, ainda tentamos o volume persistente. Isso também
+            # mantém acessíveis uploads antigos ainda não migrados.
             if codigo not in {"NoSuchKey", "404", "NotFound"}:
-                raise
+                logger.warning(
+                    "Falha ao ler upload no armazenamento remoto; usando fallback local: %s",
+                    erro,
+                )
 
     caminho_local = UPLOAD_DIR / chave
     if not caminho_local.is_file():
