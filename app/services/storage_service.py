@@ -53,7 +53,13 @@ def _cliente_s3():
         aws_access_key_id=STORAGE_S3_ACCESS_KEY_ID,
         aws_secret_access_key=STORAGE_S3_SECRET_ACCESS_KEY,
         region_name=STORAGE_S3_REGION,
-        config=Config(s3={"addressing_style": estilo_enderecamento}),
+        # Railway Buckets require AWS Signature Version 4.  Leaving the
+        # signature version to botocore's endpoint heuristics can produce
+        # SignatureDoesNotMatch with the S3-compatible storage endpoint.
+        config=Config(
+            signature_version="s3v4",
+            s3={"addressing_style": estilo_enderecamento},
+        ),
     )
 
 
