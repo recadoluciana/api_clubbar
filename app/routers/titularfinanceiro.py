@@ -14,6 +14,7 @@ from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
+from app.models.checkout_asaas import CheckoutAsaas
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.models.titularfinanceiro import TitularFinanceiro
@@ -276,6 +277,26 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None,
     return data
 
 
+async def _credencial_asaas_eh_sandbox(api_key: str) -> bool:
+    """Confirma o ambiente da credencial sem depender da URL configurada na API.
+
+    A migração só pode remover um vínculo que seja comprovadamente do Sandbox.
+    Assim, uma subconta de produção nunca é desvinculada por engano.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resposta = await client.get(
+                "https://api-sandbox.asaas.com/v3/myAccount/status/",
+                headers={"accept": "application/json", "access_token": api_key},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível validar a subconta no Sandbox do Asaas.",
+        ) from exc
+    return resposta.status_code < 400
+
+
 async def _sincronizar_dados_comerciais_asaas(
     titular: TitularFinanceiro, dados: TitularFinanceiroIn
 ) -> None:
@@ -385,6 +406,93 @@ def atualizar_dados_ativacao_asaas(
 
     titular.dtnascimento = dados.dtnascimento if titular.tipotitular == "PF" else None
     titular.vrfaturamentomensal = dados.vrfaturamentomensal
+    db.commit()
+    db.refresh(titular)
+    return _out(titular)
+
+
+@router.post(
+    "/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/migrar-sandbox-producao"
+)
+async def migrar_vinculo_sandbox_para_producao(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    """Desvincula somente uma subconta comprovadamente criada no Sandbox.
+
+    A subconta de teste continua existindo no Sandbox. O titular e seus dados
+    permanecem no Clubbar para que a conta de produção seja criada com o mesmo
+    CPF/CNPJ no fluxo normal de ativação.
+    """
+    _validar_escopo(payload, organizacao_id)
+    if "api-sandbox.asaas.com" in ASAAS_BASE_URL.lower():
+        raise HTTPException(
+            status_code=409,
+            detail="Esta migração deve ser executada somente no ambiente de produção.",
+        )
+    if not ASAAS_API_KEY:
+        raise HTTPException(
+            status_code=422,
+            detail="A conta principal Asaas de produção não está configurada.",
+        )
+
+    titular = (
+        db.query(TitularFinanceiro)
+        .filter(
+            TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+            TitularFinanceiro.organizacao_id == organizacao_id,
+        )
+        .first()
+    )
+    if not titular:
+        raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+    if not titular.asaas_account_id or not titular.asaas_api_key_criptografada:
+        raise HTTPException(409, "Este titular não possui um vínculo Asaas para migrar.")
+
+    api_key_antiga = descriptografar_credencial(titular.asaas_api_key_criptografada)
+    if not await _credencial_asaas_eh_sandbox(api_key_antiga):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A subconta vinculada não foi confirmada como Sandbox. "
+                "Para proteger recebimentos reais, nenhuma alteração foi feita."
+            ),
+        )
+
+    if titular.asaas_wallet_id:
+        possui_checkout = (
+            db.query(CheckoutAsaas.checkout_asaas_id)
+            .filter(CheckoutAsaas.asaas_wallet_loja == titular.asaas_wallet_id)
+            .first()
+        )
+        if possui_checkout:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Este vínculo Sandbox possui checkout registrado e não pode ser migrado automaticamente. "
+                    "Procure o suporte do Clubbar para a migração assistida."
+                ),
+            )
+
+    titular.asaas_account_id = None
+    titular.asaas_wallet_id = None
+    titular.asaas_api_key_criptografada = None
+    titular.status_asaas = "NAO_INICIADO"
+    titular.onboarding_url = None
+    titular.dtultimaverificacao = datetime.now()
+
+    lojas = (
+        db.query(Loja)
+        .filter(
+            Loja.organizacao_id == organizacao_id,
+            Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
+        )
+        .all()
+    )
+    for loja in lojas:
+        sincronizar_integracao_asaas_da_loja(db, loja, titular)
     db.commit()
     db.refresh(titular)
     return _out(titular)
