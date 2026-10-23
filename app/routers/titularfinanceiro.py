@@ -277,24 +277,34 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None,
     return data
 
 
-async def _credencial_asaas_eh_sandbox(api_key: str) -> bool:
-    """Confirma o ambiente da credencial sem depender da URL configurada na API.
+async def _identificar_ambiente_credencial_asaas(api_key: str) -> str:
+    """Identifica, sem alterar dados, em qual ambiente a chave é válida.
 
-    A migração só pode remover um vínculo que seja comprovadamente do Sandbox.
-    Assim, uma subconta de produção nunca é desvinculada por engano.
+    A credencial de uma subconta só é aceita por um ambiente do Asaas. Consultar
+    os dois endpoints evita tratar uma subconta real como se fosse de testes.
     """
+    endpoints = (
+        ("SANDBOX", "https://api-sandbox.asaas.com/v3/myAccount/status/"),
+        ("PRODUCAO", "https://api.asaas.com/v3/myAccount/status/"),
+    )
+    respostas: list[int | None] = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            resposta = await client.get(
-                "https://api-sandbox.asaas.com/v3/myAccount/status/",
-                headers={"accept": "application/json", "access_token": api_key},
-            )
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Não foi possível validar a subconta no Sandbox do Asaas.",
-        ) from exc
-    return resposta.status_code < 400
+            for ambiente, url in endpoints:
+                resposta = await client.get(
+                    url,
+                    headers={"accept": "application/json", "access_token": api_key},
+                )
+                respostas.append(resposta.status_code)
+                if resposta.is_success:
+                    return ambiente
+    except httpx.HTTPError:
+        respostas.append(None)
+
+    # Não confundir uma indisponibilidade do Asaas com uma chave inválida.
+    if any(status is None or status >= 500 for status in respostas):
+        return "INDISPONIVEL"
+    return "INVALIDA"
 
 
 async def _sincronizar_dados_comerciais_asaas(
@@ -452,12 +462,29 @@ async def migrar_vinculo_sandbox_para_producao(
         raise HTTPException(409, "Este titular não possui um vínculo Asaas para migrar.")
 
     api_key_antiga = descriptografar_credencial(titular.asaas_api_key_criptografada)
-    if not await _credencial_asaas_eh_sandbox(api_key_antiga):
+    ambiente_credencial = await _identificar_ambiente_credencial_asaas(api_key_antiga)
+    if ambiente_credencial == "PRODUCAO":
         raise HTTPException(
             status_code=409,
             detail=(
-                "A subconta vinculada não foi confirmada como Sandbox. "
+                "A subconta vinculada já é de produção e não precisa ser migrada. "
                 "Para proteger recebimentos reais, nenhuma alteração foi feita."
+            ),
+        )
+    if ambiente_credencial == "INDISPONIVEL":
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Não foi possível confirmar o ambiente da subconta porque o Asaas não respondeu "
+                "normalmente. Tente novamente em alguns minutos; nenhuma alteração foi feita."
+            ),
+        )
+    if ambiente_credencial != "SANDBOX":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "A credencial armazenada não é válida nem no Sandbox nem na produção do Asaas. "
+                "Ela pode ter sido revogada ou estar inconsistente; nenhuma alteração foi feita."
             ),
         )
 
