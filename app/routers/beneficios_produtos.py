@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.cliente_auth import exigir_cliente_autenticado
 from app.core.permissoes_loja import validar_mutacao_loja
-from app.core.security import get_usuario_logado
+from app.core.security import get_usuario_logado, get_usuario_opcional
 from app.database import get_db
 from app.models.beneficio_produto import BeneficioProdutoCampanha, BeneficioProdutoResgate
 from app.models.loja import Loja
@@ -316,8 +316,18 @@ def excluir_campanha(campanha_id: int, usuario: dict = Depends(get_usuario_logad
 
 
 @router.get("/lojas/{loja_id}/ofertas")
-def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
-    exigir_cliente_autenticado(usuario, cliente_id)
+def ofertas_ativas(
+    loja_id: int,
+    cliente_id: int | None = None,
+    usuario: dict | None = Depends(get_usuario_opcional),
+    db: Session = Depends(get_db),
+):
+    # As ofertas são públicas para que visitantes também as conheçam. A sessão
+    # só é necessária para indicar se o próprio cliente já possui a cortesia.
+    if cliente_id is not None:
+        if usuario is None:
+            raise HTTPException(status_code=403, detail="Não autenticado")
+        exigir_cliente_autenticado(usuario, cliente_id)
     agora = _agora()
     itens = db.query(BeneficioProdutoCampanha).filter(
         BeneficioProdutoCampanha.loja_id == loja_id,
@@ -341,7 +351,7 @@ def ofertas_ativas(loja_id: int, cliente_id: int, usuario: dict = Depends(get_us
         if item.qtlimite is not None and usados >= item.qtlimite: continue
         oferta = _campanha_out(item, resgates=usados)
         if item.tipo == "CORTESIA":
-            cortesia_pendente = _tem_cortesia_pendente(
+            cortesia_pendente = cliente_id is not None and _tem_cortesia_pendente(
                 db,
                 cliente_id=cliente_id,
                 produto_id=int(item.produto_id),

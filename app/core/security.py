@@ -62,6 +62,15 @@ def get_usuario_logado(
     return payload
 
 
+def get_usuario_opcional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict | None:
+    """Retorna o usuário quando houver sessão, sem bloquear consultas públicas."""
+    if not credentials or not credentials.credentials:
+        return None
+    return verificar_jwt(credentials.credentials)
+
+
 def get_operador_logado(payload: dict = Depends(get_usuario_logado)) -> dict:
     if payload.get("role") != "operador":
         raise HTTPException(status_code=403, detail="Acesso exclusivo de operador Clubbar")
