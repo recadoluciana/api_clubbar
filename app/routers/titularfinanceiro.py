@@ -15,6 +15,7 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.models.titularfinanceiro import TitularFinanceiro
@@ -89,6 +90,35 @@ def _out(titular: TitularFinanceiro) -> dict:
     }
 
 
+def _motivos_titular_em_uso(db: Session, titular: TitularFinanceiro) -> list[str]:
+    """Informa vínculos que tornam insegura a exclusão de um titular."""
+    motivos: list[str] = []
+    if titular.asaas_account_id or titular.asaas_wallet_id:
+        motivos.append("subconta Asaas")
+    if db.query(Loja.loja_id).filter(
+        Loja.organizacao_id == titular.organizacao_id,
+        Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
+    ).first():
+        motivos.append("estabelecimento associado")
+    if db.query(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id).filter(
+        LeadEstabelecimentoContrato.titularfinanceiro_id == titular.titularfinanceiro_id,
+    ).first():
+        motivos.append("contrato")
+    if titular.asaas_wallet_id and db.query(CheckoutAsaas.checkout_asaas_id).filter(
+        CheckoutAsaas.asaas_wallet_loja == titular.asaas_wallet_id,
+    ).first():
+        motivos.append("checkout")
+    return motivos
+
+
+def _out_com_permissoes_de_exclusao(
+    db: Session, titular: TitularFinanceiro
+) -> dict:
+    retorno = _out(titular)
+    retorno["pode_excluir"] = not _motivos_titular_em_uso(db, titular)
+    return retorno
+
+
 @router.get("/organizacao/{organizacao_id}")
 def consultar(
     organizacao_id: int,
@@ -108,7 +138,7 @@ def consultar(
     )
     if not titular:
         return None
-    retorno = _out(titular)
+    retorno = _out_com_permissoes_de_exclusao(db, titular)
     retorno["loja_id"] = loja.loja_id if loja else None
     return retorno
 
@@ -121,7 +151,7 @@ def listar_titulares(
 ):
     _validar_escopo(payload, organizacao_id)
     return [
-        _out(item)
+        _out_com_permissoes_de_exclusao(db, item)
         for item in db.query(TitularFinanceiro)
         .filter(TitularFinanceiro.organizacao_id == organizacao_id)
         .order_by(TitularFinanceiro.titularfinanceiro_id.asc())
@@ -347,6 +377,41 @@ async def _sincronizar_dados_comerciais_asaas(
         "AWAITING_APPROVAL": "EM_ANALISE",
     }.get(geral, "PENDENTE_DOCUMENTOS")
     titular.dtultimaverificacao = datetime.now()
+
+
+@router.delete("/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}")
+def excluir_titular(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    """Exclui apenas um titular que nunca foi utilizado na operação."""
+    _validar_escopo(payload, organizacao_id)
+    titular = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
+        TitularFinanceiro.organizacao_id == organizacao_id,
+    ).first()
+    if not titular:
+        raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
+
+    motivos = _motivos_titular_em_uso(db, titular)
+    if motivos:
+        raise HTTPException(
+            409,
+            "Este titular não pode ser excluído porque já possui "
+            f"{', '.join(motivos)}.",
+        )
+    try:
+        db.delete(titular)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Este titular não pode ser excluído porque possui vínculos no Clubbar.",
+        ) from exc
+    return {"ok": True}
 
 
 @router.patch("/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/inativar")
