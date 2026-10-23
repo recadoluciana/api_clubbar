@@ -260,6 +260,14 @@ async def obter_ou_criar_customer_asaas_loja(
         response = await getattr(client, metodo)(
             f"{ASAAS_BASE_URL}{caminho}", json=body, headers=_headers(api_key)
         )
+        # Clientes do Asaas pertencem ao ambiente e à subconta. Depois de uma
+        # migração Sandbox -> Produção (ou troca de subconta), o ID salvo
+        # localmente pode não existir mais para a chave atual. Recria-o sem
+        # exigir que o cliente refaça seu cadastro no Clubbar.
+        if response.status_code == 404 and vinculo:
+            response = await client.post(
+                f"{ASAAS_BASE_URL}/customers", json=body, headers=_headers(api_key)
+            )
     try:
         data = response.json()
     except Exception:
@@ -269,7 +277,9 @@ async def obter_ou_criar_customer_asaas_loja(
     customer_id = str(data.get("id") or (vinculo.asaas_customer_id if vinculo else ""))
     if not customer_id:
         raise HTTPException(502, "Asaas não retornou o identificador do cliente")
-    if not vinculo:
+    if vinculo:
+        vinculo.asaas_customer_id = customer_id
+    else:
         db.add(ClienteAsaas(
             cliente_id=cliente_id, loja_id=loja_id,
             asaas_customer_id=customer_id,
