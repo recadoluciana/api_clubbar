@@ -284,7 +284,11 @@ async def _asaas(method: str, path: str, api_key: str, json: dict | None = None,
         response = await client.request(
             method,
             f"{ASAAS_BASE_URL}{path}",
-            headers={"accept": "application/json", "access_token": api_key},
+            headers={
+                "accept": "application/json",
+                "access_token": api_key,
+                "User-Agent": "Clubbar/1.0",
+            },
             json=json,
             params=params,
         )
@@ -323,7 +327,11 @@ async def _identificar_ambiente_credencial_asaas(api_key: str) -> str:
             for ambiente, url in endpoints:
                 resposta = await client.get(
                     url,
-                    headers={"accept": "application/json", "access_token": api_key},
+                    headers={
+                        "accept": "application/json",
+                        "access_token": api_key,
+                        "User-Agent": "Clubbar/1.0",
+                    },
                 )
                 respostas.append(resposta.status_code)
                 if resposta.is_success:

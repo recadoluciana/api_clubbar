@@ -74,7 +74,12 @@ async def criar_cobranca_implantacao(
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(
             f"{ASAAS_BASE_URL.rstrip('/')}/checkouts",
-            headers={"accept": "application/json", "content-type": "application/json", "access_token": ASAAS_API_KEY},
+            headers={
+                "accept": "application/json",
+                "content-type": "application/json",
+                "access_token": ASAAS_API_KEY,
+                "User-Agent": "Clubbar/1.0",
+            },
             json=body,
         )
     try:

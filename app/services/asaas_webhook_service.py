@@ -47,7 +47,11 @@ async def garantir_webhook_pagamentos_asaas(api_key: str) -> None:
             ),
         )
 
-    headers = {"accept": "application/json", "access_token": api_key}
+    headers = {
+        "accept": "application/json",
+        "access_token": api_key,
+        "User-Agent": "Clubbar/1.0",
+    }
     configuracao = {
         "name": "Clubbar - confirmação de pagamentos",
         "url": url_api,

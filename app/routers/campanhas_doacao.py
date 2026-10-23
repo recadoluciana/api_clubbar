@@ -205,7 +205,11 @@ async def _asaas(
         resposta = await client.request(
             method,
             f"{ASAAS_BASE_URL}{path}",
-            headers={"accept": "application/json", "access_token": api_key},
+            headers={
+                "accept": "application/json",
+                "access_token": api_key,
+                "User-Agent": "Clubbar/1.0",
+            },
             json=json,
             params=params,
         )

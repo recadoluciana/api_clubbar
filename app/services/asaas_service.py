@@ -47,6 +47,7 @@ def _headers(api_key: str):
     return {
         "Content-Type": "application/json",
         "access_token": api_key,
+        "User-Agent": "Clubbar/1.0",
     }
 
 
