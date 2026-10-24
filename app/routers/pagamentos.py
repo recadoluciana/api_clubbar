@@ -104,6 +104,33 @@ def _enviar_confirmacao_produtos_sem_bloquear(db: Session, venda_id: int) -> Non
         print("[PRODUTO] Não foi possível enviar e-mail:", repr(exc))
 
 
+def _notificar_confirmacao_mercado_pago(
+    db: Session, checkout: CheckoutMercadoPago
+) -> bool:
+    """Envia a confirmação uma única vez, sem colocar a venda em risco.
+
+    A venda já foi confirmada e commitada quando esta função é chamada. Se o
+    Brevo/SMTP falhar, não registramos o marco: uma consulta posterior da
+    compra pode tentar novamente. Assim, falha de e-mail nunca perde produto
+    nem impede a retirada na Carteira.
+    """
+    if not checkout.venda_id or checkout.dtemailconfirmacao:
+        return False
+    try:
+        enviado = enviar_produtos_confirmados_da_venda(
+            db, int(checkout.venda_id)
+        )
+        if not enviado:
+            return False
+        checkout.dtemailconfirmacao = datetime.now()
+        db.commit()
+        return True
+    except Exception as exc:
+        db.rollback()
+        print("[MERCADO_PAGO] Não foi possível enviar e-mail:", repr(exc))
+        return False
+
+
 def _sincronizar_checkout_de_reserva_confirmada(
     db: Session, checkout: CheckoutAsaas
 ) -> bool:
@@ -800,6 +827,7 @@ async def _consultar_status_checkout_mercado_pago(
 ) -> dict:
     preference_id = str(checkout.preference_id)
     if checkout.venda_id:
+        _notificar_confirmacao_mercado_pago(db, checkout)
         return {'pagamento_id': preference_id, 'status': 'PAGO', 'venda_id': checkout.venda_id}
     if str(checkout.status).upper() in {'CANCELLED', 'EXPIRED'}:
         return {'pagamento_id': preference_id, 'status': 'SUBSTITUIDO'}
@@ -836,8 +864,7 @@ async def _consultar_status_checkout_mercado_pago(
     checkout.dsorigemconfirmacao = 'CONSULTA'
     checkout.dtconfirmacao = datetime.now()
     db.commit()
-    if resultado.get('venda_id') and not resultado.get('already_processed'):
-        _enviar_confirmacao_produtos_sem_bloquear(db, int(resultado['venda_id']))
+    _notificar_confirmacao_mercado_pago(db, checkout)
     return {
         'pagamento_id': preference_id,
         'status': 'PAGO',
@@ -1641,8 +1668,19 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
         db.query(CheckoutMercadoPago)
         .filter(
             CheckoutMercadoPago.cliente_id == cliente_id,
-            CheckoutMercadoPago.venda_id.is_(None),
-            CheckoutMercadoPago.status.notin_(['APPROVED', 'CANCELLED', 'EXPIRED']),
+            or_(
+                and_(
+                    CheckoutMercadoPago.venda_id.is_(None),
+                    CheckoutMercadoPago.status.notin_(
+                        ['APPROVED', 'CANCELLED', 'EXPIRED']
+                    ),
+                ),
+                and_(
+                    CheckoutMercadoPago.venda_id.isnot(None),
+                    CheckoutMercadoPago.carrinho_id.isnot(None),
+                    CheckoutMercadoPago.dtemailconfirmacao.is_(None),
+                ),
+            ),
         )
         .order_by(CheckoutMercadoPago.checkout_mercadopago_id.asc())
         .limit(20)

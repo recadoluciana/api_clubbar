@@ -16,6 +16,7 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.services.mercado_pago_service import buscar_pagamento_por_id, obter_token_loja
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
+from app.routers.pagamentos import _notificar_confirmacao_mercado_pago
 
 
 router = APIRouter(tags=["Webhook Mercado Pago"])
@@ -91,6 +92,7 @@ async def receber_webhook_mercado_pago(request: Request):
         if recebido != esperado:
             raise HTTPException(409, 'Valor Mercado Pago divergente do checkout.')
         if checkout.venda_id:
+            _notificar_confirmacao_mercado_pago(db, checkout)
             return {'ok': True, 'venda_id': checkout.venda_id}
 
         if checkout.reserva_ingresso_id:
@@ -120,6 +122,7 @@ async def receber_webhook_mercado_pago(request: Request):
         checkout.dsorigemconfirmacao = 'WEBHOOK'
         checkout.dtconfirmacao = datetime.now()
         db.commit()
+        _notificar_confirmacao_mercado_pago(db, checkout)
         return {'ok': True, 'venda_id': checkout.venda_id}
     except HTTPException:
         db.rollback()

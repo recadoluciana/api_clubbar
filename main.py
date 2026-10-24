@@ -1222,6 +1222,21 @@ def garantir_estrutura_mercado_pago() -> None:
         LojaMercadoPago.__table__.create(bind=engine, checkfirst=True)
         CheckoutMercadoPago.__table__.create(bind=engine, checkfirst=True)
         inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        if "checkout_mercadopago" in tabelas:
+            colunas_checkout_mp = {
+                coluna["name"]
+                for coluna in inspector.get_columns("checkout_mercadopago")
+            }
+            if "dtemailconfirmacao" not in colunas_checkout_mp:
+                with engine.begin() as conexao:
+                    conexao.execute(
+                        text(
+                            "ALTER TABLE checkout_mercadopago "
+                            "ADD COLUMN dtemailconfirmacao DATETIME NULL "
+                            "AFTER dtconfirmacao"
+                        )
+                    )
         if "loja" not in inspector.get_table_names():
             return
         colunas = {coluna["name"] for coluna in inspector.get_columns("loja")}

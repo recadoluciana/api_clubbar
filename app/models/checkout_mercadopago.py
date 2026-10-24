@@ -32,4 +32,8 @@ class CheckoutMercadoPago(Base):
     dadosentrega = Column(Text, nullable=True)
     dsorigemconfirmacao = Column(String(20), nullable=True)
     dtconfirmacao = Column(DateTime, nullable=True)
+    # A confirmação de pagamento e a comunicação ao cliente são etapas
+    # distintas. Este marco permite retomar o e-mail caso o webhook tenha
+    # confirmado a venda, mas o provedor de e-mail estivesse indisponível.
+    dtemailconfirmacao = Column(DateTime, nullable=True)
     dtcriacao = Column(DateTime, server_default=text("CURRENT_TIMESTAMP"))
