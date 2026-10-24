@@ -55,6 +55,18 @@ ASAAS_CREDENTIAL_ENCRYPTION_KEY = os.getenv("ASAAS_CREDENTIAL_ENCRYPTION_KEY", "
 ASAAS_CLUBBAR_WALLET_ID = os.getenv("ASAAS_CLUBBAR_WALLET_ID", "").strip()
 ASAAS_PIX_ADDRESS_KEY = os.getenv("ASAAS_PIX_ADDRESS_KEY", "").strip()
 
+# Mercado Pago é um segundo provedor. Estas credenciais pertencem à aplicação
+# Marketplace do Clubbar; as credenciais de cada estabelecimento são obtidas
+# individualmente via OAuth e ficam criptografadas no banco.
+MERCADO_PAGO_CLIENT_ID = os.getenv("MERCADO_PAGO_CLIENT_ID", "").strip()
+MERCADO_PAGO_CLIENT_SECRET = os.getenv("MERCADO_PAGO_CLIENT_SECRET", "").strip()
+MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
+MERCADO_PAGO_API_BASE_URL = (
+    os.getenv("MERCADO_PAGO_API_BASE_URL", "https://api.mercadopago.com")
+    .strip()
+    .rstrip("/")
+)
+
 _railway_public_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
 PUBLIC_API_BASE_URL = os.getenv("PUBLIC_API_BASE_URL", "").strip().rstrip("/")
 if not PUBLIC_API_BASE_URL and _railway_public_domain:
@@ -86,6 +98,13 @@ PUBLIC_PARTNER_BASE_URL = (
 ).strip().rstrip("/")
 
 PUBLIC_SITE_URL = os.getenv("PUBLIC_SITE_URL", "").strip().rstrip("/")
+
+# Deve ser cadastrado exatamente assim na aplicação Mercado Pago. Permite
+# override para desenvolvimento/local sem afetar a URL de produção.
+MERCADO_PAGO_OAUTH_REDIRECT_URL = (
+    os.getenv("MERCADO_PAGO_OAUTH_REDIRECT_URL")
+    or (f"{PUBLIC_API_BASE_URL}/mercado-pago/oauth/callback" if PUBLIC_API_BASE_URL else "")
+).strip()
 
 # Railway Buckets expose these official S3-compatible variable names when
 # credentials are attached to a service. Keep the STORAGE_S3_* names as an

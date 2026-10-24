@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 from datetime import datetime
 from decimal import Decimal
 
@@ -161,6 +162,7 @@ async def criar_venda_paga_por_carrinho_gateway(
     gateway: str,
     pagamento: dict,
     metodo_pagamento: str | None = None,
+    checkout_origem: Any | None = None,
 ):
     gateway = (gateway or "").upper()
 
@@ -323,7 +325,7 @@ async def criar_venda_paga_por_carrinho_gateway(
         gateway=gateway,
         payload=pagamento,
     )
-    _criar_delivery(db, checkout_cashback, venda_id)
+    _criar_delivery(db, checkout_origem or checkout_cashback, venda_id)
     if checkout_cashback:
         confirmar_uso(db, checkout_cashback, venda_id)
     cashback_gerado = gerar_cashback_venda(db, venda_id)

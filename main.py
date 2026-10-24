@@ -15,6 +15,8 @@ from app.database import SessionLocal, engine
 from app.models.contratopadrao import ContratoPadrao
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
+from app.models.lojamercadopago import LojaMercadoPago
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
@@ -44,6 +46,8 @@ from app.routers import asaas_webhook
 from app.routers import portalparceiro
 from app.routers import painel_gerencial
 from app.routers import lojaasaas
+from app.routers import lojamercadopago
+from app.routers import mercado_pago_webhook
 from app.routers import operadores
 from app.routers import atracoes
 from app.routers import agenda
@@ -179,6 +183,8 @@ app.include_router(asaas_webhook.router)
 app.include_router(portalparceiro.router)
 app.include_router(painel_gerencial.router)
 app.include_router(lojaasaas.router)
+app.include_router(lojamercadopago.router)
+app.include_router(mercado_pago_webhook.router)
 app.include_router(operadores.router)
 app.include_router(atracoes.router)
 app.include_router(agenda.router)
@@ -1205,6 +1211,31 @@ def normalizar_capacidade_por_setor_nos_lotes() -> None:
         logger.info("Capacidades dos lotes normalizadas por setor.")
     except Exception:
         logger.exception("Não foi possível normalizar as capacidades por setor")
+        raise
+
+
+# A conexão Mercado Pago é independente da estrutura legada do Asaas. A
+# migração abaixo é aditiva e mantém ASAAS como escolha das lojas existentes.
+@app.on_event("startup")
+def garantir_estrutura_mercado_pago() -> None:
+    try:
+        LojaMercadoPago.__table__.create(bind=engine, checkfirst=True)
+        CheckoutMercadoPago.__table__.create(bind=engine, checkfirst=True)
+        inspector = inspect(engine)
+        if "loja" not in inspector.get_table_names():
+            return
+        colunas = {coluna["name"] for coluna in inspector.get_columns("loja")}
+        if "provedor_pagamento" not in colunas:
+            with engine.begin() as conexao:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE loja ADD COLUMN provedor_pagamento "
+                        "VARCHAR(20) NOT NULL DEFAULT 'ASAAS'"
+                    )
+                )
+        logger.info("Estrutura de integração Mercado Pago verificada.")
+    except Exception:
+        logger.exception("Não foi possível preparar a integração Mercado Pago")
         raise
 
 

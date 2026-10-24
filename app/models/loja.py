@@ -62,6 +62,9 @@ class Loja(Base):
     vrtaxaprod = Column(Numeric(10, 2), nullable=False, default=5)
     vrtaxaing = Column(Numeric(10, 2), nullable=False, default=10)
     vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, default=2.99)
+    # Mantém Asaas como padrão para todas as lojas existentes. A alteração é
+    # explícita, após a conta Mercado Pago ser autorizada pelo parceiro.
+    provedor_pagamento = Column(String(20), nullable=False, default="ASAAS")
     
     __table_args__ = (
         UniqueConstraint("organizacao_id", "loja_id", name="uq_loja_org_loja"),

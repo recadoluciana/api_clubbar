@@ -36,6 +36,8 @@ from app.models.cashback_movimento import CashbackMovimento
 from app.models.cliente import Cliente
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_asaas_item import CheckoutAsaasItem
+from app.models.checkout_mercadopago import CheckoutMercadoPago
+from app.models.lojamercadopago import LojaMercadoPago
 from app.models.reserva_ingresso import ReservaIngresso
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 
@@ -74,6 +76,11 @@ from app.services.cashback_service import reservar_uso, vincular_uso_ao_checkout
 from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
+from app.services.mercado_pago_service import (
+    buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
+    criar_preferencia as criar_preferencia_mercado_pago,
+    obter_token_loja as obter_token_mercado_pago_loja,
+)
 from app.services.campanha_doacao_service import (
     obter_campanha_doacao_vigente,
     registrar_snapshot_doacao,
@@ -651,6 +658,196 @@ def _salvar_snapshot_checkout(
             nmparticipante=item.get('nmparticipante'),
             cpfparticipante=item.get('cpfparticipante'),
         ))
+
+
+@router.get('/lojas/{loja_id}/provedor')
+async def consultar_provedor_pagamento_loja(
+    loja_id: int,
+    usuario: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    """Informa ao Client qual checkout deve abrir, sem revelar credenciais."""
+    loja = db.query(Loja).filter(Loja.loja_id == loja_id, Loja.sitloja == 'ATIVA').first()
+    if not loja:
+        raise HTTPException(404, 'Estabelecimento não encontrado ou indisponível.')
+    provedor = str(getattr(loja, 'provedor_pagamento', None) or 'ASAAS').upper()
+    mercado_pago_pronto = False
+    if provedor == 'MERCADO_PAGO':
+        configuracao = db.query(LojaMercadoPago).filter(
+            LojaMercadoPago.loja_id == loja_id,
+            LojaMercadoPago.ambiente == APP_ENV,
+            LojaMercadoPago.statusintegracao == 'ATIVA',
+        ).first()
+        mercado_pago_pronto = bool(configuracao and configuracao.access_token_criptografado)
+        if not mercado_pago_pronto:
+            # Nunca direciona o cliente a uma conta incompleta. O parceiro
+            # precisa concluir OAuth antes de trocar o provedor efetivo.
+            provedor = 'ASAAS'
+    return {'provedor_pagamento': provedor, 'mercado_pago_pronto': mercado_pago_pronto}
+
+
+@router.post('/pagar-mercado-pago')
+async def pagar_mercado_pago_cliente(
+    payload: PagarNovoIn,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Cria Checkout Pro no Mercado Pago para produtos.
+
+    É paralelo ao endpoint Asaas: não altera a cobrança, o histórico ou os
+    webhooks atuais desse provedor. Cashback permanece indisponível aqui até
+    sua reserva ganhar uma chave de checkout independente do Asaas.
+    """
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if payload.usuario_id is not None or payload.origem_checkout != 'CLIENT':
+        raise HTTPException(403, detail='Origem de pagamento inválida')
+    if payload.usar_cashback:
+        raise HTTPException(
+            409,
+            'Cashback ainda não está disponível para Mercado Pago. Escolha Asaas ou prossiga sem usar cashback.',
+        )
+    try:
+        validar_publicacao_loja(db, payload.loja_id)
+        loja = db.query(Loja).filter(Loja.loja_id == payload.loja_id).first()
+        if not loja:
+            raise HTTPException(404, 'Estabelecimento não encontrado.')
+        if str(getattr(loja, 'provedor_pagamento', 'ASAAS')).upper() != 'MERCADO_PAGO':
+            raise HTTPException(409, 'Este estabelecimento está configurado para receber pelo Asaas.')
+        if payload.entrega and loja.permiteentrega != 'S':
+            raise HTTPException(400, detail='Este estabelecimento não aceita delivery.')
+
+        carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id, None)
+        if not carrinho or not carrinho.get('itens'):
+            raise HTTPException(400, 'Carrinho vazio')
+        carrinho_id = int(carrinho.get('carrinho_id') or 0)
+        if not carrinho_id:
+            raise HTTPException(400, 'Carrinho inválido')
+        itens, _ = _recalcular_itens_carrinho(
+            db, carrinho['itens'], payload.loja_id, payload.organizacao_id
+        )
+        itens_checkout, valor_total, valor_taxa_clubbar = _montar_itens_asaas(itens)
+        _exigir_valor_positivo(valor_total)
+
+        # Tentações antigas do próprio Mercado Pago são invalidadas no Clubbar.
+        # A preferência anterior não é reaproveitada nem pode confirmar uma
+        # venda nova porque a referência é única e o status é validado.
+        db.query(CheckoutMercadoPago).filter(
+            CheckoutMercadoPago.carrinho_id == carrinho_id,
+            CheckoutMercadoPago.venda_id.is_(None),
+            CheckoutMercadoPago.status.in_(['PENDING', 'IN_PROCESS']),
+        ).update({'status': 'CANCELLED'}, synchronize_session=False)
+
+        token, _ = await obter_token_mercado_pago_loja(db, payload.loja_id)
+        referencia = f'MP-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
+        itens_mp = [
+            {
+                'id': str(item.get('externalReference') or index),
+                'title': str(item.get('name') or 'Compra Clubbar')[:256],
+                'description': str(item.get('description') or '')[:256],
+                'quantity': int(item.get('quantity') or 1),
+                'currency_id': 'BRL',
+                'unit_price': float(item.get('value') or 0),
+            }
+            for index, item in enumerate(itens_checkout, start=1)
+        ]
+        preferencia = await criar_preferencia_mercado_pago(
+            access_token=token,
+            external_reference=referencia,
+            titulo='PRODUTOS',
+            itens=itens_mp,
+            valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+            metodo=payload.dsmetodopag,
+        )
+        checkout = CheckoutMercadoPago(
+            carrinho_id=carrinho_id,
+            cliente_id=payload.cliente_id,
+            loja_id=payload.loja_id,
+            preference_id=str(preferencia['id']),
+            external_reference=referencia,
+            status='PENDING',
+            checkout_url=str(preferencia.get('init_point') or preferencia.get('sandbox_init_point')),
+            metodo_solicitado=payload.dsmetodopag,
+            valor=valor_total,
+            vrtaxaclubbar=valor_taxa_clubbar,
+            dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
+        )
+        db.add(checkout)
+        db.commit()
+        return {
+            'ok': True,
+            'gateway': 'MERCADO_PAGO',
+            'pagamento_id': checkout.preference_id,
+            'checkout_url': checkout.checkout_url,
+            'status': checkout.status,
+            'valor_cobrado': float(checkout.valor),
+            'external_reference': checkout.external_reference,
+        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as erro:
+        db.rollback()
+        print('[MERCADO_PAGO][ERRO]', repr(erro))
+        raise HTTPException(500, 'Não foi possível criar o checkout Mercado Pago.') from erro
+
+
+@router.get('/mercado-pago/status/{preference_id}')
+async def consultar_status_checkout_mercado_pago(
+    preference_id: str,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    checkout = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.preference_id == preference_id
+    ).first()
+    if not checkout:
+        raise HTTPException(404, 'Checkout Mercado Pago não encontrado.')
+    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    if checkout.venda_id:
+        return {'pagamento_id': preference_id, 'status': 'PAGO', 'venda_id': checkout.venda_id}
+    if str(checkout.status).upper() in {'CANCELLED', 'EXPIRED'}:
+        return {'pagamento_id': preference_id, 'status': 'SUBSTITUIDO'}
+
+    token, _ = await obter_token_mercado_pago_loja(db, checkout.loja_id)
+    pagamento = await buscar_pagamento_mercado_pago(
+        access_token=token, external_reference=checkout.external_reference
+    )
+    if not pagamento:
+        return {'pagamento_id': preference_id, 'status': 'PENDENTE'}
+    recebido = Decimal(str(pagamento.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
+    esperado = Decimal(str(checkout.valor or 0)).quantize(Decimal('0.01'))
+    if recebido != esperado:
+        raise HTTPException(409, 'Valor aprovado no Mercado Pago diverge da venda.')
+    if str(pagamento.get('external_reference') or '') != str(checkout.external_reference):
+        raise HTTPException(409, 'Referência Mercado Pago divergente.')
+
+    from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
+    resultado = await criar_venda_paga_por_carrinho_gateway(
+        db,
+        carrinho_id=int(checkout.carrinho_id),
+        gateway='MERCADO_PAGO',
+        pagamento={
+            **pagamento,
+            'id': str(pagamento.get('id') or ''),
+            'value': float(recebido),
+            'externalReference': checkout.external_reference,
+        },
+        checkout_origem=checkout,
+    )
+    checkout.payment_id = str(pagamento.get('id') or '') or None
+    checkout.status = 'APPROVED'
+    checkout.venda_id = resultado.get('venda_id')
+    checkout.dsorigemconfirmacao = 'CONSULTA'
+    checkout.dtconfirmacao = datetime.now()
+    db.commit()
+    if resultado.get('venda_id') and not resultado.get('already_processed'):
+        _enviar_confirmacao_produtos_sem_bloquear(db, int(resultado['venda_id']))
+    return {
+        'pagamento_id': preference_id,
+        'status': 'PAGO',
+        'venda_id': resultado.get('venda_id'),
+        'cashback_gerado': resultado.get('cashback_gerado', 0),
+    }
 
 
 @router.post('/pix')

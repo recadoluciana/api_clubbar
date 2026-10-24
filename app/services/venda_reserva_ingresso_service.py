@@ -31,9 +31,22 @@ def _dados_catalogo_item(
     }
 
 
-def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pagamento: dict) -> dict:
+def finalizar_reserva_paga(
+    db: Session,
+    *,
+    reserva_id: int,
+    checkout_id: int,
+    pagamento: dict,
+    gateway: str = "ASAAS",
+    modelo_checkout=CheckoutAsaas,
+) -> dict:
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
-    checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.checkout_asaas_id == checkout_id).with_for_update().first()
+    chave_checkout = (
+        modelo_checkout.checkout_asaas_id
+        if gateway.upper() == "ASAAS"
+        else modelo_checkout.checkout_mercadopago_id
+    )
+    checkout = db.query(modelo_checkout).filter(chave_checkout == checkout_id).with_for_update().first()
     if not reserva or not checkout or checkout.reserva_ingresso_id != reserva_id:
         raise HTTPException(409, "Reserva ou checkout divergente")
     if reserva.venda_id:
@@ -44,9 +57,15 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
     if len(participantes) != reserva.qtreservada:
         raise HTTPException(409, "Participantes da reserva estão incompletos")
     status = str(pagamento.get("status") or "").upper()
-    if status not in {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"}:
-        raise HTTPException(409, "Pagamento ainda não confirmado pelo Asaas")
-    recebido = Decimal(str(pagamento.get("value") or 0)).quantize(Decimal("0.01"))
+    confirmados = {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"}
+    if gateway.upper() == "MERCADO_PAGO":
+        confirmados = {"APPROVED"}
+    if status not in confirmados:
+        raise HTTPException(409, f"Pagamento ainda não confirmado pelo {gateway.title()}")
+    recebido = Decimal(str(
+        pagamento.get("value") if gateway.upper() == "ASAAS"
+        else pagamento.get("transaction_amount")
+    )).quantize(Decimal("0.01"))
     esperado = Decimal(str(reserva.vrtotal)).quantize(Decimal("0.01"))
     if recebido != esperado:
         raise HTTPException(409, "Valor confirmado diverge da reserva")
@@ -62,11 +81,19 @@ def finalizar_reserva_paga(db: Session, *, reserva_id: int, checkout_id: int, pa
         db.flush()
         participante.itvenda_id = item.itvenda_id
     metodo = {"PIX": "PIX", "CREDIT_CARD": "CREDITO", "DEBIT_CARD": "DEBITO"}.get(str(pagamento.get("billingType") or "").upper(), "OUTRO")
+    if gateway.upper() == "MERCADO_PAGO":
+        metodo = {
+            "credit_card": "CREDITO", "debit_card": "DEBITO", "pix": "PIX",
+            "bank_transfer": "PIX",
+        }.get(str(pagamento.get("payment_type_id") or pagamento.get("payment_method_id") or "").lower(), "OUTRO")
     payment_id = str(pagamento.get("id") or "")
-    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=reserva.vrtotal, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor="ASAAS", reference_id=checkout.external_reference, checkout_id=checkout.checkout_id)
+    checkout_referencia = (
+        checkout.checkout_id if gateway.upper() == "ASAAS" else checkout.preference_id
+    )
+    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=reserva.vrtotal, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor=gateway.upper(), reference_id=checkout.external_reference, checkout_id=checkout_referencia)
     db.add(pag)
     db.flush()
-    set_venda_como_paga(db, venda_id=venda.venda_id, gateway="ASAAS", payload=pagamento, finalizar_carrinho=False)
+    set_venda_como_paga(db, venda_id=venda.venda_id, gateway=gateway.upper(), payload=pagamento, finalizar_carrinho=False)
     lote.qtvendidalote = int(lote.qtvendidalote or 0) + int(reserva.qtreservada)
     reserva.sitreserva = "CONFIRMADA"
     reserva.venda_id = venda.venda_id

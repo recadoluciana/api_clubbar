@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,7 +11,9 @@ from app.core.cliente_auth import exigir_cliente_autenticado
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
+from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
@@ -25,6 +28,11 @@ from app.services.cortesia_evento_service import (
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
+from app.services.mercado_pago_service import (
+    buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
+    criar_preferencia as criar_preferencia_mercado_pago,
+    obter_token_loja as obter_token_mercado_pago_loja,
+)
 from app.services.campanha_doacao_service import (
     obter_campanha_para_reserva,
     registrar_snapshot_doacao,
@@ -238,6 +246,72 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
         db.rollback(); raise
 
 
+@router.post("/{reserva_id}/mercado-pago")
+async def gerar_checkout_reserva_mercado_pago(
+    reserva_id: int,
+    payload: PagamentoReservaIn,
+    metodo: str = "CREDIT_CARD",
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Cria uma preferência Mercado Pago para a reserva, sem tocar no Asaas."""
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    try:
+        reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
+        loja = db.query(Loja).filter(Loja.loja_id == reserva.loja_id).first()
+        if not loja or str(getattr(loja, 'provedor_pagamento', 'ASAAS')).upper() != 'MERCADO_PAGO':
+            raise HTTPException(409, 'Este estabelecimento está configurado para receber pelo Asaas.')
+        metodo = metodo.upper()
+        if metodo not in {'PIX', 'CREDIT_CARD', 'CREDITO'}:
+            raise HTTPException(422, 'Método Mercado Pago inválido.')
+        referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
+        taxa_clubbar = float(reserva.vrtaxa or 0) * int(reserva.qtreservada or 1)
+        token, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id)
+        preferencia = await criar_preferencia_mercado_pago(
+            access_token=token,
+            external_reference=referencia,
+            titulo='INGRESSOS',
+            itens=[{
+                'id': f'LOTE-{reserva.lote_id}',
+                'title': 'Ingresso Clubbar',
+                'description': f'{reserva.qtreservada} ingresso(s)',
+                'quantity': int(reserva.qtreservada),
+                'currency_id': 'BRL',
+                'unit_price': float(reserva.vrunitario + reserva.vrtaxa),
+            }],
+            valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
+            metodo=metodo,
+        )
+        checkout = CheckoutMercadoPago(
+            reserva_ingresso_id=reserva_id,
+            cliente_id=reserva.cliente_id,
+            loja_id=reserva.loja_id,
+            preference_id=str(preferencia['id']),
+            external_reference=referencia,
+            status='PENDING',
+            checkout_url=str(preferencia.get('init_point') or preferencia.get('sandbox_init_point')),
+            metodo_solicitado=metodo,
+            valor=reserva.vrtotal,
+            vrtaxaclubbar=taxa_clubbar,
+        )
+        db.add(checkout)
+        db.commit()
+        return {
+            'reserva_ingresso_id': reserva_id,
+            'pagamento_id': checkout.preference_id,
+            'checkout_url': checkout.checkout_url,
+            'status': checkout.status,
+            'data_expiracao': iso_utc(reserva.dtexpiracao),
+            'gateway': 'MERCADO_PAGO',
+        }
+    except HTTPException:
+        db.rollback(); raise
+    except Exception as erro:
+        db.rollback()
+        print('[MERCADO_PAGO RESERVA][ERRO]', repr(erro))
+        raise HTTPException(500, 'Não foi possível criar o pagamento Mercado Pago.') from erro
+
+
 @router.get("/{reserva_id}/status")
 async def consultar_status_reserva(
     reserva_id: int,
@@ -255,6 +329,39 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
         raise HTTPException(404, "Reserva não encontrada")
     if reserva.venda_id:
         return {**_saida(db, reserva), "status_pagamento": "PAGO"}
+    checkout_mp = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.reserva_ingresso_id == reserva_id
+    ).order_by(CheckoutMercadoPago.checkout_mercadopago_id.desc()).first()
+    if checkout_mp:
+        if checkout_mp.venda_id:
+            return {**_saida(db, reserva), 'status_pagamento': 'PAGO'}
+        token, _ = await obter_token_mercado_pago_loja(db, checkout_mp.loja_id)
+        pagamento_mp = await buscar_pagamento_mercado_pago(
+            access_token=token, external_reference=checkout_mp.external_reference
+        )
+        if pagamento_mp:
+            recebido = Decimal(str(pagamento_mp.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
+            esperado = Decimal(str(reserva.vrtotal or 0)).quantize(Decimal('0.01'))
+            if recebido != esperado:
+                raise HTTPException(409, 'Valor Mercado Pago diverge da reserva.')
+            resultado = finalizar_reserva_paga(
+                db,
+                reserva_id=reserva_id,
+                checkout_id=checkout_mp.checkout_mercadopago_id,
+                pagamento=pagamento_mp,
+                gateway='MERCADO_PAGO',
+                modelo_checkout=CheckoutMercadoPago,
+            )
+            db.commit()
+            if not resultado.get('already_processed'):
+                try:
+                    enviar_ingressos_confirmados_da_venda(db, int(resultado['venda_id']))
+                except Exception as exc:
+                    print('[INGRESSO] Não foi possível enviar e-mail:', repr(exc))
+            return {**_saida(db, reserva), **resultado, 'status_pagamento': 'PAGO'}
+        if reserva.dtexpiracao <= datetime.now():
+            checkout_mp.status = 'EXPIRED'; reserva.sitreserva = 'EXPIRADA'; db.commit()
+        return {**_saida(db, reserva), 'status_pagamento': 'PENDENTE'}
     checkout = db.query(CheckoutAsaas).filter(CheckoutAsaas.reserva_ingresso_id == reserva_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).first()
     if not checkout:
         return {**_saida(db, reserva), "status_pagamento": "PENDENTE"}
