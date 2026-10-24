@@ -795,18 +795,10 @@ async def pagar_mercado_pago_cliente(
         raise HTTPException(500, 'Não foi possível criar o checkout Mercado Pago.') from erro
 
 
-@router.get('/mercado-pago/status/{preference_id}')
-async def consultar_status_checkout_mercado_pago(
-    preference_id: str,
-    db: Session = Depends(get_db),
-    usuario: dict = Depends(get_usuario_logado),
-):
-    checkout = db.query(CheckoutMercadoPago).filter(
-        CheckoutMercadoPago.preference_id == preference_id
-    ).first()
-    if not checkout:
-        raise HTTPException(404, 'Checkout Mercado Pago não encontrado.')
-    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+async def _consultar_status_checkout_mercado_pago(
+    *, checkout: CheckoutMercadoPago, db: Session
+) -> dict:
+    preference_id = str(checkout.preference_id)
     if checkout.venda_id:
         return {'pagamento_id': preference_id, 'status': 'PAGO', 'venda_id': checkout.venda_id}
     if str(checkout.status).upper() in {'CANCELLED', 'EXPIRED'}:
@@ -852,6 +844,37 @@ async def consultar_status_checkout_mercado_pago(
         'venda_id': resultado.get('venda_id'),
         'cashback_gerado': resultado.get('cashback_gerado', 0),
     }
+
+
+@router.get('/mercado-pago/status/{preference_id}')
+async def consultar_status_checkout_mercado_pago(
+    preference_id: str,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    checkout = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.preference_id == preference_id
+    ).first()
+    if not checkout:
+        raise HTTPException(404, 'Checkout Mercado Pago não encontrado.')
+    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    return await _consultar_status_checkout_mercado_pago(checkout=checkout, db=db)
+
+
+@router.get('/mercado-pago/status/referencia/{external_reference}')
+async def consultar_status_checkout_mercado_pago_por_referencia(
+    external_reference: str,
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
+):
+    """Confirma o retorno web usando a referência que o Mercado Pago devolve."""
+    checkout = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.external_reference == external_reference
+    ).first()
+    if not checkout:
+        raise HTTPException(404, 'Checkout Mercado Pago não encontrado.')
+    exigir_cliente_autenticado(usuario, checkout.cliente_id)
+    return await _consultar_status_checkout_mercado_pago(checkout=checkout, db=db)
 
 
 @router.post('/pix')

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 from fastapi import HTTPException
@@ -47,10 +48,21 @@ async def obter_token_loja(db: Session, loja_id: int) -> tuple[str, LojaMercadoP
     return descriptografar_credencial(config.access_token_criptografado), config
 
 
-def _url_retorno(acao: str) -> str | None:
+def _url_retorno(acao: str, external_reference: str) -> str | None:
     if not PUBLIC_CLIENT_BASE_URL:
         return None
-    return f"{PUBLIC_CLIENT_BASE_URL}/mercado-pago/retorno?acao={acao}"
+    # O Client Web é uma SPA. Mantemos o retorno na raiz e levamos uma
+    # referência não sensível do checkout para que ele consulte a API após o
+    # redirecionamento. Sem isso, o navegador voltava para o app sem saber
+    # qual preferência Mercado Pago deveria confirmar.
+    parametros = urlencode(
+        {
+            "pagamento": "mercado_pago",
+            "acao": acao,
+            "referencia": external_reference,
+        }
+    )
+    return f"{PUBLIC_CLIENT_BASE_URL}/?{parametros}"
 
 
 async def criar_preferencia(
@@ -86,9 +98,9 @@ async def criar_preferencia(
     back_urls = {
         chave: url
         for chave, url in {
-            "success": _url_retorno("sucesso"),
-            "pending": _url_retorno("pendente"),
-            "failure": _url_retorno("cancelado"),
+            "success": _url_retorno("sucesso", external_reference),
+            "pending": _url_retorno("pendente", external_reference),
+            "failure": _url_retorno("cancelado", external_reference),
         }.items()
         if url
     }
