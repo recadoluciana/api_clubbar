@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -112,6 +112,8 @@ def produtos_pendentes(
 def listar_compras_produtos(
     situacao: str = Query(default="TODOS", pattern="^(TODOS|PENDENTES|RETIRADOS)$"),
     loja_id: int | None = Query(default=None, ge=1),
+    inicio: date | None = Query(default=None),
+    fim: date | None = Query(default=None),
     limite: int = Query(default=500, ge=1, le=1000),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
@@ -126,6 +128,8 @@ def listar_compras_produtos(
     organizacao_id, loja_escopo = _escopo(usuario)
     _validar_loja(db, organizacao_id, loja_escopo, loja_id)
     loja_final = loja_escopo or loja_id
+    if inicio is not None and fim is not None and inicio > fim:
+        raise HTTPException(422, "A data inicial não pode ser posterior à final")
 
     query = (
         db.query(
@@ -159,6 +163,14 @@ def listar_compras_produtos(
     )
     if loja_final is not None:
         query = query.filter(Venda.loja_id == loja_final)
+    if inicio is not None:
+        query = query.filter(
+            Venda.dtcriacao >= datetime.combine(inicio, time.min),
+        )
+    if fim is not None:
+        query = query.filter(
+            Venda.dtcriacao < datetime.combine(fim + timedelta(days=1), time.min),
+        )
     if situacao == "PENDENTES":
         query = query.filter(ItVenda.identregaitvenda != "SIM")
     elif situacao == "RETIRADOS":
