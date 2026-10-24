@@ -725,7 +725,11 @@ async def pagar_mercado_pago_cliente(
         itens, _ = _recalcular_itens_carrinho(
             db, carrinho['itens'], payload.loja_id, payload.organizacao_id
         )
-        itens_checkout, valor_total, valor_taxa_clubbar = _montar_itens_asaas(itens)
+        itens_checkout, valor_total, _ = _montar_itens_asaas(itens)
+        # Produtos no Mercado Pago são recebidos diretamente pelo parceiro.
+        # Não há comissão Clubbar nesta modalidade e, portanto, não enviamos
+        # marketplace_fee nem acionamos split para essa preferência.
+        valor_taxa_clubbar = Decimal('0')
         _exigir_valor_positivo(valor_total)
 
         # Tentações antigas do próprio Mercado Pago são invalidadas no Clubbar.
