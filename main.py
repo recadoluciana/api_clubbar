@@ -1254,6 +1254,52 @@ def garantir_estrutura_mercado_pago() -> None:
         raise
 
 
+# Uma cortesia confirmada é uma venda paga por R$ 0,00, sem gateway externo.
+# Esta correção é idempotente e recupera registros criados antes de o fluxo de
+# campanhas preencher a PagVenda como PAGO.
+@app.on_event("startup")
+def normalizar_pagamentos_de_cortesia() -> None:
+    try:
+        inspector = inspect(engine)
+        tabelas = set(inspector.get_table_names())
+        if not {"venda", "pagvenda"}.issubset(tabelas):
+            return
+        with engine.begin() as conexao:
+            resultado = conexao.execute(
+                text(
+                    """
+                    UPDATE pagvenda AS pag
+                    INNER JOIN venda AS venda ON venda.venda_id = pag.venda_id
+                    SET pag.dsmetodopag = 'CORTESIA',
+                        pag.provedor = 'CORTESIA',
+                        pag.vrpagvenda = 0.00,
+                        pag.sitpagvenda = 'PAGO',
+                        pag.idtransacaopagvenda = COALESCE(
+                            NULLIF(pag.idtransacaopagvenda, ''),
+                            CONCAT('CORTESIA-', pag.venda_id)
+                        ),
+                        pag.dtconftranspagvenda = COALESCE(
+                            pag.dtconftranspagvenda,
+                            venda.dtultatu,
+                            venda.dtcriacao,
+                            NOW()
+                        )
+                    WHERE venda.sitvenda = 'PAGA'
+                      AND COALESCE(venda.totalvenda, 0) = 0
+                      AND (
+                        UPPER(COALESCE(pag.dsmetodopag, '')) = 'CORTESIA'
+                        OR UPPER(COALESCE(pag.provedor, '')) = 'CORTESIA'
+                      )
+                    """
+                )
+            )
+        if resultado.rowcount:
+            logger.info("%s pagamento(s) de cortesia normalizado(s).", resultado.rowcount)
+    except Exception:
+        logger.exception("Não foi possível normalizar os pagamentos de cortesia")
+        raise
+
+
 # As verificações de esquema abaixo são compatíveis com instância única, mas
 # algumas delas também atualizam dados legados. Em réplicas, executá-las ao
 # mesmo tempo poderia causar deadlock no MySQL durante uma inicialização.

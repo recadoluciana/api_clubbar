@@ -405,7 +405,19 @@ def resgatar_cortesia(campanha_id: int, dados: GiroIn, usuario: dict = Depends(g
     venda = Venda(loja_id=campanha.loja_id, organizacao_id=campanha.organizacao_id, cliente_id=dados.cliente_id, carrinho_id=carrinho.carrinho_id, tipovenda="PRODUTO", dsplataforma="OUTROS", sitvenda="PENDENTE", totalvenda=0)
     db.add(venda); db.flush()
     db.add(ItVenda(venda_id=venda.venda_id, tipoitem="PRODUTO", produto_id=campanha.produto_id, beneficioprodutoresgate_id=resgate.beneficioprodutoresgate_id, qtitvenda=1, vrunititvenda=0, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), dtexpiraitvenda=data_expira))
-    db.add(PagVenda(venda_id=venda.venda_id, dsmetodopag="CORTESIA", vrpagvenda=0, sitpagvenda="PENDENTE", reference_id=f"CORTESIA-{venda.venda_id}", provedor="CORTESIA"))
+    # Cortesia não depende de gateway: é uma cobrança interna, já quitada e
+    # de valor zero. Assim ela aparece corretamente na carteira e pode ser
+    # cancelada sem consultar Asaas ou Mercado Pago.
+    db.add(PagVenda(
+        venda_id=venda.venda_id,
+        dsmetodopag="CORTESIA",
+        vrpagvenda=0,
+        sitpagvenda="PAGO",
+        idtransacaopagvenda=f"CORTESIA-{venda.venda_id}",
+        dtconftranspagvenda=agora,
+        reference_id=f"CORTESIA-{venda.venda_id}",
+        provedor="CORTESIA",
+    ))
     db.flush()
     # Não passa pela validação legada de cortesias do cardápio: esta campanha
     # tem vida própria e preserva o preço público do produto.

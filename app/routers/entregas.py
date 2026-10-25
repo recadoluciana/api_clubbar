@@ -1312,13 +1312,16 @@ async def cancelar_transacao(
                 detail="O Asaas ainda não confirmou o cancelamento. Tente novamente mais tarde.",
             ) from exc
 
-    # Os itens foram bloqueados antes da chamada ao Asaas para impedir estorno
-    # duplicado. Com a confirmação recebida, eles precisam avançar para o
-    # estado final, e não permanecer como solicitação pendente.
-    itens = db.query(ItVenda).filter(
-        ItVenda.venda_id == venda_id,
-        ItVenda.sititvenda == "CANCELAMENTO_SOLICITADO",
-    ).all()
+    # Em pagamentos com valor, os itens foram bloqueados antes da chamada ao
+    # Asaas para impedir um estorno duplicado. Cortesias são quitadas por R$ 0
+    # e não usam gateway: seus itens ativos são cancelados diretamente.
+    if _exige_estorno_asaas(valor_reembolso):
+        itens = db.query(ItVenda).filter(
+            ItVenda.venda_id == venda_id,
+            ItVenda.sititvenda == "CANCELAMENTO_SOLICITADO",
+        ).all()
+    else:
+        itens = itens_ativos
     saldo_a_distribuir = valor_reembolso
     lotes_cancelados: dict[int, int] = {}
     for indice, item in enumerate(itens):
@@ -1347,7 +1350,11 @@ async def cancelar_transacao(
         "venda_id": venda.venda_id,
         "itens_cancelados": len(itens),
         "valor_reembolso": valor_reembolso,
-        "mensagem": "Transação cancelada. O reembolso total foi solicitado com sucesso.",
+        "mensagem": (
+            "Cortesia cancelada com sucesso. Nenhum reembolso foi necessário."
+            if not _exige_estorno_asaas(valor_reembolso)
+            else "Transação cancelada. O reembolso total foi solicitado com sucesso."
+        ),
     }
 
 
