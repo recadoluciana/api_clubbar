@@ -38,6 +38,8 @@ class EmailServiceTest(unittest.TestCase):
         self.assertIn('produtos Clubbar', assunto)
         self.assertIn('Água', html)
         self.assertIn('Remelexo Brasil', html)
+        self.assertNotIn('Retirada em:', html)
+        self.assertIn('text-align:justify', html)
         self.assertIn('/publico/produtos/token/qr.png', html)
         self.assertEqual('produto-clubbar-1.png', anexos[0]['nome'])
         self.assertTrue(anexos[0]['conteudo'])

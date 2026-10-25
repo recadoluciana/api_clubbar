@@ -491,7 +491,7 @@ def enviar_produtos_confirmados(
         f"""
         <div style='margin:16px 0;padding:18px;border:1px solid #e4e4e4;border-radius:12px'>
           <p style='margin:0 0 8px;font-size:18px'><b>{escape(item['produto'])}</b></p>
-          <p style='margin:0 0 14px;color:#444'><b>Retirada em:</b> {escape(item['loja'])}</p>
+          <p style='margin:0 0 14px;color:#444'>{escape(item['loja'])}</p>
           <img src='{escape(item['qr_url'], quote=True)}' width='260' height='260' alt='QR Code para retirada do produto' style='display:block;width:260px;max-width:100%;height:auto;margin:12px auto;background:#fff'>
         </div>
         """
@@ -506,11 +506,11 @@ def enviar_produtos_confirmados(
         )
 
     conteudo = f"""
-    <p>Olá, <b>{escape(nome_cliente or 'cliente')}</b>.</p>
-    <p>Seu pagamento/resgate foi confirmado. Apresente o QR Code correspondente ao produto no momento da retirada.</p>
+    <p style='text-align:justify'>Olá, <b>{escape(nome_cliente or 'cliente')}</b>.</p>
+    <p style='text-align:justify'>Seu pagamento/resgate foi confirmado. Apresente o QR Code correspondente ao produto no momento da retirada.</p>
     {cartoes}
-    <p style='color:#666;font-size:14px'>Cada QR Code já está nesta mensagem e também foi anexado como imagem PNG. Salve-o no seu celular para apresentar na retirada, mesmo sem internet.</p>
-    <p style='color:#666;font-size:14px'>Após a retirada, o QR Code deixa de ser válido.</p>
+    <p style='color:#666;font-size:14px;text-align:justify'>Cada QR Code já está nesta mensagem e também foi anexado como imagem PNG. Salve-o no seu celular para apresentar na retirada, mesmo sem internet.</p>
+    <p style='color:#666;font-size:14px;text-align:justify'>Após a retirada, o QR Code deixa de ser válido.</p>
     """
     _enviar_email_smtp(
         destinatario,
