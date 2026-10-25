@@ -264,6 +264,11 @@ async def gerar_checkout_reserva_mercado_pago(
         metodo = metodo.upper()
         if metodo not in {'PIX', 'CREDIT_CARD', 'CREDITO'}:
             raise HTTPException(422, 'Método Mercado Pago inválido.')
+        cliente = db.query(Cliente).filter(
+            Cliente.cliente_id == reserva.cliente_id
+        ).first()
+        if not cliente:
+            raise HTTPException(404, 'Cliente não encontrado.')
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
         taxa_clubbar = float(reserva.vrtaxa or 0) * int(reserva.qtreservada or 1)
         token, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id)
@@ -281,6 +286,7 @@ async def gerar_checkout_reserva_mercado_pago(
             }],
             valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
             metodo=metodo,
+            email_pagador=cliente.emailcliente,
         )
         checkout = CheckoutMercadoPago(
             reserva_ingresso_id=reserva_id,

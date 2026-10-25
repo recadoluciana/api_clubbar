@@ -73,6 +73,7 @@ async def criar_preferencia(
     itens: list[dict[str, Any]],
     valor_taxa_clubbar: Decimal,
     metodo: str,
+    email_pagador: str | None = None,
 ) -> dict[str, Any]:
     payment_methods: dict[str, Any] = {}
     if metodo == "PIX":
@@ -90,6 +91,11 @@ async def criar_preferencia(
         "metadata": {"origem": "CLUBBAR", "tipo": titulo},
         "payment_methods": payment_methods,
     }
+    # Checkout Pro continua sendo uma página hospedada pelo Mercado Pago, mas
+    # o e-mail válido do Clubbar evita que o cliente tenha de digitá-lo de
+    # novo. Não enviamos CPF: o pagador pode usar cartão de outro titular.
+    if (email_pagador or "").strip():
+        dados["payer"] = {"email": email_pagador.strip().lower()}
     if valor_taxa_clubbar > 0:
         # No Split 1:1 é a comissão fixa que vai para o marketplace Clubbar.
         dados["marketplace_fee"] = float(valor_taxa_clubbar)

@@ -746,6 +746,11 @@ async def pagar_mercado_pago_cliente(
         carrinho = get_carrinho(db, payload.cliente_id, payload.loja_id, None)
         if not carrinho or not carrinho.get('itens'):
             raise HTTPException(400, 'Carrinho vazio')
+        cliente = db.query(Cliente).filter(
+            Cliente.cliente_id == payload.cliente_id
+        ).first()
+        if not cliente:
+            raise HTTPException(404, 'Cliente não encontrado.')
         carrinho_id = int(carrinho.get('carrinho_id') or 0)
         if not carrinho_id:
             raise HTTPException(400, 'Carrinho inválido')
@@ -788,6 +793,7 @@ async def pagar_mercado_pago_cliente(
             itens=itens_mp,
             valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
             metodo=payload.dsmetodopag,
+            email_pagador=cliente.emailcliente,
         )
         checkout = CheckoutMercadoPago(
             carrinho_id=carrinho_id,
