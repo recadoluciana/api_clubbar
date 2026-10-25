@@ -834,7 +834,12 @@ async def _consultar_status_checkout_mercado_pago(
     preference_id = str(checkout.preference_id)
     if checkout.venda_id:
         _notificar_confirmacao_mercado_pago(db, checkout)
-        return {'pagamento_id': preference_id, 'status': 'PAGO', 'venda_id': checkout.venda_id}
+        return {
+            'pagamento_id': preference_id,
+            'status': 'PAGO',
+            'venda_id': checkout.venda_id,
+            'loja_id': getattr(checkout, 'loja_id', None),
+        }
     if str(checkout.status).upper() in {'CANCELLED', 'EXPIRED'}:
         return {'pagamento_id': preference_id, 'status': 'SUBSTITUIDO'}
 
@@ -876,6 +881,7 @@ async def _consultar_status_checkout_mercado_pago(
         'status': 'PAGO',
         'venda_id': resultado.get('venda_id'),
         'cashback_gerado': resultado.get('cashback_gerado', 0),
+        'loja_id': getattr(checkout, 'loja_id', None),
     }
 
 
@@ -1501,6 +1507,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
                     'pagamento_id': checkout.checkout_id,
                     'status': 'PAGO',
                     'venda_id': checkout.venda_id,
+                    'loja_id': getattr(checkout, 'loja_id', None),
                     'tipo_compra': 'INGRESSO'
                     if getattr(checkout, 'reserva_ingresso_id', None)
                     else 'PRODUTO',
@@ -1583,6 +1590,7 @@ async def status_checkout_asaas(checkout_id: str, db: Session = Depends(get_db))
     return {
         "pagamento_id": checkout.checkout_id,
         "status": "PAGO" if pago else status_atual,
+        "loja_id": getattr(checkout, 'loja_id', None),
         "tipo_compra": "INGRESSO"
         if getattr(checkout, "reserva_ingresso_id", None)
         else "PRODUTO",
