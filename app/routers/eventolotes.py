@@ -39,6 +39,11 @@ from app.services.reserva_ingresso_service import (
     quantidade_vendida_modalidade,
 )
 from app.services.evento_edicao_service import validar_evento_editavel
+from app.services.cota_legal_service import (
+    capacidade_venda_evento,
+    cota_legal_total,
+    cotas_legais_por_setor,
+)
 from app.utils.datetime_utils import FUSO_BRASIL
 
 
@@ -134,14 +139,8 @@ def _validar_exclusao_configuracao_lote(db: Session, lote: EventoLote) -> None:
 
 
 def _capacidade_total_evento(db: Session, evento: Evento) -> int:
-    if evento.qtcapacidadeevento:
-        return int(evento.qtcapacidadeevento)
-    return int(
-        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
-        .filter(EventoSetor.evento_id == evento.evento_id, EventoSetor.sitsetor == "ATIVO")
-        .scalar()
-        or 0
-    )
+    # Reserva interna não é ingresso disponível para venda nem base de cota.
+    return capacidade_venda_evento(db, evento.evento_id)
 
 
 def _uso_cota_legal_evento(db: Session, evento_id: int) -> tuple[int, int]:
@@ -162,6 +161,39 @@ def _uso_cota_legal_evento(db: Session, evento_id: int) -> tuple[int, int]:
         .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
         .filter(
             ReservaIngresso.evento_id == evento_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > datetime.now(),
+            EventoLotePreco.aplicacotalegal.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    return vendidos, reservados
+
+
+def _uso_cota_legal_setor(
+    db: Session, evento_id: int, eventosetor_id: int
+) -> tuple[int, int]:
+    vendidos = int(
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .filter(
+            EventoLote.evento_id == evento_id,
+            EventoLote.eventosetor_id == eventosetor_id,
+            ItVenda.sititvenda == "ATIVO",
+            EventoLotePreco.aplicacotalegal.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+    reservados = int(
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id)
+        .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
+        .filter(
+            ReservaIngresso.evento_id == evento_id,
+            EventoLote.eventosetor_id == eventosetor_id,
             ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
             ReservaIngresso.dtexpiracao > datetime.now(),
             EventoLotePreco.aplicacotalegal.is_(True),
@@ -311,8 +343,13 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
     setor = lote.setor
     global_ = lote.lote_global
     disponibilidade = quantidade_disponivel_configuracao(db, lote)
-    base_cota_lote = int(lote.qtlimite)
-    quantidade_cota_lote = int(base_cota_lote * PERCENTUAL_COTA_LEGAL / 100)
+    cotas_setores = cotas_legais_por_setor(
+        db, evento.evento_id, PERCENTUAL_COTA_LEGAL
+    )
+    cota_setor = int(cotas_setores.get(lote.eventosetor_id, 0))
+    vendidos_cota_setor, reservados_cota_setor = _uso_cota_legal_setor(
+        db, evento.evento_id, lote.eventosetor_id
+    )
     return {
         "lote_id": lote.lote_id,
         "loteglobal_id": global_.loteglobal_id,
@@ -339,15 +376,16 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
         "dtfimvenda": global_.dtfimvenda,
         "gatilhovirada": global_.gatilhovirada,
         "statuslote": global_.situacao if lote.situacao == "ATIVO" else "INATIVO",
-        "cotalegal": int(
-            _capacidade_total_evento(db, evento)
-            * PERCENTUAL_COTA_LEGAL
-            / 100
+        "cotalegal": cota_legal_total(
+            _capacidade_total_evento(db, evento), PERCENTUAL_COTA_LEGAL
         ),
         "percentualcotalegal": PERCENTUAL_COTA_LEGAL,
-        "qtlimitecotalegal": quantidade_cota_lote,
+        "qtlimitecotalegal": cota_setor,
         "qtvendidacotalegal": vendidos_cota,
         "qtreservadacotalegal": reservados_cota,
+        "cotalegalsetor": cota_setor,
+        "qtvendidacotalegalsetor": vendidos_cota_setor,
+        "qtreservadacotalegalsetor": reservados_cota_setor,
         "precos": [
             {
                 "lotepreco_id": preco.lotepreco_id,

@@ -16,6 +16,11 @@ from app.models.modalidadeingresso import ModalidadeIngresso
 from app.models.modalidadebeneficio import ModalidadeBeneficio
 from app.models.beneficioingresso import BeneficioIngresso
 from app.models.reserva_ingresso import ReservaIngresso
+from app.services.cota_legal_service import (
+    capacidade_venda_evento,
+    cota_legal_total,
+    cotas_legais_por_setor,
+)
 from app.models.itvenda import ItVenda
 from app.models.venda import Venda
 from app.services.taxa_service import calcular_taxa_ingresso_unitaria
@@ -218,13 +223,47 @@ def lote_atual_do_setor(db: Session, lote: EventoLote, agora: datetime) -> Event
 
 
 def _capacidade_evento(db: Session, evento: Evento) -> int:
-    if evento.qtcapacidadeevento:
-        return int(evento.qtcapacidadeevento)
-    return int(
-        db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0))
-        .filter(EventoSetor.evento_id == evento.evento_id, EventoSetor.sitsetor == "ATIVO")
-        .scalar()
-        or 0
+    return capacidade_venda_evento(db, evento.evento_id)
+
+
+def _uso_cota_legal(
+    db: Session, evento_id: int, setor_id: int | None = None
+) -> tuple[int, int]:
+    """Retorna ingressos de cota legal já vendidos e temporariamente reservados.
+
+    A reserva confirmada vira item de venda. Por isso, para não contar uma
+    mesma vaga duas vezes nem liberar uma vaga já paga, somamos itens ativos de
+    vendas pagas com somente as reservas ainda em aberto.
+    """
+    vendidos_query = (
+        db.query(func.coalesce(func.sum(ItVenda.qtitvenda), 0))
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
+        .filter(
+            EventoLote.evento_id == evento_id,
+            ItVenda.sititvenda == "ATIVO",
+            Venda.sitvenda == "PAGA",
+            EventoLotePreco.aplicacotalegal.is_(True),
+        )
+    )
+    reservados_query = (
+        db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
+        .join(EventoLote, EventoLote.lote_id == ReservaIngresso.lote_id)
+        .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
+        .filter(
+            ReservaIngresso.evento_id == evento_id,
+            ReservaIngresso.sitreserva.in_(STATUS_RESERVAM_ESTOQUE),
+            ReservaIngresso.dtexpiracao > datetime.now(),
+            EventoLotePreco.aplicacotalegal.is_(True),
+        )
+    )
+    if setor_id is not None:
+        vendidos_query = vendidos_query.filter(EventoLote.eventosetor_id == setor_id)
+        reservados_query = reservados_query.filter(EventoLote.eventosetor_id == setor_id)
+    return (
+        int(vendidos_query.scalar() or 0),
+        int(reservados_query.scalar() or 0),
     )
 
 
@@ -372,25 +411,23 @@ def criar_reserva(
     if quantidade > capacidade_restante_setor(db, evento.evento_id, setor.eventosetor_id, int(setor.qtcapacidade)):
         raise HTTPException(409, "A capacidade do setor foi atingida")
 
-    # A cota é global ao evento; a modalidade apenas informa se consome essa
-    # cota. A porcentagem oficial continuará em uma regra do evento, quando
-    # esta for exposta ao parceiro.
+    # A cota é legalmente global no evento. A distribuição proporcional por
+    # setor serve para manter a oferta exibida e vendida coerente em cada área.
     if preco.aplicacotalegal:
-        usada_cota = int(
-            db.query(func.coalesce(func.sum(ReservaIngresso.qtreservada), 0))
-            .join(EventoLotePreco, EventoLotePreco.lotepreco_id == ReservaIngresso.lotepreco_id)
-            .filter(
-                ReservaIngresso.evento_id == evento.evento_id,
-                EventoLotePreco.aplicacotalegal.is_(True),
-                ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO", "CONFIRMADA")),
-            )
-            .scalar()
-            or 0
-        )
-        if usada_cota + quantidade > int(
-            capacidade_evento * PERCENTUAL_COTA_LEGAL / 100
-        ):
+        vendida_cota, reservada_cota = _uso_cota_legal(db, evento.evento_id)
+        usada_cota = vendida_cota + reservada_cota
+        cota_evento = cota_legal_total(capacidade_evento, PERCENTUAL_COTA_LEGAL)
+        if usada_cota + quantidade > cota_evento:
             raise HTTPException(409, "A cota legal de meia-entrada do evento foi atingida")
+        cota_setor = cotas_legais_por_setor(
+            db, evento.evento_id, PERCENTUAL_COTA_LEGAL
+        ).get(setor.eventosetor_id, 0)
+        vendida_cota_setor, reservada_cota_setor = _uso_cota_legal(
+            db, evento.evento_id, setor.eventosetor_id
+        )
+        usada_cota_setor = vendida_cota_setor + reservada_cota_setor
+        if usada_cota_setor + quantidade > cota_setor:
+            raise HTTPException(409, "A cota legal deste setor foi atingida")
 
     loja = db.query(Loja).filter(Loja.loja_id == lote.loja_id).first()
     percentual = Decimal(str(loja.vrtaxaing or 0)) if loja else Decimal("0")

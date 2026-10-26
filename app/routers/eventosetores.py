@@ -31,16 +31,14 @@ def _item(x):
     return {"eventosetor_id":x.eventosetor_id,"organizacao_id":x.organizacao_id,"loja_id":x.loja_id,"evento_id":x.evento_id,"nmsetor":x.nmsetor,"dssetor":x.dssetor,"qtcapacidade":x.qtcapacidade,"nrordem":x.nrordem,"sitsetor":x.sitsetor}
 
 
-def _validar_teto_capacidade_evento(
+def _validar_e_ajustar_reserva_interna(
     db: Session,
     evento: Evento,
     capacidade_setor: int,
     situacao_setor: str,
     setor_id_atual: int | None = None,
 ) -> None:
-    """Impede que a soma dos setores ultrapasse a lotação da ocorrência."""
-    if evento.qtcapacidadeevento is None:
-        return
+    """Fecha a capacidade do evento entre setores ativos e reserva interna."""
     outros_setores = db.query(func.coalesce(func.sum(EventoSetor.qtcapacidade), 0)).filter(
         EventoSetor.evento_id == evento.evento_id,
         EventoSetor.sitsetor == "ATIVO",
@@ -50,12 +48,22 @@ def _validar_teto_capacidade_evento(
     total = int(outros_setores.scalar() or 0)
     if situacao_setor.upper() == "ATIVO":
         total += capacidade_setor
-    if total > int(evento.qtcapacidadeevento):
+    capacidade_atual = int(evento.qtcapacidadeevento or 0)
+    if capacidade_atual <= 0:
+        # Eventos legados sem capacidade passam a iniciar sem reserva; a
+        # primeira configuração de setor passa a representar a lotação.
+        evento.qtcapacidadeevento = total
+        evento.qtreservainterna = 0
+        return
+    reserva_resultante = capacidade_atual - total
+    if reserva_resultante < 0:
         raise HTTPException(
             422,
-            "A soma das capacidades dos setores não pode ultrapassar a capacidade "
-            f"total do evento ({evento.qtcapacidadeevento} pessoas).",
+            "A capacidade deste setor ultrapassa a capacidade ainda reservada "
+            f"internamente no evento ({max(int(evento.qtreservainterna or 0), 0)} pessoas). "
+            "Ajuste a capacidade total ou reduza outro setor.",
         )
+    evento.qtreservainterna = reserva_resultante
 
 @router.get("/{evento_id}/setores")
 def listar(evento_id:int,db:Session=Depends(get_db),usuario=Depends(get_usuario_logado)):
@@ -67,7 +75,7 @@ def criar(evento_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
     evento=_evento(db,evento_id,usuario)
     validar_evento_editavel(evento)
     if db.query(EventoSetor).filter(EventoSetor.evento_id==evento_id,EventoSetor.nmsetor==dados.nmsetor.strip()).first(): raise HTTPException(409,"Já existe um setor com esse nome")
-    _validar_teto_capacidade_evento(db, evento, dados.qtcapacidade, dados.sitsetor)
+    _validar_e_ajustar_reserva_interna(db, evento, dados.qtcapacidade, dados.sitsetor)
     x=EventoSetor(organizacao_id=evento.organizacao_id,loja_id=evento.loja_id,evento_id=evento_id,**dados.model_dump())
     db.add(x);db.commit();db.refresh(x);return _item(x)
 
@@ -112,7 +120,7 @@ def editar(setor_id:int,dados:SetorIn,db:Session=Depends(get_db),usuario=Depends
             "A capacidade não pode ser menor que a quantidade configurada nos lotes "
             f"deste setor ({maior_limite_lote}). Atualize primeiro os lotes.",
         )
-    _validar_teto_capacidade_evento(
+    _validar_e_ajustar_reserva_interna(
         db, evento, dados.qtcapacidade, dados.sitsetor, x.eventosetor_id
     )
     for k,v in dados.model_dump().items():setattr(x,k,v)
@@ -125,4 +133,6 @@ def excluir(setor_id:int,db:Session=Depends(get_db),usuario=Depends(get_usuario_
     evento = _evento(db,x.evento_id,usuario)
     validar_evento_editavel(evento)
     if db.query(EventoLote).filter(EventoLote.eventosetor_id==setor_id).first():raise HTTPException(409,"O setor possui ingressos cadastrados")
+    if x.sitsetor.upper() == "ATIVO":
+        evento.qtreservainterna = int(evento.qtreservainterna or 0) + int(x.qtcapacidade)
     db.delete(x);db.commit()

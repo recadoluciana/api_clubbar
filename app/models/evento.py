@@ -22,8 +22,10 @@ class Evento(Base):
     dtinicioevento = Column(DateTime, nullable=False)
     dtfimevento = Column(DateTime, nullable=True)
     # É a lotação autorizada para esta ocorrência na agenda, não para o
-    # evento padrão. Os setores e lotes são obrigados a respeitar esse teto.
+    # evento padrão. A soma dos setores ativos e das reservas internas deve
+    # sempre fechar exatamente esta capacidade.
     qtcapacidadeevento = Column(Integer, nullable=True)
+    qtreservainterna = Column(Integer, nullable=False, server_default="0")
 
     nmlocalevento = Column(String(120), nullable=True)
     dsendlocevento = Column(String(200), nullable=True)

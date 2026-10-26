@@ -961,6 +961,14 @@ def garantir_capacidade_evento_agendado() -> None:
                         "ADD COLUMN qtcapacidadeevento INT NULL AFTER dtfimevento"
                     )
                 )
+            if "qtreservainterna" not in colunas:
+                conexao.execute(
+                    text(
+                        "ALTER TABLE evento "
+                        "ADD COLUMN qtreservainterna INT NOT NULL DEFAULT 0 "
+                        "AFTER qtcapacidadeevento"
+                    )
+                )
 
             verificacoes = {
                 verificacao.get("name")
@@ -988,6 +996,49 @@ def garantir_capacidade_evento_agendado() -> None:
                     SET e.qtcapacidadeevento = setores.capacidade_setores
                     WHERE e.qtcapacidadeevento IS NULL
                       AND COALESCE(setores.capacidade_setores, 0) > 0
+                    """
+                )
+            )
+            # Dados anteriores podiam ter uma diferença implícita entre a
+            # lotação do evento e os setores. Essa diferença torna-se uma
+            # reserva interna explícita. Caso setores já ultrapassem o teto
+            # antigo, preservamos as vagas configuradas e corrigimos o teto.
+            conexao.execute(
+                text(
+                    """
+                    UPDATE evento e
+                    LEFT JOIN (
+                      SELECT evento_id, SUM(qtcapacidade) AS capacidade_setores
+                      FROM eventosetor
+                      WHERE sitsetor = 'ATIVO'
+                      GROUP BY evento_id
+                    ) setores ON setores.evento_id = e.evento_id
+                    SET e.qtcapacidadeevento = GREATEST(
+                        COALESCE(e.qtcapacidadeevento, 0),
+                        COALESCE(setores.capacidade_setores, 0)
+                    )
+                    WHERE COALESCE(e.qtcapacidadeevento, 0) > 0
+                       OR COALESCE(setores.capacidade_setores, 0) > 0
+                    """
+                )
+            )
+            conexao.execute(
+                text(
+                    """
+                    UPDATE evento e
+                    LEFT JOIN (
+                      SELECT evento_id, SUM(qtcapacidade) AS capacidade_setores
+                      FROM eventosetor
+                      WHERE sitsetor = 'ATIVO'
+                      GROUP BY evento_id
+                    ) setores ON setores.evento_id = e.evento_id
+                    SET e.qtreservainterna = GREATEST(
+                        COALESCE(e.qtcapacidadeevento, 0)
+                        - COALESCE(setores.capacidade_setores, 0),
+                        0
+                    )
+                    WHERE COALESCE(e.qtcapacidadeevento, 0) > 0
+                       OR COALESCE(setores.capacidade_setores, 0) > 0
                     """
                 )
             )

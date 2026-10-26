@@ -57,6 +57,7 @@ STATUS_EVENTO_VALIDOS = {"RASCUNHO", "ATIVO", "INATIVO", "ENCERRADO", "CANCELADO
 
 class CapacidadeEventoIn(BaseModel):
     qtcapacidadeevento: int = Field(gt=0)
+    qtreservainterna: int = Field(default=0, ge=0)
 
 
 class PublicarEventosIn(BaseModel):
@@ -82,11 +83,10 @@ def _resumo_capacidade_evento(db: Session, evento: Evento) -> dict:
         "evento_id": evento.evento_id,
         "qtcapacidadeevento": capacidade_evento,
         "qtcapacidade_setores": capacidade_setores,
-        "qtcapacidade_nao_distribuida": (
-            capacidade_evento - capacidade_setores
-            if capacidade_evento is not None
-            else None
-        ),
+        "qtreservainterna": int(evento.qtreservainterna or 0),
+        # Campo legado mantido para clientes antigos. A diferença agora é uma
+        # reserva interna declarada, portanto não existe capacidade sem uso.
+        "qtcapacidade_nao_distribuida": 0 if capacidade_evento is not None else None,
     }
 
 
@@ -322,13 +322,15 @@ def atualizar_capacidade_evento(
         .scalar()
         or 0
     )
-    if dados.qtcapacidadeevento < capacidade_setores:
+    if dados.qtcapacidadeevento != capacidade_setores + dados.qtreservainterna:
         raise HTTPException(
             422,
-            "A capacidade total não pode ser menor que a soma dos setores ativos "
-            f"({capacidade_setores} pessoas).",
+            "A capacidade total deve ser igual à soma dos setores ativos "
+            f"({capacidade_setores} pessoas) e das reservas internas "
+            f"({dados.qtreservainterna} pessoas).",
         )
     evento.qtcapacidadeevento = dados.qtcapacidadeevento
+    evento.qtreservainterna = dados.qtreservainterna
     db.commit()
     db.refresh(evento)
     return _resumo_capacidade_evento(db, evento)
