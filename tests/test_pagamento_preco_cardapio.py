@@ -5,10 +5,19 @@ from unittest.mock import Mock
 
 from fastapi import HTTPException
 
-from app.routers.pagamentos import _recalcular_itens_carrinho
+from app.routers.pagamentos import (
+    _calcular_comissao_produtos_mercado_pago,
+    _recalcular_itens_carrinho,
+)
 
 
 class PagamentoPrecoCardapioTest(unittest.TestCase):
+    def test_comissao_mercado_pago_usa_percentual_da_loja(self):
+        self.assertEqual(
+            _calcular_comissao_produtos_mercado_pago(5.25, Decimal("5")),
+            Decimal("0.26"),
+        )
+
     def _db(self, item):
         produto = SimpleNamespace(
             produto_id=3, organizacao_id=1, nmproduto="Teste", sitproduto="ATIVO",

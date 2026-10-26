@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict
 from contextlib import nullcontext
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -94,6 +94,24 @@ router = APIRouter(prefix="/pagamentos", tags=["Pagamentos"])
 def _exigir_valor_positivo(valor: float) -> None:
     if Decimal(str(valor)) <= 0:
         raise HTTPException(422, "O valor do pagamento deve ser maior que zero.")
+
+
+def _calcular_comissao_produtos_mercado_pago(
+    valor_venda: float,
+    percentual_loja: object,
+) -> Decimal:
+    """Calcula a comissão do Clubbar sem alterar o valor do comprador.
+
+    A porcentagem vem sempre do estabelecimento. O valor é enviado ao Mercado
+    Pago como ``marketplace_fee`` e é descontado do recebimento do parceiro.
+    """
+    percentual = Decimal(str(percentual_loja or 0))
+    if percentual < 0 or percentual > 100:
+        raise HTTPException(422, "Taxa de produtos do estabelecimento inválida.")
+    return (Decimal(str(valor_venda)) * percentual / Decimal("100")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
 
 
 def _enviar_confirmacao_produtos_sem_bloquear(db: Session, venda_id: int) -> None:
@@ -758,10 +776,12 @@ async def pagar_mercado_pago_cliente(
             db, carrinho['itens'], payload.loja_id, payload.organizacao_id
         )
         itens_checkout, valor_total, _ = _montar_itens_asaas(itens)
-        # Produtos no Mercado Pago são recebidos diretamente pelo parceiro.
-        # Não há comissão Clubbar nesta modalidade e, portanto, não enviamos
-        # marketplace_fee nem acionamos split para essa preferência.
-        valor_taxa_clubbar = Decimal('0')
+        # O comprador continua pagando exatamente o total do carrinho. A
+        # comissão é separada do recebimento do parceiro pelo marketplace_fee.
+        valor_taxa_clubbar = _calcular_comissao_produtos_mercado_pago(
+            valor_total,
+            loja.vrtaxaprod,
+        )
         _exigir_valor_positivo(valor_total)
 
         # Tentações antigas do próprio Mercado Pago são invalidadas no Clubbar.
