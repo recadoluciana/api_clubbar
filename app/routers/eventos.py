@@ -834,6 +834,7 @@ def get_evento_por_id(
     endereco_evento = evento_obj.dsendlocevento or endloja
     numero_endereco_evento = None if evento_obj.dsendlocevento else nrendloja
     local_evento    = evento_obj.nmlocalevento or nmloja
+    resumo_capacidade = _resumo_capacidade_evento(db, evento_obj)
     politica_loja = db.query(LojaPoliticaIngresso).filter(
         LojaPoliticaIngresso.loja_id == evento_obj.loja_id
     ).first()
@@ -846,6 +847,10 @@ def get_evento_por_id(
         "classificacaoetaria": classificacao_etaria or "Livre",
         "dtinicioevento": getattr(evento_obj, "dtinicioevento", None),
         "dtfimevento": getattr(evento_obj, "dtfimevento", None),
+        "qtcapacidadeevento": (
+            resumo_capacidade["qtcapacidadeevento"]
+            or resumo_capacidade["qtcapacidade_setores"]
+        ),
         "nmlocalevento": local_evento,
         "dsendlocevento": endereco_evento,
         "nrendlocevento": numero_endereco_evento,
