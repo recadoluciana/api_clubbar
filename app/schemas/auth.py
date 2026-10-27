@@ -1,6 +1,6 @@
 # app/schemas/auth.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Literal, Optional
 
 class ClienteRegister(BaseModel):
     nmcliente   : str = Field(min_length=3, max_length=120)
@@ -19,6 +19,12 @@ class ClienteRegister(BaseModel):
 class ClienteLogin(BaseModel):
     email: EmailStr
     senha: str = Field(min_length=6, max_length=72)
+
+
+class ClienteLoginSocial(BaseModel):
+    provedor: Literal['google', 'apple']
+    id_token: str = Field(min_length=20, max_length=12000)
+    authorization_code: Optional[str] = Field(default=None, max_length=2000)
 
 class UserLogin(BaseModel):
     email: EmailStr

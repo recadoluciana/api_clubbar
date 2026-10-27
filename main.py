@@ -17,6 +17,7 @@ from app.models.campanha_doacao import CampanhaDoacao
 from app.models.checkout_asaas_doacao import CheckoutAsaasDoacao
 from app.models.lojamercadopago import LojaMercadoPago
 from app.models.checkout_mercadopago import CheckoutMercadoPago
+from app.models.clienteidentidadesocial import ClienteIdentidadeSocial
 from app.models.politicacompra import PoliticaCompra
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
@@ -1348,6 +1349,16 @@ def normalizar_pagamentos_de_cortesia() -> None:
             logger.info("%s pagamento(s) de cortesia normalizado(s).", resultado.rowcount)
     except Exception:
         logger.exception("Não foi possível normalizar os pagamentos de cortesia")
+        raise
+
+
+@app.on_event('startup')
+def garantir_tabela_identidade_social_cliente() -> None:
+    """Mantém a tabela de vínculos Google/Apple disponível em todos os ambientes."""
+    try:
+        ClienteIdentidadeSocial.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        logger.exception('Não foi possível criar a tabela clienteidentidadesocial')
         raise
 
 
