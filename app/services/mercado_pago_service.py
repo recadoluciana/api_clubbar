@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import HTTPException
@@ -166,16 +167,17 @@ async def criar_pagamento_pix(
     if not email:
         raise HTTPException(409, "O e-mail do cliente é obrigatório para gerar o PIX.")
     tipo_documento, numero_documento = _documento_pagador(documento_pagador)
-    expiracao = datetime.now(timezone.utc) + timedelta(minutes=15)
+    # O Mercado Pago exige ISO 8601 com milissegundos e offset com dois pontos,
+    # por exemplo ``2026-10-27T00:30:00.000-03:00``. Além disso, PIX precisa
+    # de ao menos 30 minutos de validade. Usar o fuso brasileiro também evita
+    # enviar uma data ambígua em UTC para uma conta brasileira.
+    expiracao = datetime.now(ZoneInfo("America/Sao_Paulo")) + timedelta(minutes=30)
     dados: dict[str, Any] = {
         "transaction_amount": float(valor),
         "description": f"Clubbar - {titulo}"[:256],
         "payment_method_id": "pix",
         "external_reference": external_reference,
-        # A API do Mercado Pago exige segundos e o deslocamento numérico (+0000).
-        # ``isoformat()`` inclui microssegundos e o sufixo ``Z``, formato que ela
-        # rejeita para pagamentos PIX.
-        "date_of_expiration": expiracao.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "date_of_expiration": expiracao.isoformat(timespec="milliseconds"),
         "metadata": {"origem": "CLUBBAR", "tipo": titulo},
         "payer": {
             "email": email,
