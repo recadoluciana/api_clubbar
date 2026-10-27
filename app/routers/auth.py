@@ -38,6 +38,13 @@ def _valores_de_ambiente(nome: str) -> list[str]:
     return [valor.strip() for valor in os.getenv(nome, '').split(',') if valor.strip()]
 
 
+@router.get('/social-config')
+def obter_configuracao_social():
+    """Expõe somente a configuração pública necessária ao login social web."""
+    client_ids = _valores_de_ambiente('GOOGLE_OAUTH_CLIENT_IDS')
+    return {'google_client_id': client_ids[0] if client_ids else ''}
+
+
 def _validar_google(id_token: str) -> tuple[str, str]:
     client_ids = _valores_de_ambiente('GOOGLE_OAUTH_CLIENT_IDS')
     if not client_ids:
