@@ -80,6 +80,7 @@ from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.services.mercado_pago_service import (
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
     criar_pagamento_pix as criar_pagamento_pix_mercado_pago,
+    criar_order_checkout_pro as criar_order_checkout_pro_mercado_pago,
     criar_preferencia as criar_preferencia_mercado_pago,
     obter_token_loja as obter_token_mercado_pago_loja,
 )
@@ -860,23 +861,43 @@ async def pagar_mercado_pago_cliente(
                 'external_reference': checkout.external_reference,
             }
 
-        preferencia = await criar_preferencia_mercado_pago(
-            access_token=token,
-            external_reference=referencia,
-            titulo='PRODUTOS',
-            itens=itens_mp,
-            valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
-            metodo=payload.dsmetodopag,
-            email_pagador=cliente.emailcliente,
-        )
+        if metodo == 'PIX':
+            # Orders é o Checkout Pro atual: após aprovar o Pix, o Mercado
+            # Pago redireciona automaticamente para a tela de sucesso do
+            # Clubbar. Cartão continua no fluxo de preferências já validado.
+            checkout_remoto = await criar_order_checkout_pro_mercado_pago(
+                access_token=token,
+                external_reference=referencia,
+                titulo='PRODUTOS',
+                itens=itens_mp,
+                valor_total=Decimal(str(valor_total)),
+                valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                email_pagador=cliente.emailcliente,
+            )
+            checkout_url = str(checkout_remoto['checkout_url'])
+        else:
+            checkout_remoto = await criar_preferencia_mercado_pago(
+                access_token=token,
+                external_reference=referencia,
+                titulo='PRODUTOS',
+                itens=itens_mp,
+                valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                metodo=payload.dsmetodopag,
+                email_pagador=cliente.emailcliente,
+            )
+            checkout_url = str(
+                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
+            )
         checkout = CheckoutMercadoPago(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
-            preference_id=str(preferencia['id']),
+            # O campo é a chave interna de consulta do checkout e comporta
+            # tanto preference (cartão) quanto order (Pix com split).
+            preference_id=str(checkout_remoto['id']),
             external_reference=referencia,
             status='PENDING',
-            checkout_url=str(preferencia.get('init_point') or preferencia.get('sandbox_init_point')),
+            checkout_url=checkout_url,
             metodo_solicitado=payload.dsmetodopag,
             valor=valor_total,
             vrtaxaclubbar=valor_taxa_clubbar,

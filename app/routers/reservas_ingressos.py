@@ -30,6 +30,7 @@ from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_s
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.services.mercado_pago_service import (
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
+    criar_order_checkout_pro as criar_order_checkout_pro_mercado_pago,
     criar_preferencia as criar_preferencia_mercado_pago,
     obter_token_loja as obter_token_mercado_pago_loja,
 )
@@ -272,30 +273,46 @@ async def gerar_checkout_reserva_mercado_pago(
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
         taxa_clubbar = float(reserva.vrtaxa or 0) * int(reserva.qtreservada or 1)
         token, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id)
-        preferencia = await criar_preferencia_mercado_pago(
-            access_token=token,
-            external_reference=referencia,
-            titulo='INGRESSOS',
-            itens=[{
-                'id': f'LOTE-{reserva.lote_id}',
-                'title': 'Ingresso Clubbar',
-                'description': f'{reserva.qtreservada} ingresso(s)',
-                'quantity': int(reserva.qtreservada),
-                'currency_id': 'BRL',
-                'unit_price': float(reserva.vrunitario + reserva.vrtaxa),
-            }],
-            valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
-            metodo=metodo,
-            email_pagador=cliente.emailcliente,
-        )
+        itens_checkout = [{
+            'id': f'LOTE-{reserva.lote_id}',
+            'title': 'Ingresso Clubbar',
+            'description': f'{reserva.qtreservada} ingresso(s)',
+            'quantity': int(reserva.qtreservada),
+            'currency_id': 'BRL',
+            'unit_price': float(reserva.vrunitario + reserva.vrtaxa),
+        }]
+        if metodo == 'PIX':
+            checkout_remoto = await criar_order_checkout_pro_mercado_pago(
+                access_token=token,
+                external_reference=referencia,
+                titulo='INGRESSOS',
+                itens=itens_checkout,
+                valor_total=Decimal(str(reserva.vrtotal)),
+                valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
+                email_pagador=cliente.emailcliente,
+            )
+            checkout_url = str(checkout_remoto['checkout_url'])
+        else:
+            checkout_remoto = await criar_preferencia_mercado_pago(
+                access_token=token,
+                external_reference=referencia,
+                titulo='INGRESSOS',
+                itens=itens_checkout,
+                valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
+                metodo=metodo,
+                email_pagador=cliente.emailcliente,
+            )
+            checkout_url = str(
+                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
+            )
         checkout = CheckoutMercadoPago(
             reserva_ingresso_id=reserva_id,
             cliente_id=reserva.cliente_id,
             loja_id=reserva.loja_id,
-            preference_id=str(preferencia['id']),
+            preference_id=str(checkout_remoto['id']),
             external_reference=referencia,
             status='PENDING',
-            checkout_url=str(preferencia.get('init_point') or preferencia.get('sandbox_init_point')),
+            checkout_url=checkout_url,
             metodo_solicitado=metodo,
             valor=reserva.vrtotal,
             vrtaxaclubbar=taxa_clubbar,

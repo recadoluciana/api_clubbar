@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -68,6 +69,119 @@ def _url_retorno(acao: str, external_reference: str) -> str | None:
         }
     )
     return f"{PUBLIC_CLIENT_BASE_URL}/?{parametros}"
+
+
+def _valor_monetario(valor: Any) -> str:
+    """Devolve valores no formato decimal exigido pela API Orders."""
+    return format(Decimal(str(valor or 0)).quantize(Decimal("0.01")), ".2f")
+
+
+async def criar_order_checkout_pro(
+    *,
+    access_token: str,
+    external_reference: str,
+    titulo: str,
+    itens: list[dict[str, Any]],
+    valor_total: Decimal,
+    valor_taxa_clubbar: Decimal,
+    email_pagador: str | None = None,
+) -> dict[str, Any]:
+    """Cria uma Order online do Checkout Pro para um Pix com split.
+
+    A API de Orders é a versão atual do Checkout Pro. Ao configurar
+    ``auto_return=approved`` ela redireciona automaticamente o navegador ao
+    Clubbar depois da confirmação do Pix, sem exigir que o cliente toque em
+    "Voltar para Clubbar" na página hospedada pelo Mercado Pago.
+    """
+    urls_retorno = {
+        chave: url
+        for chave, url in {
+            "success_url": _url_retorno("sucesso", external_reference),
+            "pending_url": _url_retorno("pendente", external_reference),
+            "failure_url": _url_retorno("cancelado", external_reference),
+        }.items()
+        if url
+    }
+    if not urls_retorno.get("success_url"):
+        raise HTTPException(
+            500,
+            "A URL pública do Clubbar não está configurada para receber o retorno do pagamento.",
+        )
+
+    itens_order: list[dict[str, Any]] = []
+    for item in itens:
+        quantidade = int(item.get("quantity") or 0)
+        if quantidade <= 0:
+            continue
+        itens_order.append(
+            {
+                "title": str(item.get("title") or "Compra Clubbar")[:256],
+                "quantity": quantidade,
+                "unit_price": _valor_monetario(item.get("unit_price")),
+            }
+        )
+    if not itens_order:
+        raise HTTPException(422, "Não há itens válidos para criar o checkout Mercado Pago.")
+
+    dados: dict[str, Any] = {
+        "type": "online",
+        "processing_mode": "manual",
+        "capture_mode": "automatic_async",
+        "external_reference": external_reference,
+        "description": f"Clubbar - {titulo}"[:256],
+        "total_amount": _valor_monetario(valor_total),
+        "items": itens_order,
+        "config": {
+            "online": {
+                **urls_retorno,
+                "auto_return": "approved",
+            }
+        },
+    }
+    if (email_pagador or "").strip():
+        dados["payer"] = {"email": email_pagador.strip().lower()}
+    if valor_taxa_clubbar > 0:
+        # É o valor em reais que pertence ao marketplace Clubbar no split.
+        dados["marketplace_fee"] = _valor_monetario(valor_taxa_clubbar)
+
+    try:
+        async with httpx.AsyncClient(timeout=25) as cliente:
+            resposta = await cliente.post(
+                f"{MERCADO_PAGO_API_BASE_URL}/v1/orders",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "X-Idempotency-Key": str(uuid.uuid4()),
+                    "Content-Type": "application/json",
+                },
+                json=dados,
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Falha de rede ao criar Order Mercado Pago: referencia=%s erro=%s",
+            external_reference,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            502,
+            "Não foi possível conectar ao Mercado Pago para criar o checkout. Tente novamente.",
+        ) from exc
+    if resposta.is_error:
+        try:
+            erro = resposta.json()
+        except ValueError:
+            erro = {}
+        logger.warning(
+            "Mercado Pago recusou Order: referencia=%s status=%s erro=%s mensagem=%s",
+            external_reference,
+            resposta.status_code,
+            (erro or {}).get("error") if isinstance(erro, dict) else None,
+            (erro or {}).get("message") if isinstance(erro, dict) else None,
+        )
+        raise HTTPException(422, "O Mercado Pago recusou criar este checkout. Tente novamente.")
+    retorno = resposta.json()
+    if not retorno.get("id") or not retorno.get("checkout_url"):
+        raise HTTPException(502, "Mercado Pago não retornou o link de pagamento.")
+    return retorno
 
 
 async def criar_preferencia(
