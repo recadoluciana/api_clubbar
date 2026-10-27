@@ -809,7 +809,12 @@ async def pagar_mercado_pago_cliente(
             for index, item in enumerate(itens_checkout, start=1)
         ]
         metodo = str(payload.dsmetodopag or '').upper()
-        if metodo == 'PIX':
+        # O PIX transparente (/v1/payments) é usado apenas quando não há
+        # comissão Clubbar. Para marketplaces, o Mercado Pago pode recusar
+        # application_fee nesse endpoint (erro 2059). Com comissão, usamos
+        # Checkout Pro abaixo, que aplica marketplace_fee no mesmo pagamento
+        # e mantém o split sem perder a taxa configurada para a loja.
+        if metodo == 'PIX' and valor_taxa_clubbar <= 0:
             pagamento_pix = await criar_pagamento_pix_mercado_pago(
                 access_token=token,
                 external_reference=referencia,
