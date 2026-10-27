@@ -78,6 +78,7 @@ from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_s
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.services.mercado_pago_service import (
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
+    criar_pagamento_pix as criar_pagamento_pix_mercado_pago,
     criar_preferencia as criar_preferencia_mercado_pago,
     obter_token_loja as obter_token_mercado_pago_loja,
 )
@@ -806,6 +807,53 @@ async def pagar_mercado_pago_cliente(
             }
             for index, item in enumerate(itens_checkout, start=1)
         ]
+        metodo = str(payload.dsmetodopag or '').upper()
+        if metodo == 'PIX':
+            pagamento_pix = await criar_pagamento_pix_mercado_pago(
+                access_token=token,
+                external_reference=referencia,
+                titulo='PRODUTOS',
+                valor=Decimal(str(valor_total)),
+                valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                email_pagador=cliente.emailcliente,
+                documento_pagador=cliente.nrcpfcliente,
+                chave_idempotencia=str(uuid.uuid4()),
+            )
+            dados_pix = (
+                (pagamento_pix.get('point_of_interaction') or {})
+                .get('transaction_data')
+                or {}
+            )
+            checkout = CheckoutMercadoPago(
+                carrinho_id=carrinho_id,
+                cliente_id=payload.cliente_id,
+                loja_id=payload.loja_id,
+                # Para o Pix transparente não há preferência: este campo
+                # continua sendo a chave pública de consulta do checkout.
+                preference_id=str(pagamento_pix['id']),
+                payment_id=str(pagamento_pix['id']),
+                external_reference=referencia,
+                status='PENDING',
+                checkout_url=dados_pix.get('ticket_url'),
+                metodo_solicitado=payload.dsmetodopag,
+                valor=valor_total,
+                vrtaxaclubbar=valor_taxa_clubbar,
+                dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
+            )
+            db.add(checkout)
+            db.commit()
+            return {
+                'ok': True,
+                'gateway': 'MERCADO_PAGO',
+                'pagamento_id': checkout.preference_id,
+                'status': checkout.status,
+                'valor': float(checkout.valor),
+                'pix_copia_cola': dados_pix['qr_code'],
+                'qr_code_text': dados_pix['qr_code'],
+                'expiration_date': pagamento_pix.get('date_of_expiration'),
+                'external_reference': checkout.external_reference,
+            }
+
         preferencia = await criar_preferencia_mercado_pago(
             access_token=token,
             external_reference=referencia,

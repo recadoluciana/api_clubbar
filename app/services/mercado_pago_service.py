@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlencode
@@ -125,6 +125,77 @@ async def criar_preferencia(
     retorno = resposta.json()
     if not retorno.get("id") or not (retorno.get("init_point") or retorno.get("sandbox_init_point")):
         raise HTTPException(502, "Mercado Pago não retornou o link de pagamento.")
+    return retorno
+
+
+def _documento_pagador(documento: str | None) -> tuple[str, str]:
+    """Normaliza o documento exigido pelo Pix transparente do Mercado Pago."""
+    numero = "".join(caractere for caractere in (documento or "") if caractere.isdigit())
+    if len(numero) == 11:
+        return "CPF", numero
+    if len(numero) == 14:
+        return "CNPJ", numero
+    raise HTTPException(
+        409,
+        "Para gerar o PIX, complete o CPF ou CNPJ válido nos seus Dados pessoais.",
+    )
+
+
+async def criar_pagamento_pix(
+    *,
+    access_token: str,
+    external_reference: str,
+    titulo: str,
+    valor: Decimal,
+    valor_taxa_clubbar: Decimal,
+    email_pagador: str,
+    documento_pagador: str | None,
+    chave_idempotencia: str,
+) -> dict[str, Any]:
+    """Cria um PIX transparente, para o QR Code permanecer dentro do Clubbar.
+
+    O ``application_fee`` é a contrapartida do ``marketplace_fee`` do
+    Checkout Pro: quando a loja optar pela taxa Clubbar, o Mercado Pago
+    separa a comissão do marketplace na mesma transação.
+    """
+    email = (email_pagador or "").strip().lower()
+    if not email:
+        raise HTTPException(409, "O e-mail do cliente é obrigatório para gerar o PIX.")
+    tipo_documento, numero_documento = _documento_pagador(documento_pagador)
+    expiracao = datetime.now(timezone.utc) + timedelta(minutes=15)
+    dados: dict[str, Any] = {
+        "transaction_amount": float(valor),
+        "description": f"Clubbar - {titulo}"[:256],
+        "payment_method_id": "pix",
+        "external_reference": external_reference,
+        "date_of_expiration": expiracao.isoformat().replace("+00:00", "Z"),
+        "metadata": {"origem": "CLUBBAR", "tipo": titulo},
+        "payer": {
+            "email": email,
+            "identification": {"type": tipo_documento, "number": numero_documento},
+        },
+    }
+    if valor_taxa_clubbar > 0:
+        dados["application_fee"] = float(valor_taxa_clubbar)
+    if PUBLIC_API_BASE_URL:
+        dados["notification_url"] = f"{PUBLIC_API_BASE_URL}/mercado-pago/webhook"
+
+    async with httpx.AsyncClient(timeout=25) as cliente:
+        resposta = await cliente.post(
+            f"{MERCADO_PAGO_API_BASE_URL}/v1/payments",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "X-Idempotency-Key": chave_idempotencia,
+                "Content-Type": "application/json",
+            },
+            json=dados,
+        )
+    if resposta.is_error:
+        raise HTTPException(502, "Não foi possível gerar o PIX Mercado Pago.")
+    retorno = resposta.json()
+    dados_pix = ((retorno.get("point_of_interaction") or {}).get("transaction_data") or {})
+    if not retorno.get("id") or not dados_pix.get("qr_code"):
+        raise HTTPException(502, "Mercado Pago não retornou o QR Code PIX.")
     return retorno
 
 
