@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -13,6 +14,9 @@ from app.core.config import APP_ENV, MERCADO_PAGO_API_BASE_URL, PUBLIC_API_BASE_
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.models.lojamercadopago import LojaMercadoPago
 from app.services.mercado_pago_oauth_service import expira_em, renovar_tokens
+
+
+logger = logging.getLogger(__name__)
 
 
 def _ambiente() -> str:
@@ -180,18 +184,48 @@ async def criar_pagamento_pix(
     if PUBLIC_API_BASE_URL:
         dados["notification_url"] = f"{PUBLIC_API_BASE_URL}/mercado-pago/webhook"
 
-    async with httpx.AsyncClient(timeout=25) as cliente:
-        resposta = await cliente.post(
-            f"{MERCADO_PAGO_API_BASE_URL}/v1/payments",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "X-Idempotency-Key": chave_idempotencia,
-                "Content-Type": "application/json",
-            },
-            json=dados,
+    try:
+        async with httpx.AsyncClient(timeout=25) as cliente:
+            resposta = await cliente.post(
+                f"{MERCADO_PAGO_API_BASE_URL}/v1/payments",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "X-Idempotency-Key": chave_idempotencia,
+                    "Content-Type": "application/json",
+                },
+                json=dados,
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "Falha de rede ao gerar PIX Mercado Pago: referencia=%s erro=%s",
+            external_reference,
+            type(exc).__name__,
         )
+        raise HTTPException(
+            502,
+            "Não foi possível conectar ao Mercado Pago para gerar o PIX. Tente novamente.",
+        ) from exc
     if resposta.is_error:
-        raise HTTPException(502, "Não foi possível gerar o PIX Mercado Pago.")
+        # O detalhe do Mercado Pago é registrado no servidor sem tokens ou
+        # dados pessoais. Isso permite corrigir configurações de split ou da
+        # conta recebedora sem expor a resposta do provedor ao Client.
+        try:
+            erro = resposta.json()
+        except ValueError:
+            erro = {}
+        causas = erro.get("cause") if isinstance(erro, dict) else None
+        logger.warning(
+            "Mercado Pago recusou PIX: referencia=%s status=%s erro=%s mensagem=%s causas=%s",
+            external_reference,
+            resposta.status_code,
+            (erro or {}).get("error") if isinstance(erro, dict) else None,
+            (erro or {}).get("message") if isinstance(erro, dict) else None,
+            causas,
+        )
+        raise HTTPException(
+            422,
+            "O Mercado Pago recusou gerar este PIX. Verifique a conta recebedora e tente novamente.",
+        )
     retorno = resposta.json()
     dados_pix = ((retorno.get("point_of_interaction") or {}).get("transaction_data") or {})
     if not retorno.get("id") or not dados_pix.get("qr_code"):
