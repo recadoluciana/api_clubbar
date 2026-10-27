@@ -172,7 +172,10 @@ async def criar_pagamento_pix(
         "description": f"Clubbar - {titulo}"[:256],
         "payment_method_id": "pix",
         "external_reference": external_reference,
-        "date_of_expiration": expiracao.isoformat().replace("+00:00", "Z"),
+        # A API do Mercado Pago exige segundos e o deslocamento numérico (+0000).
+        # ``isoformat()`` inclui microssegundos e o sufixo ``Z``, formato que ela
+        # rejeita para pagamentos PIX.
+        "date_of_expiration": expiracao.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "metadata": {"origem": "CLUBBAR", "tipo": titulo},
         "payer": {
             "email": email,
