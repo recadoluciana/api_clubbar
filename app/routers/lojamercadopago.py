@@ -24,6 +24,7 @@ from app.services.mercado_pago_oauth_service import (
     expira_em,
     montar_url_autorizacao,
     trocar_codigo_por_tokens,
+    obter_nome_usuario,
 )
 
 
@@ -66,6 +67,7 @@ def _saida(loja: Loja, config: LojaMercadoPago | None) -> dict:
         "organizacao_id": int(loja.organizacao_id),
         "ambiente": APP_ENV,
         "mercadopago_user_id": config.mercadopago_user_id if config else None,
+        "mercadopago_nome": config.mercadopago_nome if config else None,
         "statusintegracao": config.statusintegracao if config else "NAO_CONFIGURADA",
         "conectada": conectada,
         "provedor_pagamento": str(loja.provedor_pagamento or "ASAAS").upper(),
@@ -133,6 +135,10 @@ async def concluir_autorizacao_mercado_pago(
     try:
         tokens = await trocar_codigo_por_tokens(code=code)
         config.mercadopago_user_id = str(tokens["user_id"])
+        config.mercadopago_nome = await obter_nome_usuario(
+            access_token=str(tokens["access_token"]),
+            user_id=str(tokens["user_id"]),
+        )
         config.public_key = str(tokens.get("public_key") or "") or None
         config.access_token_criptografado = criptografar_credencial(str(tokens["access_token"]))
         refresh_token = str(tokens.get("refresh_token") or "")

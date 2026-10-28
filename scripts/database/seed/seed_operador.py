@@ -20,7 +20,6 @@ from sqlalchemy import text
 SOCIOS_DESENVOLVIMENTO = (
     ("Luciana Corrêa", "recadoluciana@gmail.com"),
     ("Tricia Murad", "triciamurad@gmail.com"),
-    ("Adilson", "adilson.datascience@gmail.com"),
 )
 
 
@@ -42,15 +41,15 @@ def seed(db, *, recriar: bool = False, allow_production: bool = False) -> None:
             operador = Operador(emailoperador=email)
             db.add(operador)
         operador.nmoperador = nome
-        operador.senhahashoperador = hash_senha("101010")
+        operador.senhahashoperador = hash_senha("142628")
         operador.perfil = "ADMIN"
         operador.sitoperador = "ATIVO"
     db.commit()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Cria os três sócios no desenvolvimento.")
-    parser.add_argument("--recriar", action="store_true", help="Apaga os operadores atuais e recria somente os três sócios.")
+    parser = argparse.ArgumentParser(description="Cria os dois sócios no desenvolvimento.")
+    parser.add_argument("--recriar", action="store_true", help="Apaga os operadores atuais e recria somente os dois sócios.")
     parser.add_argument(
         "--allow-production",
         action="store_true",

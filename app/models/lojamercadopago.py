@@ -19,6 +19,7 @@ class LojaMercadoPago(Base):
     ambiente = Column(String(20), nullable=False)
 
     mercadopago_user_id = Column(String(100), nullable=True, index=True)
+    mercadopago_nome = Column(String(255), nullable=True)
     public_key = Column(String(255), nullable=True)
     access_token_criptografado = Column(Text, nullable=True)
     refresh_token_criptografado = Column(Text, nullable=True)

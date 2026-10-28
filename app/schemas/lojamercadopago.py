@@ -12,6 +12,7 @@ class LojaMercadoPagoOut(BaseModel):
     organizacao_id: int
     ambiente: str
     mercadopago_user_id: str | None = None
+    mercadopago_nome: str | None = None
     statusintegracao: str
     conectada: bool
     provedor_pagamento: str

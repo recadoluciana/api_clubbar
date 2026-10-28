@@ -82,6 +82,24 @@ async def renovar_tokens(*, refresh_token: str) -> dict:
     return retorno
 
 
+async def obter_nome_usuario(*, access_token: str, user_id: str) -> str | None:
+    """Obtém um nome seguro para identificar a conta autorizada no Partner."""
+    async with httpx.AsyncClient(timeout=20) as cliente:
+        resposta = await cliente.get(
+            f"{MERCADO_PAGO_API_BASE_URL}/users/{user_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if resposta.is_error:
+        return None
+    dados = resposta.json()
+    nome = str(dados.get("nickname") or "").strip()
+    if nome:
+        return nome
+    partes = [str(dados.get(chave) or "").strip() for chave in ("first_name", "last_name")]
+    nome = " ".join(parte for parte in partes if parte)
+    return nome or None
+
+
 def expira_em(tokens: dict) -> datetime:
     # Renovamos com margem para não iniciar um checkout com credencial vencendo.
     segundos = int(tokens.get("expires_in") or 0)

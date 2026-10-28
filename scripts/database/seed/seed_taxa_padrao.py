@@ -20,7 +20,7 @@ def main() -> None:
             INSERT INTO taxapadrao
               (nrversao, pctaxaproduto, pctaxaingresso, vrtaxaminimaingresso,
                sittaxapadrao, dtiniciovigencia)
-            VALUES (1, 5.00, 10.00, 2.99, 'VIGENTE', CURRENT_TIMESTAMP)
+            VALUES (1, 1.00, 8.00, 2.99, 'VIGENTE', CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE nrversao = nrversao
         """))
         db.commit()

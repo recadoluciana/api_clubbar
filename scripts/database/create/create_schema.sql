@@ -542,6 +542,22 @@ CREATE TABLE cliente (
 
 CREATE INDEX idx_cliente_asaas       ON cliente(idclienteasaas);
 
+CREATE TABLE IF NOT EXISTS clienteidentidadesocial (
+  clienteidentidadesocial_id BIGINT NOT NULL AUTO_INCREMENT,
+  cliente_id BIGINT NOT NULL,
+  provedor VARCHAR(20) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  email VARCHAR(160) NULL,
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (clienteidentidadesocial_id),
+  KEY ix_clienteidentidadesocial_cliente_id (cliente_id),
+  UNIQUE KEY uq_clienteidentidadesocial_provedor_subject (provedor, subject),
+  CONSTRAINT fk_clienteidentidadesocial_cliente
+    FOREIGN KEY (cliente_id) REFERENCES cliente (cliente_id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE titularfinanceiro (
   titularfinanceiro_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
@@ -736,6 +752,32 @@ CREATE TABLE lojaasaas (
   CONSTRAINT fk_lojaasaas_loja FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
+CREATE TABLE lojamercadopago (
+  lojamercadopago_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  organizacao_id BIGINT NOT NULL,
+  loja_id BIGINT NOT NULL,
+  ambiente VARCHAR(20) NOT NULL,
+  mercadopago_user_id VARCHAR(100) NULL,
+  mercadopago_nome VARCHAR(255) NULL,
+  public_key VARCHAR(255) NULL,
+  access_token_criptografado TEXT NULL,
+  refresh_token_criptografado TEXT NULL,
+  token_expira_em DATETIME NULL,
+  oauth_state_hash CHAR(64) NULL,
+  oauth_state_expira_em DATETIME NULL,
+  statusintegracao VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtalteracao DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_lojamercadopago_loja_ambiente (loja_id, ambiente),
+  UNIQUE KEY uq_lojamercadopago_oauth_state (oauth_state_hash),
+  KEY idx_lojamercadopago_organizacao (organizacao_id),
+  KEY idx_lojamercadopago_user (mercadopago_user_id),
+  CONSTRAINT fk_lojamercadopago_organizacao
+    FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
+  CONSTRAINT fk_lojamercadopago_loja
+    FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
+
 CREATE TABLE clienteasaas (
   clienteasaas_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   cliente_id BIGINT NOT NULL,
@@ -925,45 +967,14 @@ CREATE INDEX idx_produto_org_sit
 CREATE INDEX idx_produto_org_sit_nome
   ON produto(organizacao_id, sitproduto, nmproduto);
 
-CREATE TABLE cardapiomodelo (
-  cardapiomodelo_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL,
-  nmcardapio VARCHAR(120) NOT NULL,
-  tipocardapio ENUM('PRINCIPAL','ESPECIAL') NOT NULL DEFAULT 'PRINCIPAL',
-  principal_organizacao_id BIGINT GENERATED ALWAYS AS (
-    CASE WHEN tipocardapio = 'PRINCIPAL' THEN organizacao_id ELSE NULL END
-  ) STORED,
-  sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
-  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapiomodelo_organizacao FOREIGN KEY (organizacao_id)
-    REFERENCES organizacao(organizacao_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  UNIQUE KEY uk_cardapiomodelo_org_nome (organizacao_id, nmcardapio),
-  UNIQUE KEY uk_cardapiomodelo_principal_org (principal_organizacao_id),
-  KEY idx_cardapiomodelo_org_situacao (organizacao_id, sitcardapio)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE cardapio (
   cardapio_id BIGINT AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
-  loja_id BIGINT NOT NULL,
-  cardapiomodelo_id BIGINT NOT NULL,
   nmcardapio VARCHAR(120) NOT NULL,
   tipocardapio ENUM('PRINCIPAL','ESPECIAL') NOT NULL DEFAULT 'PRINCIPAL',
-  principal_loja_id BIGINT GENERATED ALWAYS AS (
-    CASE WHEN tipocardapio = 'PRINCIPAL' THEN loja_id ELSE NULL END
-  ) STORED,
-  prioridade INT NOT NULL DEFAULT 0,
   sitcardapio ENUM('ATIVO','INATIVO') NOT NULL DEFAULT 'ATIVO',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapio_loja FOREIGN KEY (organizacao_id, loja_id)
-    REFERENCES loja(organizacao_id, loja_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_cardapio_modelo FOREIGN KEY (cardapiomodelo_id)
-    REFERENCES cardapiomodelo(cardapiomodelo_id) ON DELETE RESTRICT ON UPDATE CASCADE,
-  UNIQUE KEY uk_cardapio_loja_modelo (loja_id, cardapiomodelo_id),
-  UNIQUE KEY uk_cardapio_principal_loja (principal_loja_id),
-  KEY idx_cardapio_loja_situacao (loja_id, sitcardapio, prioridade)
+  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE cardapioversao (
@@ -2273,36 +2284,283 @@ CREATE TABLE IF NOT EXISTS manualversao (
     CONSTRAINT fk_manualversao_manual FOREIGN KEY (manual_id) REFERENCES manualguia(manual_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE cardapiomodelocategoria (
-  cardapiomodelocategoria_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  organizacao_id BIGINT NOT NULL,
-  cardapiomodelo_id BIGINT NOT NULL,
-  categoria_id BIGINT NOT NULL,
-  idordcategoria BIGINT NOT NULL DEFAULT 1,
-  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  dtultatu DATETIME NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT fk_cardapiomodelocategoria_org
-    FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id)
-    ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT fk_cardapiomodelocategoria_modelo
-    FOREIGN KEY (cardapiomodelo_id) REFERENCES cardapiomodelo(cardapiomodelo_id) ON DELETE CASCADE,
-  CONSTRAINT fk_cardapiomodelocategoria_categoria
-    FOREIGN KEY (categoria_id) REFERENCES categoriaorg(categoria_id),
-  UNIQUE KEY uk_cardapiomodelocategoria_modelo_categoria (cardapiomodelo_id, categoria_id),
-  KEY idx_cardapiomodelocategoria_org (organizacao_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE beneficioprodutocampanha (
+  beneficioprodutocampanha_id bigint NOT NULL AUTO_INCREMENT,
+  organizacao_id bigint NOT NULL,
+  loja_id bigint NOT NULL,
+  produto_id bigint NOT NULL,
+  tipo varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  nmcampanha varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  dthrinicio datetime NOT NULL,
+  dthrfim datetime DEFAULT NULL,
+  qtlimite int DEFAULT NULL,
+  limite_cliente_dia int NOT NULL DEFAULT '1',
+  qtitenspacote int DEFAULT NULL,
+  vrpacote decimal(10,2) DEFAULT NULL,
+  percentual_desconto decimal(5,2) DEFAULT NULL,
+  situacao varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ATIVA',
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu datetime DEFAULT NULL,
+  PRIMARY KEY (beneficioprodutocampanha_id),
+  KEY ix_bpc_loja_produto (loja_id,produto_id),
+  KEY fk_bpc_organizacao (organizacao_id),
+  KEY fk_bpc_produto (produto_id),
+  CONSTRAINT fk_bpc_loja FOREIGN KEY (loja_id) REFERENCES loja (loja_id),
+  CONSTRAINT fk_bpc_organizacao FOREIGN KEY (organizacao_id) REFERENCES organizacao (organizacao_id),
+  CONSTRAINT fk_bpc_produto FOREIGN KEY (produto_id) REFERENCES produto (produto_id)
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE cardapiomodeloproduto (
-  cardapiomodeloproduto_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  cardapiomodelocategoria_id BIGINT NOT NULL,
-  produto_id BIGINT NOT NULL,
-  idorditem INT NOT NULL DEFAULT 1,
-  CONSTRAINT fk_cardapiomodeloproduto_categoria FOREIGN KEY (cardapiomodelocategoria_id)
-    REFERENCES cardapiomodelocategoria(cardapiomodelocategoria_id) ON DELETE CASCADE,
-  CONSTRAINT fk_cardapiomodeloproduto_produto FOREIGN KEY (produto_id)
-    REFERENCES produto(produto_id),
-  UNIQUE KEY uk_cardapiomodeloproduto_categoria_produto (cardapiomodelocategoria_id, produto_id)
-) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE beneficioprodutoresgate (
+  beneficioprodutoresgate_id bigint NOT NULL AUTO_INCREMENT,
+  campanha_id bigint NOT NULL,
+  cliente_id bigint NOT NULL,
+  produto_id bigint NOT NULL,
+  percentual_desconto decimal(5,2) NOT NULL DEFAULT '0.00',
+  situacao varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DISPONIVEL',
+  dtresgate datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtexpiracao datetime DEFAULT NULL,
+  venda_id bigint DEFAULT NULL,
+  PRIMARY KEY (beneficioprodutoresgate_id),
+  KEY ix_bpr_cliente_produto (cliente_id,produto_id),
+  KEY fk_bpr_campanha (campanha_id),
+  KEY fk_bpr_produto (produto_id),
+  KEY fk_bpr_venda (venda_id),
+  CONSTRAINT fk_bpr_campanha FOREIGN KEY (campanha_id) REFERENCES beneficioprodutocampanha (beneficioprodutocampanha_id),
+  CONSTRAINT fk_bpr_cliente FOREIGN KEY (cliente_id) REFERENCES cliente (cliente_id),
+  CONSTRAINT fk_bpr_produto FOREIGN KEY (produto_id) REFERENCES produto (produto_id),
+  CONSTRAINT fk_bpr_venda FOREIGN KEY (venda_id) REFERENCES venda (venda_id)
+) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE campanha_doacao (
+  campanhadoacao_id bigint NOT NULL AUTO_INCREMENT,
+  organizacao_id bigint NOT NULL,
+  loja_id bigint NOT NULL,
+  evento_id bigint DEFAULT NULL,
+  nmcampanha varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  nmbeficiario varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  urllogocampanha varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  dsmensagem text COLLATE utf8mb4_unicode_ci,
+  chavepix varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  asaas_wallet_id varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  asaas_account_id varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  asaas_api_key_criptografada text COLLATE utf8mb4_unicode_ci,
+  status_asaas varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  onboarding_url varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  percentual_doacao decimal(7,4) NOT NULL,
+  sitcampanha varchar(12) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ATIVA',
+  dtinicio datetime DEFAULT NULL,
+  dtfim datetime DEFAULT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu datetime DEFAULT NULL,
+  PRIMARY KEY (campanhadoacao_id),
+  KEY ix_campanha_doacao_organizacao_id (organizacao_id),
+  KEY ix_campanha_doacao_loja_id (loja_id),
+  KEY ix_campanha_doacao_evento_id (evento_id),
+  CONSTRAINT campanha_doacao_ibfk_1 FOREIGN KEY (organizacao_id) REFERENCES organizacao (organizacao_id),
+  CONSTRAINT campanha_doacao_ibfk_2 FOREIGN KEY (loja_id) REFERENCES loja (loja_id),
+  CONSTRAINT campanha_doacao_ibfk_3 FOREIGN KEY (evento_id) REFERENCES evento (evento_id)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cardapioloja (
+  cardapioloja_id bigint NOT NULL AUTO_INCREMENT,
+  cardapio_id bigint NOT NULL,
+  loja_id bigint NOT NULL,
+  sitassociacao enum('ATIVA','INATIVA') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ATIVA',
+  vendas_habilitadas tinyint(1) NOT NULL DEFAULT '1',
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (cardapioloja_id),
+  UNIQUE KEY uk_cardapioloja_cardapio_loja (cardapio_id,loja_id),
+  KEY ix_cardapioloja_cardapio (cardapio_id),
+  KEY ix_cardapioloja_loja (loja_id),
+  CONSTRAINT fk_cardapioloja_cardapio FOREIGN KEY (cardapio_id) REFERENCES cardapio (cardapio_id) ON DELETE CASCADE,
+  CONSTRAINT fk_cardapioloja_loja FOREIGN KEY (loja_id) REFERENCES loja (loja_id)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE checkout_asaas_doacao (
+  checkoutasaasdoacao_id bigint NOT NULL AUTO_INCREMENT,
+  checkout_asaas_id bigint NOT NULL,
+  campanhadoacao_id bigint DEFAULT NULL,
+  nmcampanha varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  nmbeficiario varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  dsmensagem text COLLATE utf8mb4_unicode_ci,
+  chavepix varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  asaas_wallet_id varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  percentual_doacao decimal(7,4) NOT NULL,
+  split_asaas_id varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  situacaorepasse varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'VINCULADO',
+  dtliquidacao datetime DEFAULT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (checkoutasaasdoacao_id),
+  UNIQUE KEY ix_checkout_asaas_doacao_checkout_asaas_id (checkout_asaas_id),
+  UNIQUE KEY split_asaas_id (split_asaas_id),
+  KEY campanhadoacao_id (campanhadoacao_id),
+  CONSTRAINT checkout_asaas_doacao_ibfk_1 FOREIGN KEY (checkout_asaas_id) REFERENCES checkout_asaas (checkout_asaas_id) ON DELETE CASCADE,
+  CONSTRAINT checkout_asaas_doacao_ibfk_2 FOREIGN KEY (campanhadoacao_id) REFERENCES campanha_doacao (campanhadoacao_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE checkout_mercadopago (
+  checkout_mercadopago_id bigint NOT NULL AUTO_INCREMENT,
+  carrinho_id bigint DEFAULT NULL,
+  reserva_ingresso_id bigint DEFAULT NULL,
+  cliente_id bigint NOT NULL,
+  loja_id bigint NOT NULL,
+  venda_id bigint DEFAULT NULL,
+  preference_id varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  payment_id varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  external_reference varchar(140) COLLATE utf8mb4_unicode_ci NOT NULL,
+  status varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT 'PENDING',
+  checkout_url varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  metodo_solicitado varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  valor decimal(10,2) NOT NULL,
+  vrtaxaclubbar decimal(10,2) NOT NULL DEFAULT '0.00',
+  dadosentrega text COLLATE utf8mb4_unicode_ci,
+  dsorigemconfirmacao varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  dtconfirmacao datetime DEFAULT NULL,
+  dtemailconfirmacao datetime DEFAULT NULL,
+  dtcriacao datetime DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (checkout_mercadopago_id),
+  UNIQUE KEY preference_id (preference_id),
+  UNIQUE KEY external_reference (external_reference),
+  UNIQUE KEY payment_id (payment_id),
+  KEY venda_id (venda_id),
+  KEY ix_checkout_mercadopago_reserva_ingresso_id (reserva_ingresso_id),
+  KEY ix_checkout_mercadopago_carrinho_id (carrinho_id),
+  KEY ix_checkout_mercadopago_cliente_id (cliente_id),
+  KEY ix_checkout_mercadopago_loja_id (loja_id),
+  CONSTRAINT checkout_mercadopago_ibfk_1 FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso (reserva_ingresso_id),
+  CONSTRAINT checkout_mercadopago_ibfk_2 FOREIGN KEY (venda_id) REFERENCES venda (venda_id)
+) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE eventomodalidade (
+  evento_id bigint NOT NULL,
+  modalidade_id bigint NOT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (evento_id,modalidade_id),
+  KEY fk_eventomodalidade_modalidade (modalidade_id),
+  CONSTRAINT fk_eventomodalidade_evento FOREIGN KEY (evento_id) REFERENCES evento (evento_id) ON DELETE CASCADE,
+  CONSTRAINT fk_eventomodalidade_modalidade FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso (modalidade_id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE eventomodalidadebeneficio (
+  evento_id bigint NOT NULL,
+  modalidade_id bigint NOT NULL,
+  beneficio_id bigint NOT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (evento_id,modalidade_id,beneficio_id),
+  KEY fk_emb_modalidade (modalidade_id),
+  KEY fk_emb_beneficio (beneficio_id),
+  CONSTRAINT fk_emb_beneficio FOREIGN KEY (beneficio_id) REFERENCES beneficioingresso (beneficio_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_emb_evento FOREIGN KEY (evento_id) REFERENCES evento (evento_id) ON DELETE CASCADE,
+  CONSTRAINT fk_emb_modalidade FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso (modalidade_id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE eventomodelomodalidade (
+  eventomodelo_id bigint NOT NULL,
+  modalidade_id bigint NOT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (eventomodelo_id,modalidade_id),
+  KEY fk_eventomodelomodalidade_modalidade (modalidade_id),
+  CONSTRAINT fk_eventomodelomodalidade_modalidade FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso (modalidade_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_eventomodelomodalidade_modelo FOREIGN KEY (eventomodelo_id) REFERENCES eventomodelo (eventomodelo_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE eventomodelomodalidadebeneficio (
+  eventomodelo_id bigint NOT NULL,
+  modalidade_id bigint NOT NULL,
+  beneficio_id bigint NOT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (eventomodelo_id,modalidade_id,beneficio_id),
+  KEY fk_emmb_modalidade (modalidade_id),
+  KEY fk_emmb_beneficio (beneficio_id),
+  CONSTRAINT fk_emmb_beneficio FOREIGN KEY (beneficio_id) REFERENCES beneficioingresso (beneficio_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_emmb_modalidade FOREIGN KEY (modalidade_id) REFERENCES modalidadeingresso (modalidade_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_emmb_modelo FOREIGN KEY (eventomodelo_id) REFERENCES eventomodelo (eventomodelo_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE itvendaparticipantehistorico (
+  historico_id bigint NOT NULL AUTO_INCREMENT,
+  itvenda_id bigint NOT NULL,
+  cliente_id bigint NOT NULL,
+  nmparticipanteanterior varchar(150) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  cpfparticipanteanterior varchar(11) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  nmparticipantenovo varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
+  cpfparticipantenovo varchar(11) COLLATE utf8mb4_unicode_ci NOT NULL,
+  tipopreco varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  tipobeneficio varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  confirmoumeiaentrada tinyint(1) NOT NULL DEFAULT '0',
+  dttransferencia datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (historico_id),
+  KEY ix_itvendaparticipantehistorico_itvenda (itvenda_id),
+  KEY ix_itvendaparticipantehistorico_cliente (cliente_id),
+  CONSTRAINT fk_itvendaparticipantehistorico_cliente FOREIGN KEY (cliente_id) REFERENCES cliente (cliente_id),
+  CONSTRAINT fk_itvendaparticipantehistorico_itvenda FOREIGN KEY (itvenda_id) REFERENCES itvenda (itvenda_id)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE pedidoentrega (
+  pedidoentrega_id bigint NOT NULL AUTO_INCREMENT,
+  venda_id bigint NOT NULL,
+  situacaopedido enum('AGUARDANDO_ACEITE','ACEITO','EM_ROTA','ENTREGUE','RECUSADO','CANCELADO') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'AGUARDANDO_ACEITE',
+  qrcode_token varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  cepentrega varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
+  enderecoentrega varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  numeroentrega varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  complementoentrega varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  bairroentrega varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  cidade_id bigint NOT NULL,
+  estado_id bigint NOT NULL,
+  cidadeentrega varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
+  ufentrega varchar(2) COLLATE utf8mb4_unicode_ci NOT NULL,
+  observacaoentrega varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  dtaceite datetime DEFAULT NULL,
+  dtdespacho datetime DEFAULT NULL,
+  dtrecebimento datetime DEFAULT NULL,
+  dtrecusa datetime DEFAULT NULL,
+  motivorecusa varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  usuarioaceite_id bigint DEFAULT NULL,
+  usuariodespacho_id bigint DEFAULT NULL,
+  usuariorecebimento_id bigint DEFAULT NULL,
+  dtcriacao datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dtultatu datetime DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (pedidoentrega_id),
+  UNIQUE KEY uq_pedidoentrega_venda (venda_id),
+  UNIQUE KEY uq_pedidoentrega_qrcode_token (qrcode_token),
+  KEY idx_pedidoentrega_situacao (situacaopedido,dtcriacao),
+  KEY fk_pedidoentrega_aceite (usuarioaceite_id),
+  KEY fk_pedidoentrega_despacho (usuariodespacho_id),
+  KEY fk_pedidoentrega_recebimento (usuariorecebimento_id),
+  KEY fk_pedidoentrega_cidade (cidade_id),
+  KEY fk_pedidoentrega_estado (estado_id),
+  CONSTRAINT fk_pedidoentrega_aceite FOREIGN KEY (usuarioaceite_id) REFERENCES usuario (usuario_id) ON DELETE SET NULL,
+  CONSTRAINT fk_pedidoentrega_cidade FOREIGN KEY (cidade_id) REFERENCES cidade (cidade_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_pedidoentrega_despacho FOREIGN KEY (usuariodespacho_id) REFERENCES usuario (usuario_id) ON DELETE SET NULL,
+  CONSTRAINT fk_pedidoentrega_estado FOREIGN KEY (estado_id) REFERENCES estado (estado_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT fk_pedidoentrega_recebimento FOREIGN KEY (usuariorecebimento_id) REFERENCES usuario (usuario_id) ON DELETE SET NULL,
+  CONSTRAINT fk_pedidoentrega_venda FOREIGN KEY (venda_id) REFERENCES venda (venda_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE politicacompra (
+  politicacompra_id bigint NOT NULL AUTO_INCREMENT,
+  versao varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  tipopolitica varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'INGRESSO',
+  titulo varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  conteudo text COLLATE utf8mb4_unicode_ci NOT NULL,
+  qtd_dias_cancelamento int DEFAULT NULL,
+  qtd_horas_antecedencia_cancelamento int DEFAULT NULL,
+  qtd_alteracoes_participante int DEFAULT NULL,
+  qtd_horas_antecedencia_alteracao int DEFAULT NULL,
+  sitpolitica varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'VIGENTE',
+  operador_id bigint DEFAULT NULL,
+  dtiniciovigencia datetime DEFAULT NULL,
+  dtfimvigencia datetime DEFAULT NULL,
+  dtcriacao datetime NOT NULL DEFAULT (now()),
+  PRIMARY KEY (politicacompra_id),
+  UNIQUE KEY uq_politicacompra_tipo_versao (tipopolitica,versao),
+  KEY operador_id (operador_id),
+  CONSTRAINT politicacompra_ibfk_1 FOREIGN KEY (operador_id) REFERENCES operador (operador_id)
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 CREATE TABLE IF NOT EXISTS cancelamentoparceria (
   cancelamentoparceria_id BIGINT NOT NULL AUTO_INCREMENT,
   loja_id BIGINT NOT NULL,
