@@ -196,9 +196,13 @@ async def criar_preferencia(
 ) -> dict[str, Any]:
     payment_methods: dict[str, Any] = {}
     if metodo == "PIX":
-        # Checkout Pro mantém somente PIX para o botão específico do Client.
+        # O Checkout Pro identifica o PIX como método `pix` (tipo
+        # `bank_transfer`). Definimos o PIX como opção inicial e removemos o
+        # boleto; `credit_card` e `debit_card` não são tipos de exclusão
+        # válidos para preferências do Checkout Pro.
+        payment_methods["default_payment_method_id"] = "pix"
         payment_methods["excluded_payment_types"] = [
-            {"id": "credit_card"}, {"id": "debit_card"}, {"id": "ticket"},
+            {"id": "ticket"},
         ]
     elif metodo in {"CREDIT_CARD", "CREDITO"}:
         payment_methods["excluded_payment_methods"] = [{"id": "pix"}]
