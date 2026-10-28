@@ -862,19 +862,21 @@ async def pagar_mercado_pago_cliente(
             }
 
         if metodo == 'PIX':
-            # Orders é o Checkout Pro atual: após aprovar o Pix, o Mercado
-            # Pago redireciona automaticamente para a tela de sucesso do
-            # Clubbar. Cartão continua no fluxo de preferências já validado.
-            checkout_remoto = await criar_order_checkout_pro_mercado_pago(
+            # Use Checkout Pro Preferences também para Pix com comissão. A
+            # aplicação Marketplace do Clubbar não tem autorização para a API
+            # Orders, que retorna 403 (UNAUTHORIZED) em produção.
+            checkout_remoto = await criar_preferencia_mercado_pago(
                 access_token=token,
                 external_reference=referencia,
                 titulo='PRODUTOS',
                 itens=itens_mp,
-                valor_total=Decimal(str(valor_total)),
                 valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                metodo='PIX',
                 email_pagador=cliente.emailcliente,
             )
-            checkout_url = str(checkout_remoto['checkout_url'])
+            checkout_url = str(
+                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
+            )
         else:
             checkout_remoto = await criar_preferencia_mercado_pago(
                 access_token=token,
@@ -892,8 +894,7 @@ async def pagar_mercado_pago_cliente(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
-            # O campo é a chave interna de consulta do checkout e comporta
-            # tanto preference (cartão) quanto order (Pix com split).
+            # O campo é a chave interna de consulta da preferência do checkout.
             preference_id=str(checkout_remoto['id']),
             external_reference=referencia,
             status='PENDING',
