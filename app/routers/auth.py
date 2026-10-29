@@ -1,5 +1,6 @@
 import logging
 import os
+import requests
 
 import jwt
 from fastapi import APIRouter, HTTPException, Depends
@@ -45,12 +46,28 @@ def obter_configuracao_social():
     return {'google_client_id': client_ids[0] if client_ids else ''}
 
 
-def _validar_google(id_token: str) -> tuple[str, str]:
+def _validar_google(id_token: str | None, access_token: str | None) -> tuple[str, str]:
     client_ids = _valores_de_ambiente('GOOGLE_OAUTH_CLIENT_IDS')
     if not client_ids:
         raise HTTPException(status_code=503, detail='Login com Google não configurado.')
 
     try:
+        if not id_token and access_token:
+            resposta = requests.get(
+                'https://oauth2.googleapis.com/tokeninfo',
+                params={'access_token': access_token},
+                timeout=10,
+            )
+            resposta.raise_for_status()
+            dados = resposta.json()
+            if dados.get('aud') not in client_ids:
+                raise ValueError('Client ID Google inválido.')
+            if dados.get('email_verified') not in {'true', True}:
+                raise ValueError('E-mail Google não confirmado.')
+            return str(dados['sub']), str(dados['email']).lower().strip()
+
+        if not id_token:
+            raise ValueError('Token Google ausente.')
         dados = google_id_token.verify_oauth2_token(
             id_token,
             google_requests.Request(),
@@ -250,8 +267,10 @@ def login(data: ClienteLogin, db: Session = Depends(get_db)):
 def login_social(data: ClienteLoginSocial, db: Session = Depends(get_db)):
     """Autentica um cliente já cadastrado por uma identidade social validada."""
     if data.provedor == 'google':
-        subject, email = _validar_google(data.id_token)
+        subject, email = _validar_google(data.id_token, data.access_token)
     else:
+        if not data.id_token:
+            raise HTTPException(status_code=401, detail='Token Apple ausente.')
         subject, email = _validar_apple(data.id_token)
 
     identidade = (

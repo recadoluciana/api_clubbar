@@ -23,7 +23,8 @@ class ClienteLogin(BaseModel):
 
 class ClienteLoginSocial(BaseModel):
     provedor: Literal['google', 'apple']
-    id_token: str = Field(min_length=20, max_length=12000)
+    id_token: Optional[str] = Field(default=None, min_length=20, max_length=12000)
+    access_token: Optional[str] = Field(default=None, min_length=20, max_length=12000)
     authorization_code: Optional[str] = Field(default=None, max_length=2000)
 
 class UserLogin(BaseModel):
