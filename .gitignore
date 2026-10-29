@@ -8,6 +8,7 @@ venv/
 .venv/
 venv_api/
 venv_api_copia_antiga/
+.venv-linux/
 
 # Cache do Python
 __pycache__/
