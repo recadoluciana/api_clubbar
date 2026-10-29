@@ -23,7 +23,6 @@ from app.models.cardapio import (
 from app.models.categoria import Categoria
 from app.models.loja import Loja
 from app.models.produto import Produto
-from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.storage_service import salvar_bytes
 from app.utils.datetime_utils import FUSO_BRASIL
 
@@ -960,8 +959,6 @@ def publicar(versao_id: int, dados: PublicarIn, payload=Depends(get_usuario_loga
         CardapioLoja.cardapio_id == cardapio.cardapio_id,
         CardapioLoja.sitassociacao == "ATIVA",
     ).all()
-    for associacao in associacoes:
-        validar_publicacao_loja(db, associacao.loja_id)
     if versao.statusversao != "RASCUNHO":
         raise HTTPException(409, "Somente uma versão em rascunho pode ser publicada.")
     if not _versao_possui_alteracoes(db, versao):
