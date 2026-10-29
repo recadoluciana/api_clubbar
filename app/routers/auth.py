@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 
 from datetime import datetime, timedelta
-from secrets import randbelow
+from secrets import randbelow, token_urlsafe
 
 from app.models.cliente import Cliente
 from app.models.clienteidentidadesocial import ClienteIdentidadeSocial
@@ -298,10 +298,22 @@ def login_social(data: ClienteLoginSocial, db: Session = Depends(get_db)):
             )
         cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
         if not cli:
-            raise HTTPException(
-                status_code=404,
-                detail='Este e-mail ainda não possui cadastro no Clubbar. Cadastre-se ou entre com e-mail e senha.',
+            nome_social = email.split('@', 1)[0].replace('.', ' ').replace('_', ' ').strip()
+            cli = Cliente(
+                nmcliente=nome_social[:120] or 'Cliente Clubbar',
+                emailcliente=email,
+                senhahashcli=hash_senha(token_urlsafe(32)),
+                sitcliente='ATIVO',
+                emailconf='S',
             )
+            db.add(cli)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                cli = db.query(Cliente).filter(Cliente.emailcliente == email).first()
+                if not cli:
+                    raise HTTPException(status_code=409, detail='Não foi possível criar o cliente social.')
         identidade = ClienteIdentidadeSocial(
             cliente_id=cli.cliente_id,
             provedor=data.provedor,
