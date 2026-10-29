@@ -1218,6 +1218,8 @@ CREATE TABLE itvenda (
   venda_id              BIGINT NOT NULL,
   tipoitem              ENUM('PRODUTO','INGRESSO') NOT NULL,
   produto_id            BIGINT NULL,
+  beneficioprodutoresgate_id BIGINT NULL,
+  beneficioprodutocampanha_id BIGINT NULL,
   lote_id               BIGINT NULL,
   lotepreco_id          BIGINT NULL,
   modalidade_id         BIGINT NULL,
@@ -1287,6 +1289,12 @@ CREATE INDEX idx_itvenda_venda
 
 CREATE INDEX idx_itvenda_lote
   ON itvenda(lote_id);
+
+CREATE INDEX idx_itvenda_beneficio_resgate
+  ON itvenda(beneficioprodutoresgate_id);
+
+CREATE INDEX idx_itvenda_beneficio_campanha
+  ON itvenda(beneficioprodutocampanha_id);
 
 CREATE INDEX idx_itvenda_entrega
   ON itvenda(identregaitvenda, dtentregaitvenda);
@@ -2330,6 +2338,14 @@ CREATE TABLE beneficioprodutoresgate (
   CONSTRAINT fk_bpr_produto FOREIGN KEY (produto_id) REFERENCES produto (produto_id),
   CONSTRAINT fk_bpr_venda FOREIGN KEY (venda_id) REFERENCES venda (venda_id)
 ) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE itvenda
+  ADD CONSTRAINT fk_itvenda_beneficio_resgate
+    FOREIGN KEY (beneficioprodutoresgate_id)
+    REFERENCES beneficioprodutoresgate (beneficioprodutoresgate_id),
+  ADD CONSTRAINT fk_itvenda_beneficio_campanha
+    FOREIGN KEY (beneficioprodutocampanha_id)
+    REFERENCES beneficioprodutocampanha (beneficioprodutocampanha_id);
 
 CREATE TABLE campanha_doacao (
   campanhadoacao_id bigint NOT NULL AUTO_INCREMENT,
