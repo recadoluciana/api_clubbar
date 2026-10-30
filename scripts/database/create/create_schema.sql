@@ -1122,6 +1122,7 @@ CREATE TABLE itcarrinho (
   reserva_ingresso_id BIGINT NULL,
   produto_id       BIGINT NOT NULL,
   cardapioitem_id  BIGINT NULL,
+  beneficioprodutoresgate_id BIGINT NULL,
   vrunitario       DECIMAL(10,2) NOT NULL,
   lote_id          BIGINT NULL,
   qtitcarrinho     INT NOT NULL DEFAULT 1,
@@ -1146,6 +1147,10 @@ CREATE TABLE itcarrinho (
     REFERENCES cardapioitem(cardapioitem_id)
     ON DELETE SET NULL ON UPDATE CASCADE,
 
+  CONSTRAINT fk_itcarrinho_beneficio_resgate
+    FOREIGN KEY (beneficioprodutoresgate_id)
+    REFERENCES beneficioprodutoresgate(beneficioprodutoresgate_id),
+
   CONSTRAINT chk_itcarrinho_qt
     CHECK (qtitcarrinho = 1)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
@@ -1158,6 +1163,9 @@ CREATE INDEX idx_itcarrinho_carrinho_produto
 
 CREATE INDEX idx_itcarrinho_lote
   ON itcarrinho(lote_id);
+
+CREATE INDEX idx_itcarrinho_beneficio_resgate
+  ON itcarrinho(beneficioprodutoresgate_id);
 
 CREATE INDEX idx_itcarrinho_carrinho_dt
   ON itcarrinho(carrinho_id, dtcriacao, itcarrinho_id);
