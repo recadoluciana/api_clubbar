@@ -1722,6 +1722,7 @@ async def reconciliar_pagamentos_pendentes_asaas(
         .all()
     )
     confirmados = []
+    pendentes_com_erro = 0
     for checkout in pendentes:
         try:
             # Corrige registros legados de ingressos já vendidos sem tratá-los
@@ -1751,9 +1752,25 @@ async def reconciliar_pagamentos_pendentes_asaas(
         except HTTPException as exc:
             # Uma tentativa pendente não pode impedir a reconciliação das demais.
             db.rollback()
+            pendentes_com_erro += 1
             print("[ASAAS RECONCILIACAO] Pendente não conciliado:", exc.detail)
+        except Exception as exc:
+            # A reconciliação é executada em segundo plano pelo cliente. Uma
+            # falha isolada do Asaas não deve interromper o uso do aplicativo
+            # nem impedir que as demais cobranças sejam verificadas.
+            db.rollback()
+            pendentes_com_erro += 1
+            print(
+                "[ASAAS RECONCILIACAO] Erro inesperado no checkout "
+                f"{getattr(checkout, 'checkout_id', None)}:",
+                repr(exc),
+            )
 
-    return {"ok": True, "pagamentos_confirmados": confirmados}
+    return {
+        "ok": True,
+        "pagamentos_confirmados": confirmados,
+        "pendentes_com_erro": pendentes_com_erro,
+    }
 
 
 @router.post('/mercado-pago/reconciliar-pendentes')
