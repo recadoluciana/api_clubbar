@@ -99,6 +99,7 @@ origins = [
     # Ambiente de desenvolvimento
     "https://clubbaradmin-desenvolvimento.up.railway.app",
     "https://clubbarclient-desenvolvimento.up.railway.app",
+    "https://dev-app.clubbar.com.br",
 
     "https://clubbar.com.br",
     "https://www.clubbar.com.br",
