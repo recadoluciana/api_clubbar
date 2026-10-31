@@ -11,6 +11,7 @@ from app.core.config import (
     MERCADO_PAGO_CLIENT_ID,
     MERCADO_PAGO_CLIENT_SECRET,
     MERCADO_PAGO_OAUTH_REDIRECT_URL,
+    MERCADO_PAGO_OAUTH_TEST_TOKEN,
 )
 
 
@@ -51,6 +52,7 @@ async def trocar_codigo_por_tokens(*, code: str) -> dict:
         "client_id": MERCADO_PAGO_CLIENT_ID,
         "client_secret": MERCADO_PAGO_CLIENT_SECRET,
         "grant_type": "authorization_code",
+        "test_token": "true" if MERCADO_PAGO_OAUTH_TEST_TOKEN else "false",
         "code": code,
         "redirect_uri": MERCADO_PAGO_OAUTH_REDIRECT_URL,
     }
@@ -70,6 +72,7 @@ async def renovar_tokens(*, refresh_token: str) -> dict:
         "client_id": MERCADO_PAGO_CLIENT_ID,
         "client_secret": MERCADO_PAGO_CLIENT_SECRET,
         "grant_type": "refresh_token",
+        "test_token": "true" if MERCADO_PAGO_OAUTH_TEST_TOKEN else "false",
         "refresh_token": refresh_token,
     }
     async with httpx.AsyncClient(timeout=20) as cliente:

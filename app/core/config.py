@@ -60,6 +60,13 @@ ASAAS_PIX_ADDRESS_KEY = os.getenv("ASAAS_PIX_ADDRESS_KEY", "").strip()
 # individualmente via OAuth e ficam criptografadas no banco.
 MERCADO_PAGO_CLIENT_ID = os.getenv("MERCADO_PAGO_CLIENT_ID", "").strip()
 MERCADO_PAGO_CLIENT_SECRET = os.getenv("MERCADO_PAGO_CLIENT_SECRET", "").strip()
+# Ativar explicitamente somente para autorizações de sandbox.
+MERCADO_PAGO_OAUTH_TEST_TOKEN = (
+    os.getenv("MERCADO_PAGO_OAUTH_TEST_TOKEN", "false").strip().lower()
+    in {"true", "1", "yes"}
+)
+if APP_ENV in {"production", "prod"} and MERCADO_PAGO_OAUTH_TEST_TOKEN:
+    raise RuntimeError("OAuth de sandbox Mercado Pago não pode ser ativado em produção")
 MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
 MERCADO_PAGO_API_BASE_URL = (
     os.getenv("MERCADO_PAGO_API_BASE_URL", "https://api.mercadopago.com")
