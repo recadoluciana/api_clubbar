@@ -809,12 +809,8 @@ async def pagar_mercado_pago_cliente(
             for index, item in enumerate(itens_checkout, start=1)
         ]
         metodo = str(payload.dsmetodopag or '').upper()
-        # O PIX transparente (/v1/payments) é usado apenas quando não há
-        # comissão Clubbar. Para marketplaces, o Mercado Pago pode recusar
-        # application_fee nesse endpoint (erro 2059). Com comissão, usamos
-        # Checkout Pro abaixo, que aplica marketplace_fee no mesmo pagamento
-        # e mantém o split sem perder a taxa configurada para a loja.
-        if metodo == 'PIX' and valor_taxa_clubbar <= 0:
+        # Pix direto preserva o split via application_fee no token OAuth da loja.
+        if metodo == 'PIX':
             pagamento_pix = await criar_pagamento_pix_mercado_pago(
                 access_token=token,
                 external_reference=referencia,
@@ -860,35 +856,18 @@ async def pagar_mercado_pago_cliente(
                 'external_reference': checkout.external_reference,
             }
 
-        if metodo == 'PIX':
-            # Use Checkout Pro Preferences também para Pix com comissão. A
-            # aplicação Marketplace do Clubbar não tem autorização para a API
-            # Orders, que retorna 403 (UNAUTHORIZED) em produção.
-            checkout_remoto = await criar_preferencia_mercado_pago(
-                access_token=token,
-                external_reference=referencia,
-                titulo='PRODUTOS',
-                itens=itens_mp,
-                valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
-                metodo='PIX',
-                email_pagador=cliente.emailcliente,
-            )
-            checkout_url = str(
-                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
-            )
-        else:
-            checkout_remoto = await criar_preferencia_mercado_pago(
-                access_token=token,
-                external_reference=referencia,
-                titulo='PRODUTOS',
-                itens=itens_mp,
-                valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
-                metodo=payload.dsmetodopag,
-                email_pagador=cliente.emailcliente,
-            )
-            checkout_url = str(
-                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
-            )
+        checkout_remoto = await criar_preferencia_mercado_pago(
+            access_token=token,
+            external_reference=referencia,
+            titulo='PRODUTOS',
+            itens=itens_mp,
+            valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+            metodo=payload.dsmetodopag,
+            email_pagador=cliente.emailcliente,
+        )
+        checkout_url = str(
+            checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
+        )
         checkout = CheckoutMercadoPago(
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,

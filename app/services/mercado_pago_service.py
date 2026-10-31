@@ -275,12 +275,7 @@ async def criar_pagamento_pix(
     documento_pagador: str | None,
     chave_idempotencia: str,
 ) -> dict[str, Any]:
-    """Cria um PIX transparente sem comissão de marketplace.
-
-    Quando há comissão Clubbar, o chamador usa Checkout Pro com
-    ``marketplace_fee``. A integração atual do Mercado Pago recusa
-    ``application_fee`` neste endpoint para PIX (erro 2059).
-    """
+    """Cria Pix na conta OAuth do vendedor, com comissão do marketplace."""
     email = (email_pagador or "").strip().lower()
     if not email:
         raise HTTPException(409, "O e-mail do cliente é obrigatório para gerar o PIX.")
@@ -303,9 +298,7 @@ async def criar_pagamento_pix(
         },
     }
     if valor_taxa_clubbar > 0:
-        raise ValueError(
-            "PIX transparente não suporta comissão Clubbar; use Checkout Pro."
-        )
+        dados["application_fee"] = float(valor_taxa_clubbar)
     if PUBLIC_API_BASE_URL:
         dados["notification_url"] = f"{PUBLIC_API_BASE_URL}/mercado-pago/webhook"
 
