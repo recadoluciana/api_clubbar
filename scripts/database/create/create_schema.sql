@@ -1788,6 +1788,7 @@ CREATE TABLE checkout_asaas (
   vrcashbackusado DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   asaas_wallet_loja VARCHAR(100) NULL,
   asaas_wallet_clubbar VARCHAR(100) NULL,
+  dadosentrega TEXT NULL,
 
   PRIMARY KEY (checkout_asaas_id),
   UNIQUE KEY uk_checkout_asaas_checkout_id (checkout_id),
