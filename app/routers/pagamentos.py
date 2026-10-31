@@ -755,7 +755,6 @@ async def pagar_mercado_pago_cliente(
             'Cashback ainda não está disponível para Mercado Pago. Escolha Asaas ou prossiga sem usar cashback.',
         )
     try:
-        validar_publicacao_loja(db, payload.loja_id)
         loja = db.query(Loja).filter(Loja.loja_id == payload.loja_id).first()
         if not loja:
             raise HTTPException(404, 'Estabelecimento não encontrado.')

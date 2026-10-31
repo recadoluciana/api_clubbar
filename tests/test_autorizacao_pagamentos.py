@@ -56,6 +56,21 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
             )
             self.assertEqual(200, self.client.post("/reservas-ingressos", json=corpo, headers=self.cliente).status_code)
 
+    def test_mercado_pago_nao_exige_aprovacao_asaas(self):
+        self.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+            provedor_pagamento="MERCADO_PAGO", permiteentrega="N"
+        )
+        with patch("app.routers.pagamentos.validar_publicacao_loja", side_effect=AssertionError("Asaas não deve ser consultado")), patch(
+            "app.routers.pagamentos.get_carrinho", return_value=None
+        ):
+            resposta = self.client.post(
+                "/pagamentos/pagar-mercado-pago",
+                json={"cliente_id": 42, "organizacao_id": 1, "loja_id": 2},
+                headers=self.cliente,
+            )
+        self.assertEqual(400, resposta.status_code)
+        self.assertEqual("Carrinho vazio", resposta.json()["detail"])
+
     def test_status_checkout_nao_expoe_compra_de_outro_cliente(self):
         self.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(cliente_id=42)
         for headers in ({}, self.outro_cliente, self.parceiro):
