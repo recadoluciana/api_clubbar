@@ -65,6 +65,11 @@ MERCADO_PAGO_OAUTH_TEST_TOKEN = (
     os.getenv("MERCADO_PAGO_OAUTH_TEST_TOKEN", "false").strip().lower()
     in {"true", "1", "yes"}
 )
+# Pagador fictício usado somente nas requisições Pix de sandbox. Não altera
+# os dados do cliente no Clubbar nem é usado em pagamentos de produção.
+MERCADO_PAGO_TEST_PAYER_EMAIL = os.getenv(
+    "MERCADO_PAGO_TEST_PAYER_EMAIL", ""
+).strip().lower()
 if APP_ENV in {"production", "prod"} and MERCADO_PAGO_OAUTH_TEST_TOKEN:
     raise RuntimeError("OAuth de sandbox Mercado Pago não pode ser ativado em produção")
 MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()

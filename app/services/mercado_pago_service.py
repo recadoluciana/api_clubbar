@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -12,13 +13,40 @@ import httpx
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.config import APP_ENV, MERCADO_PAGO_API_BASE_URL, PUBLIC_API_BASE_URL, PUBLIC_CLIENT_BASE_URL
+from app.core.config import (
+    APP_ENV,
+    MERCADO_PAGO_API_BASE_URL,
+    MERCADO_PAGO_OAUTH_TEST_TOKEN,
+    MERCADO_PAGO_TEST_PAYER_EMAIL,
+    PUBLIC_API_BASE_URL,
+    PUBLIC_CLIENT_BASE_URL,
+)
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.models.lojamercadopago import LojaMercadoPago
 from app.services.mercado_pago_oauth_service import expira_em, renovar_tokens
 
 
 logger = logging.getLogger(__name__)
+
+
+def pix_em_sandbox() -> bool:
+    return APP_ENV not in {"production", "prod"} and MERCADO_PAGO_OAUTH_TEST_TOKEN
+
+
+def _email_pagador_pix(email_pagador: str) -> str:
+    email = (email_pagador or "").strip().lower()
+    if pix_em_sandbox():
+        email = MERCADO_PAGO_TEST_PAYER_EMAIL or email
+        if not re.fullmatch(r"test_user_[a-z0-9_]+@testuser\.com", email):
+            raise HTTPException(
+                409,
+                "PIX de teste: configure MERCADO_PAGO_TEST_PAYER_EMAIL na API "
+                "com o e-mail da conta Comprador de teste do Mercado Pago. "
+                "O cadastro do cliente no Clubbar não precisa ser alterado.",
+            )
+    if not email:
+        raise HTTPException(409, "O e-mail do cliente é obrigatório para gerar o PIX.")
+    return email
 
 
 def _ambiente() -> str:
@@ -304,9 +332,7 @@ async def criar_pagamento_pix(
     chave_idempotencia: str,
 ) -> dict[str, Any]:
     """Cria Pix na conta OAuth do vendedor, com comissão do marketplace."""
-    email = (email_pagador or "").strip().lower()
-    if not email:
-        raise HTTPException(409, "O e-mail do cliente é obrigatório para gerar o PIX.")
+    email = _email_pagador_pix(email_pagador)
     tipo_documento, numero_documento = _documento_pagador(documento_pagador)
     # O Mercado Pago exige ISO 8601 com milissegundos e offset com dois pontos,
     # por exemplo ``2026-10-27T00:30:00.000-03:00``. Além disso, PIX precisa
@@ -368,6 +394,17 @@ async def criar_pagamento_pix(
             (erro or {}).get("message") if isinstance(erro, dict) else None,
             causas,
         )
+        if pix_em_sandbox() and isinstance(causas, list) and any(
+            isinstance(causa, dict) and str(causa.get("code")) == "2034"
+            for causa in causas
+        ):
+            raise HTTPException(
+                409,
+                "PIX de teste: o Mercado Pago recusou a combinação de contas. "
+                "Confira a conta Vendedor conectada e MERCADO_PAGO_TEST_PAYER_EMAIL "
+                "da conta Comprador de teste. Comprador, vendedor e marketplace "
+                "devem ser contas de teste diferentes.",
+            )
         raise HTTPException(
             422,
             "O Mercado Pago recusou gerar este PIX. Verifique a conta recebedora e tente novamente.",

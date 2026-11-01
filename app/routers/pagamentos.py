@@ -78,11 +78,13 @@ from app.services.onboarding_parceiro_service import validar_publicacao_loja
 from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_splits_pagamento
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.services.mercado_pago_service import (
+    buscar_pagamento_por_id as buscar_pagamento_mercado_pago_por_id,
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
     criar_pagamento_pix as criar_pagamento_pix_mercado_pago,
     criar_order_checkout_pro as criar_order_checkout_pro_mercado_pago,
     criar_preferencia as criar_preferencia_mercado_pago,
     obter_token_loja as obter_token_mercado_pago_loja,
+    pix_em_sandbox,
 )
 from app.services.campanha_doacao_service import (
     obter_campanha_doacao_vigente,
@@ -853,6 +855,7 @@ async def pagar_mercado_pago_cliente(
                 'valor': float(checkout.valor),
                 'pix_copia_cola': dados_pix['qr_code'],
                 'qr_code_text': dados_pix['qr_code'],
+                'ambiente_teste': pix_em_sandbox(),
                 'expiration_date': pagamento_pix.get('date_of_expiration'),
                 'external_reference': checkout.external_reference,
             }
@@ -924,11 +927,18 @@ async def _consultar_status_checkout_mercado_pago(
     token, _ = await obter_token_mercado_pago_loja(
         db, checkout.loja_id, lojamercadopago_id=checkout.lojamercadopago_id
     )
-    pagamento = await buscar_pagamento_mercado_pago(
-        access_token=token, external_reference=checkout.external_reference
-    )
-    if not pagamento:
+    if checkout.payment_id:
+        pagamento = await buscar_pagamento_mercado_pago_por_id(
+            access_token=token, payment_id=str(checkout.payment_id)
+        )
+    else:
+        pagamento = await buscar_pagamento_mercado_pago(
+            access_token=token, external_reference=checkout.external_reference
+        )
+    if not pagamento or str(pagamento.get('status') or '').lower() != 'approved':
         return {'pagamento_id': preference_id, 'status': 'PENDENTE'}
+    if checkout.payment_id and str(pagamento.get('id') or '') != str(checkout.payment_id):
+        raise HTTPException(409, 'Identificador Mercado Pago divergente.')
     recebido = Decimal(str(pagamento.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
     esperado = Decimal(str(checkout.valor or 0)).quantize(Decimal('0.01'))
     if recebido != esperado:
