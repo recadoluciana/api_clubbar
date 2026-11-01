@@ -281,30 +281,18 @@ async def gerar_checkout_reserva_mercado_pago(
             'currency_id': 'BRL',
             'unit_price': float(reserva.vrunitario + reserva.vrtaxa),
         }]
-        if metodo == 'PIX':
-            checkout_remoto = await criar_order_checkout_pro_mercado_pago(
-                access_token=token,
-                external_reference=referencia,
-                titulo='INGRESSOS',
-                itens=itens_checkout,
-                valor_total=Decimal(str(reserva.vrtotal)),
-                valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
-                email_pagador=cliente.emailcliente,
-            )
-            checkout_url = str(checkout_remoto['checkout_url'])
-        else:
-            checkout_remoto = await criar_preferencia_mercado_pago(
-                access_token=token,
-                external_reference=referencia,
-                titulo='INGRESSOS',
-                itens=itens_checkout,
-                valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
-                metodo=metodo,
-                email_pagador=cliente.emailcliente,
-            )
-            checkout_url = str(
-                checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
-            )
+        checkout_remoto = await criar_preferencia_mercado_pago(
+            access_token=token,
+            external_reference=referencia,
+            titulo='INGRESSOS',
+            itens=itens_checkout,
+            valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
+            metodo=metodo,
+            email_pagador=cliente.emailcliente,
+        )
+        checkout_url = str(
+            checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
+        )
         checkout = CheckoutMercadoPago(
             lojamercadopago_id=conta_mp.lojamercadopago_id,
             reserva_ingresso_id=reserva_id,

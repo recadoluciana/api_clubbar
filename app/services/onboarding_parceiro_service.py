@@ -13,6 +13,8 @@ def validar_publicacao_loja(db: Session, loja_id: int) -> None:
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(status_code=404, detail='Loja nao encontrada')
+    if str(getattr(loja, 'provedor_pagamento', None) or 'ASAAS').upper() == 'MERCADO_PAGO':
+        return
     titular = db.query(TitularFinanceiro).filter(
         TitularFinanceiro.organizacao_id == loja.organizacao_id,
         TitularFinanceiro.titularfinanceiro_id == loja.titularfinanceiro_id,

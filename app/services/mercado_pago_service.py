@@ -262,6 +262,10 @@ async def criar_preferencia(
         ]
     elif metodo in {"CREDIT_CARD", "CREDITO"}:
         payment_methods["excluded_payment_methods"] = [{"id": "pix"}]
+        payment_methods["excluded_payment_types"] = [
+            {"id": tipo}
+            for tipo in ("ticket", "bank_transfer", "debit_card", "account_money", "atm")
+        ]
 
     dados: dict[str, Any] = {
         "items": itens,
@@ -269,6 +273,9 @@ async def criar_preferencia(
         "statement_descriptor": "CLUBBAR",
         "metadata": {"origem": "CLUBBAR", "tipo": titulo},
         "payment_methods": payment_methods,
+        "expiration_date_to": (
+            datetime.now(ZoneInfo("America/Sao_Paulo")) + timedelta(minutes=5)
+        ).isoformat(timespec="milliseconds"),
     }
     # Checkout Pro continua sendo uma página hospedada pelo Mercado Pago, mas
     # o e-mail válido do Clubbar evita que o cliente tenha de digitá-lo de
@@ -413,6 +420,47 @@ async def criar_pagamento_pix(
     dados_pix = ((retorno.get("point_of_interaction") or {}).get("transaction_data") or {})
     if not retorno.get("id") or not dados_pix.get("qr_code"):
         raise HTTPException(502, "Mercado Pago não retornou o QR Code PIX.")
+    return retorno
+
+
+async def criar_pagamento_cartao(
+    *, access_token: str, external_reference: str, titulo: str,
+    valor: Decimal, valor_taxa_clubbar: Decimal, card_token: str,
+    payment_method_id: str, installments: int = 1, issuer_id: str | None = None,
+    payer_email: str | None = None, payer_document: str | None = None,
+    device_id: str | None = None, chave_idempotencia: str,
+) -> dict[str, Any]:
+    """Cria cartão tokenizado no checkout transparente do Mercado Pago."""
+    if not card_token or not payment_method_id:
+        raise HTTPException(422, "Token e método do cartão são obrigatórios.")
+    dados: dict[str, Any] = {
+        "transaction_amount": float(valor), "token": card_token,
+        "description": f"Clubbar - {titulo}"[:256],
+        "installments": max(1, int(installments or 1)),
+        "payment_method_id": payment_method_id,
+        "external_reference": external_reference,
+        "payer": {"email": (payer_email or "").strip().lower()},
+    }
+    if issuer_id:
+        dados["issuer_id"] = issuer_id
+    if payer_document:
+        numero = "".join(c for c in payer_document if c.isdigit())
+        if numero:
+            dados["payer"]["identification"] = {
+                "type": "CPF" if len(numero) == 11 else "CNPJ", "number": numero,
+            }
+    if valor_taxa_clubbar > 0:
+        dados["application_fee"] = float(valor_taxa_clubbar)
+    headers = {"Authorization": f"Bearer {access_token}", "X-Idempotency-Key": chave_idempotencia, "Content-Type": "application/json"}
+    if device_id:
+        headers["X-meli-session-id"] = device_id
+    async with httpx.AsyncClient(timeout=25) as cliente:
+        resposta = await cliente.post(f"{MERCADO_PAGO_API_BASE_URL}/v1/payments", headers=headers, json=dados)
+    if resposta.is_error:
+        raise HTTPException(422, "O Mercado Pago recusou o pagamento com cartão.")
+    retorno = resposta.json()
+    if not retorno.get("id"):
+        raise HTTPException(502, "Mercado Pago não retornou o pagamento.")
     return retorno
 
 

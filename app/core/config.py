@@ -73,6 +73,8 @@ MERCADO_PAGO_TEST_PAYER_EMAIL = os.getenv(
 if APP_ENV in {"production", "prod"} and MERCADO_PAGO_OAUTH_TEST_TOKEN:
     raise RuntimeError("OAuth de sandbox Mercado Pago não pode ser ativado em produção")
 MERCADO_PAGO_WEBHOOK_SECRET = os.getenv("MERCADO_PAGO_WEBHOOK_SECRET", "").strip()
+if APP_ENV in {"production", "prod"} and not MERCADO_PAGO_WEBHOOK_SECRET:
+    raise RuntimeError("MERCADO_PAGO_WEBHOOK_SECRET é obrigatório em produção")
 MERCADO_PAGO_API_BASE_URL = (
     os.getenv("MERCADO_PAGO_API_BASE_URL", "https://api.mercadopago.com")
     .strip()

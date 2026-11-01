@@ -81,6 +81,7 @@ from app.services.mercado_pago_service import (
     buscar_pagamento_por_id as buscar_pagamento_mercado_pago_por_id,
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
     criar_pagamento_pix as criar_pagamento_pix_mercado_pago,
+    criar_pagamento_cartao as criar_pagamento_cartao_mercado_pago,
     criar_order_checkout_pro as criar_order_checkout_pro_mercado_pago,
     criar_preferencia as criar_preferencia_mercado_pago,
     obter_token_loja as obter_token_mercado_pago_loja,
@@ -859,6 +860,30 @@ async def pagar_mercado_pago_cliente(
                 'expiration_date': pagamento_pix.get('date_of_expiration'),
                 'external_reference': checkout.external_reference,
             }
+
+        if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.card_token:
+            pagamento_cartao = await criar_pagamento_cartao_mercado_pago(
+                access_token=token, external_reference=referencia, titulo='PRODUTOS',
+                valor=Decimal(str(valor_total)), valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                card_token=payload.card_token, payment_method_id=payload.payment_method_id or '',
+                installments=payload.installments or 1, issuer_id=payload.issuer_id,
+                payer_email=payload.payer_email or cliente.emailcliente,
+                payer_document=payload.payer_document or cliente.nrcpfcliente,
+                device_id=payload.device_id, chave_idempotencia=payload.idempotency_key or str(uuid.uuid4()),
+            )
+            checkout = CheckoutMercadoPago(
+                lojamercadopago_id=conta_mp.lojamercadopago_id, carrinho_id=carrinho_id,
+                cliente_id=payload.cliente_id, loja_id=payload.loja_id,
+                preference_id=str(pagamento_cartao['id']), payment_id=str(pagamento_cartao['id']),
+                external_reference=referencia, status=str(pagamento_cartao.get('status') or 'PENDING').upper(),
+                metodo_solicitado=payload.dsmetodopag, valor=valor_total,
+                vrtaxaclubbar=valor_taxa_clubbar,
+                dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
+            )
+            db.add(checkout); db.commit()
+            return {'ok': True, 'gateway': 'MERCADO_PAGO', 'pagamento_id': checkout.payment_id,
+                    'status': checkout.status, 'valor_cobrado': float(checkout.valor),
+                    'external_reference': checkout.external_reference}
 
         checkout_remoto = await criar_preferencia_mercado_pago(
             access_token=token,

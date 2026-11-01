@@ -44,6 +44,9 @@ class PagarNovoIn(BaseModel):
 
     # Mercado Pago Cartão
     card_token: Optional[str] = None
+    payer_email: Optional[str] = None
+    payer_document: Optional[str] = None
+    payer_document_type: Optional[str] = None
     payment_method_id: Optional[str] = None
     issuer_id: Optional[str] = None
     installments: Optional[int] = 1
