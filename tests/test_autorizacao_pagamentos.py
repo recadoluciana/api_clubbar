@@ -71,6 +71,17 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
         self.assertEqual(400, resposta.status_code)
         self.assertEqual("Carrinho vazio", resposta.json()["detail"])
 
+    def test_mercado_pago_cartao_sem_token_nao_cria_preferencia(self):
+        with patch("app.routers.pagamentos.criar_preferencia_mercado_pago") as preferencia:
+            resposta = self.client.post(
+                "/pagamentos/pagar-mercado-pago",
+                json={"cliente_id": 42, "organizacao_id": 1, "loja_id": 2, "dsmetodopag": "CREDIT_CARD"},
+                headers=self.cliente,
+            )
+        self.assertEqual(422, resposta.status_code)
+        self.assertIn("Token", resposta.json()["detail"])
+        preferencia.assert_not_called()
+
     def test_status_checkout_nao_expoe_compra_de_outro_cliente(self):
         self.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(cliente_id=42)
         for headers in ({}, self.outro_cliente, self.parceiro):

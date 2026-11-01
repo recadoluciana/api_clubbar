@@ -760,6 +760,14 @@ async def pagar_mercado_pago_cliente(
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     if payload.usuario_id is not None or payload.origem_checkout != 'CLIENT':
         raise HTTPException(403, detail='Origem de pagamento inválida')
+    metodo = str(payload.dsmetodopag or '').upper()
+    if metodo not in {'PIX', 'CREDIT_CARD', 'CREDITO'}:
+        raise HTTPException(422, 'Método de pagamento Mercado Pago não suportado.')
+    if metodo in {'CREDIT_CARD', 'CREDITO'} and (
+        not (payload.card_token or '').strip()
+        or not (payload.payment_method_id or '').strip()
+    ):
+        raise HTTPException(422, 'Token e método do cartão são obrigatórios. Atualize o aplicativo e tente novamente.')
     if payload.usar_cashback:
         raise HTTPException(
             409,
@@ -808,18 +816,6 @@ async def pagar_mercado_pago_cliente(
 
         token, conta_mp = await obter_token_mercado_pago_loja(db, payload.loja_id)
         referencia = f'MP-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
-        itens_mp = [
-            {
-                'id': str(item.get('externalReference') or index),
-                'title': str(item.get('name') or 'Compra Clubbar')[:256],
-                'description': str(item.get('description') or '')[:256],
-                'quantity': int(item.get('quantity') or 1),
-                'currency_id': 'BRL',
-                'unit_price': float(item.get('value') or 0),
-            }
-            for index, item in enumerate(itens_checkout, start=1)
-        ]
-        metodo = str(payload.dsmetodopag or '').upper()
         # Pix direto preserva o split via application_fee no token OAuth da loja.
         if metodo == 'PIX':
             pagamento_pix = await criar_pagamento_pix_mercado_pago(
@@ -893,44 +889,6 @@ async def pagar_mercado_pago_cliente(
                     'status': checkout.status, 'valor_cobrado': float(checkout.valor),
                     'external_reference': checkout.external_reference}
 
-        checkout_remoto = await criar_preferencia_mercado_pago(
-            access_token=token,
-            external_reference=referencia,
-            titulo='PRODUTOS',
-            itens=itens_mp,
-            valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
-            metodo=payload.dsmetodopag,
-            email_pagador=cliente.emailcliente,
-        )
-        checkout_url = str(
-            checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
-        )
-        checkout = CheckoutMercadoPago(
-            lojamercadopago_id=conta_mp.lojamercadopago_id,
-            carrinho_id=carrinho_id,
-            cliente_id=payload.cliente_id,
-            loja_id=payload.loja_id,
-            # O campo é a chave interna de consulta da preferência do checkout.
-            preference_id=str(checkout_remoto['id']),
-            external_reference=referencia,
-            status='PENDING',
-            checkout_url=checkout_url,
-            metodo_solicitado=payload.dsmetodopag,
-            valor=valor_total,
-            vrtaxaclubbar=valor_taxa_clubbar,
-            dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
-        )
-        db.add(checkout)
-        db.commit()
-        return {
-            'ok': True,
-            'gateway': 'MERCADO_PAGO',
-            'pagamento_id': checkout.preference_id,
-            'checkout_url': checkout.checkout_url,
-            'status': checkout.status,
-            'valor_cobrado': float(checkout.valor),
-            'external_reference': checkout.external_reference,
-        }
     except HTTPException:
         db.rollback()
         raise
