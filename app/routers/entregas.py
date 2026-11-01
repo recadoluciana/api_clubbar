@@ -22,6 +22,7 @@ from app.models.usuario import Usuario
 from app.models.evento import Evento
 from app.models.eventoatracao import EventoAtracao
 from app.models.eventolote import EventoLote
+from app.models.eventoloteglobal import EventoLoteGlobal
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventosetor import EventoSetor
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
@@ -679,9 +680,10 @@ def listar_itens_nao_entregues(
         .outerjoin(Estado, Estado.estado_id == Loja.estado_id)
         .outerjoin(PedidoEntrega, PedidoEntrega.venda_id == Venda.venda_id)
         .outerjoin(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
+        .outerjoin(EventoLoteGlobal, EventoLoteGlobal.loteglobal_id == EventoLote.loteglobal_id)
         .outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id)
         .outerjoin(EventoLotePreco, EventoLotePreco.lotepreco_id == ItVenda.lotepreco_id)
-        .outerjoin(Evento, Evento.evento_id == EventoLote.evento_id)
+        .outerjoin(Evento, Evento.evento_id == EventoLoteGlobal.evento_id)
         .filter(Venda.cliente_id == cliente_id)
         .filter(
             or_(
@@ -722,8 +724,8 @@ def listar_itens_nao_entregues(
             Evento.dsendlocevento,
             Cidade.nmcidade.label("nmcidadeloja"),
             Estado.sgestado.label("sgestadoloja"),
-            EventoLote.nmlote.label("nmlote"),
-            EventoLote.nrlote.label("nrlote"),
+            EventoLoteGlobal.nmlote.label("nmlote"),
+            EventoLoteGlobal.nrlote.label("nrlote"),
         )
     )
 
