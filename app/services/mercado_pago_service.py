@@ -264,7 +264,7 @@ async def criar_preferencia(
         payment_methods["excluded_payment_methods"] = [{"id": "pix"}]
         payment_methods["excluded_payment_types"] = [
             {"id": tipo}
-            for tipo in ("ticket", "bank_transfer", "debit_card", "account_money", "atm")
+            for tipo in ("ticket", "bank_transfer", "debit_card", "account_money")
         ]
 
     dados: dict[str, Any] = {
@@ -273,6 +273,9 @@ async def criar_preferencia(
         "statement_descriptor": "CLUBBAR",
         "metadata": {"origem": "CLUBBAR", "tipo": titulo},
         "payment_methods": payment_methods,
+        "expiration_date_from": datetime.now(
+            ZoneInfo("America/Sao_Paulo")
+        ).isoformat(timespec="milliseconds"),
         "expiration_date_to": (
             datetime.now(ZoneInfo("America/Sao_Paulo")) + timedelta(minutes=5)
         ).isoformat(timespec="milliseconds"),
@@ -307,6 +310,16 @@ async def criar_preferencia(
             json=dados,
         )
     if resposta.is_error:
+        try:
+            detalhe = resposta.json()
+        except ValueError:
+            detalhe = {"body": resposta.text[:500]}
+        logger.warning(
+            "Mercado Pago recusou preferência: referencia=%s status=%s detalhe=%s",
+            external_reference,
+            resposta.status_code,
+            detalhe,
+        )
         raise HTTPException(502, "Não foi possível criar o checkout Mercado Pago.")
     retorno = resposta.json()
     if not retorno.get("id") or not (retorno.get("init_point") or retorno.get("sandbox_init_point")):

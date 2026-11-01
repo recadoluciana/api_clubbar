@@ -723,6 +723,7 @@ async def consultar_provedor_pagamento_loja(
         raise HTTPException(404, 'Estabelecimento não encontrado ou indisponível.')
     provedor = str(getattr(loja, 'provedor_pagamento', None) or 'ASAAS').upper()
     mercado_pago_pronto = False
+    configuracao = None
     if provedor == 'MERCADO_PAGO':
         configuracao = db.query(LojaMercadoPago).filter(
             LojaMercadoPago.loja_id == loja_id,
@@ -734,7 +735,14 @@ async def consultar_provedor_pagamento_loja(
             # Nunca direciona o cliente a uma conta incompleta. O parceiro
             # precisa concluir OAuth antes de trocar o provedor efetivo.
             provedor = 'ASAAS'
-    return {'provedor_pagamento': provedor, 'mercado_pago_pronto': mercado_pago_pronto}
+    public_key = None
+    if provedor == 'MERCADO_PAGO' and configuracao:
+        public_key = configuracao.public_key
+    return {
+        'provedor_pagamento': provedor,
+        'mercado_pago_pronto': mercado_pago_pronto,
+        'mercado_pago_public_key': public_key,
+    }
 
 
 @router.post('/pagar-mercado-pago')
