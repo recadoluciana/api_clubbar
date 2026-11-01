@@ -70,23 +70,37 @@ async def receber_webhook_mercado_pago(request: Request):
 
     db: Session = SessionLocal()
     try:
-        configuracao = db.query(LojaMercadoPago).filter(
+        configuracoes = db.query(LojaMercadoPago).filter(
             LojaMercadoPago.mercadopago_user_id == user_id,
-            LojaMercadoPago.statusintegracao == 'ATIVA',
-        ).first()
-        if not configuracao:
+        ).all()
+        if not configuracoes:
             return {'ok': True, 'ignorado': True}
-        token, _ = await obter_token_loja(db, int(configuracao.loja_id))
-        pagamento = await buscar_pagamento_por_id(access_token=token, payment_id=payment_id)
-        if not pagamento or str(pagamento.get('status') or '').lower() != 'approved':
-            return {'ok': True, 'pendente': True}
-        referencia = str(pagamento.get('external_reference') or '')
-        checkout = db.query(CheckoutMercadoPago).filter(
-            CheckoutMercadoPago.external_reference == referencia,
-            CheckoutMercadoPago.loja_id == configuracao.loja_id,
-        ).with_for_update().first()
+        checkout = None
+        ultimo_erro = None
+        pagamento = None
+        for configuracao in configuracoes:
+            try:
+                token, _ = await obter_token_loja(db, int(configuracao.loja_id), int(configuracao.lojamercadopago_id))
+                pagamento = await buscar_pagamento_por_id(access_token=token, payment_id=payment_id)
+            except HTTPException as erro:
+                ultimo_erro = erro
+                continue
+            if not pagamento:
+                continue
+            referencia = str(pagamento.get('external_reference') or '')
+            checkout = db.query(CheckoutMercadoPago).filter(
+                CheckoutMercadoPago.external_reference == referencia,
+                CheckoutMercadoPago.loja_id == configuracao.loja_id,
+                CheckoutMercadoPago.lojamercadopago_id == configuracao.lojamercadopago_id,
+            ).with_for_update().first()
+            if checkout:
+                break
         if not checkout:
+            if ultimo_erro:
+                raise ultimo_erro
             return {'ok': True, 'ignorado': True}
+        if str(pagamento.get('status') or '').lower() != 'approved':
+            return {'ok': True, 'pendente': True}
         recebido = Decimal(str(pagamento.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
         esperado = Decimal(str(checkout.valor or 0)).quantize(Decimal('0.01'))
         if recebido != esperado:

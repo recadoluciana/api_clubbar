@@ -13,6 +13,7 @@ class PagVenda(Base):
     pagvenda_id = Column(BigInteger, primary_key=True, autoincrement=True)
 
     venda_id = Column(BigInteger, ForeignKey("venda.venda_id", ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
+    lojamercadopago_id = Column(BigInteger, ForeignKey("lojamercadopago.lojamercadopago_id"), nullable=True, index=True)
 
     dsmetodopag = Column(
         String(40),

@@ -1366,6 +1366,12 @@ def garantir_tabela_identidade_social_cliente() -> None:
 # As verificações de esquema abaixo são compatíveis com instância única, mas
 # algumas delas também atualizam dados legados. Em réplicas, executá-las ao
 # mesmo tempo poderia causar deadlock no MySQL durante uma inicialização.
+@app.on_event("startup")
+def garantir_confirmacao_mercado_pago():
+    from app.models.lojamercadopago import LojaMercadoPagoPendente
+    LojaMercadoPagoPendente.__table__.create(bind=engine, checkfirst=True)
+
+
 _startup_handlers_originais = list(app.router.on_startup)
 app.router.on_startup.clear()
 

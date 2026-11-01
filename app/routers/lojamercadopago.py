@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import secrets
+import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import case
 
 from app.core.config import APP_ENV, PUBLIC_PARTNER_BASE_URL
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial, hash_token_webhook
@@ -14,9 +16,11 @@ from app.core.permissoes_loja import validar_mutacao_loja
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
-from app.models.lojamercadopago import LojaMercadoPago
+from app.models.checkout_mercadopago import CheckoutMercadoPago
+from app.models.lojamercadopago import LojaMercadoPago, LojaMercadoPagoPendente
 from app.schemas.lojamercadopago import (
     LojaMercadoPagoOut,
+    MercadoPagoConfirmacaoIn,
     MercadoPagoAutorizacaoOut,
     ProvedorPagamentoIn,
 )
@@ -52,7 +56,7 @@ def _config(db: Session, loja_id: int) -> LojaMercadoPago | None:
     return db.query(LojaMercadoPago).filter(
         LojaMercadoPago.loja_id == loja_id,
         LojaMercadoPago.ambiente == APP_ENV,
-    ).first()
+    ).order_by(case((LojaMercadoPago.statusintegracao == "ATIVA", 0), else_=1), LojaMercadoPago.lojamercadopago_id.desc()).first()
 
 
 def _saida(loja: Loja, config: LojaMercadoPago | None) -> dict:
@@ -81,7 +85,16 @@ def consultar_mercado_pago(
     db: Session = Depends(get_db),
 ):
     loja = _loja_autorizada(db, loja_id, usuario)
-    return _saida(loja, _config(db, loja_id))
+    saida = _saida(loja, _config(db, loja_id))
+    pendente = _pendente(db, loja_id)
+    if pendente and pendente.expira_em > datetime.now():
+        dados = json.loads(descriptografar_credencial(pendente.credenciais))
+        saida["conta_pendente"] = {
+            "confirmacao_id": pendente.confirmacao_id,
+            "nome": dados["nome"] or "Nome indisponivel",
+            "user_id": str(dados["user_id"]),
+        }
+    return saida
 
 
 @router.post(
@@ -106,7 +119,9 @@ def iniciar_autorizacao_mercado_pago(
     state = secrets.token_urlsafe(32)
     config.oauth_state_hash = hash_token_webhook(state)
     config.oauth_state_expira_em = datetime.now() + timedelta(minutes=10)
-    config.statusintegracao = "PENDENTE"
+    pendente = _pendente(db, loja_id)
+    if pendente:
+        db.delete(pendente)
     db.commit()
     return {"authorization_url": montar_url_autorizacao(state=state)}
 
@@ -125,6 +140,7 @@ async def concluir_autorizacao_mercado_pago(
         return RedirectResponse(f"{destino}?{urlencode(parametros)}")
 
     config = db.query(LojaMercadoPago).filter(
+        LojaMercadoPago.ambiente == APP_ENV,
         LojaMercadoPago.oauth_state_hash == hash_token_webhook(state),
         LojaMercadoPago.oauth_state_expira_em >= datetime.now(),
     ).first()
@@ -134,27 +150,107 @@ async def concluir_autorizacao_mercado_pago(
 
     try:
         tokens = await trocar_codigo_por_tokens(code=code)
-        config.mercadopago_user_id = str(tokens["user_id"])
-        config.mercadopago_nome = await obter_nome_usuario(
-            access_token=str(tokens["access_token"]),
-            user_id=str(tokens["user_id"]),
+        tokens["nome"] = await obter_nome_usuario(
+            access_token=str(tokens["access_token"]), user_id=str(tokens["user_id"])
         )
-        config.public_key = str(tokens.get("public_key") or "") or None
-        config.access_token_criptografado = criptografar_credencial(str(tokens["access_token"]))
-        refresh_token = str(tokens.get("refresh_token") or "")
-        config.refresh_token_criptografado = (
-            criptografar_credencial(refresh_token) if refresh_token else None
-        )
-        config.token_expira_em = expira_em(tokens)
+        validade = expira_em(tokens)
+        tokens["validade"] = validade.isoformat() if validade else None
+        pendente = _pendente(db, config.loja_id)
+        if pendente:
+            db.delete(pendente)
+            db.flush()
+        db.add(LojaMercadoPagoPendente(
+            loja_id=config.loja_id, ambiente=APP_ENV,
+            confirmacao_id=secrets.token_urlsafe(32),
+            credenciais=criptografar_credencial(json.dumps(tokens)),
+            expira_em=datetime.now() + timedelta(minutes=10),
+        ))
         config.oauth_state_hash = None
         config.oauth_state_expira_em = None
-        config.statusintegracao = "ATIVA"
         db.commit()
-        parametros["status"] = "conectada"
+        return HTMLResponse("""<!doctype html><html lang="pt-BR"><meta charset="utf-8">
+<title>Confirmar conta Mercado Pago</title><body>
+<p>Volte a tela de Recebimentos do Clubbar Partner para confirmar a conta autorizada.</p>
+<script>window.close();</script></body></html>""")
     except HTTPException:
         db.rollback()
         parametros["status"] = "erro_autorizacao"
     return RedirectResponse(f"{destino}?{urlencode(parametros)}")
+
+
+def _pendente(db, loja_id):
+    return db.query(LojaMercadoPagoPendente).filter_by(loja_id=loja_id, ambiente=APP_ENV).first()
+
+
+@router.post("/lojas/{loja_id}/mercado-pago/confirmacao", response_model=LojaMercadoPagoOut)
+def confirmar_conta_mercado_pago(
+    loja_id: int, payload: MercadoPagoConfirmacaoIn,
+    usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db),
+):
+    loja = _loja_autorizada(db, loja_id, usuario)
+    pendente = db.query(LojaMercadoPagoPendente).filter_by(
+        loja_id=loja_id, ambiente=APP_ENV
+    ).with_for_update().first()
+    if not pendente or not secrets.compare_digest(pendente.confirmacao_id, payload.confirmacao_id):
+        raise HTTPException(409, "Autorizacao indisponivel. Conecte novamente.")
+    if pendente.expira_em <= datetime.now():
+        raise HTTPException(409, "Autorizacao expirada. Conecte novamente.")
+    config = _config(db, loja_id)
+    if not config:
+        raise HTTPException(409, "Conecte novamente a conta Mercado Pago.")
+    if payload.confirmar:
+        dados = json.loads(descriptografar_credencial(pendente.credenciais))
+        # As credenciais de contas antigas continuam vinculadas às vendas.
+        db.query(Loja).filter(Loja.loja_id == loja_id).with_for_update().first()
+        atual = config
+        existente = db.query(LojaMercadoPago).filter_by(
+            loja_id=loja_id, ambiente=APP_ENV,
+            mercadopago_user_id=str(dados["user_id"]),
+        ).first()
+        if existente:
+            config = existente
+        elif config.mercadopago_user_id:
+            config = LojaMercadoPago(loja_id=loja_id, organizacao_id=loja.organizacao_id, ambiente=APP_ENV)
+            db.add(config)
+        if atual is not config and atual.statusintegracao == "ATIVA":
+            atual.statusintegracao = "INATIVA"
+        config.mercadopago_user_id = str(dados["user_id"])
+        config.mercadopago_nome = dados["nome"]
+        config.public_key = dados.get("public_key")
+        config.access_token_criptografado = criptografar_credencial(dados["access_token"])
+        config.refresh_token_criptografado = (
+            criptografar_credencial(dados["refresh_token"]) if dados.get("refresh_token") else None
+        )
+        config.token_expira_em = datetime.fromisoformat(dados["validade"]) if dados.get("validade") else None
+        config.statusintegracao = "ATIVA"
+    db.delete(pendente)
+    db.commit()
+    return _saida(loja, config)
+
+
+@router.post("/lojas/{loja_id}/mercado-pago/desconectar", response_model=LojaMercadoPagoOut)
+def desconectar_mercado_pago(
+    loja_id: int, usuario: dict = Depends(get_usuario_logado),
+    db: Session = Depends(get_db),
+):
+    loja = _loja_autorizada(db, loja_id, usuario)
+    config = _config(db, loja_id)
+    pendente = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.loja_id == loja_id,
+        CheckoutMercadoPago.venda_id.is_(None),
+        CheckoutMercadoPago.status.notin_(["CANCELLED", "CANCELED", "EXPIRED", "REJECTED", "REFUNDED"]),
+    ).first()
+    if pendente:
+        raise HTTPException(409, "Existem pagamentos pendentes nesta loja. Aguarde a conclusão ou o cancelamento antes de desconectar.")
+    autorizacao = _pendente(db, loja_id)
+    if autorizacao:
+        db.delete(autorizacao)
+    if config:
+        config.statusintegracao = "INATIVA"
+        config.oauth_state_hash = None
+        config.oauth_state_expira_em = None
+    db.commit()
+    return _saida(loja, config)
 
 
 @router.put("/lojas/{loja_id}/provedor-pagamento", response_model=LojaMercadoPagoOut)

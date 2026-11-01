@@ -768,7 +768,8 @@ CREATE TABLE lojamercadopago (
   statusintegracao VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
   dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtalteracao DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_lojamercadopago_loja_ambiente (loja_id, ambiente),
+  KEY idx_lojamercadopago_loja_ambiente (loja_id, ambiente),
+  UNIQUE KEY uq_lojamercadopago_loja_ambiente_usuario (loja_id, ambiente, mercadopago_user_id),
   UNIQUE KEY uq_lojamercadopago_oauth_state (oauth_state_hash),
   KEY idx_lojamercadopago_organizacao (organizacao_id),
   KEY idx_lojamercadopago_user (mercadopago_user_id),
@@ -1348,6 +1349,7 @@ ALTER TABLE venda ADD CONSTRAINT fk_venda_reserva_ingresso
 CREATE TABLE pagvenda (
   pagvenda_id           BIGINT AUTO_INCREMENT PRIMARY KEY,
   venda_id              BIGINT NOT NULL,
+  lojamercadopago_id    BIGINT NULL,
   dsmetodopag           VARCHAR(40) NOT NULL,
   vrpagvenda            DECIMAL(10,2) NOT NULL,
   sitpagvenda           ENUM('PENDENTE','PAGO','CANCELADO') NOT NULL DEFAULT 'PENDENTE',
@@ -1356,6 +1358,8 @@ CREATE TABLE pagvenda (
   dtcriacao             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu              DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
+  KEY idx_pagvenda_lojamercadopago (lojamercadopago_id),
+  CONSTRAINT fk_pagvenda_lojamercadopago FOREIGN KEY (lojamercadopago_id) REFERENCES lojamercadopago(lojamercadopago_id),
   CONSTRAINT fk_pagamento_venda
     FOREIGN KEY (venda_id) REFERENCES venda(venda_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT
@@ -2430,6 +2434,7 @@ CREATE TABLE checkout_mercadopago (
   reserva_ingresso_id bigint DEFAULT NULL,
   cliente_id bigint NOT NULL,
   loja_id bigint NOT NULL,
+  lojamercadopago_id bigint DEFAULT NULL,
   venda_id bigint DEFAULT NULL,
   preference_id varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL,
   payment_id varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -2453,6 +2458,8 @@ CREATE TABLE checkout_mercadopago (
   KEY ix_checkout_mercadopago_carrinho_id (carrinho_id),
   KEY ix_checkout_mercadopago_cliente_id (cliente_id),
   KEY ix_checkout_mercadopago_loja_id (loja_id),
+  KEY idx_checkout_mp_lojamercadopago (lojamercadopago_id),
+  CONSTRAINT fk_checkout_mp_lojamercadopago FOREIGN KEY (lojamercadopago_id) REFERENCES lojamercadopago (lojamercadopago_id),
   CONSTRAINT checkout_mercadopago_ibfk_1 FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso (reserva_ingresso_id),
   CONSTRAINT checkout_mercadopago_ibfk_2 FOREIGN KEY (venda_id) REFERENCES venda (venda_id)
 ) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -2597,3 +2604,12 @@ CREATE TABLE IF NOT EXISTS cancelamentoparceria (
   UNIQUE KEY uq_cancelamento_parceria_loja (loja_id),
   CONSTRAINT fk_cancelamento_parceria_loja FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE lojamercadopagopendente (
+  loja_id BIGINT NOT NULL,
+  ambiente VARCHAR(20) NOT NULL,
+  confirmacao_id VARCHAR(64) NOT NULL,
+  credenciais TEXT NOT NULL,
+  expira_em DATETIME NOT NULL,
+  PRIMARY KEY (loja_id, ambiente)
+);

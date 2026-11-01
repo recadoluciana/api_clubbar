@@ -15,8 +15,14 @@ class LojaMercadoPagoOut(BaseModel):
     mercadopago_nome: str | None = None
     statusintegracao: str
     conectada: bool
+    conta_pendente: dict[str, str] | None = None
     provedor_pagamento: str
 
 
 class MercadoPagoAutorizacaoOut(BaseModel):
     authorization_url: str
+
+
+class MercadoPagoConfirmacaoIn(BaseModel):
+    confirmacao_id: str
+    confirmar: bool

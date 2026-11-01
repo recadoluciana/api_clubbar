@@ -27,12 +27,16 @@ def _ambiente() -> str:
     return APP_ENV
 
 
-async def obter_token_loja(db: Session, loja_id: int) -> tuple[str, LojaMercadoPago]:
-    config = db.query(LojaMercadoPago).filter(
+async def obter_token_loja(db: Session, loja_id: int, lojamercadopago_id: int | None = None) -> tuple[str, LojaMercadoPago]:
+    consulta = db.query(LojaMercadoPago).filter(
         LojaMercadoPago.loja_id == loja_id,
         LojaMercadoPago.ambiente == _ambiente(),
-        LojaMercadoPago.statusintegracao == "ATIVA",
-    ).first()
+    )
+    if lojamercadopago_id is None:
+        consulta = consulta.filter(LojaMercadoPago.statusintegracao == "ATIVA")
+    else:
+        consulta = consulta.filter(LojaMercadoPago.lojamercadopago_id == lojamercadopago_id)
+    config = consulta.first()
     if not config or not config.access_token_criptografado:
         raise HTTPException(409, "A conta Mercado Pago do estabelecimento ainda não está conectada.")
 
@@ -49,7 +53,6 @@ async def obter_token_loja(db: Session, loja_id: int) -> tuple[str, LojaMercadoP
         if novo_refresh:
             config.refresh_token_criptografado = criptografar_credencial(novo_refresh)
         config.token_expira_em = expira_em(tokens)
-        config.statusintegracao = "ATIVA"
         db.commit()
     return descriptografar_credencial(config.access_token_criptografado), config
 
@@ -69,6 +72,31 @@ def _url_retorno(acao: str, external_reference: str) -> str | None:
         }
     )
     return f"{PUBLIC_CLIENT_BASE_URL}/?{parametros}"
+
+
+async def estornar_pagamento_mercado_pago(*, access_token: str, payment_id: str, venda_id: int) -> dict:
+    """Solicita estorno integral usando sempre a conta que recebeu a venda."""
+    chave = str(uuid.uuid5(uuid.NAMESPACE_URL, f"clubbar:estorno:{venda_id}:{payment_id}"))
+    try:
+        async with httpx.AsyncClient(timeout=25) as cliente:
+            resposta = await cliente.post(
+                f"{MERCADO_PAGO_API_BASE_URL}/v1/payments/{payment_id}/refunds",
+                headers={"Authorization": f"Bearer {access_token}", "X-Idempotency-Key": chave},
+                json={},
+            )
+    except httpx.RequestError as erro:
+        raise HTTPException(502, "Não foi possível confirmar o estorno no Mercado Pago; procure o suporte.") from erro
+    if resposta.status_code >= 500:
+        raise HTTPException(502, "O Mercado Pago ainda não confirmou o estorno; procure o suporte.")
+    if resposta.status_code >= 400:
+        raise HTTPException(409, "O Mercado Pago recusou o estorno. Verifique a conta que recebeu a venda.")
+    try:
+        resultado = resposta.json()
+    except ValueError as erro:
+        raise HTTPException(502, "Resposta de estorno inválida; procure o suporte.") from erro
+    if str(resultado.get("status") or "").lower() != "approved":
+        raise HTTPException(503, "O estorno ainda não foi confirmado pelo Mercado Pago; procure o suporte.")
+    return resultado
 
 
 def _valor_monetario(valor: Any) -> str:

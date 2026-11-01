@@ -29,6 +29,7 @@ from app.models.politicacompra import PoliticaCompra
 from app.models.pagvenda import PagVenda
 from app.models.pedidoentrega import PedidoEntrega
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
+from app.services.mercado_pago_service import obter_token_loja, estornar_pagamento_mercado_pago
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
 from app.services.cashback_service import cancelar_cashback_da_venda
 from app.services.localidade_entrega_service import nome_localidade_entrega
@@ -1271,31 +1272,36 @@ async def cancelar_transacao(
     if _exige_estorno_asaas(valor_reembolso):
         payment_id = str(pagamento.idtransacaopagvenda or "").strip()
         if not payment_id:
-            raise HTTPException(status_code=503, detail="Pagamento Asaas indisponível para estorno.")
-        api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
-        pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
-        saldo_disponivel = _saldo_disponivel_para_estorno(
-            pagamento_asaas,
-            valor_reembolso,
-        )
-        if saldo_disponivel + 0.01 < valor_reembolso:
-            raise HTTPException(
-                status_code=409,
-                detail="Esta transação possui um estorno anterior e não pode ser cancelada integralmente.",
-            )
-        taxas = sum(float(item.vrtaxaitvenda or 0) for item in itens_ativos)
-        split_refunds = _estornos_do_split_clubbar(pagamento_asaas, taxas)
+            raise HTTPException(status_code=503, detail="Pagamento indisponível para estorno.")
+        provedor = str(pagamento.provedor or "ASAAS").upper()
+        if provedor == "MERCADO_PAGO":
+            if not pagamento.lojamercadopago_id:
+                raise HTTPException(409, "A conta original desta venda não foi identificada. Procure o suporte antes de cancelar.")
+            api_key_estorno, _ = await obter_token_loja(db, venda.loja_id, pagamento.lojamercadopago_id)
+        elif provedor == "ASAAS":
+            api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
+            pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)
+            saldo_disponivel = _saldo_disponivel_para_estorno(pagamento_asaas, valor_reembolso)
+            if saldo_disponivel + 0.01 < valor_reembolso:
+                raise HTTPException(409, "Esta transação possui um estorno anterior e não pode ser cancelada integralmente.")
+            taxas = sum(float(item.vrtaxaitvenda or 0) for item in itens_ativos)
+            split_refunds = _estornos_do_split_clubbar(pagamento_asaas, taxas)
+        else:
+            raise HTTPException(409, "Estorno indisponível para o provedor deste pagamento.")
         for item in itens_ativos:
             item.sititvenda = "CANCELAMENTO_SOLICITADO"
         db.commit()
         try:
-            estorno = await estornar_pagamento_asaas(
-                payment_id=payment_id,
-                valor=valor_reembolso,
-                descricao=f"Cancelamento transação Clubbar venda {venda_id}",
-                api_key=api_key_estorno,
-                split_refunds=split_refunds,
-            )
+            if provedor == "MERCADO_PAGO":
+                estorno = await estornar_pagamento_mercado_pago(access_token=api_key_estorno, payment_id=payment_id, venda_id=venda_id)
+            else:
+                estorno = await estornar_pagamento_asaas(
+                    payment_id=payment_id,
+                    valor=valor_reembolso,
+                    descricao=f"Cancelamento transação Clubbar venda {venda_id}",
+                    api_key=api_key_estorno,
+                    split_refunds=split_refunds,
+                )
         except HTTPException as exc:
             db.rollback()
             if exc.status_code < 500:

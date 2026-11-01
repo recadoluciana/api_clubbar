@@ -90,7 +90,7 @@ def finalizar_reserva_paga(
     checkout_referencia = (
         checkout.checkout_id if gateway.upper() == "ASAAS" else checkout.preference_id
     )
-    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=reserva.vrtotal, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor=gateway.upper(), reference_id=checkout.external_reference, checkout_id=checkout_referencia)
+    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=reserva.vrtotal, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor=gateway.upper(), reference_id=checkout.external_reference, checkout_id=checkout_referencia, lojamercadopago_id=getattr(checkout, 'lojamercadopago_id', None) if gateway.upper() == 'MERCADO_PAGO' else None)
     db.add(pag)
     db.flush()
     set_venda_como_paga(db, venda_id=venda.venda_id, gateway=gateway.upper(), payload=pagamento, finalizar_carrinho=False)

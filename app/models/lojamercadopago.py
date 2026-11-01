@@ -33,5 +33,14 @@ class LojaMercadoPago(Base):
     dtalteracao = Column(DateTime, nullable=True, onupdate=func.current_timestamp())
 
     __table_args__ = (
-        UniqueConstraint("loja_id", "ambiente", name="uq_lojamercadopago_loja_ambiente"),
+        UniqueConstraint("loja_id", "ambiente", "mercadopago_user_id", name="uq_lojamercadopago_loja_ambiente_usuario"),
     )
+
+
+class LojaMercadoPagoPendente(Base):
+    __tablename__ = "lojamercadopagopendente"
+    loja_id = Column(BigInteger, primary_key=True)
+    ambiente = Column(String(20), primary_key=True)
+    confirmacao_id = Column(String(64), nullable=False)
+    credenciais = Column(Text, nullable=False)
+    expira_em = Column(DateTime, nullable=False)

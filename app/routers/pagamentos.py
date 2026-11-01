@@ -795,7 +795,7 @@ async def pagar_mercado_pago_cliente(
             CheckoutMercadoPago.status.in_(['PENDING', 'IN_PROCESS']),
         ).update({'status': 'CANCELLED'}, synchronize_session=False)
 
-        token, _ = await obter_token_mercado_pago_loja(db, payload.loja_id)
+        token, conta_mp = await obter_token_mercado_pago_loja(db, payload.loja_id)
         referencia = f'MP-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
         itens_mp = [
             {
@@ -827,6 +827,7 @@ async def pagar_mercado_pago_cliente(
                 or {}
             )
             checkout = CheckoutMercadoPago(
+                lojamercadopago_id=conta_mp.lojamercadopago_id,
                 carrinho_id=carrinho_id,
                 cliente_id=payload.cliente_id,
                 loja_id=payload.loja_id,
@@ -869,6 +870,7 @@ async def pagar_mercado_pago_cliente(
             checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
         )
         checkout = CheckoutMercadoPago(
+            lojamercadopago_id=conta_mp.lojamercadopago_id,
             carrinho_id=carrinho_id,
             cliente_id=payload.cliente_id,
             loja_id=payload.loja_id,
@@ -917,7 +919,11 @@ async def _consultar_status_checkout_mercado_pago(
     if str(checkout.status).upper() in {'CANCELLED', 'EXPIRED'}:
         return {'pagamento_id': preference_id, 'status': 'SUBSTITUIDO'}
 
-    token, _ = await obter_token_mercado_pago_loja(db, checkout.loja_id)
+    if not checkout.lojamercadopago_id:
+        raise HTTPException(409, 'Conta original do Mercado Pago não identificada para este pagamento.')
+    token, _ = await obter_token_mercado_pago_loja(
+        db, checkout.loja_id, lojamercadopago_id=checkout.lojamercadopago_id
+    )
     pagamento = await buscar_pagamento_mercado_pago(
         access_token=token, external_reference=checkout.external_reference
     )

@@ -18,6 +18,7 @@ class CheckoutMercadoPago(Base):
     )
     cliente_id = Column(BigInteger, nullable=False, index=True)
     loja_id = Column(BigInteger, nullable=False, index=True)
+    lojamercadopago_id = Column(BigInteger, ForeignKey("lojamercadopago.lojamercadopago_id"), nullable=True, index=True)
     venda_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
 
     preference_id = Column(String(120), unique=True, nullable=False)

@@ -272,7 +272,7 @@ async def gerar_checkout_reserva_mercado_pago(
             raise HTTPException(404, 'Cliente não encontrado.')
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
         taxa_clubbar = float(reserva.vrtaxa or 0) * int(reserva.qtreservada or 1)
-        token, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id)
+        token, conta_mp = await obter_token_mercado_pago_loja(db, reserva.loja_id)
         itens_checkout = [{
             'id': f'LOTE-{reserva.lote_id}',
             'title': 'Ingresso Clubbar',
@@ -306,6 +306,7 @@ async def gerar_checkout_reserva_mercado_pago(
                 checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
             )
         checkout = CheckoutMercadoPago(
+            lojamercadopago_id=conta_mp.lojamercadopago_id,
             reserva_ingresso_id=reserva_id,
             cliente_id=reserva.cliente_id,
             loja_id=reserva.loja_id,
@@ -358,7 +359,11 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
     if checkout_mp:
         if checkout_mp.venda_id:
             return {**_saida(db, reserva), 'status_pagamento': 'PAGO'}
-        token, _ = await obter_token_mercado_pago_loja(db, checkout_mp.loja_id)
+        if not checkout_mp.lojamercadopago_id:
+            raise HTTPException(409, 'Conta original do Mercado Pago não identificada para este pagamento.')
+        token, _ = await obter_token_mercado_pago_loja(
+            db, checkout_mp.loja_id, lojamercadopago_id=checkout_mp.lojamercadopago_id
+        )
         pagamento_mp = await buscar_pagamento_mercado_pago(
             access_token=token, external_reference=checkout_mp.external_reference
         )

@@ -436,6 +436,13 @@ async def criar_venda_paga_por_checkout_snapshot(
         transacao_existente = str(pag_existente.idtransacaopagvenda or '').strip()
         if transacao_existente and payment_id and transacao_existente != payment_id:
             raise HTTPException(409, 'Venda existente pertence a outro pagamento')
+        if (gateway or '').upper() == 'MERCADO_PAGO':
+            conta_checkout = getattr(checkout_origem, 'lojamercadopago_id', None)
+            conta_pagamento = getattr(pag_existente, 'lojamercadopago_id', None)
+            if conta_pagamento and conta_checkout and conta_pagamento != conta_checkout:
+                raise HTTPException(409, 'Venda existente pertence a outra conta Mercado Pago')
+            if conta_checkout and not conta_pagamento:
+                pag_existente.lojamercadopago_id = conta_checkout
         pag_existente.idtransacaopagvenda = payment_id or transacao_existente or None
         pag_existente.checkout_id = payment_id or checkout.checkout_id
         pag_existente.reference_id = checkout.external_reference
@@ -504,6 +511,7 @@ async def criar_venda_paga_por_checkout_snapshot(
     )
 
     pag = PagVenda(
+        lojamercadopago_id=getattr(checkout_origem, 'lojamercadopago_id', None) if gateway.upper() == 'MERCADO_PAGO' else None,
         venda_id=venda.venda_id,
         dsmetodopag=metodo,
         vrpagvenda=checkout.valor or 0,
