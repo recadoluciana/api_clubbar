@@ -464,6 +464,8 @@ async def criar_pagamento_cartao(
             }
     if valor_taxa_clubbar > 0:
         dados["application_fee"] = float(valor_taxa_clubbar)
+    if PUBLIC_API_BASE_URL:
+        dados["notification_url"] = f"{PUBLIC_API_BASE_URL}/mercado-pago/webhook"
     headers = {"Authorization": f"Bearer {access_token}", "X-Idempotency-Key": chave_idempotencia, "Content-Type": "application/json"}
     if device_id:
         headers["X-meli-session-id"] = device_id
