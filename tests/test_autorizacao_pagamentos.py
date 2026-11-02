@@ -71,6 +71,15 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
         self.assertEqual(400, resposta.status_code)
         self.assertEqual("Carrinho vazio", resposta.json()["detail"])
 
+    def test_checkout_retorna_chave_publica_do_integrador(self):
+        loja = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
+        config = SimpleNamespace(access_token_criptografado='token', public_key='chave-vendedor')
+        self.db.query.return_value.filter.return_value.first.side_effect = [loja, config]
+        with patch('app.routers.pagamentos.MERCADO_PAGO_PUBLIC_KEY', 'chave-integrador'):
+            resposta = self.client.get('/pagamentos/lojas/2/provedor', headers=self.cliente)
+        self.assertEqual(200, resposta.status_code)
+        self.assertEqual('chave-integrador', resposta.json()['mercado_pago_public_key'])
+
     def test_mercado_pago_cartao_sem_token_nao_cria_preferencia(self):
         with patch("app.routers.pagamentos.criar_preferencia_mercado_pago") as preferencia:
             resposta = self.client.post(

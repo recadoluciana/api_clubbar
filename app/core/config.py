@@ -60,6 +60,8 @@ ASAAS_PIX_ADDRESS_KEY = os.getenv("ASAAS_PIX_ADDRESS_KEY", "").strip()
 # individualmente via OAuth e ficam criptografadas no banco.
 MERCADO_PAGO_CLIENT_ID = os.getenv("MERCADO_PAGO_CLIENT_ID", "").strip()
 MERCADO_PAGO_CLIENT_SECRET = os.getenv("MERCADO_PAGO_CLIENT_SECRET", "").strip()
+# Chave pública da aplicação integradora; não é o token privado do marketplace.
+MERCADO_PAGO_PUBLIC_KEY = os.getenv("MERCADO_PAGO_PUBLIC_KEY", "").strip()
 # Ativar explicitamente somente para autorizações de sandbox.
 MERCADO_PAGO_OAUTH_TEST_TOKEN = (
     os.getenv("MERCADO_PAGO_OAUTH_TEST_TOKEN", "false").strip().lower()

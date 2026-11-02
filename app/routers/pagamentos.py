@@ -40,7 +40,7 @@ from app.models.checkout_asaas_item import CheckoutAsaasItem
 from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.lojamercadopago import LojaMercadoPago
 from app.models.reserva_ingresso import ReservaIngresso
-from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
+from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID, MERCADO_PAGO_PUBLIC_KEY
 
 from app.services.carrinho_service import get_carrinho
 from app.services.cliente_service import get_cliente
@@ -737,7 +737,7 @@ async def consultar_provedor_pagamento_loja(
             provedor = 'ASAAS'
     public_key = None
     if provedor == 'MERCADO_PAGO' and configuracao:
-        public_key = configuracao.public_key
+        public_key = MERCADO_PAGO_PUBLIC_KEY or None
     return {
         'provedor_pagamento': provedor,
         'mercado_pago_pronto': mercado_pago_pronto,
