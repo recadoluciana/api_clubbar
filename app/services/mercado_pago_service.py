@@ -125,16 +125,20 @@ async def estornar_pagamento_mercado_pago(*, access_token: str, payment_id: str,
         def codigo_seguro(valor: Any) -> str:
             valor = str(valor or "")[:80]
             return valor if re.fullmatch(r"[a-zA-Z0-9_.-]+", valor) else "indisponivel"
-        mensagem = str(erro_mp.get("message") or "")[:160]
-        if not re.fullmatch(r"[a-zA-Z0-9_ .-]+", mensagem):
-            mensagem = "indisponivel"
+        def descricao_segura(valor: Any) -> str:
+            valor = str(valor or "")[:160]
+            return valor if re.fullmatch(r"[a-zA-Z0-9_ .,:'()/-]+", valor) else "indisponivel"
+        mensagem = descricao_segura(erro_mp.get("message"))
         causas = erro_mp.get("cause") or []
         codigos = [codigo_seguro(c.get("code")) for c in causas if isinstance(c, dict)] if isinstance(causas, list) else []
+        descricoes = [descricao_segura(c.get("description")) for c in causas if isinstance(c, dict)] if isinstance(causas, list) else []
         logger.warning(
-            "Mercado Pago recusou estorno venda=%s pagamento=%s http=%s erro=%s mensagem=%s causas=%s request_id=%s",
+            "Mercado Pago recusou estorno venda=%s pagamento=%s http=%s erro=%s mensagem=%s causas=%s descricoes=%s request_id=%s",
             venda_id, payment_id, resposta.status_code, codigo_seguro(erro_mp.get("error")),
-            mensagem, codigos, codigo_seguro(resposta.headers.get("x-request-id")),
+            mensagem, codigos, descricoes, codigo_seguro(resposta.headers.get("x-request-id")),
         )
+        if "2031" in codigos or "2030" in codigos:
+            raise HTTPException(409, "O Mercado Pago informou saldo insuficiente para o estorno. O estabelecimento precisa verificar o saldo disponível.")
         raise HTTPException(409, "O Mercado Pago recusou o estorno. Procure o suporte para verificar o motivo.")
     try:
         resultado = resposta.json()

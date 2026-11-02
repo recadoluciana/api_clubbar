@@ -36,3 +36,12 @@ def test_recusa_registra_diagnostico_sem_credencial(monkeypatch, caplog):
     assert 'insufficient funds' in caplog.text
     assert 'req-123' in caplog.text
     assert 'segredo' not in caplog.text
+
+
+def test_recusa_saldo_exibe_motivo_e_registra_descricao(monkeypatch, caplog):
+    resposta = httpx.Response(400, json={'message': "Collector hasn't enough available money", 'cause': [{'code': 2031, 'description': "Collector hasn't enough available money"}]})
+    _cliente(monkeypatch, resposta)
+    with pytest.raises(HTTPException) as erro:
+        asyncio.run(service.estornar_pagamento_mercado_pago(access_token='segredo', payment_id='123', venda_id=7))
+    assert 'saldo insuficiente' in erro.value.detail
+    assert "Collector hasn't enough available money" in caplog.text
