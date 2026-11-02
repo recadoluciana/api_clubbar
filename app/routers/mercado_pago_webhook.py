@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 from datetime import datetime
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ from app.routers.pagamentos import _notificar_confirmacao_mercado_pago
 
 
 router = APIRouter(tags=["Webhook Mercado Pago"])
+logger = logging.getLogger(__name__)
 
 
 def _assinatura_valida(request: Request, payment_id: str) -> bool:
@@ -36,15 +38,27 @@ def _assinatura_valida(request: Request, payment_id: str) -> bool:
     )
     ts, recebida = partes.get('ts'), partes.get('v1')
     if not ts or not recebida:
+        logger.warning('Webhook Mercado Pago recusado: assinatura ausente ou incompleta')
         return False
     request_id = request.headers.get('x-request-id', '')
-    manifest = f'id:{payment_id};request-id:{request_id};ts:{ts};'
+    # O Mercado Pago assina o data.id da URL, não o ID do corpo.
+    data_id = (request.query_params.get('data.id') or '').strip().lower()
+    manifest = (f'id:{data_id};' if data_id else '')
+    if request_id:
+        manifest += f'request-id:{request_id};'
+    manifest += f'ts:{ts};'
     esperada = hmac.new(
         MERCADO_PAGO_WEBHOOK_SECRET.encode(),
         manifest.encode(),
         hashlib.sha256,
     ).hexdigest()
-    return hmac.compare_digest(esperada, recebida)
+    valida = hmac.compare_digest(esperada, recebida)
+    if not valida:
+        logger.warning(
+            'Webhook Mercado Pago recusado: HMAC divergente (data.id=%s, request-id=%s, ids_coincidem=%s)',
+            bool(data_id), bool(request_id), not data_id or data_id == payment_id.lower(),
+        )
+    return valida
 
 
 @router.post('/mercado-pago/webhook', include_in_schema=False)
@@ -67,6 +81,9 @@ async def receber_webhook_mercado_pago(request: Request):
         return {'ok': True, 'ignorado': True}
     if not _assinatura_valida(request, payment_id):
         raise HTTPException(401, 'Assinatura do webhook Mercado Pago inválida.')
+    query_payment_id = str(request.query_params.get('data.id') or '').strip()
+    if query_payment_id and query_payment_id.lower() != payment_id.lower():
+        raise HTTPException(400, 'Identificador do pagamento divergente.')
 
     db: Session = SessionLocal()
     try:
