@@ -28,6 +28,7 @@ from app.models.eventosetor import EventoSetor
 from app.models.itvendaparticipantehistorico import ItVendaParticipanteHistorico
 from app.models.politicacompra import PoliticaCompra
 from app.models.pagvenda import PagVenda
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.pedidoentrega import PedidoEntrega
 from app.services.asaas_service import estornar_pagamento_asaas, consultar_pagamento_asaas
 from app.services.mercado_pago_service import obter_token_loja, estornar_pagamento_mercado_pago
@@ -44,6 +45,25 @@ from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 from app.schemas.entregas import LojaRetiradaOut,AlterarParticipanteIn
 router = APIRouter(prefix="/entregas", tags=["entregas"])
 _FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+
+def _conta_original_mercado_pago(db: Session, venda: Venda, pagamento: PagVenda, payment_id: str) -> int:
+    if pagamento.lojamercadopago_id:
+        return pagamento.lojamercadopago_id
+    if not pagamento.reference_id:
+        raise HTTPException(409, "A conta original desta venda não foi identificada. Procure o suporte antes de cancelar.")
+    tabela = CheckoutMercadoPago.__table__
+    conta_id = db.execute(select(tabela.c.lojamercadopago_id).where(
+        tabela.c.venda_id == venda.venda_id,
+        tabela.c.loja_id == venda.loja_id,
+        tabela.c.payment_id == payment_id,
+        tabela.c.external_reference == pagamento.reference_id,
+        tabela.c.lojamercadopago_id.isnot(None),
+    )).scalar_one_or_none()
+    if not conta_id:
+        raise HTTPException(409, "A conta original desta venda não foi identificada. Procure o suporte antes de cancelar.")
+    pagamento.lojamercadopago_id = conta_id
+    return pagamento.lojamercadopago_id
 
 
 class AtualizarControleBarIn(BaseModel):
@@ -1173,7 +1193,7 @@ def consultar_cancelamento_transacao(
                 "tipo": item.tipoitem,
                 "nome": produto.nmproduto if produto else (evento.nmtituloevento if evento else "Item Clubbar"),
                 "quantidade": int(item.qtitvenda or 1),
-                "valor": round(float(item.vrunititvenda or 0) * int(item.qtitvenda or 1) + float(item.vrtaxaitvenda or 0), 2),
+                "valor": round(float(item.vrunititvenda or 0) * int(item.qtitvenda or 1) + (float(item.vrtaxaitvenda or 0) if (item.tipoitem or "").upper() == "INGRESSO" else 0), 2),
             }
             for item, produto, evento in itens
         ],
@@ -1277,9 +1297,8 @@ async def cancelar_transacao(
             raise HTTPException(status_code=503, detail="Pagamento indisponível para estorno.")
         provedor = str(pagamento.provedor or "ASAAS").upper()
         if provedor == "MERCADO_PAGO":
-            if not pagamento.lojamercadopago_id:
-                raise HTTPException(409, "A conta original desta venda não foi identificada. Procure o suporte antes de cancelar.")
-            api_key_estorno, _ = await obter_token_loja(db, venda.loja_id, pagamento.lojamercadopago_id)
+            conta_id = _conta_original_mercado_pago(db, venda, pagamento, payment_id)
+            api_key_estorno, _ = await obter_token_loja(db, venda.loja_id, conta_id)
         elif provedor == "ASAAS":
             api_key_estorno, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
             pagamento_asaas = await consultar_pagamento_asaas(payment_id, api_key_estorno)

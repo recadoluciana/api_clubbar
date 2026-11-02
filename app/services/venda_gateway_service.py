@@ -302,6 +302,13 @@ async def criar_venda_paga_por_carrinho_gateway(
     pag.reference_id = external_reference or str(venda_id)
     pag.pay_url = None
     pag.provedor = gateway
+    if gateway == "MERCADO_PAGO":
+        conta_checkout = getattr(checkout_origem, "lojamercadopago_id", None)
+        if not conta_checkout:
+            raise HTTPException(409, "Conta Mercado Pago do checkout não identificada.")
+        if pag.lojamercadopago_id and pag.lojamercadopago_id != conta_checkout:
+            raise HTTPException(409, "Venda existente pertence a outra conta Mercado Pago.")
+        pag.lojamercadopago_id = conta_checkout
 
     if gateway == "ASAAS":
         checkout = (
