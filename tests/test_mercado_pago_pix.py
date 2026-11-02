@@ -22,6 +22,7 @@ class MercadoPagoPixTest(unittest.TestCase):
                 titulo='PRODUTOS', valor=Decimal('5.00'), valor_taxa_clubbar=taxa,
                 email_pagador=email_pagador, documento_pagador='123.456.789-09',
                 chave_idempotencia='pedido-pix-unico',
+                nome_loja='Forró do X',
             ))
         return retorno, cliente.post.call_args
 
@@ -33,6 +34,7 @@ class MercadoPagoPixTest(unittest.TestCase):
         self.assertEqual(chamada.kwargs['headers']['Authorization'], 'Bearer token-vendedor')
         self.assertEqual(chamada.kwargs['headers']['X-Idempotency-Key'], 'pedido-pix-unico')
         dados = chamada.kwargs['json']
+        self.assertRegex(dados['description'], r'^Venda - Forró do X - \d{2}/\d{2}/\d{4} \d{2}:\d{2}$')
         self.assertEqual(dados['application_fee'], 0.05)
         self.assertEqual(dados['transaction_amount'], 5.0)
         self.assertEqual(dados['payment_method_id'], 'pix')

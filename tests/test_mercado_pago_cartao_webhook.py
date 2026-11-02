@@ -1,4 +1,5 @@
 import asyncio
+import re
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -19,7 +20,9 @@ def test_cartao_envia_webhook_do_ambiente():
             valor=Decimal('10'), valor_taxa_clubbar=Decimal('1'),
             card_token='token-cartao', payment_method_id='visa',
             payer_email='teste@exemplo.com', chave_idempotencia='chave',
+            nome_loja='Forró do X',
         ))
+    assert re.fullmatch(r'Venda - Forró do X - \d{2}/\d{2}/\d{4} \d{2}:\d{2}', client.post.call_args.kwargs['json']['description'])
     assert client.post.call_args.kwargs['json']['notification_url'] == (
         'https://api-dev.exemplo.com/mercado-pago/webhook'
     )

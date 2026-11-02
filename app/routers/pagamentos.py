@@ -822,6 +822,7 @@ async def pagar_mercado_pago_cliente(
                 access_token=token,
                 external_reference=referencia,
                 titulo='PRODUTOS',
+                nome_loja=loja.nmloja,
                 valor=Decimal(str(valor_total)),
                 valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
                 email_pagador=cliente.emailcliente,
@@ -867,7 +868,7 @@ async def pagar_mercado_pago_cliente(
 
         if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.card_token:
             pagamento_cartao = await criar_pagamento_cartao_mercado_pago(
-                access_token=token, external_reference=referencia, titulo='PRODUTOS',
+                access_token=token, external_reference=referencia, titulo='PRODUTOS', nome_loja=loja.nmloja,
                 valor=Decimal(str(valor_total)), valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
                 card_token=payload.card_token, payment_method_id=payload.payment_method_id or '',
                 installments=payload.installments or 1, issuer_id=payload.issuer_id,

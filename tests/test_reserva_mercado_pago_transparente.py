@@ -127,7 +127,7 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
             return SimpleNamespace(**kwargs, venda_id=None, payment_id=None)
 
     monkeypatch.setattr(router, 'CheckoutMercadoPago', CheckoutFalso)
-    loja_query.filter.return_value.first.return_value = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
+    loja_query.filter.return_value.first.return_value = SimpleNamespace(provedor_pagamento='MERCADO_PAGO', nmloja='Forró do X')
     cliente_query.filter.return_value.first.return_value = cliente
     checkout_query.filter.return_value.order_by.return_value.first.return_value = None
     salvo = []
@@ -158,6 +158,7 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
     resultado = asyncio.run(router.gerar_checkout_reserva_mercado_pago(2, payload, metodo, db, {}))
     criador = pix if metodo == 'PIX' else cartao
     criador.assert_awaited_once()
+    assert criador.await_args.kwargs['nome_loja'] == 'Forró do X'
     assert criador.await_args.kwargs['valor'] == Decimal('7.99')
     assert criador.await_args.kwargs['valor_taxa_clubbar'] == Decimal('2.99')
     assert resultado['pagamento_id'] == salvo[0].external_reference

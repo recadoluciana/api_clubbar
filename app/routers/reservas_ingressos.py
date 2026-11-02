@@ -315,7 +315,7 @@ async def gerar_checkout_reserva_mercado_pago(
         db.commit()
         checkout_criado_id = checkout.checkout_mercadopago_id
         chave = str(uuid.uuid5(uuid.NAMESPACE_URL, f'clubbar:reserva:{referencia}'))
-        comum = dict(access_token=token, external_reference=referencia, titulo='INGRESSOS',
+        comum = dict(access_token=token, external_reference=referencia, titulo='INGRESSOS', nome_loja=loja.nmloja,
                      valor=Decimal(str(reserva.vrtotal)), valor_taxa_clubbar=taxa_clubbar,
                      chave_idempotencia=chave)
         if metodo == 'PIX':

@@ -362,6 +362,15 @@ def _documento_pagador(documento: str | None) -> tuple[str, str]:
     )
 
 
+def descricao_venda_mercado_pago(nome_loja: str, instante: datetime | None = None) -> str:
+    """Identifica o estabelecimento e o momento de criação do pagamento."""
+    horario = instante or datetime.now(ZoneInfo("America/Sao_Paulo"))
+    nome = " ".join((nome_loja or "Clubbar").split()) or "Clubbar"
+    sufixo = horario.astimezone(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
+    prefixo = "Venda - "
+    return f"{prefixo}{nome[:256 - len(prefixo) - len(sufixo) - 3]} - {sufixo}"
+
+
 async def criar_pagamento_pix(
     *,
     access_token: str,
@@ -372,6 +381,7 @@ async def criar_pagamento_pix(
     email_pagador: str,
     documento_pagador: str | None,
     chave_idempotencia: str,
+    nome_loja: str | None = None,
 ) -> dict[str, Any]:
     """Cria Pix na conta OAuth do vendedor, com comissão do marketplace."""
     email = _email_pagador_pix(email_pagador)
@@ -383,7 +393,7 @@ async def criar_pagamento_pix(
     expiracao = datetime.now(ZoneInfo("America/Sao_Paulo")) + timedelta(minutes=30)
     dados: dict[str, Any] = {
         "transaction_amount": float(valor),
-        "description": f"Clubbar - {titulo}"[:256],
+        "description": descricao_venda_mercado_pago(nome_loja or "Clubbar"),
         "payment_method_id": "pix",
         "external_reference": external_reference,
         "date_of_expiration": expiracao.isoformat(timespec="milliseconds"),
@@ -466,13 +476,14 @@ async def criar_pagamento_cartao(
     payment_method_id: str, installments: int = 1, issuer_id: str | None = None,
     payer_email: str | None = None, payer_document: str | None = None,
     device_id: str | None = None, chave_idempotencia: str,
+    nome_loja: str | None = None,
 ) -> dict[str, Any]:
     """Cria cartão tokenizado no checkout transparente do Mercado Pago."""
     if not card_token or not payment_method_id:
         raise HTTPException(422, "Token e método do cartão são obrigatórios.")
     dados: dict[str, Any] = {
         "transaction_amount": float(valor), "token": card_token,
-        "description": f"Clubbar - {titulo}"[:256],
+        "description": descricao_venda_mercado_pago(nome_loja or "Clubbar"),
         "installments": max(1, int(installments or 1)),
         "payment_method_id": payment_method_id,
         "external_reference": external_reference,
