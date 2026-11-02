@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
-from app.core.config import MERCADO_PAGO_WEBHOOK_SECRET
+from app.core.config import MERCADO_PAGO_CLIENT_ID, MERCADO_PAGO_WEBHOOK_SECRET
 from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.lojamercadopago import LojaMercadoPago
 from app.models.reserva_ingresso import ReservaIngresso
@@ -80,6 +80,17 @@ async def receber_webhook_mercado_pago(request: Request):
     if tipo not in {'payment', 'payments'} or not payment_id or not user_id:
         return {'ok': True, 'ignorado': True}
     if not _assinatura_valida(request, payment_id):
+        application_id = str(corpo.get('application_id') or '').strip()
+        railway_id = request.headers.get('x-railway-request-id', '')
+        request_id = request.headers.get('x-request-id', '')
+        logger.warning(
+            'Webhook Mercado Pago: modo=%s, aplicacao=%s, request_id_railway=%s',
+            'producao' if corpo.get('live_mode') is True else
+            'teste' if corpo.get('live_mode') is False else 'desconhecido',
+            ('corresponde' if application_id == MERCADO_PAGO_CLIENT_ID else 'divergente')
+            if application_id and MERCADO_PAGO_CLIENT_ID else 'indisponivel',
+            bool(railway_id and request_id and railway_id == request_id),
+        )
         raise HTTPException(401, 'Assinatura do webhook Mercado Pago inválida.')
     query_payment_id = str(request.query_params.get('data.id') or '').strip()
     if query_payment_id and query_payment_id.lower() != payment_id.lower():
