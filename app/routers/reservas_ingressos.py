@@ -77,6 +77,7 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
         "valor_total": float(reserva.vrtotal),
         "status": reserva.sitreserva,
         "data_expiracao": iso_utc(reserva.dtexpiracao),
+        "segundos_restantes": max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
         "venda_id": reserva.venda_id,
         "beneficios_validos": [
             _beneficio_saida(beneficio)
@@ -288,6 +289,7 @@ async def gerar_checkout_reserva_mercado_pago(
                             'encoded_image': dados_pix.get('qr_code_base64'),
                             'pix_expiration_date': pagamento_existente.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
                             'data_expiracao': iso_utc(reserva.dtexpiracao),
+                            'segundos_restantes': max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
                             'valor_total': float(reserva.vrtotal), 'gateway': 'MERCADO_PAGO'}
             raise HTTPException(409, 'Já existe um pagamento para esta reserva. Confira o status antes de tentar novamente.')
         if metodo in {'CREDIT_CARD', 'CREDITO'} and (not payload.card_token or not payload.payment_method_id):
@@ -346,6 +348,7 @@ async def gerar_checkout_reserva_mercado_pago(
             'pix_expiration_date': pagamento.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
             'valor_total': float(reserva.vrtotal),
             'data_expiracao': iso_utc(reserva.dtexpiracao),
+            'segundos_restantes': max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
             'gateway': 'MERCADO_PAGO',
         }
     except HTTPException as erro:

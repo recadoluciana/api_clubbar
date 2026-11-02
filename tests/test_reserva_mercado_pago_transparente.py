@@ -17,6 +17,20 @@ from app.models.loja import Loja
 from app.models.cliente import Cliente
 
 
+def test_prazo_restante_e_calculado_pelo_servidor(monkeypatch):
+    monkeypatch.setattr(router, 'beneficios_validos_para_reserva', MagicMock(return_value={}))
+    reserva = SimpleNamespace(
+        reserva_ingresso_id=2, organizacao_id=1, loja_id=1, cliente_id=3,
+        evento_id=4, lote_id=5, lotepreco_id=6, beneficio_id=None,
+        tipobeneficio=None, qtreservada=1, vrunitario=Decimal('5'),
+        pctaxa=Decimal('8'), vrtaxa=Decimal('2.99'), vrtotal=Decimal('7.99'),
+        sitreserva='AGUARDANDO_PAGAMENTO', dtexpiracao=datetime.now() + timedelta(minutes=35),
+        venda_id=None,
+    )
+    resposta = router._saida(MagicMock(), reserva)
+    assert 2098 <= resposta['segundos_restantes'] <= 2100
+
+
 def _dados(expirada=False):
     reserva = SimpleNamespace(
         reserva_ingresso_id=2, venda_id=None, sitreserva='AGUARDANDO_PAGAMENTO',
@@ -150,6 +164,7 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
     if metodo == 'PIX':
         assert resultado['pix_copia_cola'] == 'pix-ficticio'
         assert reserva.dtexpiracao > datetime.now() + timedelta(minutes=34)
+        assert resultado['segundos_restantes'] >= 2040
 
 
 def test_segunda_cobranca_da_mesma_reserva_e_bloqueada(monkeypatch):
