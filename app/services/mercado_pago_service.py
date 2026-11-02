@@ -398,6 +398,8 @@ async def criar_pagamento_pix(
             "Não foi possível conectar ao Mercado Pago para gerar o PIX. Tente novamente.",
         ) from exc
     if resposta.is_error:
+        if resposta.status_code >= 500:
+            raise HTTPException(502, 'O Mercado Pago não confirmou a criação do PIX. Verifique o pagamento antes de tentar novamente.')
         # O detalhe do Mercado Pago é registrado no servidor sem tokens ou
         # dados pessoais. Isso permite corrigir configurações de split ou da
         # conta recebedora sem expor a resposta do provedor ao Client.
@@ -472,6 +474,8 @@ async def criar_pagamento_cartao(
     async with httpx.AsyncClient(timeout=25) as cliente:
         resposta = await cliente.post(f"{MERCADO_PAGO_API_BASE_URL}/v1/payments", headers=headers, json=dados)
     if resposta.is_error:
+        if resposta.status_code >= 500:
+            raise HTTPException(502, 'O Mercado Pago não confirmou o pagamento. Verifique o status antes de tentar novamente.')
         raise HTTPException(422, "O Mercado Pago recusou o pagamento com cartão.")
     retorno = resposta.json()
     if not retorno.get("id"):

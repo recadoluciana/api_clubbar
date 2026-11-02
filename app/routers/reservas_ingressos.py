@@ -30,8 +30,9 @@ from app.services.asaas_split_service import obter_conta_asaas_da_loja, montar_s
 from app.services.asaas_webhook_service import garantir_webhook_pagamentos_asaas
 from app.services.mercado_pago_service import (
     buscar_pagamento_por_referencia as buscar_pagamento_mercado_pago,
-    criar_order_checkout_pro as criar_order_checkout_pro_mercado_pago,
-    criar_preferencia as criar_preferencia_mercado_pago,
+    criar_pagamento_pix as criar_pagamento_pix_mercado_pago,
+    criar_pagamento_cartao as criar_pagamento_cartao_mercado_pago,
+    buscar_pagamento_por_id as buscar_pagamento_mp_por_id,
     obter_token_loja as obter_token_mercado_pago_loja,
 )
 from app.services.campanha_doacao_service import (
@@ -40,6 +41,7 @@ from app.services.campanha_doacao_service import (
     validar_campanha_para_split,
 )
 from app.utils.datetime_utils import iso_utc
+from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
@@ -255,8 +257,9 @@ async def gerar_checkout_reserva_mercado_pago(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Cria uma preferência Mercado Pago para a reserva, sem tocar no Asaas."""
+    """Cria pagamento transparente na conta Mercado Pago da loja."""
     exigir_cliente_autenticado(usuario, payload.cliente_id)
+    checkout_criado_id = None
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         loja = db.query(Loja).filter(Loja.loja_id == reserva.loja_id).first()
@@ -270,54 +273,91 @@ async def gerar_checkout_reserva_mercado_pago(
         ).first()
         if not cliente:
             raise HTTPException(404, 'Cliente não encontrado.')
+        existente = db.query(CheckoutMercadoPago).filter(
+            CheckoutMercadoPago.reserva_ingresso_id == reserva_id,
+            CheckoutMercadoPago.status.in_(['CREATING', 'PENDING', 'APPROVED', 'PAID']),
+        ).order_by(CheckoutMercadoPago.checkout_mercadopago_id.desc()).first()
+        if existente:
+            if metodo == 'PIX' and existente.metodo_solicitado == 'PIX' and existente.payment_id and existente.status == 'PENDING':
+                token_existente, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id, lojamercadopago_id=existente.lojamercadopago_id)
+                pagamento_existente = await buscar_pagamento_mp_por_id(access_token=token_existente, payment_id=existente.payment_id)
+                dados_pix = (((pagamento_existente or {}).get('point_of_interaction') or {}).get('transaction_data') or {})
+                if dados_pix.get('qr_code') and str(pagamento_existente.get('status') or '').lower() == 'pending':
+                    return {'reserva_ingresso_id': reserva_id, 'pagamento_id': existente.preference_id,
+                            'status': 'PENDING', 'pix_copia_cola': dados_pix['qr_code'],
+                            'encoded_image': dados_pix.get('qr_code_base64'),
+                            'pix_expiration_date': pagamento_existente.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
+                            'data_expiracao': iso_utc(reserva.dtexpiracao),
+                            'valor_total': float(reserva.vrtotal), 'gateway': 'MERCADO_PAGO'}
+            raise HTTPException(409, 'Já existe um pagamento para esta reserva. Confira o status antes de tentar novamente.')
+        if metodo in {'CREDIT_CARD', 'CREDITO'} and (not payload.card_token or not payload.payment_method_id):
+            raise HTTPException(422, 'Informe os dados tokenizados do cartão.')
+        if metodo == 'PIX':
+            reserva.dtexpiracao = max(reserva.dtexpiracao, datetime.now() + timedelta(minutes=35))
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
-        taxa_clubbar = float(reserva.vrtaxa or 0) * int(reserva.qtreservada or 1)
+        taxa_clubbar = Decimal(str(reserva.vrtaxa or 0)) * int(reserva.qtreservada or 1)
         token, conta_mp = await obter_token_mercado_pago_loja(db, reserva.loja_id)
-        itens_checkout = [{
-            'id': f'LOTE-{reserva.lote_id}',
-            'title': 'Ingresso Clubbar',
-            'description': f'{reserva.qtreservada} ingresso(s)',
-            'quantity': int(reserva.qtreservada),
-            'currency_id': 'BRL',
-            'unit_price': float(reserva.vrunitario + reserva.vrtaxa),
-        }]
-        checkout_remoto = await criar_preferencia_mercado_pago(
-            access_token=token,
-            external_reference=referencia,
-            titulo='INGRESSOS',
-            itens=itens_checkout,
-            valor_taxa_clubbar=Decimal(str(taxa_clubbar)),
-            metodo=metodo,
-            email_pagador=cliente.emailcliente,
-        )
-        checkout_url = str(
-            checkout_remoto.get('init_point') or checkout_remoto.get('sandbox_init_point')
-        )
         checkout = CheckoutMercadoPago(
             lojamercadopago_id=conta_mp.lojamercadopago_id,
             reserva_ingresso_id=reserva_id,
             cliente_id=reserva.cliente_id,
             loja_id=reserva.loja_id,
-            preference_id=str(checkout_remoto['id']),
+            preference_id=referencia,
             external_reference=referencia,
-            status='PENDING',
-            checkout_url=checkout_url,
+            status='CREATING',
             metodo_solicitado=metodo,
             valor=reserva.vrtotal,
             vrtaxaclubbar=taxa_clubbar,
         )
         db.add(checkout)
         db.commit()
+        checkout_criado_id = checkout.checkout_mercadopago_id
+        chave = str(uuid.uuid5(uuid.NAMESPACE_URL, f'clubbar:reserva:{referencia}'))
+        comum = dict(access_token=token, external_reference=referencia, titulo='INGRESSOS',
+                     valor=Decimal(str(reserva.vrtotal)), valor_taxa_clubbar=taxa_clubbar,
+                     chave_idempotencia=chave)
+        if metodo == 'PIX':
+            pagamento = await criar_pagamento_pix_mercado_pago(
+                **comum, email_pagador=cliente.emailcliente,
+                documento_pagador=cliente.nrcpfcliente,
+            )
+        else:
+            pagamento = await criar_pagamento_cartao_mercado_pago(
+                **comum, card_token=payload.card_token, payment_method_id=payload.payment_method_id,
+                installments=payload.parcelas, issuer_id=payload.issuer_id,
+                payer_email=payload.payer_email or cliente.emailcliente,
+                payer_document=payload.payer_document or cliente.nrcpfcliente, device_id=payload.device_id,
+            )
+        checkout = db.query(CheckoutMercadoPago).filter(
+            CheckoutMercadoPago.checkout_mercadopago_id == checkout.checkout_mercadopago_id
+        ).with_for_update().first()
+        checkout.payment_id = str(pagamento['id'])
+        status_mp = str(pagamento.get('status') or 'pending').upper()
+        if not checkout.venda_id and checkout.status != 'REFUNDED':
+            checkout.status = 'PENDING' if status_mp in {'PENDING', 'IN_PROCESS', 'APPROVED'} else status_mp
+        db.commit()
+        dados_pix = ((pagamento.get('point_of_interaction') or {}).get('transaction_data') or {})
         return {
             'reserva_ingresso_id': reserva_id,
             'pagamento_id': checkout.preference_id,
-            'checkout_url': checkout.checkout_url,
-            'status': checkout.status,
+            'status': status_mp,
+            'pix_copia_cola': dados_pix.get('qr_code'),
+            'encoded_image': dados_pix.get('qr_code_base64'),
+            'pix_expiration_date': pagamento.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
+            'valor_total': float(reserva.vrtotal),
             'data_expiracao': iso_utc(reserva.dtexpiracao),
             'gateway': 'MERCADO_PAGO',
         }
-    except HTTPException:
-        db.rollback(); raise
+    except HTTPException as erro:
+        db.rollback()
+        if checkout_criado_id and erro.status_code in {409, 422}:
+            falha = db.query(CheckoutMercadoPago).filter(
+                CheckoutMercadoPago.checkout_mercadopago_id == checkout_criado_id
+            ).with_for_update().first()
+            if falha and falha.status == 'CREATING' and not falha.payment_id:
+                falha.status = 'REJECTED'
+                db.commit()
+        raise
     except Exception as erro:
         db.rollback()
         print('[MERCADO_PAGO RESERVA][ERRO]', repr(erro))
@@ -343,32 +383,41 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
         return {**_saida(db, reserva), "status_pagamento": "PAGO"}
     checkout_mp = db.query(CheckoutMercadoPago).filter(
         CheckoutMercadoPago.reserva_ingresso_id == reserva_id
-    ).order_by(CheckoutMercadoPago.checkout_mercadopago_id.desc()).first()
+    ).order_by(CheckoutMercadoPago.checkout_mercadopago_id.desc()).with_for_update().first()
     if checkout_mp:
         if checkout_mp.venda_id:
             return {**_saida(db, reserva), 'status_pagamento': 'PAGO'}
+        if checkout_mp.status == 'REFUNDED':
+            return {**_saida(db, reserva), 'status_pagamento': 'ESTORNADO'}
         if not checkout_mp.lojamercadopago_id:
             raise HTTPException(409, 'Conta original do Mercado Pago não identificada para este pagamento.')
         token, _ = await obter_token_mercado_pago_loja(
             db, checkout_mp.loja_id, lojamercadopago_id=checkout_mp.lojamercadopago_id
         )
-        pagamento_mp = await buscar_pagamento_mercado_pago(
-            access_token=token, external_reference=checkout_mp.external_reference
-        )
+        pagamento_mp = None
+        if checkout_mp.payment_id:
+            pagamento_direto = await buscar_pagamento_mp_por_id(access_token=token, payment_id=checkout_mp.payment_id)
+            if pagamento_direto and str(pagamento_direto.get('status') or '').lower() == 'approved':
+                pagamento_mp = pagamento_direto
+            elif pagamento_direto and str(pagamento_direto.get('status') or '').lower() in {'cancelled', 'expired'}:
+                checkout_mp.status = 'EXPIRED'
+                db.commit()
+                return {**_saida(db, reserva), 'status_pagamento': 'EXPIRED'}
+        if not pagamento_mp:
+            pagamento_mp = await buscar_pagamento_mercado_pago(
+                access_token=token, external_reference=checkout_mp.external_reference
+            )
         if pagamento_mp:
             recebido = Decimal(str(pagamento_mp.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
             esperado = Decimal(str(reserva.vrtotal or 0)).quantize(Decimal('0.01'))
             if recebido != esperado:
                 raise HTTPException(409, 'Valor Mercado Pago diverge da reserva.')
-            resultado = finalizar_reserva_paga(
-                db,
-                reserva_id=reserva_id,
-                checkout_id=checkout_mp.checkout_mercadopago_id,
-                pagamento=pagamento_mp,
-                gateway='MERCADO_PAGO',
-                modelo_checkout=CheckoutMercadoPago,
+            resultado = await confirmar_pagamento_reserva_mp(
+                db, checkout=checkout_mp, pagamento=pagamento_mp, access_token=token,
             )
             db.commit()
+            if resultado.get('estornado'):
+                return {**_saida(db, reserva), **resultado, 'status_pagamento': 'ESTORNADO'}
             if not resultado.get('already_processed'):
                 try:
                     enviar_ingressos_confirmados_da_venda(db, int(resultado['venda_id']))

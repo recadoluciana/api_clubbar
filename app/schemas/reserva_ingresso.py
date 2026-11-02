@@ -31,4 +31,10 @@ class ParticipantesReservaUpdate(BaseModel):
 class PagamentoReservaIn(BaseModel):
     cliente_id: int
     parcelas: int = Field(default=1, ge=1, le=12)
+    card_token: str | None = None
+    payment_method_id: str | None = None
+    issuer_id: str | None = None
+    payer_email: str | None = None
+    payer_document: str | None = None
+    device_id: str | None = None
 

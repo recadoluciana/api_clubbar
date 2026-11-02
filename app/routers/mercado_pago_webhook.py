@@ -16,7 +16,7 @@ from app.models.lojamercadopago import LojaMercadoPago
 from app.models.reserva_ingresso import ReservaIngresso
 from app.services.mercado_pago_service import buscar_pagamento_por_id, obter_token_loja
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
-from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga
+from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
 from app.routers.pagamentos import _notificar_confirmacao_mercado_pago
 
 
@@ -138,14 +138,12 @@ async def receber_webhook_mercado_pago(request: Request):
             return {'ok': True, 'venda_id': checkout.venda_id}
 
         if checkout.reserva_ingresso_id:
-            resultado = finalizar_reserva_paga(
-                db,
-                reserva_id=int(checkout.reserva_ingresso_id),
-                checkout_id=int(checkout.checkout_mercadopago_id),
-                pagamento=pagamento,
-                gateway='MERCADO_PAGO',
-                modelo_checkout=CheckoutMercadoPago,
+            resultado = await confirmar_pagamento_reserva_mp(
+                db, checkout=checkout, pagamento=pagamento, access_token=token,
             )
+            if resultado.get('estornado'):
+                db.commit()
+                return {'ok': True, 'estornado': True}
         else:
             resultado = await criar_venda_paga_por_carrinho_gateway(
                 db,
