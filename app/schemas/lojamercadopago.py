@@ -13,6 +13,8 @@ class LojaMercadoPagoOut(BaseModel):
     ambiente: str
     mercadopago_user_id: str | None = None
     mercadopago_nome: str | None = None
+    mercadopago_titular: str | None = None
+    mercadopago_email: str | None = None
     statusintegracao: str
     conectada: bool
     conta_pendente: dict[str, str] | None = None

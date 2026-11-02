@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import json
+import logging
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import case
+import httpx
 
 from app.core.config import APP_ENV, PUBLIC_PARTNER_BASE_URL
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial, hash_token_webhook
@@ -29,10 +31,13 @@ from app.services.mercado_pago_oauth_service import (
     montar_url_autorizacao,
     trocar_codigo_por_tokens,
     obter_nome_usuario,
+    obter_dados_titular,
 )
+from app.services.mercado_pago_service import obter_token_loja
 
 
 router = APIRouter(tags=["Integração Mercado Pago das lojas"])
+logger = logging.getLogger(__name__)
 
 
 def _loja_autorizada(db: Session, loja_id: int, usuario: dict) -> Loja:
@@ -79,13 +84,23 @@ def _saida(loja: Loja, config: LojaMercadoPago | None) -> dict:
 
 
 @router.get("/lojas/{loja_id}/mercado-pago", response_model=LojaMercadoPagoOut)
-def consultar_mercado_pago(
+async def consultar_mercado_pago(
     loja_id: int,
+    incluir_dados_titular: bool = False,
     usuario: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
     loja = _loja_autorizada(db, loja_id, usuario)
-    saida = _saida(loja, _config(db, loja_id))
+    config = _config(db, loja_id)
+    saida = _saida(loja, config)
+    if incluir_dados_titular and saida['conectada']:
+        try:
+            token, _ = await obter_token_loja(db, loja_id, lojamercadopago_id=config.lojamercadopago_id)
+            titular = await obter_dados_titular(access_token=token, user_id=str(config.mercadopago_user_id))
+            saida['mercadopago_titular'] = titular['nome']
+            saida['mercadopago_email'] = titular['email']
+        except (HTTPException, httpx.HTTPError, ValueError):
+            logger.warning('Não foi possível consultar os dados do titular Mercado Pago para a loja %s', loja_id)
     pendente = _pendente(db, loja_id)
     if pendente and pendente.expira_em > datetime.now():
         dados = json.loads(descriptografar_credencial(pendente.credenciais))

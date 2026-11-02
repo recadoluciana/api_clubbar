@@ -103,6 +103,26 @@ async def obter_nome_usuario(*, access_token: str, user_id: str) -> str | None:
     return nome or None
 
 
+async def obter_dados_titular(*, access_token: str, user_id: str) -> dict[str, str | None]:
+    """Consulta dados do próprio vendedor sem expor ou registrar credenciais."""
+    async with httpx.AsyncClient(timeout=8) as cliente:
+        resposta = await cliente.get(
+            f"{MERCADO_PAGO_API_BASE_URL}/users/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    if resposta.is_error:
+        return {"nome": None, "email": None}
+    dados = resposta.json()
+    if not isinstance(dados, dict) or str(dados.get("id") or "") != str(user_id):
+        return {"nome": None, "email": None}
+    nome = " ".join(
+        parte for parte in (str(dados.get(chave) or "").strip() for chave in ("first_name", "last_name"))
+        if parte
+    )
+    email = str(dados.get("email") or "").strip()
+    return {"nome": nome or None, "email": email or None}
+
+
 def expira_em(tokens: dict) -> datetime:
     # Renovamos com margem para não iniciar um checkout com credencial vencendo.
     segundos = int(tokens.get("expires_in") or 0)
