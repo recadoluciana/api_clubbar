@@ -110,14 +110,32 @@ async def estornar_pagamento_mercado_pago(*, access_token: str, payment_id: str,
             resposta = await cliente.post(
                 f"{MERCADO_PAGO_API_BASE_URL}/v1/payments/{payment_id}/refunds",
                 headers={"Authorization": f"Bearer {access_token}", "X-Idempotency-Key": chave},
-                json={},
             )
     except httpx.RequestError as erro:
         raise HTTPException(502, "Não foi possível confirmar o estorno no Mercado Pago; procure o suporte.") from erro
     if resposta.status_code >= 500:
         raise HTTPException(502, "O Mercado Pago ainda não confirmou o estorno; procure o suporte.")
     if resposta.status_code >= 400:
-        raise HTTPException(409, "O Mercado Pago recusou o estorno. Verifique a conta que recebeu a venda.")
+        try:
+            erro_mp = resposta.json()
+        except ValueError:
+            erro_mp = {}
+        if not isinstance(erro_mp, dict):
+            erro_mp = {}
+        def codigo_seguro(valor: Any) -> str:
+            valor = str(valor or "")[:80]
+            return valor if re.fullmatch(r"[a-zA-Z0-9_.-]+", valor) else "indisponivel"
+        mensagem = str(erro_mp.get("message") or "")[:160]
+        if not re.fullmatch(r"[a-zA-Z0-9_ .-]+", mensagem):
+            mensagem = "indisponivel"
+        causas = erro_mp.get("cause") or []
+        codigos = [codigo_seguro(c.get("code")) for c in causas if isinstance(c, dict)] if isinstance(causas, list) else []
+        logger.warning(
+            "Mercado Pago recusou estorno venda=%s pagamento=%s http=%s erro=%s mensagem=%s causas=%s request_id=%s",
+            venda_id, payment_id, resposta.status_code, codigo_seguro(erro_mp.get("error")),
+            mensagem, codigos, codigo_seguro(resposta.headers.get("x-request-id")),
+        )
+        raise HTTPException(409, "O Mercado Pago recusou o estorno. Procure o suporte para verificar o motivo.")
     try:
         resultado = resposta.json()
     except ValueError as erro:
