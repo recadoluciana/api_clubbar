@@ -561,21 +561,6 @@ async def migrar_vinculo_sandbox_para_producao(
             ),
         )
 
-    if titular.asaas_wallet_id:
-        possui_checkout = (
-            db.query(CheckoutAsaas.checkout_asaas_id)
-            .filter(CheckoutAsaas.asaas_wallet_loja == titular.asaas_wallet_id)
-            .first()
-        )
-        if possui_checkout:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Este vínculo Sandbox possui checkout registrado e não pode ser migrado automaticamente. "
-                    "Procure o suporte do Clubbar para a migração assistida."
-                ),
-            )
-
     titular.asaas_account_id = None
     titular.asaas_wallet_id = None
     titular.asaas_api_key_criptografada = None
