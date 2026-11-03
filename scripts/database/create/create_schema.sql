@@ -2599,6 +2599,33 @@ CREATE TABLE politicacompra (
 ) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
+-- Políticas iniciais equivalentes às versões vigentes revisadas.
+INSERT INTO politicacompra (versao, tipopolitica, titulo, conteudo,
+  qtd_dias_cancelamento, qtd_horas_antecedencia_cancelamento,
+  qtd_alteracoes_participante, qtd_horas_antecedencia_alteracao,
+  sitpolitica, dtiniciovigencia) VALUES
+  ('1.0', 'INGRESSO', 'Política de compra de ingresso', 'Para ter direito ao cancelamento com reembolso, você precisa atender as duas condições seguintes cumulativamente:
+1: solicitar o cancelamento até 7 dias corridos a partir da data da compra; e
+2: solicitar o cancelamento com no mínimo 48 horas de antecedência do horário de início do evento.
+
+O cancelamento é definitivo. Após confirmado, a compra não poderá ser reativada. Você precisará fazer uma nova compra caso mude de ideia.
+
+O processo de reembolso é iniciado automaticamente a partir da efetivação do cancelamento. O reembolso será efetuado pelo mesmo meio de pagamento utilizado na compra. O prazo de reembolso depende da operadora do cartão e do banco em caso de pix.
+
+Política do organizador: alguns eventos possuem política própria de cancelamento. Sempre verifique as regras específicas na página do evento.
+
+Para cancelamento, acesse seu Perfil/Minhas compras/Ingressos.
+
+Alteração de participante:
+
+Você poderá alterar o participante de um ingresso apenas 1 vez. Esta opção ficará disponível até 24 horas antes do início do evento. Para ingressos de meia-entrada, o novo participante também deverá comprovar o direito ao benefício.', 7, 48, 1, 24, 'VIGENTE', CURRENT_TIMESTAMP),
+  ('1.0', 'PRODUTO', 'Política de compra de produto', 'Para solicitar o cancelamento com reembolso, o produto não pode ter sido retirado, utilizado ou consumido, e a solicitação deve ser feita em até 7 dias corridos a partir da data da compra.
+
+O processo de reembolso é iniciado automaticamente a partir da efetivação do cancelamento. O reembolso será efetuado pelo mesmo meio de pagamento utilizado na compra. O prazo de reembolso depende da operadora do cartão e do banco em caso de pix.
+
+Para cancelamento, acesse seu Perfil/Minhas compras/Produtos.', 7, NULL, NULL, NULL, 'VIGENTE', CURRENT_TIMESTAMP);
+
+
 CREATE TABLE IF NOT EXISTS cancelamentoparceria (
   cancelamentoparceria_id BIGINT NOT NULL AUTO_INCREMENT,
   loja_id BIGINT NOT NULL,
