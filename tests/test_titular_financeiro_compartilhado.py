@@ -1,6 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from fastapi import HTTPException
 
 from app.services.titular_financeiro_service import (
     sincronizar_integracao_asaas_da_loja,
@@ -8,6 +9,16 @@ from app.services.titular_financeiro_service import (
 
 
 class TitularFinanceiroCompartilhadoTest(unittest.TestCase):
+    def test_nao_vincula_conta_sandbox_quando_asaas_e_producao(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = SimpleNamespace()
+        titular = SimpleNamespace(asaas_account_id="conta-sandbox")
+        with patch.dict("os.environ", {"ASAAS_BASE_URL": "https://api.asaas.com/v3"}):
+            with self.assertRaises(HTTPException) as erro:
+                sincronizar_integracao_asaas_da_loja(db, SimpleNamespace(loja_id=1), titular)
+        self.assertEqual(409, erro.exception.status_code)
+        db.add.assert_not_called()
+
     @patch(
         "app.services.titular_financeiro_service.hash_token_webhook",
         return_value="token-hash",

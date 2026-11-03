@@ -34,6 +34,7 @@ from app.routers.pagamentos import (
 from app.schemas.carrinho import AddItemIn
 from app.schemas.pagamentos import PagarNovoIn
 from app.services.carrinho_service import get_carrinho
+from app.services.titular_financeiro_service import ambiente_asaas
 from app.services.asaas_service import (
     criar_qrcode_pix_estatico_asaas,
     excluir_qrcode_pix_estatico_asaas,
@@ -271,7 +272,7 @@ async def checkout_pix(payload: dict = Depends(get_usuario_logado), db: Session 
         'status': 'PENDENTE',
         'reutilizado': False,
         'simulacao_sandbox_disponivel': bool(
-            APP_ENV not in {'production', 'prod'} and ASAAS_SANDBOX_PAYER_API_KEY
+            APP_ENV not in {'production', 'prod'} and ASAAS_SANDBOX_PAYER_API_KEY and ambiente_asaas() == 'sandbox'
         ),
     }
 @router.post("/checkout/{checkout_id}/cancelar-pix")
@@ -365,7 +366,7 @@ async def simular_pagamento_pix(
     db: Session = Depends(get_db),
 ):
     loja, cliente = _contexto_caixa(payload, db)
-    if APP_ENV in {"production", "prod"} or not ASAAS_SANDBOX_PAYER_API_KEY:
+    if APP_ENV in {"production", "prod"} or ambiente_asaas() != "sandbox" or not ASAAS_SANDBOX_PAYER_API_KEY:
         raise HTTPException(404, "Simulacao PIX nao disponivel")
     checkout = db.query(CheckoutAsaas).filter(
         CheckoutAsaas.checkout_id == checkout_id,

@@ -17,7 +17,7 @@ from app.models.loja import Loja
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
-from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
+from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.utils.documento import normalizar_cpf_cnpj
 
@@ -924,7 +924,7 @@ async def aprovar_subconta_sandbox(
     payload: dict = Depends(get_usuario_logado),
 ):
     _validar_escopo(payload, organizacao_id)
-    if APP_ENV in {"production", "prod"}:
+    if APP_ENV in {"production", "prod"} or ambiente_asaas() != "sandbox":
         raise HTTPException(status_code=403, detail="A aprovação simulada existe somente no Sandbox")
     titular, _ = _resolver_titular(
         db,

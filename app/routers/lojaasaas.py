@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import APP_ENV
+from app.services.titular_financeiro_service import ambiente_asaas
 from app.core.credential_crypto import criptografar_credencial, hash_token_webhook
 from app.core.security import get_usuario_logado
 from app.core.permissoes_loja import validar_mutacao_loja
@@ -53,7 +53,7 @@ def consultar_configuracao_asaas(
     _loja_autorizada(db, loja_id, usuario)
     config = db.query(LojaAsaas).filter(
         LojaAsaas.loja_id == loja_id,
-        LojaAsaas.ambiente == APP_ENV,
+        LojaAsaas.ambiente == ambiente_asaas(),
     ).first()
     if not config:
         raise HTTPException(status_code=404, detail="Integração Asaas não configurada")
@@ -71,13 +71,13 @@ def configurar_conta_asaas(
     try:
         config = db.query(LojaAsaas).filter(
             LojaAsaas.loja_id == loja_id,
-            LojaAsaas.ambiente == APP_ENV,
+            LojaAsaas.ambiente == ambiente_asaas(),
         ).first()
         if not config:
             config = LojaAsaas(
                 loja_id=loja_id,
                 organizacao_id=loja.organizacao_id,
-                ambiente=APP_ENV,
+                ambiente=ambiente_asaas(),
             )
             db.add(config)
 

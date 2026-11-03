@@ -3,14 +3,15 @@ from decimal import Decimal, ROUND_HALF_UP
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.config import APP_ENV, ASAAS_CLUBBAR_WALLET_ID
+from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 from app.core.credential_crypto import descriptografar_credencial
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.lojaasaas import LojaAsaas
+from app.services.titular_financeiro_service import ambiente_asaas
 
 
 def _ambiente_asaas() -> str:
-    return "production" if APP_ENV in {"production", "prod"} else "sandbox"
+    return ambiente_asaas()
 
 
 def obter_conta_asaas_da_loja(db: Session, loja_id: int) -> tuple[str, str]:

@@ -20,6 +20,7 @@ from app.services.asaas_service import (
     criar_qrcode_pix_estatico_asaas,
     criar_referencia_checkout_asaas,
 )
+from app.services.titular_financeiro_service import ambiente_asaas
 
 
 class RespostaCancelamentoFalsa:
@@ -128,6 +129,12 @@ class ClienteHttpPixFalso(ClienteHttpFalso):
 
 
 class AsaasAmbientesTest(unittest.TestCase):
+    def test_ambiente_asaas_segue_url_e_nao_ambiente_da_aplicacao(self):
+        with patch.dict("os.environ", {"APP_ENV": "development", "ASAAS_BASE_URL": "https://api.asaas.com/v3"}):
+            self.assertEqual("production", ambiente_asaas())
+        with patch.dict("os.environ", {"ASAAS_BASE_URL": "https://api-sandbox.asaas.com/v3"}):
+            self.assertEqual("sandbox", ambiente_asaas())
+
     def test_cancelamento_de_checkout_ja_inativo_e_idempotente(self):
         ClienteHttpCancelamentoFalso.resposta = RespostaCancelamentoFalsa(
             400, 'O checkout não está ativo para ser cancelado'
