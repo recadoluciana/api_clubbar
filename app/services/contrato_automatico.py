@@ -129,7 +129,7 @@ def garantir_contrato(db, estabelecimento):
         contratopadrao_id=modelo.contratopadrao_id, taxapadrao_id=taxa.taxapadrao_id,
         status="RASCUNHO", versao=modelo.versao,
         vrtaxaprod=taxa.pctaxaproduto, vrtaxaing=taxa.pctaxaingresso,
-        vrtaxaminimaingresso=taxa.vrtaxaminimaingresso, vrimplantacao=modelo.vrimplantacao,
+        vrtaxaminimaingresso=taxa.vrtaxaminimaingresso, vrimplantacao=0,
         cpfcnpjcontratante=documento or None,
         nmrazaosocial=estabelecimento.nmestabelecimento,
         cepcontratante=estabelecimento.cep, enderecocontratante=estabelecimento.endereco,

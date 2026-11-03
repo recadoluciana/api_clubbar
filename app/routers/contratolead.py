@@ -26,7 +26,7 @@ from app.models.leadparceiro import LeadParceiro
 from app.models.loja import Loja
 from app.models.cobrancaimplantacao import CobrancaImplantacao
 from app.services.portal_acesso_service import obter_lead_portal
-from app.services.implantacao_service import criar_cobranca_implantacao, reconciliar_cobranca_implantacao, saida_cobranca
+from app.services.implantacao_service import reconciliar_cobranca_implantacao, saida_cobranca
 from app.services.asaas_service import cancelar_checkout_asaas
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import A4
@@ -328,7 +328,7 @@ def criar_contrato(
         vrtaxaprod=taxa_produtos,
         vrtaxaing=taxa_ingressos,
         vrtaxaminimaingresso=taxa.vrtaxaminimaingresso,
-        vrimplantacao=modelo.vrimplantacao,
+        vrimplantacao=0,
         tipopessoa="PJ" if len(cpfcnpj) == 14 else "PF",
         cpfcnpjcontratante=cpfcnpj,
         nmrazaosocial=razao_social,
@@ -700,13 +700,7 @@ async def consultar_implantacao_portal(
         contrato = db.get(LeadEstabelecimentoContrato, contrato.contratoorigem_id)
         if contrato is None or contrato.status != "ACEITO":
             raise HTTPException(409, "Contrato original aceito não encontrado.")
-    cobranca = db.query(CobrancaImplantacao).filter(
-        CobrancaImplantacao.leadestabelecimentocontrato_id == contrato.leadestabelecimentocontrato_id
-    ).first()
-    if not cobranca or cobranca.status == "VENCIDA":
-        cobranca = await criar_cobranca_implantacao(db, contrato)
-    cobranca = await reconciliar_cobranca_implantacao(db, cobranca)
-    return saida_cobranca(cobranca)
+    raise HTTPException(410, "A taxa de implantação não é mais cobrada.")
 
 
 @router.get("/estabelecimento/{leadestabelecimento_id}/implantacao")

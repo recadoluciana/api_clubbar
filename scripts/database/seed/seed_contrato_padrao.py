@@ -29,7 +29,7 @@ Modalidade de venda: {{MODALIDADE_VENDA}}
 O presente contrato estabelece a parceria comercial e concede ao ESTABELECIMENTO PARCEIRO licença limitada, não exclusiva e intransferível para utilizar a plataforma Clubbar na divulgação e comercialização dos produtos e/ou ingressos indicados em seu cadastro.
 
 2. IMPLANTAÇÃO
-Pela ativação da conta financeira, configuração inicial da organização e do estabelecimento, treinamento de acesso, configuração inicial de produtos ou eventos, acompanhamento da primeira venda e suporte assistido durante a implantação, será cobrada uma única taxa de implantação de R$ {{TAXA_IMPLANTACAO}}. A implantação e a publicação das vendas poderão permanecer bloqueadas até a confirmação desse pagamento.
+Não há cobrança de taxa de implantação para iniciar a parceria.
 
 3. COMISSÃO SOBRE AS VENDAS
 Pelas vendas realizadas por meio da plataforma serão aplicadas as seguintes taxas Clubbar:
@@ -53,7 +53,7 @@ O ESTABELECIMENTO PARCEIRO declara que os dados fornecidos são verdadeiros e ma
 Os repasses financeiros observarão os prazos do meio de pagamento. Cancelamentos, reembolsos, estornos e contestações poderão reverter valores anteriormente creditados. O parceiro responderá pelos valores decorrentes da entrega dos produtos, realização dos eventos, descumprimento das políticas publicadas, fraude atribuível à sua operação e demais hipóteses previstas em lei.
 
 9. ATIVAÇÃO FINANCEIRA E PUBLICAÇÃO
-A criação ou aprovação da subconta e a liberação para publicar vendas poderão depender do aceite deste contrato, do pagamento da implantação, do fornecimento dos dados e documentos exigidos e da aprovação cadastral pelo meio de pagamento.
+A criação ou aprovação da subconta e a liberação para publicar vendas poderão depender do aceite deste contrato, do fornecimento dos dados e documentos exigidos e da aprovação cadastral pelo meio de pagamento.
 
 10. PROTEÇÃO DE DADOS
 As partes tratarão dados pessoais apenas para as finalidades da parceria e observarão a legislação aplicável de proteção de dados. Documentos e selfies exigidos para validação financeira serão enviados diretamente ao ambiente seguro do meio de pagamento quando aplicável.
@@ -85,7 +85,7 @@ def main() -> None:
                 versao="1",
                 titulo="Termo de Parceria Comercial Clubbar",
                 conteudomodelo=CONTRATO_V1.strip(),
-                vrimplantacao=99.00,
+                vrimplantacao=0,
                 sitcontrato="ATIVO",
             ))
             db.commit()

@@ -17,7 +17,7 @@ class ContratoPadraoCreate(BaseModel):
     versao: str = Field(min_length=1, max_length=30)
     titulo: str = Field(min_length=3, max_length=160)
     conteudomodelo: str = Field(min_length=100)
-    vrimplantacao: Decimal = Field(default=Decimal("0"), ge=0)
+    vrimplantacao: Decimal = Field(default=Decimal("0"), ge=0, le=0)
 
 
 def _out(item: ContratoPadrao) -> dict:

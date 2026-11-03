@@ -45,6 +45,10 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
+    def test_novo_contrato_nao_cobra_implantacao_mesmo_com_modelo_antigo(self):
+        contrato = garantir_contrato(self.db, self.est)
+        self.assertEqual(float(contrato.vrimplantacao), 0)
+
     def completar_endereco(self, contrato_id):
         dados = EnderecoContratoPortal(
             cep="30130000", endereco="Rua da Bahia", numero="100",

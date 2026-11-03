@@ -888,18 +888,6 @@ async def converter_lead_em_parceiro(
         CobrancaImplantacao.leadestabelecimentocontrato_id
         == contrato_cobranca_id
     ).first()
-    if float(contrato_aceito.vrimplantacao or 0) > 0 and (
-        cobranca_implantacao is None
-        or cobranca_implantacao.status not in {"PAGA", "ISENTA"}
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "Não foi possível converter o estabelecimento. A taxa de "
-                "implantação ainda precisa ser paga ou marcada como isenta. "
-                "Conclua essa etapa antes de tentar novamente."
-            ),
-        )
     senha_inicial = secrets.token_urlsafe(9)
     primeira_conversao = organizacao_existente is None
 

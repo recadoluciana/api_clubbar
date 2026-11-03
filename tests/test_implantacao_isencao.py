@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from app.routers.contratolead import (
     IsencaoImplantacaoIn,
     _registrar_isencao_implantacao,
+    consultar_implantacao_portal,
 )
 
 
@@ -16,6 +17,9 @@ class _Query:
         self.resultado = resultado
 
     def filter(self, *args):
+        return self
+
+    def join(self, *args):
         return self
 
     def with_for_update(self):
@@ -55,6 +59,12 @@ class IsencaoImplantacaoTests(unittest.IsolatedAsyncioTestCase):
             justificativa="Isenção comercial autorizada"
         )
         self.operador = {"sub": "7"}
+
+    async def test_portal_nao_cria_nem_retorna_cobranca_de_implantacao(self):
+        contrato = SimpleNamespace(status='ACEITO', tipoinstrumento='ORIGINAL')
+        with self.assertRaises(HTTPException) as erro:
+            await consultar_implantacao_portal(12, SimpleNamespace(leadparceiro_id=1), _Db(contrato))
+        self.assertEqual(erro.exception.status_code, 410)
 
     async def test_isenta_sem_gerar_checkout(self):
         db = _Db()
