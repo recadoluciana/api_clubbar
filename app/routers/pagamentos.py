@@ -725,16 +725,16 @@ async def consultar_provedor_pagamento_loja(
     mercado_pago_pronto = False
     configuracao = None
     if provedor == 'MERCADO_PAGO':
+        if not loja.titularfinanceiro_id:
+            raise HTTPException(409, 'Selecione o titular financeiro do estabelecimento.')
         configuracao = db.query(LojaMercadoPago).filter(
-            LojaMercadoPago.loja_id == loja_id,
+            LojaMercadoPago.titularfinanceiro_id == loja.titularfinanceiro_id,
             LojaMercadoPago.ambiente == APP_ENV,
             LojaMercadoPago.statusintegracao == 'ATIVA',
         ).first()
         mercado_pago_pronto = bool(configuracao and configuracao.access_token_criptografado)
         if not mercado_pago_pronto:
-            # Nunca direciona o cliente a uma conta incompleta. O parceiro
-            # precisa concluir OAuth antes de trocar o provedor efetivo.
-            provedor = 'ASAAS'
+            raise HTTPException(409, 'A conta Mercado Pago do titular não está conectada para este estabelecimento.')
     public_key = None
     if provedor == 'MERCADO_PAGO' and configuracao:
         public_key = MERCADO_PAGO_PUBLIC_KEY or None

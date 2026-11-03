@@ -1276,6 +1276,23 @@ def garantir_estrutura_mercado_pago() -> None:
         CheckoutMercadoPago.__table__.create(bind=engine, checkfirst=True)
         inspector = inspect(engine)
         tabelas = set(inspector.get_table_names())
+        if {'lojamercadopago', 'titularfinanceiro'}.issubset(tabelas):
+            colunas_mp = {coluna['name']: coluna for coluna in inspector.get_columns('lojamercadopago')}
+            with engine.begin() as conexao:
+                if not colunas_mp['loja_id']['nullable']:
+                    conexao.execute(text('ALTER TABLE lojamercadopago MODIFY COLUMN loja_id BIGINT NULL'))
+                if 'titularfinanceiro_id' not in colunas_mp:
+                    conexao.execute(text('ALTER TABLE lojamercadopago ADD COLUMN titularfinanceiro_id BIGINT NULL'))
+                indices_mp = {indice['name'] for indice in inspector.get_indexes('lojamercadopago')}
+                if 'idx_lojamercadopago_titular_ambiente' not in indices_mp:
+                    conexao.execute(text('ALTER TABLE lojamercadopago ADD INDEX idx_lojamercadopago_titular_ambiente (titularfinanceiro_id, ambiente)'))
+                if 'uq_lojamercadopago_titular_ambiente_usuario' not in indices_mp:
+                    conexao.execute(text('ALTER TABLE lojamercadopago ADD UNIQUE KEY uq_lojamercadopago_titular_ambiente_usuario (titularfinanceiro_id, ambiente, mercadopago_user_id)'))
+                fks_mp = {fk['name'] for fk in inspector.get_foreign_keys('lojamercadopago')}
+                if 'fk_lojamercadopago_titular_org' not in fks_mp:
+                    conexao.execute(text('ALTER TABLE lojamercadopago ADD CONSTRAINT fk_lojamercadopago_titular_org FOREIGN KEY (organizacao_id, titularfinanceiro_id) REFERENCES titularfinanceiro (organizacao_id, titularfinanceiro_id)'))
+            from app.models.titularmercadopago_pendente import TitularMercadoPagoPendente
+            TitularMercadoPagoPendente.__table__.create(bind=engine, checkfirst=True)
         if "checkout_mercadopago" in tabelas:
             colunas_checkout_mp = {
                 coluna["name"]

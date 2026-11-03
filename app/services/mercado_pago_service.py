@@ -23,6 +23,9 @@ from app.core.config import (
 )
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.models.lojamercadopago import LojaMercadoPago
+from app.models.loja import Loja
+from app.models.checkout_mercadopago import CheckoutMercadoPago
+from sqlalchemy import or_, exists
 from app.services.mercado_pago_oauth_service import expira_em, renovar_tokens
 
 
@@ -56,19 +59,27 @@ def _ambiente() -> str:
 
 
 async def obter_token_loja(db: Session, loja_id: int, lojamercadopago_id: int | None = None) -> tuple[str, LojaMercadoPago]:
-    consulta = db.query(LojaMercadoPago).filter(
-        LojaMercadoPago.loja_id == loja_id,
-        LojaMercadoPago.ambiente == _ambiente(),
-    )
+    consulta = db.query(LojaMercadoPago).filter(LojaMercadoPago.ambiente == _ambiente())
     if lojamercadopago_id is None:
-        consulta = consulta.filter(LojaMercadoPago.statusintegracao == "ATIVA")
+        loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+        if not loja or not loja.titularfinanceiro_id:
+            raise HTTPException(409, "O estabelecimento não possui titular financeiro vinculado.")
+        consulta = consulta.filter(LojaMercadoPago.titularfinanceiro_id == loja.titularfinanceiro_id, LojaMercadoPago.statusintegracao == "ATIVA")
     else:
-        consulta = consulta.filter(LojaMercadoPago.lojamercadopago_id == lojamercadopago_id)
+        historico = exists().where(CheckoutMercadoPago.loja_id == loja_id, CheckoutMercadoPago.lojamercadopago_id == LojaMercadoPago.lojamercadopago_id)
+        consulta = consulta.filter(LojaMercadoPago.lojamercadopago_id == lojamercadopago_id, or_(LojaMercadoPago.loja_id == loja_id, historico))
     config = consulta.first()
     if not config or not config.access_token_criptografado:
         raise HTTPException(409, "A conta Mercado Pago do estabelecimento ainda não está conectada.")
 
     if config.token_expira_em and config.token_expira_em <= datetime.now():
+        config = db.query(LojaMercadoPago).filter(
+            LojaMercadoPago.lojamercadopago_id == config.lojamercadopago_id
+        ).populate_existing().with_for_update().first()
+        if not config:
+            raise HTTPException(409, 'A conta Mercado Pago não está mais disponível.')
+        if not config.token_expira_em or config.token_expira_em > datetime.now():
+            return descriptografar_credencial(config.access_token_criptografado), config
         if not config.refresh_token_criptografado:
             config.statusintegracao = "EXPIRADA"
             db.commit()

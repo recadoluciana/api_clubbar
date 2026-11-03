@@ -35,7 +35,7 @@ def test_recusa_confirmacao_expirada_ou_incorreta(expirado):
     db = MagicMock()
     candidato = SimpleNamespace(confirmacao_id='id', expira_em=datetime.now()+timedelta(minutes=-1 if expirado else 1))
     db.query.return_value.filter_by.return_value.with_for_update.return_value.first.return_value = candidato
-    with patch.object(r, '_loja_autorizada'), pytest.raises(HTTPException) as erro:
+    with patch.object(r, '_loja_autorizada', return_value=SimpleNamespace(titularfinanceiro_id=None)), pytest.raises(HTTPException) as erro:
         r.confirmar_conta_mercado_pago(1, MercadoPagoConfirmacaoIn(confirmacao_id='id' if expirado else 'errado', confirmar=True), {}, db)
     assert erro.value.status_code == 409
     db.commit.assert_not_called()

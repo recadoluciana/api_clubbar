@@ -755,7 +755,8 @@ CREATE TABLE lojaasaas (
 CREATE TABLE lojamercadopago (
   lojamercadopago_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   organizacao_id BIGINT NOT NULL,
-  loja_id BIGINT NOT NULL,
+  loja_id BIGINT NULL,
+  titularfinanceiro_id BIGINT NULL,
   ambiente VARCHAR(20) NOT NULL,
   mercadopago_user_id VARCHAR(100) NULL,
   mercadopago_nome VARCHAR(255) NULL,
@@ -770,13 +771,18 @@ CREATE TABLE lojamercadopago (
   dtalteracao DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_lojamercadopago_loja_ambiente (loja_id, ambiente),
   UNIQUE KEY uq_lojamercadopago_loja_ambiente_usuario (loja_id, ambiente, mercadopago_user_id),
+  UNIQUE KEY uq_lojamercadopago_titular_ambiente_usuario (titularfinanceiro_id, ambiente, mercadopago_user_id),
   UNIQUE KEY uq_lojamercadopago_oauth_state (oauth_state_hash),
   KEY idx_lojamercadopago_organizacao (organizacao_id),
+  KEY idx_lojamercadopago_titular_ambiente (titularfinanceiro_id, ambiente),
   KEY idx_lojamercadopago_user (mercadopago_user_id),
   CONSTRAINT fk_lojamercadopago_organizacao
     FOREIGN KEY (organizacao_id) REFERENCES organizacao(organizacao_id),
   CONSTRAINT fk_lojamercadopago_loja
-    FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE
+    FOREIGN KEY (loja_id) REFERENCES loja(loja_id) ON DELETE CASCADE,
+  CONSTRAINT fk_lojamercadopago_titular_org
+    FOREIGN KEY (organizacao_id, titularfinanceiro_id)
+    REFERENCES titularfinanceiro (organizacao_id, titularfinanceiro_id)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
 CREATE TABLE clienteasaas (
@@ -2613,3 +2619,14 @@ CREATE TABLE lojamercadopagopendente (
   expira_em DATETIME NOT NULL,
   PRIMARY KEY (loja_id, ambiente)
 );
+
+CREATE TABLE titularmercadopagopendente (
+  titularfinanceiro_id BIGINT NOT NULL,
+  ambiente VARCHAR(20) NOT NULL,
+  confirmacao_id VARCHAR(64) NOT NULL,
+  credenciais TEXT NOT NULL,
+  expira_em DATETIME NOT NULL,
+  PRIMARY KEY (titularfinanceiro_id, ambiente),
+  CONSTRAINT fk_mp_pendente_titular FOREIGN KEY (titularfinanceiro_id)
+    REFERENCES titularfinanceiro (titularfinanceiro_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

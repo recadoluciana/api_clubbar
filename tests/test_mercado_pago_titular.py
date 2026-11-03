@@ -34,7 +34,7 @@ def test_busca_titular_indisponivel_nao_quebra_integracao(monkeypatch):
 
 
 def test_rota_consulta_conta_conectada_somente_quando_solicitado(monkeypatch):
-    loja = SimpleNamespace(loja_id=1, organizacao_id=1, provedor_pagamento='MERCADO_PAGO')
+    loja = SimpleNamespace(loja_id=1, organizacao_id=1, titularfinanceiro_id=10, provedor_pagamento='MERCADO_PAGO')
     conta = SimpleNamespace(lojamercadopago_id=6, mercadopago_user_id='123', mercadopago_nome='apelido', statusintegracao='ATIVA', access_token_criptografado='cifrado')
     monkeypatch.setattr(router, '_loja_autorizada', MagicMock(return_value=loja))
     monkeypatch.setattr(router, '_config', MagicMock(return_value=conta))
@@ -43,11 +43,13 @@ def test_rota_consulta_conta_conectada_somente_quando_solicitado(monkeypatch):
     titular = AsyncMock(return_value={'nome': 'Ana Silva', 'email': 'ana@example.com'})
     monkeypatch.setattr(router, 'obter_token_loja', token)
     monkeypatch.setattr(router, 'obter_dados_titular', titular)
-    resultado = asyncio.run(router.consultar_mercado_pago(1, True, {}, MagicMock()))
+    db = MagicMock()
+    db.query.return_value.filter_by.return_value.first.return_value = None
+    resultado = asyncio.run(router.consultar_mercado_pago(1, True, {}, db))
     assert resultado['mercadopago_titular'] == 'Ana Silva'
     assert resultado['mercadopago_email'] == 'ana@example.com'
     assert 'token' not in resultado.values()
-    asyncio.run(router.consultar_mercado_pago(1, False, {}, MagicMock()))
+    asyncio.run(router.consultar_mercado_pago(1, False, {}, db))
     assert titular.await_count == 1
 
 
@@ -61,13 +63,15 @@ def test_rota_nao_consulta_dados_antes_da_autorizacao(monkeypatch):
 
 
 def test_rota_preserva_conexao_se_consulta_do_titular_falhar(monkeypatch):
-    loja = SimpleNamespace(loja_id=1, organizacao_id=1, provedor_pagamento='MERCADO_PAGO')
+    loja = SimpleNamespace(loja_id=1, organizacao_id=1, titularfinanceiro_id=10, provedor_pagamento='MERCADO_PAGO')
     conta = SimpleNamespace(lojamercadopago_id=6, mercadopago_user_id='123', mercadopago_nome='apelido', statusintegracao='ATIVA', access_token_criptografado='cifrado')
     monkeypatch.setattr(router, '_loja_autorizada', MagicMock(return_value=loja))
     monkeypatch.setattr(router, '_config', MagicMock(return_value=conta))
     monkeypatch.setattr(router, '_pendente', MagicMock(return_value=None))
     monkeypatch.setattr(router, 'obter_token_loja', AsyncMock(side_effect=HTTPException(502)))
-    resultado = asyncio.run(router.consultar_mercado_pago(1, True, {}, MagicMock()))
+    db = MagicMock()
+    db.query.return_value.filter_by.return_value.first.return_value = None
+    resultado = asyncio.run(router.consultar_mercado_pago(1, True, {}, db))
     assert resultado['conectada'] is True
     assert resultado.get('mercadopago_titular') is None
     assert resultado.get('mercadopago_email') is None

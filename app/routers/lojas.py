@@ -829,6 +829,8 @@ def atualizar_loja(
             loja.nmrazaosocial = razao
 
         if titularfinanceiro_id is not None:
+            if titularfinanceiro_id != loja.titularfinanceiro_id:
+                raise HTTPException(409, 'Altere o titular junto com o provedor na tela Recebimentos.')
             titular = db.query(TitularFinanceiro).filter(
                 TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
                 TitularFinanceiro.organizacao_id == loja.organizacao_id,

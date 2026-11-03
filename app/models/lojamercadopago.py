@@ -15,7 +15,8 @@ class LojaMercadoPago(Base):
 
     lojamercadopago_id = Column(BigInteger, primary_key=True, autoincrement=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False, index=True)
-    loja_id = Column(BigInteger, ForeignKey("loja.loja_id", ondelete="CASCADE"), nullable=False, index=True)
+    loja_id = Column(BigInteger, ForeignKey("loja.loja_id", ondelete="CASCADE"), nullable=True, index=True)
+    titularfinanceiro_id = Column(BigInteger, ForeignKey("titularfinanceiro.titularfinanceiro_id"), nullable=True, index=True)
     ambiente = Column(String(20), nullable=False)
 
     mercadopago_user_id = Column(String(100), nullable=True, index=True)
@@ -34,6 +35,7 @@ class LojaMercadoPago(Base):
 
     __table_args__ = (
         UniqueConstraint("loja_id", "ambiente", "mercadopago_user_id", name="uq_lojamercadopago_loja_ambiente_usuario"),
+        UniqueConstraint("titularfinanceiro_id", "ambiente", "mercadopago_user_id", name="uq_lojamercadopago_titular_ambiente_usuario"),
     )
 
 

@@ -7,6 +7,7 @@ from app.core.config import ASAAS_CLUBBAR_WALLET_ID
 from app.core.credential_crypto import descriptografar_credencial
 from app.models.campanha_doacao import CampanhaDoacao
 from app.models.lojaasaas import LojaAsaas
+from app.models.loja import Loja
 from app.services.titular_financeiro_service import ambiente_asaas
 
 
@@ -14,7 +15,11 @@ def _ambiente_asaas() -> str:
     return ambiente_asaas()
 
 
-def obter_conta_asaas_da_loja(db: Session, loja_id: int) -> tuple[str, str]:
+def obter_conta_asaas_da_loja(db: Session, loja_id: int, *, validar_provedor: bool = True) -> tuple[str, str]:
+    if validar_provedor:
+        loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
+        if not loja or str(loja.provedor_pagamento or 'ASAAS').upper() != 'ASAAS':
+            raise HTTPException(409, 'Este estabelecimento não está configurado para receber pelo Asaas.')
     config = (
         db.query(LojaAsaas)
         .filter(

@@ -72,7 +72,7 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
         self.assertEqual("Carrinho vazio", resposta.json()["detail"])
 
     def test_checkout_retorna_chave_publica_do_integrador(self):
-        loja = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
+        loja = SimpleNamespace(provedor_pagamento='MERCADO_PAGO', titularfinanceiro_id=10)
         config = SimpleNamespace(access_token_criptografado='token', public_key='chave-vendedor')
         self.db.query.return_value.filter.return_value.first.side_effect = [loja, config]
         with patch('app.routers.pagamentos.MERCADO_PAGO_PUBLIC_KEY', 'chave-integrador'):

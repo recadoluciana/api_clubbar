@@ -19,6 +19,7 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
 from app.models.titularfinanceiro import TitularFinanceiro
+from app.models.lojamercadopago import LojaMercadoPago
 from app.utils.documento import normalizar_cpf_cnpj
 
 
@@ -95,6 +96,10 @@ def _motivos_titular_em_uso(db: Session, titular: TitularFinanceiro) -> list[str
     motivos: list[str] = []
     if titular.asaas_account_id or titular.asaas_wallet_id:
         motivos.append("subconta Asaas")
+    if db.query(LojaMercadoPago.lojamercadopago_id).filter(
+        LojaMercadoPago.titularfinanceiro_id == titular.titularfinanceiro_id,
+    ).first():
+        motivos.append("conexão Mercado Pago")
     if db.query(Loja.loja_id).filter(
         Loja.organizacao_id == titular.organizacao_id,
         Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
@@ -207,6 +212,8 @@ def vincular_titular_a_loja(
     ).first()
     if not titular or not loja:
         raise HTTPException(status_code=404, detail="Titular ou loja não encontrado")
+    if loja.titularfinanceiro_id and loja.titularfinanceiro_id != titularfinanceiro_id:
+        raise HTTPException(409, 'Altere o titular junto com o provedor na tela Recebimentos.')
     if str(titular.sittitular or "ATIVO").upper() != "ATIVO":
         raise HTTPException(422, "O titular financeiro está inativo e não pode ser vinculado à loja")
     loja.titularfinanceiro_id = titularfinanceiro_id
@@ -267,6 +274,8 @@ async def salvar(
         if titular.asaas_account_id:
             await _sincronizar_dados_comerciais_asaas(titular, dados)
         if loja:
+            if loja.titularfinanceiro_id and loja.titularfinanceiro_id != titular.titularfinanceiro_id:
+                raise HTTPException(409, 'Altere o titular junto com o provedor na tela Recebimentos.')
             loja.titularfinanceiro_id = titular.titularfinanceiro_id
             sincronizar_integracao_asaas_da_loja(db, loja, titular)
         db.commit()
@@ -438,6 +447,10 @@ def inativar_titular(
         raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
     if titular.asaas_account_id:
         raise HTTPException(409, "Este titular possui uma subconta Asaas e não pode ser inativado.")
+    if db.query(Loja).filter(Loja.organizacao_id == organizacao_id, Loja.titularfinanceiro_id == titularfinanceiro_id).first():
+        raise HTTPException(409, 'Altere o titular das lojas vinculadas antes de inativá-lo.')
+    if db.query(LojaMercadoPago).filter(LojaMercadoPago.titularfinanceiro_id == titularfinanceiro_id, LojaMercadoPago.statusintegracao == 'ATIVA').first():
+        raise HTTPException(409, 'Desconecte a conta Mercado Pago antes de inativar o titular.')
     titular.sittitular = "INATIVO"
     db.commit()
     db.refresh(titular)
