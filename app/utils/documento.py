@@ -31,3 +31,18 @@ def tipo_estabelecimento_inferido(valor: str | None) -> str | None:
     if ordem.isdigit():
         return "FILIAL"
     return None
+
+
+def validar_cpf_responsavel(valor: str) -> str:
+    """Normaliza e valida os dígitos verificadores do CPF de uma pessoa."""
+    if not isinstance(valor, str) or not re.fullmatch(r"[0-9.\-\s]+", valor):
+        raise ValueError("Informe um CPF válido.")
+    cpf = re.sub(r"[.\-\s]", "", valor)
+    if len(cpf) != 11 or len(set(cpf)) == 1:
+        raise ValueError("Informe um CPF válido.")
+    for tamanho in (9, 10):
+        soma = sum(int(numero) * (tamanho + 1 - indice) for indice, numero in enumerate(cpf[:tamanho]))
+        digito = (soma * 10 % 11) % 10
+        if digito != int(cpf[tamanho]):
+            raise ValueError("Informe um CPF válido.")
+    return cpf
