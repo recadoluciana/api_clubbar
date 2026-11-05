@@ -110,6 +110,25 @@ class ProdutoOrganizacaoIn(BaseModel):
         return self
 
 
+class FotoProdutoIn(BaseModel):
+    urlfotoproduto: str | None = Field(default=None, max_length=255)
+
+
+class DadosProdutoIn(BaseModel):
+    nmproduto: str = Field(min_length=2, max_length=100)
+    dsproduto: str | None = Field(default=None, max_length=255)
+    vrprecopadrao: Decimal = Field(gt=0, max_digits=10, decimal_places=2)
+    sitproduto: Literal["ATIVO", "INATIVO"]
+
+    @model_validator(mode="after")
+    def limpar_campos(self):
+        self.nmproduto = self.nmproduto.strip()
+        self.dsproduto = (self.dsproduto or '').strip() or None
+        if len(self.nmproduto) < 2:
+            raise ValueError("Informe o nome do produto com pelo menos dois caracteres.")
+        return self
+
+
 class AssociarCardapioIn(BaseModel):
     cardapio_id: int = Field(gt=0)
 
@@ -677,6 +696,31 @@ def alterar_produto_organizacao(organizacao_id: int, produto_id: int, dados: Pro
         Produto.produto_id == produto_id,
         Produto.organizacao_id == organizacao_id,
     ).first()
+    if produto is None:
+        raise HTTPException(404, "Produto não encontrado na organização.")
+    for campo, valor in dados.model_dump().items():
+        setattr(produto, campo, valor)
+    db.commit()
+    db.refresh(produto)
+    return _saida_produto_organizacao(produto)
+
+
+@router.patch("/organizacoes/{organizacao_id}/produtos/{produto_id}/foto")
+def alterar_foto_produto(organizacao_id: int, produto_id: int, dados: FotoProdutoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    produto = db.query(Produto).filter(Produto.produto_id == produto_id, Produto.organizacao_id == organizacao_id).first()
+    if produto is None:
+        raise HTTPException(404, "Produto não encontrado na organização.")
+    produto.urlfotoproduto = (dados.urlfotoproduto or '').strip() or None
+    db.commit()
+    db.refresh(produto)
+    return _saida_produto_organizacao(produto)
+
+
+@router.patch("/organizacoes/{organizacao_id}/produtos/{produto_id}/dados")
+def alterar_dados_produto(organizacao_id: int, produto_id: int, dados: DadosProdutoIn, payload=Depends(get_usuario_logado), db: Session=Depends(get_db)):
+    _validar_organizacao_do_produto(organizacao_id, payload)
+    produto = db.query(Produto).filter(Produto.produto_id == produto_id, Produto.organizacao_id == organizacao_id).first()
     if produto is None:
         raise HTTPException(404, "Produto não encontrado na organização.")
     for campo, valor in dados.model_dump().items():
