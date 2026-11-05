@@ -7,11 +7,6 @@ from app.database import Base
 
 class LeadParceiro(Base):
     __tablename__ = "leadparceiro"
-    __table_args__ = (
-        UniqueConstraint("nmorganizacao", name="uq_leadparceiro_nmorganizacao"),
-        UniqueConstraint("email", name="uq_leadparceiro_email"),
-        UniqueConstraint("telefone", name="uq_leadparceiro_telefone"),
-    )
 
     leadparceiro_id = Column(
         BigInteger,

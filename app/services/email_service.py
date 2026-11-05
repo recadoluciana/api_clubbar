@@ -223,7 +223,7 @@ def enviar_confirmacao_cadastro_lead(
         )
 
     organizacao = lead.get("nmorganizacao") or "Não informada"
-    link_html = ""
+    link_html = "<p>Para continuar, acesse o portal e solicite um código com o CPF ou CNPJ cadastrado.</p>"
     if token:
         site = url_site_publico()
         link = f"{site}/portal-lead.html#acesso={quote(token)}"
@@ -524,3 +524,14 @@ def enviar_produtos_confirmados(
         ),
         anexos,
     )
+
+
+def enviar_codigo_acesso_portal(destinatario: str, codigo: str) -> None:
+    html = template_email_clubbar(
+        titulo="Código de acesso ao Clubbar",
+        subtitulo="Use o código para entrar no portal do parceiro.",
+        conteudo_html=f"<p>Seu código de acesso é <strong>{escape(codigo)}</strong>.</p>"
+        "<p>Ele é válido por 10 minutos e pode ser usado uma vez. "
+        "Se você não solicitou o acesso, ignore este e-mail.</p>",
+    )
+    _enviar_email(destinatario, "Código de acesso ao Clubbar", html)

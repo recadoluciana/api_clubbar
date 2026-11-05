@@ -218,6 +218,28 @@ app.include_router(beneficios_produtos.router)
 
 
 @app.on_event("startup")
+def permitir_contatos_compartilhados_lead() -> None:
+    """Nome, e-mail e telefone podem pertencer a mais de um cadastro."""
+    if engine.dialect.name != "mysql":
+        return
+    insp = inspect(engine)
+    if "leadparceiro" not in insp.get_table_names():
+        return
+    nomes = {item["name"] for item in insp.get_indexes("leadparceiro") if item.get("unique")}
+    nomes.update(item["name"] for item in insp.get_unique_constraints("leadparceiro") if item.get("name"))
+    permitidos = {"uq_leadparceiro_nmorganizacao", "uq_leadparceiro_email", "uq_leadparceiro_telefone", "uq_leadparceiro_email_telefone"}
+    with engine.begin() as conexao:
+        for nome in sorted(nomes & permitidos):
+            conexao.execute(text(f"ALTER TABLE leadparceiro DROP INDEX `{nome}`"))
+
+
+@app.on_event("startup")
+def garantir_tabela_codigo_portal() -> None:
+    from app.models.leadacesso import LeadCodigoAcesso
+    LeadCodigoAcesso.__table__.create(bind=engine, checkfirst=True)
+
+
+@app.on_event("startup")
 def garantir_preco_padrao_produto() -> None:
     """Mantém um preço padrão válido para cada produto mestre."""
     try:

@@ -72,6 +72,7 @@ DROP TABLE IF EXISTS titularfinanceiro;
 DROP TABLE IF EXISTS lojahorario;
 DROP TABLE IF EXISTS lojapoliticaingresso;
 DROP TABLE IF EXISTS lojaconteudo;
+DROP TABLE IF EXISTS leadcodigo_acesso;
 DROP TABLE IF EXISTS leadacesso;
 DROP TABLE IF EXISTS leadmaterial;
 DROP TABLE IF EXISTS leadagendamento;

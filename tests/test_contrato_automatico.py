@@ -236,11 +236,22 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 422)
         self.assertEqual(item.status, "ENVIADO")
 
+    def test_cadastro_com_contato_repetido_e_documento_novo_sem_sessao(self):
+        from app.routers.leadparceiro import criar_interesse_parceiro
+        from app.schemas.leadparceiro import LeadParceiroCreate
+        dados = LeadParceiroCreate(nmresponsavel="Pessoa", nmorganizacao="Outra Empresa", telefone="11999990000", email="teste@example.com", estabelecimentos=[dict(nmestabelecimento="Novo bar", tipo="BAR", cpfcnpj="52998224725", estado_id=1, cidade_id=1, cep="30130000", endereco="Rua da Bahia", numero="100", bairro="Centro")])
+        with patch("app.routers.leadparceiro.validar_cep_lead"), patch("app.routers.leadparceiro.enviar_confirmacao_cadastro_lead"), patch("app.routers.leadparceiro.enviar_notificacao_interesse_suporte"):
+            resultado = criar_interesse_parceiro(dados, self.db)
+        self.assertIsNone(resultado["acesso_portal"])
+        with self.assertRaises(HTTPException) as erro:
+            criar_interesse_parceiro(dados, self.db)
+        self.assertEqual(erro.exception.status_code, 409)
+
     def test_cadastro_portal_disponibiliza_contrato_na_mesma_transacao(self):
         from app.routers.portalparceiro import cadastrar_estabelecimento
         from app.schemas.portalparceiro import PortalEstabelecimentoCreate
-        dados = PortalEstabelecimentoCreate(nmestabelecimento="Novo bar", tipo="BAR", estado_id=1, cidade_id=1, cep="30130000", endereco="Rua da Bahia", numero="100", bairro="Centro")
-        with patch("app.routers.portalparceiro.validar_cep_lead"):
+        dados = PortalEstabelecimentoCreate(nmestabelecimento="Novo bar", tipo="BAR", cpfcnpj="52998224725", estado_id=1, cidade_id=1, cep="30130000", endereco="Rua da Bahia", numero="100", bairro="Centro")
+        with patch("app.routers.portalparceiro.validar_cep_lead"), patch("app.routers.portalparceiro.enviar_notificacao_interesse_suporte"):
             resultado = cadastrar_estabelecimento(dados, self.db.get(LeadParceiro, 1), self.db)
         contrato = self.db.query(LeadEstabelecimentoContrato).filter_by(
             leadestabelecimento_id=resultado["leadestabelecimento_id"]).one()

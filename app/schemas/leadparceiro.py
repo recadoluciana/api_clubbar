@@ -7,7 +7,7 @@ from pydantic import (
     Field,
     field_validator,
 )
-from app.utils.documento import normalizar_cpf_cnpj
+from app.utils.documento import normalizar_cpf_cnpj, validar_documento_acesso
 
 
 TipoParceiro = Literal[
@@ -146,7 +146,7 @@ class LeadEstabelecimentoCadastro(LeadEstabelecimentoNovo):
     @classmethod
     def documento_obrigatorio(cls, valor: str | None) -> str:
         try:
-            documento = normalizar_cpf_cnpj(valor)
+            documento = validar_documento_acesso(valor)
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
         if not documento:
@@ -334,4 +334,4 @@ class LeadParceiroOut(BaseModel):
         from_attributes = True
 
 class LeadParceiroCadastroOut(LeadParceiroOut):
-    acesso_portal: str
+    acesso_portal: str | None = None

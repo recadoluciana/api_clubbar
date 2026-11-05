@@ -228,47 +228,12 @@ def criar_interesse_parceiro(
     telefone_normalizado = "".join(
         caractere for caractere in payload.telefone if caractere.isdigit()
     )
-    conflitos: list[str] = []
-    if payload.nmorganizacao:
-        organizacao_existente = (
-            db.query(LeadParceiro.leadparceiro_id)
-            .filter(
-                func.lower(func.trim(LeadParceiro.nmorganizacao))
-                == payload.nmorganizacao.strip().lower()
-            )
-            .first()
-        )
-        if organizacao_existente:
-            conflitos.append(
-                f'A empresa "{payload.nmorganizacao}" já está cadastrada.'
-            )
-
-    email_existente = (
-        db.query(LeadParceiro)
-        .filter(
-            func.lower(func.trim(LeadParceiro.email)) == email_normalizado
-        )
-        .first()
-    )
-    if email_existente:
-        conflitos.append(f'O e-mail "{email_normalizado}" já está cadastrado.')
-
-    telefone_existente = (
-        db.query(LeadParceiro.leadparceiro_id)
-        .filter(
-            func.regexp_replace(LeadParceiro.telefone, "[^0-9]", "")
-            == telefone_normalizado
-        )
-        .first()
-    )
-    if telefone_existente:
-        conflitos.append(f'O telefone "{telefone_normalizado}" já está cadastrado.')
-
-    if conflitos:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=" ".join(conflitos),
-        )
+    documentos = {item.cpfcnpj for item in payload.estabelecimentos}
+    conflito = (db.query(LeadEstabelecimento.leadparceiro_id)
+                .filter(LeadEstabelecimento.cpfcnpj.in_(documentos))
+                .with_for_update().first())
+    if conflito:
+        raise HTTPException(status_code=409, detail="CPF ou CNPJ já cadastrado. Acesse o portal para adicionar outro estabelecimento.")
 
     localidades: list[tuple[Estado, Cidade]] = []
     for item in payload.estabelecimentos:
@@ -313,11 +278,6 @@ def criar_interesse_parceiro(
         for estabelecimento in estabelecimentos:
             garantir_contrato(db, estabelecimento)
 
-        acesso_portal = criar_acesso_portal(
-            db=db,
-            leadparceiro_id=lead.leadparceiro_id,
-        )
-
         db.commit()
         db.refresh(lead)
 
@@ -328,7 +288,7 @@ def criar_interesse_parceiro(
             localidades[0][1],
         )
 
-        resposta["acesso_portal"] = acesso_portal
+        resposta["acesso_portal"] = None
         resposta["estabelecimentos"] = [
             _serializar_estabelecimento(db, item) for item in estabelecimentos
         ]
@@ -353,7 +313,7 @@ def criar_interesse_parceiro(
                         estabelecimentos, localidades
                     )
                 ],
-                token=acesso_portal,
+                token=None,
             )
         except Exception:
             traceback.print_exc()
@@ -597,38 +557,12 @@ def atualizar_interesse_parceiro(
 
     if payload.email is not None:
         email_normalizado = str(payload.email).strip().lower()
-        email_em_uso = (
-            db.query(LeadParceiro.leadparceiro_id)
-            .filter(
-                LeadParceiro.leadparceiro_id != leadparceiro_id,
-                func.lower(func.trim(LeadParceiro.email)) == email_normalizado,
-            )
-            .first()
-        )
-        if email_em_uso:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f'O e-mail "{email_normalizado}" já está cadastrado em outro lead.',
-            )
         payload.email = email_normalizado
 
     if payload.telefone is not None:
         telefone_normalizado = "".join(
             caractere for caractere in payload.telefone if caractere.isdigit()
         )
-        telefone_em_uso = (
-            db.query(LeadParceiro.leadparceiro_id)
-            .filter(
-                LeadParceiro.leadparceiro_id != leadparceiro_id,
-                LeadParceiro.telefone == telefone_normalizado,
-            )
-            .first()
-        )
-        if telefone_em_uso:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f'O telefone "{telefone_normalizado}" já está cadastrado em outro lead.',
-            )
         payload.telefone = telefone_normalizado
 
     if payload.nmresponsavel is not None:

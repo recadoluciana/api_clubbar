@@ -14,6 +14,14 @@ class PortalLoginLead(BaseModel):
     telefone: str = Field(min_length=10, max_length=30)
 
 
+class PortalSolicitarCodigo(BaseModel):
+    documento: str = Field(min_length=11, max_length=25)
+
+
+class PortalConfirmarCodigo(PortalSolicitarCodigo):
+    codigo: str = Field(pattern=r"^[0-9]{8}$")
+
+
 class PortalRecuperarDados(BaseModel):
     email: EmailStr
 

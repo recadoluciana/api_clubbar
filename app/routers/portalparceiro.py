@@ -3,7 +3,8 @@ from app.services.contrato_automatico import (
     garantir_contrato,
 )
 #portalparceiro.py
-from datetime import datetime
+from datetime import datetime, timedelta
+from secrets import randbelow
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
@@ -14,6 +15,8 @@ from app.models.leadagendamento import LeadAgendamento
 from app.models.leadmaterial import LeadMaterial
 from app.models.leadmensagem import LeadMensagem
 from app.models.leadparceiro import LeadParceiro
+from app.models.leadacesso import LeadCodigoAcesso
+from app.core.security import hash_senha, verificar_senha
 from app.models.leadestabelecimento import LeadEstabelecimento
 from app.models.cidade import Cidade
 from app.models.estado import Estado
@@ -27,15 +30,18 @@ from app.schemas.portalparceiro import (
     PortalEstabelecimentoCreate,
     PortalEstabelecimentoUpdate,
     PortalLoginLead,
+    PortalSolicitarCodigo,
+    PortalConfirmarCodigo,
     PortalRecuperarDados,
 )
 from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
 from app.services.email_service import (
     enviar_dados_portal_lead,
+    enviar_codigo_acesso_portal,
     enviar_notificacao_interesse_suporte,
 )
 from app.services.endereco_lead import validar_cep_lead
-from app.utils.documento import normalizar_cpf_cnpj
+from app.utils.documento import normalizar_cpf_cnpj, validar_documento_acesso
 
 
 router = APIRouter(
@@ -62,30 +68,76 @@ def _selecionar_lead_login(
     )
 
 
-@router.post("/entrar")
-def entrar_portal(dados: PortalLoginLead, db: Session = Depends(get_db)):
-    candidatos = (
-        db.query(LeadParceiro)
-        .filter(
-            func.lower(func.trim(LeadParceiro.email))
-            == str(dados.email).strip().lower()
-        )
-        # Cadastros novos não permitem e-mail ou telefone repetidos. Para
-        # duplicidades legadas, preserva o primeiro cadastro, que concentra o
-        # histórico original de estabelecimentos, mensagens e contratos.
-        .order_by(LeadParceiro.leadparceiro_id.asc())
-        .all()
-    )
-    lead = _selecionar_lead_login(candidatos, dados.telefone)
-    if lead is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="E-mail ou telefone não conferem com o cadastro.",
-        )
+def _lead_por_documento(db: Session, documento: str):
+    # Nunca escolhe arbitrariamente entre contas diferentes com o mesmo documento.
+    ids = (db.query(LeadEstabelecimento.leadparceiro_id)
+           .filter(LeadEstabelecimento.cpfcnpj == documento).distinct().limit(2).all())
+    if len(ids) != 1:
+        return None
+    return (db.query(LeadParceiro).filter(LeadParceiro.leadparceiro_id == ids[0][0])
+            .with_for_update().first())
 
+
+def _validar_documento_portal(valor: str) -> str:
+    try:
+        return validar_documento_acesso(valor)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Informe um CPF ou CNPJ válido.") from exc
+
+
+@router.post("/solicitar-codigo")
+def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(get_db)):
+    documento = _validar_documento_portal(dados.documento)
+    mensagem = "Se houver cadastro para este documento, enviaremos um código ao e-mail cadastrado."
+    lead = _lead_por_documento(db, documento)
+    if lead is None:
+        return {"mensagem": mensagem}
+    agora = datetime.now()
+    recentes = (db.query(LeadCodigoAcesso).filter(
+        LeadCodigoAcesso.leadparceiro_id == lead.leadparceiro_id,
+        LeadCodigoAcesso.dtcriacao >= agora - timedelta(minutes=15)).count())
+    if recentes >= 3:
+        db.rollback()
+        return {"mensagem": mensagem}
+    db.query(LeadCodigoAcesso).filter(LeadCodigoAcesso.leadparceiro_id == lead.leadparceiro_id,
+        LeadCodigoAcesso.usado == "N").update({"usado": "S"}, synchronize_session=False)
+    codigo = f"{randbelow(100_000_000):08d}"
+    db.add(LeadCodigoAcesso(leadparceiro_id=lead.leadparceiro_id, documento=documento,
+        codigo_hash=hash_senha(codigo), expiracao=agora + timedelta(minutes=10), dtcriacao=agora))
+    db.flush()
+    enviar_codigo_acesso_portal(lead.email, codigo)
+    db.commit()
+    return {"mensagem": mensagem}
+
+
+@router.post("/confirmar-codigo")
+def confirmar_codigo_portal(dados: PortalConfirmarCodigo, db: Session = Depends(get_db)):
+    documento = _validar_documento_portal(dados.documento)
+    lead = _lead_por_documento(db, documento)
+    registro = None
+    if lead is not None:
+        registro = (db.query(LeadCodigoAcesso).filter(
+            LeadCodigoAcesso.leadparceiro_id == lead.leadparceiro_id,
+            LeadCodigoAcesso.documento == documento, LeadCodigoAcesso.usado == "N")
+            .order_by(LeadCodigoAcesso.id.desc()).with_for_update().first())
+    if registro is None or registro.expiracao < datetime.now() or registro.tentativas >= 5:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Código inválido ou expirado.")
+    if not verificar_senha(dados.codigo, registro.codigo_hash):
+        registro.tentativas += 1
+        if registro.tentativas >= 5:
+            registro.usado = "S"
+        db.commit()
+        raise HTTPException(status_code=401, detail="Código inválido ou expirado.")
+    registro.usado = "S"
     token = criar_acesso_portal(db, leadparceiro_id=lead.leadparceiro_id)
     db.commit()
     return {"acesso": token}
+
+
+@router.post("/entrar")
+def entrar_portal(dados: PortalLoginLead):
+    raise HTTPException(status_code=410, detail="Solicite um código de acesso com CPF ou CNPJ.")
 
 
 @router.post("/recuperar-dados")
@@ -131,9 +183,15 @@ def cadastrar_estabelecimento(
         raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
     validar_cep_lead(dados.cep, cidade, estado)
     try:
-        documento = normalizar_cpf_cnpj(dados.cpfcnpj)
+        documento = validar_documento_acesso(dados.cpfcnpj)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    outro = (db.query(LeadEstabelecimento.leadparceiro_id)
+             .filter(LeadEstabelecimento.cpfcnpj == documento,
+                     LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
+             .with_for_update().first())
+    if outro:
+        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outra conta.")
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,
         nmestabelecimento=dados.nmestabelecimento.strip(),
@@ -236,7 +294,15 @@ def atualizar_estabelecimento_portal(
         item.email_responsavel = str(dados.email_responsavel).strip().lower() if dados.email_responsavel else None
     item.tipo = dados.tipo
     item.tipovenda = dados.tipovenda
-    item.cpfcnpj = dados.cpfcnpj
+    if "cpfcnpj" in dados.model_fields_set:
+        documento = _validar_documento_portal(dados.cpfcnpj or "")
+        outro = (db.query(LeadEstabelecimento.leadparceiro_id)
+                 .filter(LeadEstabelecimento.cpfcnpj == documento,
+                         LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
+                 .with_for_update().first())
+        if outro:
+            raise HTTPException(409, "CPF ou CNPJ já cadastrado em outra conta.")
+        item.cpfcnpj = documento
     item.estado_id = dados.estado_id
     item.cidade_id = dados.cidade_id
     item.cep = dados.cep

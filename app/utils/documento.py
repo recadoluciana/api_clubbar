@@ -46,3 +46,22 @@ def validar_cpf_responsavel(valor: str) -> str:
         if digito != int(cpf[tamanho]):
             raise ValueError("Informe um CPF válido.")
     return cpf
+
+
+def validar_documento_acesso(valor: str) -> str:
+    """Valida os DVs de CPF ou CNPJ numérico/alfanumérico de acesso."""
+    if not isinstance(valor, str) or not re.fullmatch(r"[A-Za-z0-9./\-\s]+", valor):
+        raise ValueError("Informe um CPF ou CNPJ válido.")
+    documento = re.sub(r"[./\-\s]", "", valor).upper()
+    if len(documento) == 11:
+        return validar_cpf_responsavel(documento)
+    if not re.fullmatch(r"[A-Z0-9]{12}[0-9]{2}", documento):
+        raise ValueError("Informe um CPF ou CNPJ válido.")
+    if documento.isdigit() and len(set(documento)) == 1:
+        raise ValueError("Informe um CPF ou CNPJ válido.")
+    for tamanho, pesos in ((12, (5,4,3,2,9,8,7,6,5,4,3,2)), (13, (6,5,4,3,2,9,8,7,6,5,4,3,2))):
+        soma = sum((ord(caractere) - 48) * peso for caractere, peso in zip(documento[:tamanho], pesos))
+        resto = soma % 11
+        if int(documento[tamanho]) != (0 if resto < 2 else 11 - resto):
+            raise ValueError("Informe um CPF ou CNPJ válido.")
+    return documento

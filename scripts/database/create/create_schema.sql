@@ -104,9 +104,6 @@ CREATE TABLE leadparceiro (
   dtcriacao         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   dtultatu          DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
 
-  CONSTRAINT uq_leadparceiro_nmorganizacao UNIQUE (nmorganizacao),
-  CONSTRAINT uq_leadparceiro_email UNIQUE (email),
-  CONSTRAINT uq_leadparceiro_telefone UNIQUE (telefone),
   INDEX idx_leadparceiro_email (email),
   INDEX idx_leadparceiro_dtcriacao (dtcriacao)
 )
@@ -264,6 +261,20 @@ CREATE TABLE leadmaterial (
 ) ENGINE=InnoDB
 DEFAULT CHARACTER SET=utf8mb4
 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE leadcodigo_acesso (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  leadparceiro_id BIGINT NOT NULL,
+  documento VARCHAR(14) NOT NULL,
+  codigo_hash VARCHAR(255) NOT NULL,
+  expiracao DATETIME NOT NULL,
+  tentativas INT NOT NULL DEFAULT 0,
+  usado CHAR(1) NOT NULL DEFAULT 'N',
+  dtcriacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX ix_leadcodigo_acesso_leadparceiro_id (leadparceiro_id),
+  INDEX ix_leadcodigo_acesso_documento (documento),
+  CONSTRAINT fk_leadcodigo_acesso_lead FOREIGN KEY (leadparceiro_id) REFERENCES leadparceiro(leadparceiro_id)
+) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE leadacesso (
   leadacesso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
