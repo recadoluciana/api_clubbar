@@ -1,4 +1,5 @@
 import unittest
+import main  # Registra todos os modelos relacionados antes de configurar os mapeamentos.
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from fastapi import HTTPException

@@ -1,4 +1,5 @@
 import unittest
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -52,7 +53,7 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
                 reserva_ingresso_id=8, organizacao_id=1, loja_id=2, cliente_id=42,
                 evento_id=3, lote_id=1, lotepreco_id=2, tipobeneficio=None,
                 qtreservada=1, vrunitario=10, pctaxa=0, vrtaxa=0,
-                vrtotal=10, sitreserva="PREENCHENDO", dtexpiracao=None, venda_id=None,
+                vrtotal=10, sitreserva="PREENCHENDO", dtexpiracao=datetime.now() + timedelta(minutes=20), venda_id=None,
             )
             self.assertEqual(200, self.client.post("/reservas-ingressos", json=corpo, headers=self.cliente).status_code)
 
