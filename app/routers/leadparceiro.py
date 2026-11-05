@@ -3,6 +3,7 @@ from app.services.contrato_automatico import (
     garantir_contrato,
 )
 from app.services.endereco_lead import validar_cep_lead
+from app.services.usuarios_operacionais import PERFIS_PADRAO, dominio_disponivel
 import re
 import secrets
 import traceback
@@ -1030,14 +1031,22 @@ async def converter_lead_em_parceiro(
         db.flush()
 
         identificador_loja = _identificador_email_loja(nova_loja.nmloja)
+        try:
+            dominio_loja = dominio_disponivel(
+                nova_loja.nmloja,
+                nova_loja.loja_id,
+                lambda email: db.query(Usuario).filter(Usuario.emailuser == email).first() is not None,
+            )
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         senha_operacional = "101010"
         usuarios_operacionais = []
-        for prefixo, cargo, nome_cargo in (
-            ("barman", "BARMAN", "Barman"),
-            ("ticketman", "TICKETMAN", "Ticketman"),
-            ("cashier", "CASHIER", "Cashier"),
-        ):
-            email_operacional = f"{prefixo}{identificador_loja}@clubbar.com.br"
+        perfis = [
+            (f"{prefixo}@{dominio_loja}", cargo, nome)
+            for prefixo, cargo, nome in PERFIS_PADRAO
+        ]
+        perfis.append((f"cashier{identificador_loja}@clubbar.com.br", "CASHIER", "Cashier"))
+        for email_operacional, cargo, nome_cargo in perfis:
             if db.query(Usuario).filter(Usuario.emailuser == email_operacional).first():
                 raise HTTPException(409, f"O usuário {email_operacional} já existe.")
             usuario_operacional = Usuario(
