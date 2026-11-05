@@ -176,6 +176,8 @@ def enviar_confirmacao_cadastro_lead(
         "CASA_NOTURNA": "Casa noturna",
         "PRODUTOR_EVENTOS": "Produtor de eventos",
         "CASA_EVENTOS": "Casa de eventos",
+        "RESTAURANTE": "Restaurante",
+        "CONVENIENCIA": "Conveniência",
     }
     nomes_venda = {
         "PRODUTOS": "Somente produtos",
