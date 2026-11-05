@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
-from app.utils.datetime_utils import formatar_data_br, iso_utc
+from app.utils.datetime_utils import formatar_data_br, iso_utc, iso_utc_de_horario_brasil
 from sqlalchemy import and_, or_, case
 
 from app.database import get_db
@@ -346,9 +346,9 @@ def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loj
         'observacao': pedido.observacaoentrega or '',
         'itens_resumo': descricao_itens,
         'itens': itens_detalhados,
-        'dtaceite': iso_utc(pedido.dtaceite),
-        'dtdespacho': iso_utc(pedido.dtdespacho),
-        'dtrecebimento': iso_utc(pedido.dtrecebimento),
+        'dtaceite': iso_utc_de_horario_brasil(pedido.dtaceite),
+        'dtdespacho': iso_utc_de_horario_brasil(pedido.dtdespacho),
+        'dtrecebimento': iso_utc_de_horario_brasil(pedido.dtrecebimento),
         'dtrecebimento_fmt': (
             pedido.dtrecebimento.strftime('%d/%m/%Y às %H:%M')
             if pedido.dtrecebimento
@@ -763,9 +763,9 @@ def listar_itens_nao_entregues(
             "qrtokenitvenda": row.qrtokenitvenda or "",
             "qrcodeentrega": row.qrcodeentrega or "",
             "situacaoentrega": row.situacaoentrega,
-            "dtaceiteentrega": iso_utc(row.dtaceiteentrega),
-            "dtdespachoentrega": iso_utc(row.dtdespachoentrega),
-            "dtrecebimentoentrega": iso_utc(row.dtrecebimentoentrega),
+            "dtaceiteentrega": iso_utc_de_horario_brasil(row.dtaceiteentrega),
+            "dtdespachoentrega": iso_utc_de_horario_brasil(row.dtdespachoentrega),
+            "dtrecebimentoentrega": iso_utc_de_horario_brasil(row.dtrecebimentoentrega),
             "tipo_operacao": "DELIVERY" if row.situacaoentrega else "RETIRADA",
             "nmproduto": row.nmproduto,
             "urlfotoproduto": row.urlfotoproduto,

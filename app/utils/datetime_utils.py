@@ -27,6 +27,15 @@ def iso_utc(dt):
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def iso_utc_de_horario_brasil(dt):
+    """Serializa horários civis de Brasília gravados sem fuso como UTC."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=FUSO_BRASIL)
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def formatar_data_br(dt):
     """
     Aceita datetime ou string ISO
