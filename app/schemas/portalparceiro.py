@@ -48,8 +48,10 @@ class PortalEstabelecimentoCreate(BaseModel):
 
 
 class PortalEstabelecimentoUpdate(BaseModel):
+    nmestabelecimento: str | None = Field(default=None, min_length=2, max_length=160)
     nmresponsavel: str | None = Field(default=None, max_length=120)
     telefone_responsavel: str | None = Field(default=None, max_length=30)
+    email_responsavel: EmailStr | None = None
     tipo: Literal["BAR", "CASA_NOTURNA", "PRODUTOR_EVENTOS", "CASA_EVENTOS", "RESTAURANTE", "CONVENIENCIA"]
     tipovenda: Literal["PRODUTOS", "INGRESSOS", "AMBOS"]
     cpfcnpj: str | None = Field(default=None, max_length=18)
@@ -60,6 +62,16 @@ class PortalEstabelecimentoUpdate(BaseModel):
     numero: str = Field(min_length=1, max_length=20)
     complemento: str | None = Field(default=None, max_length=120)
     bairro: str = Field(min_length=1, max_length=120)
+
+    @field_validator("nmestabelecimento")
+    @classmethod
+    def validar_nome(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        valor = valor.strip()
+        if len(valor) < 2:
+            raise ValueError("Informe o nome com pelo menos dois caracteres.")
+        return valor
 
     @field_validator("cpfcnpj")
     @classmethod

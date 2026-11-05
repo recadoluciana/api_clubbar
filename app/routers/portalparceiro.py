@@ -228,8 +228,12 @@ def atualizar_estabelecimento_portal(
         raise HTTPException(status_code=422, detail="Cidade e estado informados são incompatíveis.")
     validar_cep_lead(dados.cep, cidade, estado)
 
+    if dados.nmestabelecimento is not None:
+        item.nmestabelecimento = dados.nmestabelecimento
     item.nmresponsavel = (dados.nmresponsavel or "").strip() or None
     item.telefone_responsavel = dados.telefone_responsavel
+    if "email_responsavel" in dados.model_fields_set:
+        item.email_responsavel = str(dados.email_responsavel).strip().lower() if dados.email_responsavel else None
     item.tipo = dados.tipo
     item.tipovenda = dados.tipovenda
     item.cpfcnpj = dados.cpfcnpj
