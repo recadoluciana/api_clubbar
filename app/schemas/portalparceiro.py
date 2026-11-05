@@ -16,6 +16,7 @@ class PortalLoginLead(BaseModel):
 
 class PortalSolicitarCodigo(BaseModel):
     documento: str = Field(min_length=11, max_length=25)
+    email: EmailStr | None = None
 
 
 class PortalConfirmarCodigo(PortalSolicitarCodigo):

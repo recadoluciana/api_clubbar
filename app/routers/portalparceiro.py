@@ -68,14 +68,27 @@ def _selecionar_lead_login(
     )
 
 
-def _lead_por_documento(db: Session, documento: str):
-    # Nunca escolhe arbitrariamente entre contas diferentes com o mesmo documento.
+def _lead_por_documento(db: Session, documento: str, email: str | None = None):
+    # O e-mail só é solicitado quando o documento pertence a contas distintas.
     ids = (db.query(LeadEstabelecimento.leadparceiro_id)
-           .filter(LeadEstabelecimento.cpfcnpj == documento).distinct().limit(2).all())
-    if len(ids) != 1:
-        return None
-    return (db.query(LeadParceiro).filter(LeadParceiro.leadparceiro_id == ids[0][0])
+           .filter(LeadEstabelecimento.cpfcnpj == documento).distinct().all())
+    if len(ids) > 1 and not email:
+        return None, True
+    if email:
+        candidatos = (db.query(LeadParceiro.leadparceiro_id)
+                      .filter(LeadParceiro.leadparceiro_id.in_([item[0] for item in ids]),
+                              func.lower(func.trim(LeadParceiro.email)) == str(email).strip().lower())
+                      .limit(2).all())
+        if len(candidatos) != 1:
+            return None, False
+        lead_id = candidatos[0][0]
+    elif len(ids) == 1:
+        lead_id = ids[0][0]
+    else:
+        return None, False
+    lead = (db.query(LeadParceiro).filter(LeadParceiro.leadparceiro_id == lead_id)
             .with_for_update().first())
+    return lead, False
 
 
 def _validar_documento_portal(valor: str) -> str:
@@ -89,7 +102,9 @@ def _validar_documento_portal(valor: str) -> str:
 def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(get_db)):
     documento = _validar_documento_portal(dados.documento)
     mensagem = "Se houver cadastro para este documento, enviaremos um código ao e-mail cadastrado."
-    lead = _lead_por_documento(db, documento)
+    lead, requer_email = _lead_por_documento(db, documento, dados.email)
+    if requer_email:
+        return {"requer_email": True, "mensagem": "Informe o e-mail da conta para receber o código."}
     if lead is None:
         return {"mensagem": mensagem}
     agora = datetime.now()
@@ -113,7 +128,7 @@ def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(
 @router.post("/confirmar-codigo")
 def confirmar_codigo_portal(dados: PortalConfirmarCodigo, db: Session = Depends(get_db)):
     documento = _validar_documento_portal(dados.documento)
-    lead = _lead_por_documento(db, documento)
+    lead, _ = _lead_por_documento(db, documento, dados.email)
     registro = None
     if lead is not None:
         registro = (db.query(LeadCodigoAcesso).filter(

@@ -64,7 +64,28 @@ class PortalCodigoTest(unittest.TestCase):
         self.db.add(LeadParceiro(leadparceiro_id=2,nmresponsavel='Outro',nmorganizacao='Outra',email='outro@example.com',telefone='11999999999'))
         self.db.add(LeadEstabelecimento(leadestabelecimento_id=2,leadparceiro_id=2,nmestabelecimento='Outro',tipo='BAR',cpfcnpj='52998224725'))
         self.db.commit()
-        self.solicitar()
+        resposta = self.solicitar()
+        self.assertTrue(resposta["requer_email"])
+        self.assertEqual(self.enviado, [])
+        solicitar_codigo_portal(PortalSolicitarCodigo(documento="52998224725", email="outro@example.com"), self.db)
+        self.assertEqual([email for email, _ in self.enviado], ["outro@example.com"])
+        codigo = self.enviado[0][1]
+        with self.assertRaises(HTTPException):
+            confirmar_codigo_portal(PortalConfirmarCodigo(documento="52998224725", email="teste@example.com", codigo=codigo), self.db)
+        resultado = confirmar_codigo_portal(PortalConfirmarCodigo(documento="52998224725", email="outro@example.com", codigo=codigo), self.db)
+        token = resultado["acesso"]
+        self.assertEqual(self.db.query(LeadAcesso).filter_by(tokenhash=__import__("hashlib").sha256(token.encode()).hexdigest()).one().leadparceiro_id, 2)
+
+    def test_email_nao_cadastrado_nao_envia_codigo(self):
+        resultado = solicitar_codigo_portal(PortalSolicitarCodigo(documento="52998224725", email="ausente@example.com"), self.db)
+        self.assertNotIn("requer_email", resultado)
+        self.assertEqual(self.enviado, [])
+
+    def test_mesmo_email_e_documento_em_duas_contas_nao_seleciona_uma(self):
+        self.db.add(LeadParceiro(leadparceiro_id=2,nmresponsavel="Outro",nmorganizacao="Outra",email="teste@example.com",telefone="11999999999"))
+        self.db.add(LeadEstabelecimento(leadestabelecimento_id=2,leadparceiro_id=2,nmestabelecimento="Outro",tipo="BAR",cpfcnpj="52998224725"))
+        self.db.commit()
+        solicitar_codigo_portal(PortalSolicitarCodigo(documento="52998224725", email="teste@example.com"), self.db)
         self.assertEqual(self.enviado, [])
 
     def test_codigo_expirado(self):
