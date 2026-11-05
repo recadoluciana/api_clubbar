@@ -283,15 +283,29 @@ def _usuario_operacional_entrega(
     return usuario, loja.loja_id
 
 
-def _pedido_entrega_por_token(db: Session, token: str):
-    return (
+def _pedido_entrega_por_token(db: Session, token: str, *, bloquear: bool = False):
+    query = (
         db.query(PedidoEntrega, Venda, Loja, Cliente)
         .join(Venda, Venda.venda_id == PedidoEntrega.venda_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
         .join(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .filter(PedidoEntrega.qrcode_token == token)
-        .first()
     )
+    return (query.with_for_update() if bloquear else query).first()
+
+
+def _validar_pagamento_para_entrega(pagamento: PagVenda | None, venda: Venda) -> bool:
+    """Retorna se o pagamento pendente deve ser confirmado na entrega."""
+    if not pagamento:
+        raise HTTPException(409, 'Pagamento do pedido não encontrado.')
+    status_pagamento = (pagamento.sitpagvenda or '').upper()
+    if status_pagamento == 'PAGO' and venda.sitvenda == 'PAGA':
+        return False
+    if (status_pagamento == 'PENDENTE' and venda.sitvenda == 'PENDENTE'
+            and (pagamento.dsmetodopag or '').upper() == 'PAGAMENTO_ENTREGA'
+            and (pagamento.provedor or '').upper() == 'ENTREGA'):
+        return True
+    raise HTTPException(409, 'O pagamento do pedido não está confirmado. Verifique antes de concluir a entrega.')
 
 
 def _resumo_pedido_entrega(db: Session, pedido: PedidoEntrega, venda: Venda, loja: Loja, cliente: Cliente) -> dict:
@@ -680,6 +694,7 @@ def listar_itens_nao_entregues(
             ItVenda.tipobeneficio,
             ItVenda.nmbeneficiosnapshot,
             Venda.dtcriacao,
+            Venda.sitvenda.label('situacaovenda'),
             Venda.loja_id,
             PedidoEntrega.situacaopedido.label('situacaoentrega'),
             PedidoEntrega.qrcode_token.label('qrcodeentrega'),
@@ -767,6 +782,7 @@ def listar_itens_nao_entregues(
             "dtdespachoentrega": iso_utc_de_horario_brasil(row.dtdespachoentrega),
             "dtrecebimentoentrega": iso_utc_de_horario_brasil(row.dtrecebimentoentrega),
             "tipo_operacao": "DELIVERY" if row.situacaoentrega else "RETIRADA",
+            "situacaovenda": row.situacaovenda,
             "nmproduto": row.nmproduto,
             "urlfotoproduto": row.urlfotoproduto,
             "idtipoproduto": row.idtipoproduto,
@@ -2131,12 +2147,22 @@ def buscar_item_por_token(
         if venda_pedido.loja_id != usuario.loja_id:
             raise HTTPException(status_code=403, detail='Este pedido pertence a outro estabelecimento.')
         resumo = _resumo_pedido_entrega(db, pedido, venda_pedido, loja_pedido, cliente_pedido)
+        pagamento = (db.query(PagVenda).filter(PagVenda.venda_id == venda_pedido.venda_id)
+                     .order_by(PagVenda.pagvenda_id.desc()).first())
+        if pagamento and pagamento.sitpagvenda == 'PAGO' and venda_pedido.sitvenda == 'PAGA':
+            mensagem_pagamento = 'Pagamento já realizado.'
+        elif (pagamento and pagamento.sitpagvenda == 'PENDENTE'
+              and pagamento.dsmetodopag == 'PAGAMENTO_ENTREGA' and pagamento.provedor == 'ENTREGA'):
+            mensagem_pagamento = 'Pagamento na entrega: confira o recebimento antes de confirmar.'
+        else:
+            mensagem_pagamento = 'Pagamento ainda não confirmado.'
         return {
             **resumo,
             'itvenda_id': None,
             'produto_id': None,
             'idtipoproduto': 'P',
             'tipo_operacao': 'DELIVERY',
+            'mensagem_pagamento': mensagem_pagamento,
             'qrcode_token': pedido.qrcode_token,
             'nmproduto': 'Pedido para entrega',
             'urlfotoproduto': loja_pedido.urllogoloja or '',
@@ -2329,7 +2355,7 @@ def entregar_produto_por_token(
             detail="O usuário não está vinculado a uma loja.",
         )
 
-    pedido_resultado = _pedido_entrega_por_token(db, token)
+    pedido_resultado = _pedido_entrega_por_token(db, token, bloquear=True)
     if pedido_resultado:
         pedido, venda_pedido, loja_pedido, cliente_pedido = pedido_resultado
         if (usuario.dscargo or '').upper() not in {'MOTOBOY', 'BARMAN', 'WAITER'}:
@@ -2341,6 +2367,17 @@ def entregar_produto_por_token(
                 status_code=409,
                 detail='O pedido precisa estar em rota antes da confirmação de entrega.',
             )
+
+        pagamento = (
+            db.query(PagVenda)
+            .filter(PagVenda.venda_id == venda_pedido.venda_id)
+            .order_by(PagVenda.pagvenda_id.desc())
+            .with_for_update()
+            .first()
+        )
+        confirmar_pagamento_na_entrega = _validar_pagamento_para_entrega(
+            pagamento, venda_pedido
+        )
 
         agora = _agora_brasil()
         pedido.situacaopedido = 'ENTREGUE'
@@ -2358,21 +2395,16 @@ def entregar_produto_por_token(
                 ItVenda.idcontrolebar: 'ENTREGUE',
             }, synchronize_session=False)
         )
-        pagamento = (
-            db.query(PagVenda)
-            .filter(PagVenda.venda_id == venda_pedido.venda_id)
-            .order_by(PagVenda.pagvenda_id.desc())
-            .first()
-        )
-        if pagamento:
+        if confirmar_pagamento_na_entrega:
             pagamento.sitpagvenda = 'PAGO'
             pagamento.dtconftranspagvenda = agora
             pagamento.idtransacaopagvenda = f'ENTREGA-{pedido.pedidoentrega_id}'
-        venda_pedido.sitvenda = 'PAGA'
+            venda_pedido.sitvenda = 'PAGA'
         db.commit()
         return {
             'ok': True,
-            'msg': 'Entrega confirmada e pagamento na entrega registrado.',
+            'msg': ('Entrega confirmada e pagamento na entrega registrado.'
+                    if confirmar_pagamento_na_entrega else 'Entrega confirmada.'),
             **_resumo_pedido_entrega(db, pedido, venda_pedido, loja_pedido, cliente_pedido),
             'tipo_operacao': 'DELIVERY',
         }
