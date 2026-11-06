@@ -27,14 +27,6 @@ def criar_acesso_portal(
 ) -> str:
     token = secrets.token_urlsafe(48)
 
-    db.query(LeadAcesso).filter(
-        LeadAcesso.leadparceiro_id == leadparceiro_id,
-        LeadAcesso.revogado == "N",
-    ).update(
-        {"revogado": "S"},
-        synchronize_session=False,
-    )
-
     acesso = LeadAcesso(
         leadparceiro_id=leadparceiro_id,
         tokenhash=_hash_token(token),
@@ -46,6 +38,19 @@ def criar_acesso_portal(
     db.flush()
 
     return token
+
+
+def revogar_acesso_portal(
+    credenciais: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    db: Session = Depends(get_db),
+) -> None:
+    if credenciais is None or credenciais.scheme.lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Acesso ao portal não informado.")
+    db.query(LeadAcesso).filter(
+        LeadAcesso.tokenhash == _hash_token(credenciais.credentials),
+        LeadAcesso.revogado == "N",
+    ).update({"revogado": "S"}, synchronize_session=False)
+    db.commit()
 
 
 def obter_lead_portal(

@@ -36,7 +36,7 @@ from app.schemas.portalparceiro import (
     PortalConfirmarCodigo,
     PortalRecuperarDados,
 )
-from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal
+from app.services.portal_acesso_service import criar_acesso_portal, obter_lead_portal, revogar_acesso_portal
 from app.services.email_service import (
     enviar_dados_portal_lead,
     enviar_codigo_acesso_portal,
@@ -98,6 +98,11 @@ def _validar_documento_portal(valor: str) -> str:
         return validar_documento_acesso(valor)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Informe um CPF ou CNPJ válido.") from exc
+
+
+@router.post("/sair", status_code=204)
+def sair_portal(_: None = Depends(revogar_acesso_portal)):
+    return None
 
 
 @router.post("/solicitar-codigo")

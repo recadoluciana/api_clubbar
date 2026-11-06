@@ -58,6 +58,49 @@ class PortalCodigoTest(unittest.TestCase):
         self.assertTrue(self.confirmar(codigo)['acesso'])
         with self.assertRaises(HTTPException): self.confirmar(codigo)
 
+    def test_sessoes_de_dispositivos_diferentes_continuam_validas(self):
+        from fastapi.security import HTTPAuthorizationCredentials
+        from app.services.portal_acesso_service import obter_lead_portal, revogar_acesso_portal
+        self.solicitar()
+        primeiro = self.confirmar(self.enviado[-1][1])["acesso"]
+        self.solicitar()
+        segundo = self.confirmar(self.enviado[-1][1])["acesso"]
+        self.assertNotEqual(primeiro, segundo)
+        for token in (primeiro, segundo):
+            lead = obter_lead_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=token), self.db)
+            self.assertEqual(1, lead.leadparceiro_id)
+        revogar_acesso_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=primeiro), self.db)
+        with self.assertRaises(HTTPException):
+            obter_lead_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=primeiro), self.db)
+        self.assertEqual(1, obter_lead_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=segundo), self.db).leadparceiro_id)
+        acesso = self.db.query(LeadAcesso).filter_by(tokenhash=__import__("hashlib").sha256(primeiro.encode()).hexdigest()).one()
+        acesso.revogado = "N"
+        acesso.dtvalidade = datetime.now() - timedelta(seconds=1)
+        self.db.commit()
+        with self.assertRaises(HTTPException):
+            obter_lead_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=primeiro), self.db)
+        self.assertEqual(1, obter_lead_portal(HTTPAuthorizationCredentials(scheme="Bearer", credentials=segundo), self.db).leadparceiro_id)
+
+    def test_resumo_mostra_apenas_estabelecimentos_da_conta(self):
+        from app.models.leadagendamento import LeadAgendamento
+        from app.models.leadmaterial import LeadMaterial
+        from app.models.leadmensagem import LeadMensagem
+        from app.models.contratolead import LeadEstabelecimentoContrato
+        from app.routers.portalparceiro import obter_resumo
+        for model in (LeadAgendamento, LeadMaterial, LeadMensagem, LeadEstabelecimentoContrato):
+            model.__table__.create(self.engine, checkfirst=True)
+        self.db.add(LeadParceiro(leadparceiro_id=2, nmresponsavel="Outra", nmorganizacao="Outra empresa", email="outra@example.com", telefone="11999999999"))
+        self.db.add_all([
+            LeadEstabelecimento(leadestabelecimento_id=2, leadparceiro_id=1, nmestabelecimento="Segunda loja", tipo="BAR", cpfcnpj="11222333000181"),
+            LeadEstabelecimento(leadestabelecimento_id=3, leadparceiro_id=2, nmestabelecimento="Loja privada", tipo="BAR", cpfcnpj="11144477735"),
+        ])
+        self.db.commit()
+        resumo = obter_resumo(None, self.db.get(LeadParceiro, 1), self.db)
+        self.assertEqual([1, 2], [est["leadestabelecimento_id"] for est in resumo["estabelecimentos"]])
+        with self.assertRaises(HTTPException) as erro:
+            obter_resumo(3, self.db.get(LeadParceiro, 1), self.db)
+        self.assertEqual(404, erro.exception.status_code)
+
     def test_cnpj_alfanumerico_usa_o_email_da_conta(self):
         self.db.add(LeadEstabelecimento(leadestabelecimento_id=2, leadparceiro_id=1, nmestabelecimento='Produtora', tipo='PRODUTOR_EVENTOS', cpfcnpj='12ABC34501DE35'))
         self.db.commit()
