@@ -45,6 +45,15 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
+    def test_documento_unico_entre_estabelecimentos(self):
+        from sqlalchemy.exc import IntegrityError
+        self.est.cpfcnpj = "52998224725"
+        self.db.commit()
+        self.db.add(LeadEstabelecimento(leadparceiro_id=1, nmestabelecimento="Outra", tipo="BAR", cpfcnpj="52998224725"))
+        with self.assertRaises(IntegrityError):
+            self.db.commit()
+        self.db.rollback()
+
     def test_novo_contrato_nao_cobra_implantacao_mesmo_com_modelo_antigo(self):
         contrato = garantir_contrato(self.db, self.est)
         self.assertEqual(float(contrato.vrimplantacao), 0)

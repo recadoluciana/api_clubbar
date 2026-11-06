@@ -152,7 +152,7 @@ CREATE TABLE leadestabelecimento (
   ),
   INDEX idx_leadestabelecimento_lead (leadparceiro_id),
   INDEX idx_leadestabelecimento_status (status),
-  INDEX idx_leadestabelecimento_documento (cpfcnpj)
+  UNIQUE KEY uk_leadestabelecimento_cpfcnpj (cpfcnpj)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE leadmensagem (

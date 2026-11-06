@@ -1,3 +1,4 @@
+from app.services.lead_documento_service import tratar_integridade_documento
 from app.services.contrato_automatico import (
     atualizar_contrato_pendente,
     garantir_contrato,
@@ -229,6 +230,8 @@ def criar_interesse_parceiro(
         caractere for caractere in payload.telefone if caractere.isdigit()
     )
     documentos = {item.cpfcnpj for item in payload.estabelecimentos}
+    if len(documentos) != len(payload.estabelecimentos):
+        raise HTTPException(status_code=409, detail="CPF ou CNPJ já informado para outro estabelecimento.")
     conflito = (db.query(LeadEstabelecimento.leadparceiro_id)
                 .filter(LeadEstabelecimento.cpfcnpj.in_(documentos))
                 .with_for_update().first())
@@ -333,6 +336,8 @@ def criar_interesse_parceiro(
 
         return resposta
 
+    except IntegrityError as erro:
+        tratar_integridade_documento(db, erro)
     except Exception as erro:
         db.rollback()
 
@@ -455,14 +460,21 @@ def adicionar_estabelecimento(
     if not all((valor or "").strip() for valor in (payload.endereco, payload.numero, payload.bairro)):
         raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
     validar_cep_lead(payload.cep, cidade, estado)
+    if payload.cpfcnpj and db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
+        LeadEstabelecimento.cpfcnpj == payload.cpfcnpj
+    ).with_for_update().first():
+        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
     item = LeadEstabelecimento(
         leadparceiro_id=leadparceiro_id,
         **payload.model_dump(),
     )
-    db.add(item)
-    db.flush()
-    garantir_contrato(db, item)
-    db.commit()
+    try:
+        db.add(item)
+        db.flush()
+        garantir_contrato(db, item)
+        db.commit()
+    except IntegrityError as erro:
+        tratar_integridade_documento(db, erro)
     db.refresh(item)
     return _serializar_estabelecimento(db, item)
 
@@ -516,6 +528,12 @@ def atualizar_estabelecimento(
         )
 
     dados = payload.model_dump()
+    documento = dados.get("cpfcnpj")
+    if documento and db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
+        LeadEstabelecimento.cpfcnpj == documento,
+        LeadEstabelecimento.leadestabelecimento_id != item.leadestabelecimento_id,
+    ).with_for_update().first():
+        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
     taxa_produtos = dados.pop("vrtaxaprod", None)
     taxa_ingressos = dados.pop("vrtaxaing", None)
     for campo, valor in dados.items():
@@ -524,8 +542,11 @@ def atualizar_estabelecimento(
         item.vrtaxaprod = taxa_produtos
     if taxa_ingressos is not None:
         item.vrtaxaing = taxa_ingressos
-    atualizar_contrato_pendente(db, item)
-    db.commit()
+    try:
+        atualizar_contrato_pendente(db, item)
+        db.commit()
+    except IntegrityError as erro:
+        tratar_integridade_documento(db, erro)
     db.refresh(item)
     return _serializar_estabelecimento(db, item)
 

@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Numeric, String, Text, text
+from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint, text
 
 from app.database import Base
 
@@ -16,6 +16,7 @@ class StatusLeadEstabelecimento(str, enum.Enum):
 
 class LeadEstabelecimento(Base):
     __tablename__ = "leadestabelecimento"
+    __table_args__ = (UniqueConstraint("cpfcnpj", name="uk_leadestabelecimento_cpfcnpj"),)
 
     leadestabelecimento_id = Column(BigInteger, primary_key=True, autoincrement=True)
     leadparceiro_id = Column(

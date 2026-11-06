@@ -1,3 +1,4 @@
+from app.services.lead_documento_service import tratar_integridade_documento
 from app.services.contrato_automatico import (
     atualizar_contrato_pendente,
     garantir_contrato,
@@ -8,6 +9,7 @@ from secrets import randbelow
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -202,11 +204,10 @@ def cadastrar_estabelecimento(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     outro = (db.query(LeadEstabelecimento.leadparceiro_id)
-             .filter(LeadEstabelecimento.cpfcnpj == documento,
-                     LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
+             .filter(LeadEstabelecimento.cpfcnpj == documento)
              .with_for_update().first())
     if outro:
-        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outra conta.")
+        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,
         nmestabelecimento=dados.nmestabelecimento.strip(),
@@ -231,10 +232,13 @@ def cadastrar_estabelecimento(
         bairro=dados.bairro,
         mensagem=(dados.mensagem or "").strip() or None,
     )
-    db.add(item)
-    db.flush()
-    garantir_contrato(db, item)
-    db.commit()
+    try:
+        db.add(item)
+        db.flush()
+        garantir_contrato(db, item)
+        db.commit()
+    except IntegrityError as erro:
+        tratar_integridade_documento(db, erro)
     db.refresh(item)
     try:
         enviar_notificacao_interesse_suporte(
@@ -313,10 +317,10 @@ def atualizar_estabelecimento_portal(
         documento = _validar_documento_portal(dados.cpfcnpj or "")
         outro = (db.query(LeadEstabelecimento.leadparceiro_id)
                  .filter(LeadEstabelecimento.cpfcnpj == documento,
-                         LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
+                         LeadEstabelecimento.leadestabelecimento_id != item.leadestabelecimento_id)
                  .with_for_update().first())
         if outro:
-            raise HTTPException(409, "CPF ou CNPJ já cadastrado em outra conta.")
+            raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
         item.cpfcnpj = documento
     item.estado_id = dados.estado_id
     item.cidade_id = dados.cidade_id
@@ -325,8 +329,11 @@ def atualizar_estabelecimento_portal(
     item.numero = dados.numero.strip()
     item.complemento = (dados.complemento or "").strip() or None
     item.bairro = dados.bairro.strip()
-    atualizar_contrato_pendente(db, item)
-    db.commit()
+    try:
+        atualizar_contrato_pendente(db, item)
+        db.commit()
+    except IntegrityError as erro:
+        tratar_integridade_documento(db, erro)
     db.refresh(item)
     return {
         "leadestabelecimento_id": item.leadestabelecimento_id,

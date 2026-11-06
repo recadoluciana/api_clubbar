@@ -27,7 +27,13 @@ class PortalCodigoTest(unittest.TestCase):
 
     def setUp(self):
         self.engine = create_engine('sqlite:///:memory:')
-        Base.metadata.create_all(self.engine, tables=[Estado.__table__, Cidade.__table__, LeadParceiro.__table__, LeadEstabelecimento.__table__, LeadAcesso.__table__, LeadCodigoAcesso.__table__])
+        # Simula a base legada antes da migração, que pode conter documentos duplicados.
+        restricao = next(c for c in LeadEstabelecimento.__table__.constraints if c.name == "uk_leadestabelecimento_cpfcnpj")
+        LeadEstabelecimento.__table__.constraints.remove(restricao)
+        try:
+            Base.metadata.create_all(self.engine, tables=[Estado.__table__, Cidade.__table__, LeadParceiro.__table__, LeadEstabelecimento.__table__, LeadAcesso.__table__, LeadCodigoAcesso.__table__])
+        finally:
+            LeadEstabelecimento.__table__.constraints.add(restricao)
         self.db = sessionmaker(bind=self.engine)()
         self.db.add(LeadParceiro(leadparceiro_id=1,nmresponsavel='Teste',nmorganizacao='Empresa',email='teste@example.com',telefone='11999999999'))
         self.db.add(LeadEstabelecimento(leadestabelecimento_id=1,leadparceiro_id=1,nmestabelecimento='Teste',tipo='BAR',cpfcnpj='52998224725'))
