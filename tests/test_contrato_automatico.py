@@ -64,6 +64,7 @@ class ContratoAutomaticoTest(unittest.TestCase):
         preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa")
         self.completar_endereco(contrato.leadestabelecimentocontrato_id)
         self.db.commit()
+        self.db.autoflush = False
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
         with patch("app.routers.contratolead._converter_apos_assinatura", side_effect=HTTPException(409, "Conflito")):
             with self.assertRaises(HTTPException):
@@ -87,6 +88,8 @@ class ContratoAutomaticoTest(unittest.TestCase):
         preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa", "EXPERIENCIA", None)
         self.completar_endereco(contrato.leadestabelecimentocontrato_id)
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        # Reproduz SessionLocal de produção, que desativa o autoflush.
+        self.db.autoflush = False
         with patch("app.routers.leadparceiro.enviar_convite_parceiro"):
             asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, lead, self.db))
         self.assertEqual("ACEITO", contrato.status)

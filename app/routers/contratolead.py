@@ -710,6 +710,9 @@ async def aceitar_contrato(
         status_atual = getattr(estabelecimento.status, "value", estabelecimento.status)
         if status_atual != StatusLeadEstabelecimento.CONVERTIDO.value:
             try:
+                # A sessão de produção não faz autoflush; a conversão precisa
+                # enxergar o aceite ainda dentro da mesma transação.
+                db.flush()
                 await _converter_apos_assinatura(db, lead, estabelecimento)
             except Exception:
                 db.rollback()
