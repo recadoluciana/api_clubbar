@@ -105,6 +105,12 @@ def sair_portal(_: None = Depends(revogar_acesso_portal)):
     return None
 
 
+def _mascarar_email_portal(email: str) -> str:
+    local, dominio = email.strip().rsplit("@", 1)
+    prefixo = local[:2] if len(local) > 2 else local[:1]
+    return f"{prefixo}***@{dominio}"
+
+
 @router.post("/solicitar-codigo")
 def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(get_db)):
     documento = _validar_documento_portal(dados.documento)
@@ -129,7 +135,7 @@ def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(
     db.flush()
     enviar_codigo_acesso_portal(lead.email, codigo)
     db.commit()
-    return {"mensagem": mensagem}
+    return {"mensagem": mensagem, "email_mascarado": _mascarar_email_portal(lead.email)}
 
 
 @router.post("/confirmar-codigo")

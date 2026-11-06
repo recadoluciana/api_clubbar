@@ -51,6 +51,17 @@ class PortalCodigoTest(unittest.TestCase):
     def confirmar(self,codigo):
         return confirmar_codigo_portal(PortalConfirmarCodigo(documento='52998224725',codigo=codigo), self.db)
 
+    def test_codigo_informa_email_mascarado_sem_revelar_email_completo(self):
+        resposta = self.solicitar()
+        self.assertEqual("te***@example.com", resposta["email_mascarado"])
+        self.assertNotIn("teste@example.com", str(resposta))
+        self.assertEqual(["teste@example.com"], [email for email, _ in self.enviado])
+
+    def test_email_mascarado_nao_aparece_para_documento_sem_conta(self):
+        resposta = solicitar_codigo_portal(PortalSolicitarCodigo(documento="11144477735"), self.db)
+        self.assertNotIn("email_mascarado", resposta)
+        self.assertEqual([], self.enviado)
+
     def test_codigo_valido_somente_uma_vez(self):
         self.solicitar()
         self.assertEqual(self.enviado[0][0], 'teste@example.com')
