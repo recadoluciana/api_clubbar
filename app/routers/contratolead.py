@@ -195,6 +195,8 @@ def _out(item: LeadEstabelecimentoContrato) -> dict:
         "vrtaxaing": float(item.vrtaxaing),
         "vrtaxaminimaingresso": float(item.vrtaxaminimaingresso),
         "vrimplantacao": float(item.vrimplantacao),
+        "modalidade_comercial": item.modalidade_comercial,
+        "mensalidade_acordada": float(item.mensalidade_acordada) if item.mensalidade_acordada is not None else None,
         "tipopessoa": item.tipopessoa,
         "cpfcnpjcontratante": item.cpfcnpjcontratante,
         "nmrazaosocial": item.nmrazaosocial,
@@ -245,9 +247,10 @@ def _contexto_contrato(
     taxa = taxa_padrao_vigente(db)
     # O contrato sempre congela a versão vigente; valores enviados pela tela não podem
     # alterar silenciosamente a política comercial versionada.
-    taxa_produtos = float(taxa.pctaxaproduto)
-    taxa_ingressos = float(taxa.pctaxaingresso)
-    taxa_minima = float(taxa.vrtaxaminimaingresso)
+    novo_plano = "{{CONDICOES_COMERCIAIS}}" in modelo.conteudomodelo
+    taxa_produtos = 0.0 if novo_plano else float(taxa.pctaxaproduto)
+    taxa_ingressos = 8.0 if novo_plano else float(taxa.pctaxaingresso)
+    taxa_minima = 0.0 if novo_plano else float(taxa.vrtaxaminimaingresso)
     return estabelecimento, modelo, taxa, _gerar_conteudo(
         estabelecimento,
         lead,
@@ -323,11 +326,11 @@ def criar_contrato(
         leadestabelecimento_id=leadestabelecimento_id,
         contratopadrao_id=modelo.contratopadrao_id,
         taxapadrao_id=taxa.taxapadrao_id,
-        status="ENVIADO",
+        status="RASCUNHO" if "{{CONDICOES_COMERCIAIS}}" in modelo.conteudomodelo else "ENVIADO",
         versao=modelo.versao,
         vrtaxaprod=taxa_produtos,
         vrtaxaing=taxa_ingressos,
-        vrtaxaminimaingresso=taxa.vrtaxaminimaingresso,
+        vrtaxaminimaingresso=0 if "{{CONDICOES_COMERCIAIS}}" in modelo.conteudomodelo else taxa.vrtaxaminimaingresso,
         vrimplantacao=0,
         tipopessoa="PJ" if len(cpfcnpj) == 14 else "PF",
         cpfcnpjcontratante=cpfcnpj,
@@ -345,7 +348,7 @@ def criar_contrato(
     )
     estabelecimento.vrtaxaprod = taxa_produtos
     estabelecimento.vrtaxaing = taxa_ingressos
-    estabelecimento.vrtaxaminimaingresso = taxa.vrtaxaminimaingresso
+    estabelecimento.vrtaxaminimaingresso = item.vrtaxaminimaingresso
     db.add(item)
     db.add(
         LeadMensagem(
@@ -498,6 +501,8 @@ def cancelar_retificacao(retificacao_id: int, _: dict = Depends(get_operador_log
 
 
 class DadosContratoPortal(BaseModel):
+    modalidade_comercial: str | None = None
+    mensalidade_acordada: float | None = None
     cpfcnpj: str = Field(min_length=11, max_length=18)
     nmrazaosocial: str = Field(min_length=2, max_length=160)
 
@@ -517,7 +522,7 @@ def salvar_dados_contrato_portal(
     contrato_id: int, dados: DadosContratoPortal,
     lead: LeadParceiro = Depends(obter_lead_portal), db: Session = Depends(get_db),
 ):
-    return _out(preencher_contrato_portal(db, lead.leadparceiro_id, contrato_id, dados.cpfcnpj, dados.nmrazaosocial))
+    return _out(preencher_contrato_portal(db, lead.leadparceiro_id, contrato_id, dados.cpfcnpj, dados.nmrazaosocial, dados.modalidade_comercial, dados.mensalidade_acordada))
 
 
 @portal_router.patch("/contratos/{contrato_id}/endereco")
@@ -570,6 +575,23 @@ def atualizar_endereco_contrato_portal(
     return _out(item)
 
 
+async def _converter_apos_assinatura(db, lead, estabelecimento):
+    # Reutiliza a mesma transação e as validações da conversão existente.
+    from app.routers.leadparceiro import converter_lead_em_parceiro
+    from app.schemas.leadparceiro import ConverterLeadParceiroIn
+
+    await converter_lead_em_parceiro(
+        lead.leadparceiro_id,
+        ConverterLeadParceiroIn(
+            leadestabelecimento_id=estabelecimento.leadestabelecimento_id,
+            tipo_loja=estabelecimento.tipo,
+            email_responsavel=lead.email,
+        ),
+        {},
+        db,
+    )
+
+
 @portal_router.patch("/contratos/{leadestabelecimentocontrato_id}/aceitar")
 async def aceitar_contrato(
     leadestabelecimentocontrato_id: int,
@@ -596,6 +618,8 @@ async def aceitar_contrato(
         raise HTTPException(status_code=404, detail="Contrato não encontrado.")
     if item.status == "RASCUNHO":
         raise HTTPException(422, "Preencha os dados do contrato antes de assinar.")
+    if "{{CONDICOES_COMERCIAIS}}" in item.conteudocontrato:
+        raise HTTPException(422, "Selecione a modalidade comercial antes de assinar.")
     if item.status not in ("ENVIADO", "ACEITO"):
         raise HTTPException(409, "Este instrumento não está disponível para assinatura.")
     if item.status != "ACEITO":
@@ -664,8 +688,9 @@ async def aceitar_contrato(
         if item.tipoinstrumento != "RETIFICACAO":
             estabelecimento.status = StatusLeadEstabelecimento.ACEITOU_PARCERIA
             estabelecimento.dtaceite = item.dtaceite
-        db.commit()
-        db.refresh(item)
+        if item.tipoinstrumento == "RETIFICACAO":
+            db.commit()
+            db.refresh(item)
     elif item.tipoinstrumento != "RETIFICACAO":
         estabelecimento = db.get(LeadEstabelecimento, item.leadestabelecimento_id)
         status_estabelecimento = (
@@ -680,7 +705,16 @@ async def aceitar_contrato(
         ):
             estabelecimento.status = StatusLeadEstabelecimento.ACEITOU_PARCERIA
             estabelecimento.dtaceite = item.dtaceite
-            db.commit()
+    if item.tipoinstrumento != "RETIFICACAO":
+        estabelecimento = db.get(LeadEstabelecimento, item.leadestabelecimento_id)
+        status_atual = getattr(estabelecimento.status, "value", estabelecimento.status)
+        if status_atual != StatusLeadEstabelecimento.CONVERTIDO.value:
+            try:
+                await _converter_apos_assinatura(db, lead, estabelecimento)
+            except Exception:
+                db.rollback()
+                raise
+        db.refresh(item)
     return _out(item)
 
 

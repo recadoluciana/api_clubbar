@@ -40,6 +40,11 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.est = LeadEstabelecimento(leadestabelecimento_id=1, leadparceiro_id=1, nmestabelecimento="Clubbar", tipo="BAR", estado_id=1, cidade_id=1)
         self.db.add(self.est)
         self.db.commit()
+        async def conversao_simulada(db, lead, estabelecimento):
+            db.commit()
+        self.conversao_patch = patch("app.routers.contratolead._converter_apos_assinatura", side_effect=conversao_simulada)
+        self.conversao_patch.start()
+        self.addCleanup(self.conversao_patch.stop)
 
     def tearDown(self):
         self.db.close()
@@ -53,6 +58,93 @@ class ContratoAutomaticoTest(unittest.TestCase):
         with self.assertRaises(IntegrityError):
             self.db.commit()
         self.db.rollback()
+
+    def test_falha_na_conversao_reverte_assinatura(self):
+        contrato = garantir_contrato(self.db, self.est)
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa")
+        self.completar_endereco(contrato.leadestabelecimentocontrato_id)
+        self.db.commit()
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        with patch("app.routers.contratolead._converter_apos_assinatura", side_effect=HTTPException(409, "Conflito")):
+            with self.assertRaises(HTTPException):
+                asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, self.db.get(LeadParceiro, 1), self.db))
+        self.db.refresh(contrato)
+        self.assertNotEqual("ACEITO", contrato.status)
+
+    def test_assinatura_cria_parceiro_automaticamente(self):
+        from app.models.cardapio import CategoriaPadrao
+        from app.models.categoria import Categoria
+        from app.models.usuario import Usuario
+        from app.models.cobrancaimplantacao import CobrancaImplantacao
+        for model in [CategoriaPadrao, Categoria, Usuario, CobrancaImplantacao]:
+            model.__table__.create(self.engine)
+        self.conversao_patch.stop()
+        lead = self.db.get(LeadParceiro, 1)
+        lead.nmorganizacao = "Empresa Exemplo"
+        from scripts.database.seed.seed_contrato_padrao import CONTRATO_V1, gerar_modelo_comercial
+        self.db.get(ContratoPadrao, 1).conteudomodelo = gerar_modelo_comercial(CONTRATO_V1)
+        contrato = garantir_contrato(self.db, self.est)
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa", "EXPERIENCIA", None)
+        self.completar_endereco(contrato.leadestabelecimentocontrato_id)
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        with patch("app.routers.leadparceiro.enviar_convite_parceiro"):
+            asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, lead, self.db))
+        self.assertEqual("ACEITO", contrato.status)
+        self.assertEqual("CONVERTIDO", getattr(self.est.status, "value", self.est.status))
+        self.assertEqual(1, self.db.query(Loja).count())
+        loja = self.db.query(Loja).one()
+        self.assertEqual((0, 8, 0), tuple(float(v) for v in (loja.vrtaxaprod, loja.vrtaxaing, loja.vrtaxaminimaingresso)))
+        self.assertEqual(1, self.db.query(Organizacao).count())
+        self.assertGreater(self.db.query(Usuario).count(), 0)
+        usuarios = self.db.query(Usuario).count()
+        with patch("app.routers.leadparceiro.enviar_convite_parceiro") as convite:
+            asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, lead, self.db))
+        self.assertEqual(1, self.db.query(Loja).count())
+        self.assertEqual(usuarios, self.db.query(Usuario).count())
+        convite.assert_not_called()
+
+    def test_modalidades_geram_condicoes_e_taxas_consistentes(self):
+        from scripts.database.seed.seed_contrato_padrao import CONTRATO_V1, gerar_modelo_comercial
+        modelo = self.db.get(ContratoPadrao, 1)
+        modelo.conteudomodelo = gerar_modelo_comercial(CONTRATO_V1)
+        contrato = garantir_contrato(self.db, self.est)
+        self.assertEqual((0, 8, 0), tuple(float(v) for v in (contrato.vrtaxaprod, contrato.vrtaxaing, contrato.vrtaxaminimaingresso)))
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa", "MENSALIDADE", "49.90")
+        self.assertEqual("MENSALIDADE", contrato.modalidade_comercial)
+        self.assertIn("R$ 49,90", contrato.conteudocontrato)
+        self.assertNotIn("{{CONDICOES_COMERCIAIS}}", contrato.conteudocontrato)
+        self.completar_endereco(contrato.leadestabelecimentocontrato_id)
+        self.assertIn("R$ 49,90", contrato.conteudocontrato)
+        self.assertIn("8%", contrato.conteudocontrato)
+
+    def test_contrato_exige_escolha_e_registra_experiencia(self):
+        from scripts.database.seed.seed_contrato_padrao import CONTRATO_V1, gerar_modelo_comercial
+        self.db.get(ContratoPadrao, 1).conteudomodelo = gerar_modelo_comercial(CONTRATO_V1)
+        contrato = garantir_contrato(self.db, self.est)
+        with self.assertRaises(HTTPException):
+            preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa")
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa", "EXPERIENCIA", None)
+        self.assertIn("três meses", contrato.conteudocontrato)
+        self.assertIsNone(contrato.mensalidade_acordada)
+        self.assertEqual("EXPERIENCIA", contrato.modalidade_comercial)
+
+    def test_migracao_atualiza_so_pendentes_e_e_idempotente(self):
+        from scripts.database.seed.seed_contrato_padrao import CONTRATO_V1
+        from scripts.database.migrations import ativar_contrato_comercial
+        self.db.get(ContratoPadrao, 1).conteudomodelo = CONTRATO_V1
+        contrato = garantir_contrato(self.db, self.est)
+        self.db.commit()
+        contrato_id = contrato.leadestabelecimentocontrato_id
+        with patch.object(ativar_contrato_comercial, "SessionLocal", return_value=self.db):
+            ativar_contrato_comercial.main()
+        contrato = self.db.get(LeadEstabelecimentoContrato, contrato_id)
+        self.assertIn("{{CONDICOES_COMERCIAIS}}", contrato.conteudocontrato)
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa", "MENSALIDADE", "75.00")
+        with patch.object(ativar_contrato_comercial, "SessionLocal", return_value=self.db):
+            ativar_contrato_comercial.main()
+        contrato = self.db.get(LeadEstabelecimentoContrato, contrato_id)
+        self.assertEqual("ENVIADO", contrato.status)
+        self.assertIn("R$ 75,00", contrato.conteudocontrato)
 
     def test_novo_contrato_nao_cobra_implantacao_mesmo_com_modelo_antigo(self):
         contrato = garantir_contrato(self.db, self.est)

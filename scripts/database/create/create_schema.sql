@@ -672,6 +672,8 @@ CREATE TABLE leadestabelecimentocontrato (
   vrtaxaing DECIMAL(10,2) NOT NULL DEFAULT 10,
   vrtaxaminimaingresso DECIMAL(10,2) NOT NULL DEFAULT 2.99,
   vrimplantacao DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  modalidade_comercial VARCHAR(20) NULL,
+  mensalidade_acordada DECIMAL(10,2) NULL,
   tipopessoa VARCHAR(2) NULL,
   cpfcnpjcontratante VARCHAR(14) NULL,
   nmrazaosocial VARCHAR(160) NULL,

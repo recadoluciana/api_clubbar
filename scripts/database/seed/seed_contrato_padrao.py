@@ -77,21 +77,37 @@ Ao aceitar, {{RESPONSAVEL}} confirma sua concordância em nome do estabeleciment
 """
 
 
+
+def gerar_modelo_comercial(conteudo: str) -> str:
+    inicio = conteudo.find("2. IMPLANTAÇÃO")
+    fim = conteudo.find("4. CUSTOS DO MEIO DE PAGAMENTO")
+    if inicio < 0 or fim <= inicio:
+        raise ValueError("O modelo de contrato não possui as seções esperadas.")
+    condicoes = """2. IMPLANTAÇÃO
+Não há cobrança de taxa de implantação.
+
+3. CONDIÇÕES COMERCIAIS
+{{CONDICOES_COMERCIAIS}}
+Não há cobrança de taxa Clubbar sobre vendas de produtos. Nas vendas de ingressos, será cobrada do cliente uma taxa de conveniência de 8% sobre o preço do ingresso, sem valor mínimo.
+
+"""
+    return conteudo[:inicio] + condicoes + conteudo[fim:]
+
 def main() -> None:
     db = SessionLocal()
     try:
-        if not db.query(ContratoPadrao).filter(ContratoPadrao.versao == "1").first():
+        if db.query(ContratoPadrao).first():
+            print("Já existe um modelo de contrato; nenhum modelo foi substituído.")
+        else:
             db.add(ContratoPadrao(
-                versao="1",
+                versao="3",
                 titulo="Termo de Parceria Comercial Clubbar",
-                conteudomodelo=CONTRATO_V1.strip(),
+                conteudomodelo=gerar_modelo_comercial(CONTRATO_V1.strip()),
                 vrimplantacao=0,
                 sitcontrato="ATIVO",
             ))
             db.commit()
-            print("Contrato padrão versão 1 criado.")
-        else:
-            print("Contrato padrão versão 1 já existe.")
+            print("Contrato padrão comercial criado.")
     finally:
         db.close()
 

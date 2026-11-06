@@ -8,6 +8,7 @@ from app.models.contratopadrao import ContratoPadrao
 from app.models.leadestabelecimento import LeadEstabelecimento, StatusLeadEstabelecimento
 from app.models.leadparceiro import LeadParceiro
 from app.services.taxa_service import taxa_padrao_vigente
+from app.services.condicoes_comerciais import condicoes_comerciais
 from app.utils.documento import normalizar_cpf_cnpj
 
 def _valor(valor: object | None, padrao: str = "não informado") -> str:
@@ -71,6 +72,8 @@ def _gerar_conteudo(
     modelo: ContratoPadrao,
     nome_contratante: str,
     cpfcnpj_contratante: str,
+    modalidade_comercial: str | None = None,
+    mensalidade_acordada = None,
 ) -> str:
     endereco = endereco_contrato(estabelecimento, cidade, estado)
     responsavel = _valor(estabelecimento.nmresponsavel, lead.nmresponsavel)
@@ -94,7 +97,9 @@ def _gerar_conteudo(
         "{{TAXA_IMPLANTACAO}}": f"{float(modelo.vrimplantacao):.2f}",
     }
     conteudo = modelo.conteudomodelo
-    if "{{TAXA_MINIMA_INGRESSO}}" not in conteudo:
+    if "{{CONDICOES_COMERCIAIS}}" in conteudo and modalidade_comercial:
+        valores["{{CONDICOES_COMERCIAIS}}"] = condicoes_comerciais(modalidade_comercial, mensalidade_acordada)[0]
+    if "{{TAXA_MINIMA_INGRESSO}}" not in conteudo and "{{CONDICOES_COMERCIAIS}}" not in conteudo:
         conteudo += (
             "\n- Regra da taxa de conveniência: {{TAXA_INGRESSOS}}% por ingresso "
             "ou o mínimo de R$ {{TAXA_MINIMA_INGRESSO}}, prevalecendo o maior valor."
@@ -121,17 +126,18 @@ def garantir_contrato(db, estabelecimento):
     if not modelo:
         raise HTTPException(422, "Nenhum contrato padrão ativo está disponível.")
     taxa = taxa_padrao_vigente(db)
-    estabelecimento.vrtaxaprod = taxa.pctaxaproduto
-    estabelecimento.vrtaxaing = taxa.pctaxaingresso
-    estabelecimento.vrtaxaminimaingresso = taxa.vrtaxaminimaingresso
+    novo_plano = "{{CONDICOES_COMERCIAIS}}" in modelo.conteudomodelo
+    estabelecimento.vrtaxaprod = 0 if novo_plano else taxa.pctaxaproduto
+    estabelecimento.vrtaxaing = 8 if novo_plano else taxa.pctaxaingresso
+    estabelecimento.vrtaxaminimaingresso = 0 if novo_plano else taxa.vrtaxaminimaingresso
     lead = db.get(LeadParceiro, estabelecimento.leadparceiro_id)
     documento = normalizar_cpf_cnpj(estabelecimento.cpfcnpj) or ""
     item = LeadEstabelecimentoContrato(
         leadestabelecimento_id=estabelecimento.leadestabelecimento_id,
         contratopadrao_id=modelo.contratopadrao_id, taxapadrao_id=taxa.taxapadrao_id,
         status="RASCUNHO", versao=modelo.versao,
-        vrtaxaprod=taxa.pctaxaproduto, vrtaxaing=taxa.pctaxaingresso,
-        vrtaxaminimaingresso=taxa.vrtaxaminimaingresso, vrimplantacao=0,
+        vrtaxaprod=estabelecimento.vrtaxaprod, vrtaxaing=estabelecimento.vrtaxaing,
+        vrtaxaminimaingresso=estabelecimento.vrtaxaminimaingresso, vrimplantacao=0,
         cpfcnpjcontratante=documento or None,
         nmrazaosocial=estabelecimento.nmestabelecimento,
         cepcontratante=estabelecimento.cep, enderecocontratante=estabelecimento.endereco,
@@ -208,6 +214,7 @@ def atualizar_contrato_pendente(db, estabelecimento: LeadEstabelecimento):
         modelo,
         nome_contratante,
         cpfcnpj_contratante,
+        contrato.modalidade_comercial, contrato.mensalidade_acordada,
     )
     contrato.cepcontratante = estabelecimento.cep
     contrato.enderecocontratante = estabelecimento.endereco
@@ -222,7 +229,7 @@ def atualizar_contrato_pendente(db, estabelecimento: LeadEstabelecimento):
     return contrato
 
 
-def preencher_contrato_portal(db, lead_id, contrato_id, documento, nome):
+def preencher_contrato_portal(db, lead_id, contrato_id, documento, nome, modalidade_comercial=None, mensalidade_acordada=None):
     item = db.query(LeadEstabelecimentoContrato).join(LeadEstabelecimento).filter(
         LeadEstabelecimentoContrato.leadestabelecimentocontrato_id == contrato_id,
         LeadEstabelecimento.leadparceiro_id == lead_id,
@@ -235,6 +242,11 @@ def preencher_contrato_portal(db, lead_id, contrato_id, documento, nome):
     nome = nome.strip()
     if len(documento) not in (11, 14) or len(nome) < 2:
         raise HTTPException(422, "Informe CPF/CNPJ e nome completo ou razão social.")
+    if "{{CONDICOES_COMERCIAIS}}" in item.conteudocontrato:
+        texto_plano, valor = condicoes_comerciais(modalidade_comercial, mensalidade_acordada)
+        item.modalidade_comercial = modalidade_comercial
+        item.mensalidade_acordada = valor
+        item.conteudocontrato = item.conteudocontrato.replace("{{CONDICOES_COMERCIAIS}}", texto_plano)
     # Replace only the draft identity, preserving its original clauses and negotiated values.
     import re
     replacements = {

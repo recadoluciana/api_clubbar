@@ -35,6 +35,8 @@ class LeadEstabelecimentoContrato(Base):
     vrtaxaing = Column(Numeric(10, 2), nullable=False, server_default="10")
     vrtaxaminimaingresso = Column(Numeric(10, 2), nullable=False, server_default="2.99")
     vrimplantacao = Column(Numeric(10, 2), nullable=False, server_default="0")
+    modalidade_comercial = Column(String(20), nullable=True)
+    mensalidade_acordada = Column(Numeric(10, 2), nullable=True)
     tipopessoa = Column(String(2), nullable=True)
     cpfcnpjcontratante = Column(String(14), nullable=True)
     nmrazaosocial = Column(String(160), nullable=True)
