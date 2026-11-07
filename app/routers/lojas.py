@@ -1013,12 +1013,9 @@ def inativar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = D
     validar_permissao_mutacao_loja(
         payload, organizacao_id=loja.organizacao_id, loja_id=loja_id
     )
-    pedido = db.query(CancelamentoParceria).filter(CancelamentoParceria.loja_id == loja_id).first()
     pendencias = _pendencias_cancelamento(db, loja_id)
     if pendencias:
         raise HTTPException(409, 'Este estabelecimento não pode ser inativado pois possui tickets não retirados ou ingressos para shows que ainda não aconteceram.')
-    if not pedido or pedido.dtavisoate > datetime.now():
-        raise HTTPException(409, 'Este estabelecimento não pode ser inativado: ainda não passaram 30 dias da solicitação de cancelamento da parceria.')
 
     loja.sitloja = "INATIVA"
     db.commit()
