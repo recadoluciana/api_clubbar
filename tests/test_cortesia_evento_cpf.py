@@ -35,6 +35,13 @@ def test_bloqueia_gratuito_existente_no_mesmo_evento(db):
     with pytest.raises(HTTPException) as erro:
         validar_cortesia_unica_por_cpf(db, evento_id=10, cpf='12345678909')
     assert erro.value.status_code == 409
+    assert erro.value.detail == 'Este CPF já resgatou uma cortesia deste evento.'
+
+
+def test_bloqueia_cpf_com_formatacao_em_registro_antigo(db):
+    db.execute(text("UPDATE itvenda SET cpfparticipante='123.456.789-09' WHERE itvenda_id=1"))
+    with pytest.raises(HTTPException):
+        validar_cortesia_unica_por_cpf(db, evento_id=10, cpf='12345678909')
 
 
 def test_nao_bloqueia_outro_evento_pago_cancelado_ou_proprio_item(db):

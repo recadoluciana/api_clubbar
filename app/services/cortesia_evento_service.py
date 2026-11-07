@@ -1,4 +1,6 @@
 from fastapi import HTTPException
+import re
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models.evento import Evento
@@ -28,7 +30,8 @@ def validar_cortesia_unica_por_cpf(
         .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .filter(
             EventoLote.evento_id == evento_id,
-            ItVenda.cpfparticipante == cpf,
+            func.replace(func.replace(func.replace(ItVenda.cpfparticipante, ".", ""), "-", ""), " ", "")
+            == re.sub(r"\D", "", cpf),
             ItVenda.tipoitem == "INGRESSO",
             ItVenda.sititvenda.in_(["ATIVO", "CANCELAMENTO_SOLICITADO"]),
             Venda.sitvenda == "PAGA",
@@ -41,5 +44,5 @@ def validar_cortesia_unica_por_cpf(
     if query.with_for_update().first():
         raise HTTPException(
             409,
-            "Este CPF já possui um ingresso gratuito para este evento.",
+            "Este CPF já resgatou uma cortesia deste evento.",
         )
