@@ -44,6 +44,8 @@ def consultar(loja_id: int, usuario=Depends(get_usuario_logado), db: Session = D
 @router.put("/{loja_id}")
 def atualizar(loja_id: int, dados: PreferenciasPromocao, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
+    if dados.whatsapp and not cliente.nrtelcliente:
+        raise HTTPException(422, "Cadastre seu número de WhatsApp no perfil antes de ativar esta opção.")
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(404, "Estabelecimento não encontrado")

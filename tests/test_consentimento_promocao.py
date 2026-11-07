@@ -4,7 +4,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app.routers.consentimento_promocao import PreferenciasPromocao, _cliente, consultar
+from app.routers.consentimento_promocao import PreferenciasPromocao, _cliente, atualizar, consultar
 
 
 class ConsentimentoPromocaoTest(unittest.TestCase):
@@ -30,3 +30,13 @@ class ConsentimentoPromocaoTest(unittest.TestCase):
         resultado = consultar(7, {"role": "cliente", "sub": "42"}, db)
         self.assertEqual(resultado, {"loja_id": 7, "push": False, "whatsapp": False})
         db.query.return_value.filter_by.assert_called_once_with(cliente_id=42, loja_id=7)
+
+    def test_whatsapp_exige_telefone_no_perfil(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
+            cliente_id=42, nrtelcliente=None
+        )
+        with self.assertRaises(HTTPException) as erro:
+            atualizar(7, PreferenciasPromocao(whatsapp=True), {"role": "cliente", "sub": "42"}, db)
+        self.assertEqual(erro.exception.status_code, 422)
+        db.commit.assert_not_called()
