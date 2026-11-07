@@ -4,11 +4,14 @@ import os
 import uuid
 import shutil
 import traceback
+import hashlib
+import io
 from html import escape
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -16,7 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
-from app.services.storage_service import salvar_arquivo
+from app.services.storage_service import salvar_arquivo, obter_arquivo
 from app.core.permissoes_loja import validar_mutacao_loja
 from app.models.loja import Loja
 from app.services.agenda_service import obter_ou_criar_agenda
@@ -764,7 +767,25 @@ def compartilhar_evento(evento_id: int, db: Session = Depends(get_db)):
             "https://api.clubbar.com.br" if APP_ENV in {"prod", "production"}
             else "https://apiclubbar-desenvolvimento.up.railway.app"
         )
-        imagem = urljoin(base_api + "/", imagem.lstrip("/"))
+        versao = hashlib.sha256(imagem.encode()).hexdigest()[:12]
+        imagem = f"{base_api}/eventos/compartilhar/{evento.evento_id}/imagem.jpg?v={versao}"
+    loja = db.query(Loja).filter(Loja.loja_id == evento.loja_id).first()
+    local = (evento.nmlocalevento or (loja.nmloja if loja else "") or "").strip()
+    if evento.dsendlocevento:
+        endereco = evento.dsendlocevento.strip()
+    elif loja:
+        endereco = ", ".join(p.strip() for p in [loja.endloja or "", loja.nrendeloja or "", loja.dsbairroloja or ""] if p.strip())
+    else:
+        endereco = ""
+    if loja and loja.cidade_id:
+        cidade = db.query(Cidade).filter(Cidade.cidade_id == loja.cidade_id).first()
+        estado = db.query(Estado).filter(Estado.estado_id == cidade.estado_id).first() if cidade else None
+        cidade_estado = " - ".join(p for p in [(cidade.nmcidade or "").strip() if cidade else "", (estado.sgestado or "").strip() if estado else ""] if p)
+        if cidade_estado and cidade_estado.lower() not in endereco.lower():
+            endereco = ", ".join(p for p in [endereco, cidade_estado] if p)
+    descricao = "Local: " + " — ".join(p for p in [local, endereco] if p)
+    if descricao == "Local: ":
+        descricao = "Veja os detalhes do evento no Clubbar."
     endereco_imagem = urlparse(imagem)
     meta_imagem = (
         f'<meta property="og:image" content="{escape(imagem, quote=True)}">'
@@ -775,13 +796,37 @@ def compartilhar_evento(evento_id: int, db: Session = Depends(get_db)):
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{titulo} | Clubbar</title><meta property="og:type" content="website">
 <meta property="og:title" content="{titulo}">
-<meta property="og:description" content="Garanta seu ingresso e o que vai consumir acessando o app Clubbar.">
+<meta property="og:description" content="{escape(descricao, quote=True)}">
 {meta_imagem}
 </head><body><p>Redirecionando para o evento no Clubbar...</p>
 <a href="{escape(destino, quote=True)}">Abrir evento</a>
 <script>window.location.replace({destino!r});</script></body></html>''',
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@router.api_route("/compartilhar/{evento_id}/imagem.jpg", methods=["GET", "HEAD"])
+def imagem_compartilhamento_evento(evento_id: int, db: Session = Depends(get_db)):
+    evento = db.query(Evento).filter(
+        Evento.evento_id == evento_id, Evento.statusevento == "ATIVO"
+    ).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado.")
+    imagem = (imagem_evento(db, evento) or "").strip()
+    if not imagem.startswith("/uploads/"):
+        raise HTTPException(404, "Imagem do evento não encontrada.")
+    try:
+        arquivo = obter_arquivo(imagem[len("/uploads/"):])
+        if not arquivo:
+            raise HTTPException(404, "Imagem do evento não encontrada.")
+        with Image.open(io.BytesIO(arquivo[0])) as original:
+            foto = ImageOps.exif_transpose(original).convert("RGB")
+            foto.thumbnail((1200, 1200))
+            destino = io.BytesIO()
+            foto.save(destino, format="JPEG", quality=78, optimize=True)
+        return Response(destino.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    except (ValueError, OSError, UnidentifiedImageError):
+        raise HTTPException(404, "Imagem do evento não encontrada.")
 
 
 @router.get("/{evento_id}")
