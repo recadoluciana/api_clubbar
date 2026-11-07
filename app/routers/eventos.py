@@ -4,8 +4,11 @@ import os
 import uuid
 import shutil
 import traceback
+from html import escape
+from urllib.parse import urljoin, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -35,7 +38,7 @@ from app.models.itvenda import ItVenda
 from app.models.cliente import Cliente
 from app.models.usuario import Usuario
 from app.schemas.evento import EventoOutBR
-from app.core.config import UPLOAD_EVENTOS
+from app.core.config import APP_ENV, UPLOAD_EVENTOS, PUBLIC_API_BASE_URL
 from app.services.evento_imagem_service import imagem_evento
 from app.services.evento_disponibilidade_service import (
     validar_evento_unico_por_loja_data,
@@ -743,6 +746,41 @@ def listar_eventos_da_loja(
         }
         for evento in eventos
     ]
+
+
+@router.get("/compartilhar/{evento_id}", response_class=HTMLResponse)
+def compartilhar_evento(evento_id: int, db: Session = Depends(get_db)):
+    evento = db.query(Evento).filter(
+        Evento.evento_id == evento_id, Evento.statusevento == "ATIVO"
+    ).first()
+    if not evento:
+        raise HTTPException(404, "Evento não encontrado.")
+    destino = f"/?evento_id={int(evento.evento_id)}&loja_id={int(evento.loja_id)}"
+    titulo = escape(evento.nmtituloevento, quote=True)
+    imagem = (imagem_evento(db, evento) or "").strip()
+    if imagem.startswith("/uploads/"):
+        base_api = PUBLIC_API_BASE_URL or (
+            "https://api.clubbar.com.br" if APP_ENV in {"prod", "production"}
+            else "https://apiclubbar-desenvolvimento.up.railway.app"
+        )
+        imagem = urljoin(base_api + "/", imagem.lstrip("/"))
+    endereco_imagem = urlparse(imagem)
+    meta_imagem = (
+        f'<meta property="og:image" content="{escape(imagem, quote=True)}">'
+        if endereco_imagem.scheme == "https" and endereco_imagem.netloc else ""
+    )
+    return HTMLResponse(
+        f'''<!doctype html><html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{titulo} | Clubbar</title><meta property="og:type" content="website">
+<meta property="og:title" content="{titulo}">
+<meta property="og:description" content="Garanta seu ingresso e o que vai consumir acessando o app Clubbar.">
+{meta_imagem}
+</head><body><p>Redirecionando para o evento no Clubbar...</p>
+<a href="{escape(destino, quote=True)}">Abrir evento</a>
+<script>window.location.replace({destino!r});</script></body></html>''',
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/{evento_id}")
