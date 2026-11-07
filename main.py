@@ -1411,6 +1411,24 @@ def garantir_confirmacao_mercado_pago():
     LojaMercadoPagoPendente.__table__.create(bind=engine, checkfirst=True)
 
 
+@app.on_event("startup")
+def garantir_campos_atracao() -> None:
+    if engine.dialect.name != "mysql":
+        return
+    with engine.begin() as conexao:
+        atuais = {coluna["name"] for coluna in inspect(conexao).get_columns("atracao")}
+        for coluna, definicao in (
+            ("urlfoto2atracao", "VARCHAR(255) NULL"),
+            ("urlfoto3atracao", "VARCHAR(255) NULL"),
+            ("instagram", "VARCHAR(255) NULL"),
+            ("telefone_contato", "VARCHAR(30) NULL"),
+            ("video_instagram", "VARCHAR(500) NULL"),
+            ("video_youtube", "VARCHAR(500) NULL"),
+        ):
+            if coluna not in atuais:
+                conexao.execute(text(f"ALTER TABLE atracao ADD COLUMN `{coluna}` {definicao}"))
+
+
 _startup_handlers_originais = list(app.router.on_startup)
 app.router.on_startup.clear()
 

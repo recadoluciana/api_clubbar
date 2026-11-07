@@ -1,4 +1,6 @@
 import json, os, shutil, uuid
+import re
+from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -54,7 +56,45 @@ def _item(a):
         }
         for estilo in a.estilos
     ]
-    return {"atracao_id":a.atracao_id,"organizacao_id":a.organizacao_id,"nmatracao":a.nmatracao,"dsestilomusical":", ".join(e["nmestilomusical"] for e in estilos) or a.dsestilomusical,"estilos":estilos,"urlbanneratracao":a.urlbanneratracao,"dsatracao":a.dsatracao}
+    return {"atracao_id":a.atracao_id,"organizacao_id":a.organizacao_id,"nmatracao":a.nmatracao,"dsestilomusical":", ".join(e["nmestilomusical"] for e in estilos) or a.dsestilomusical,"estilos":estilos,"urlbanneratracao":a.urlbanneratracao,"dsatracao":a.dsatracao, **{campo: getattr(a, campo) for campo in ("urlfoto2atracao", "urlfoto3atracao", "instagram", "telefone_contato", "video_instagram", "video_youtube")}}
+
+
+def _aplicar_dados_extras(a, dados_extras, foto2, foto3):
+    if dados_extras is not None:
+        try:
+            dados = json.loads(dados_extras)
+            if not isinstance(dados, dict):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise HTTPException(422, "Dados adicionais da atração inválidos.")
+        for campo, tamanho in (("instagram", 255), ("telefone_contato", 30), ("video_instagram", 500), ("video_youtube", 500)):
+            if campo not in dados:
+                continue
+            valor = str(dados[campo] or "").strip()
+            if len(valor) > tamanho:
+                raise HTTPException(422, f"O campo {campo} é muito longo.")
+            if campo == "instagram" and valor:
+                if valor.startswith("https://"):
+                    url = urlparse(valor)
+                    dominio = (url.hostname or "").lower()
+                    if dominio != "instagram.com" and not dominio.endswith(".instagram.com"):
+                        raise HTTPException(422, "Informe um perfil válido do Instagram.")
+                elif not re.fullmatch(r"@?[A-Za-z0-9._]{1,30}", valor):
+                    raise HTTPException(422, "Informe um perfil válido do Instagram.")
+            if campo.startswith("video_") and valor:
+                url = urlparse(valor)
+                dominio = (url.hostname or "").lower()
+                dominios = ("instagram.com",) if campo == "video_instagram" else ("youtube.com", "youtu.be")
+                if url.scheme != "https" or not any(dominio == d or dominio.endswith("." + d) for d in dominios):
+                    raise HTTPException(422, "Informe um link HTTPS válido do Instagram ou YouTube.")
+            setattr(a, campo, valor or None)
+        for numero in (2, 3):
+            if dados.get(f"remover_foto{numero}") is True:
+                setattr(a, f"urlfoto{numero}atracao", None)
+    if foto2 and foto2.filename:
+        a.urlfoto2atracao = _banner(foto2)
+    if foto3 and foto3.filename:
+        a.urlfoto3atracao = _banner(foto3)
 
 def _ids_estilos(valor):
     if not valor:return []
@@ -173,15 +213,16 @@ def admin_excluir_estilo(estilo_id:int,_=Depends(get_operador_logado),db:Session
     raise HTTPException(405,"Estilos do catálogo não podem ser excluídos. Inative o estilo.")
 
 @router.post("/atracoes", status_code=201)
-def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def criar(nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None), dados_extras:str|None=Form(None), foto2:UploadFile|None=File(None), foto3:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload,_org(payload))
     nome=nmatracao.strip()
     if not nome: raise HTTPException(422,"Informe o nome da atração.")
     a=Atracao(organizacao_id=_org(payload),nmatracao=nome,dsestilomusical=(dsestilomusical or "").strip() or None,dsatracao=(dsatracao or "").strip() or None,urlbanneratracao=_banner(urlbanneratracao))
+    _aplicar_dados_extras(a, dados_extras, foto2, foto3)
     db.add(a);db.flush();_aplicar_estilos(db,a,estilos_ids);db.commit();db.refresh(a);return _item(a)
 
 @router.put("/atracoes/{atracao_id}")
-def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
+def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Form(None),estilos_ids:str|None=Form(None),dsatracao:str|None=Form(None),urlbanneratracao:UploadFile|None=File(None),dados_extras:str|None=Form(None),foto2:UploadFile|None=File(None),foto3:UploadFile|None=File(None),payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     validar_gerenciamento_organizacao(payload,_org(payload))
     a=db.query(Atracao).filter(Atracao.atracao_id==atracao_id,Atracao.organizacao_id==_org(payload)).first()
     if not a: raise HTTPException(404,"Atração não encontrada.")
@@ -189,6 +230,7 @@ def atualizar(atracao_id:int,nmatracao:str=Form(...),dsestilomusical:str|None=Fo
     a.nmatracao=nmatracao.strip();a.dsestilomusical=(dsestilomusical or "").strip() or None;a.dsatracao=(dsatracao or "").strip() or None
     _aplicar_estilos(db,a,estilos_ids)
     if urlbanneratracao and urlbanneratracao.filename: a.urlbanneratracao=_banner(urlbanneratracao)
+    _aplicar_dados_extras(a, dados_extras, foto2, foto3)
     db.commit(); db.refresh(a); return _item(a)
 
 @router.delete("/atracoes/{atracao_id}", status_code=204)

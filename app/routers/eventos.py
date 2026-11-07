@@ -971,6 +971,12 @@ def get_evento_por_id(
                 "dsatracao": atracao.dsatracao,
                 "urlbanneratracao": atracao.urlbanneratracao,
                 "dtinicioatracao": programacao.dtinicioatracao,
+                "urlfoto2atracao": atracao.urlfoto2atracao,
+                "urlfoto3atracao": atracao.urlfoto3atracao,
+                "instagram": atracao.instagram,
+                "telefone_contato": atracao.telefone_contato,
+                "video_instagram": atracao.video_instagram,
+                "video_youtube": atracao.video_youtube,
                 "dtfimatracao": programacao.dtfimatracao,
                 "nrminutoduracao": programacao.nrminutoduracao,
             }
