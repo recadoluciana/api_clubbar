@@ -178,6 +178,9 @@ def enviar_confirmacao_cadastro_lead(
         "CASA_EVENTOS": "Casa de eventos",
         "RESTAURANTE": "Restaurante",
         "CONVENIENCIA": "Conveniência",
+        "HAMBURGUERIA": "Hamburgueria",
+        "PIZZARIA": "Pizzaria",
+        "LANCHONETE": "Lanchonete",
     }
     nomes_venda = {
         "PRODUTOS": "Somente produtos",

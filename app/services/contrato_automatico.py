@@ -24,6 +24,9 @@ def _atividade_formatada(valor: str | None) -> str:
         "CASA_EVENTOS": "Casa de Eventos",
         "RESTAURANTE": "Restaurante",
         "CONVENIENCIA": "Conveniência",
+        "HAMBURGUERIA": "Hamburgueria",
+        "PIZZARIA": "Pizzaria",
+        "LANCHONETE": "Lanchonete",
     }
     codigo = _valor(valor)
     return nomes.get(codigo, codigo)

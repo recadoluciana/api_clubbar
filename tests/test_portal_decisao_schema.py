@@ -8,7 +8,7 @@ from app.schemas.leadparceiro import ConverterLeadParceiroIn
 
 class PortalStatusSchemaTest(unittest.TestCase):
     def test_novos_tipos_e_venda_padrao(self):
-        for tipo in ('RESTAURANTE', 'CONVENIENCIA'):
+        for tipo in ('RESTAURANTE', 'CONVENIENCIA', 'HAMBURGUERIA', 'PIZZARIA', 'LANCHONETE'):
             cadastro = PortalEstabelecimentoCreate(
                 nmestabelecimento='Exemplo', tipo=tipo, estado_id=1, cidade_id=1,
                 cep='37185000', endereco='Rua A', numero='1', bairro='Centro',

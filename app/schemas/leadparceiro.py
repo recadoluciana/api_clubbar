@@ -17,6 +17,9 @@ TipoParceiro = Literal[
     "CASA_EVENTOS",
     "RESTAURANTE",
     "CONVENIENCIA",
+    "HAMBURGUERIA",
+    "PIZZARIA",
+    "LANCHONETE",
 ]
 
 

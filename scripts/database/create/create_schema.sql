@@ -148,7 +148,7 @@ CREATE TABLE leadestabelecimento (
   CONSTRAINT fk_leadestabelecimento_estado FOREIGN KEY (estado_id) REFERENCES estado(estado_id),
   CONSTRAINT fk_leadestabelecimento_cidade FOREIGN KEY (cidade_id) REFERENCES cidade(cidade_id),
   CONSTRAINT chk_leadestabelecimento_tipo CHECK (
-    tipo IN ('BAR','CASA_NOTURNA','PRODUTOR_EVENTOS','CASA_EVENTOS','RESTAURANTE','CONVENIENCIA')
+    tipo IN ('BAR','CASA_NOTURNA','PRODUTOR_EVENTOS','CASA_EVENTOS','RESTAURANTE','CONVENIENCIA','HAMBURGUERIA','PIZZARIA','LANCHONETE')
   ),
   INDEX idx_leadestabelecimento_lead (leadparceiro_id),
   INDEX idx_leadestabelecimento_status (status),
