@@ -77,6 +77,8 @@ from app.routers import reconciliacao_cancelamentos
 from app.routers import ingresso_publico
 from app.routers import produto_publico
 from app.routers import beneficios_produtos
+from app.routers import consentimento_promocao
+from app.models.consentimento_promocao import ConsentimentoPromocao
 
 
 app = FastAPI(title="clubbar API", default_response_class=ClubbarJSONResponse)
@@ -215,6 +217,12 @@ app.include_router(reconciliacao_cancelamentos.router)
 app.include_router(ingresso_publico.router)
 app.include_router(produto_publico.router)
 app.include_router(beneficios_produtos.router)
+app.include_router(consentimento_promocao.router)
+
+
+@app.on_event("startup")
+def criar_tabela_consentimento_promocao():
+    ConsentimentoPromocao.__table__.create(bind=engine, checkfirst=True)
 
 
 @app.on_event("startup")
