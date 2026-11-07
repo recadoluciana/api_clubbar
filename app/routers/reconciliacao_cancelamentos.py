@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
@@ -17,6 +18,7 @@ from app.models.venda import Venda
 from app.services.asaas_service import consultar_pagamento_asaas
 from app.services.asaas_split_service import obter_conta_asaas_da_loja
 from app.services.cashback_service import cancelar_cashback_da_venda
+from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id
 
 
 router = APIRouter(
@@ -83,7 +85,7 @@ def _pagamento_da_venda(db: Session, venda_id: int) -> PagVenda:
     if not pagamento or not str(pagamento.idtransacaopagvenda or "").strip():
         raise HTTPException(
             status_code=409,
-            detail="Esta venda não possui uma cobrança Asaas disponível para reconciliação.",
+            detail="Esta venda não possui uma cobrança disponível para reconciliação.",
         )
     return pagamento
 
@@ -129,6 +131,8 @@ def _venda_em_processamento(
 
 
 async def _consultar_estorno(db: Session, venda: Venda, pagamento: PagVenda) -> dict:
+    if str(pagamento.provedor or 'ASAAS').upper() != 'ASAAS':
+        raise HTTPException(409, 'Esta venda não foi paga pelo Asaas.')
     api_key, _ = obter_conta_asaas_da_loja(db, venda.loja_id)
     retorno = await consultar_pagamento_asaas(
         str(pagamento.idtransacaopagvenda),
@@ -151,8 +155,32 @@ async def _consultar_estorno(db: Session, venda: Venda, pagamento: PagVenda) -> 
     return {
         "pagamento_id": str(pagamento.idtransacaopagvenda),
         "valor_cobrado": _dinheiro(retorno.get("value") or pagamento.vrpagvenda),
-        "valor_estornado": _dinheiro(sum(Decimal(str(item["valor"])) for item in estornos)),
+        "valor_estornado": _dinheiro(sum(Decimal(str(item["valor"])) for item in estornos if item['status'] == 'DONE')),
+        "estorno_pendente": any(item['status'] != 'DONE' for item in estornos),
         "estornos": estornos,
+    }
+
+
+async def _consultar_estorno_mercado_pago(db: Session, venda: Venda, pagamento: PagVenda) -> dict:
+    if str(pagamento.provedor or '').upper() != 'MERCADO_PAGO':
+        raise HTTPException(409, 'Esta venda não foi paga pelo Mercado Pago.')
+    if not pagamento.lojamercadopago_id:
+        raise HTTPException(409, 'A conta original do Mercado Pago não foi identificada.')
+    token, _ = await obter_token_loja(db, venda.loja_id, pagamento.lojamercadopago_id)
+    retorno = await buscar_pagamento_por_id(access_token=token, payment_id=str(pagamento.idtransacaopagvenda))
+    if not retorno:
+        raise HTTPException(404, 'Pagamento não encontrado no Mercado Pago.')
+    valor_cobrado = _dinheiro(retorno.get('transaction_amount'))
+    valor_estornado = _dinheiro(retorno.get('transaction_amount_refunded'))
+    status = str(retorno.get('status') or '').lower()
+    estornos = retorno.get('refunds') or []
+    return {
+        'pagamento_id': str(pagamento.idtransacaopagvenda),
+        'valor_cobrado': valor_cobrado,
+        'valor_estornado': valor_estornado,
+        'estornos': [{'id': str(item.get('id') or '') or None} for item in estornos if isinstance(item, dict)],
+        'estorno_localizado': status == 'refunded' and valor_cobrado > 0 and valor_estornado >= valor_cobrado,
+        'status_pagamento': status,
     }
 
 
@@ -183,6 +211,7 @@ def _resumo_venda(db: Session, venda: Venda) -> dict:
 @router.get("")
 def listar(
     limite: int = Query(default=100, ge=1, le=300),
+    provedor: str = Query(default='ASAAS', pattern='^(ASAAS|MERCADO_PAGO)$'),
     payload: dict = Depends(get_usuario_logado),
     db: Session = Depends(get_db),
 ):
@@ -190,9 +219,12 @@ def listar(
     vendas = (
         db.query(Venda)
         .join(ItVenda, ItVenda.venda_id == Venda.venda_id)
+        .join(PagVenda, PagVenda.venda_id == Venda.venda_id)
         .filter(
             Venda.organizacao_id == organizacao_id,
             ItVenda.sititvenda == "CANCELAMENTO_SOLICITADO",
+            func.coalesce(PagVenda.provedor, 'ASAAS') == provedor,
+            PagVenda.pagvenda_id == select(func.max(PagVenda.pagvenda_id)).where(PagVenda.venda_id == Venda.venda_id).correlate(Venda).scalar_subquery(),
         )
         .distinct()
         .order_by(Venda.dtultatu.desc(), Venda.dtcriacao.desc())
@@ -200,6 +232,15 @@ def listar(
         .all()
     )
     return [_resumo_venda(db, venda) for venda in vendas]
+
+
+@router.get('/{venda_id}/mercado-pago')
+async def consultar_mercado_pago(venda_id: int, payload: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    organizacao_id = _organizacao_administradora(payload)
+    venda, itens, pagamento = _venda_em_processamento(db, venda_id, organizacao_id)
+    consulta = await _consultar_estorno_mercado_pago(db, venda, pagamento)
+    consulta['valor_esperado'] = _dinheiro(sum(Decimal(str(_valor_item(item))) for item in itens))
+    return consulta
 
 
 @router.get("/{venda_id}/asaas")
@@ -213,7 +254,7 @@ async def consultar_asaas(
     consulta = await _consultar_estorno(db, venda, pagamento)
     valor_esperado = _dinheiro(sum(Decimal(str(_valor_item(item))) for item in itens))
     consulta["valor_esperado"] = valor_esperado
-    consulta["estorno_localizado"] = consulta["valor_estornado"] + 0.01 >= valor_esperado
+    consulta["estorno_localizado"] = consulta["valor_estornado"] >= valor_esperado and not consulta['estorno_pendente']
     return consulta
 
 
@@ -225,15 +266,22 @@ async def concluir(
 ):
     organizacao_id = _organizacao_administradora(payload)
     venda, itens, pagamento = _venda_em_processamento(db, venda_id, organizacao_id)
-    consulta = await _consultar_estorno(db, venda, pagamento)
+    mercado_pago = str(pagamento.provedor or '').upper() == 'MERCADO_PAGO'
+    pagamento_id = pagamento.pagvenda_id
+    consulta = await (_consultar_estorno_mercado_pago(db, venda, pagamento) if mercado_pago else _consultar_estorno(db, venda, pagamento))
+    if mercado_pago:
+        # A renovação do token pode fazer commit e liberar os bloqueios.
+        venda, itens, pagamento = _venda_em_processamento(db, venda_id, organizacao_id)
+        if pagamento.pagvenda_id != pagamento_id:
+            raise HTTPException(409, 'O pagamento da venda foi alterado. Consulte novamente.')
     valor_esperado = _dinheiro(sum(Decimal(str(_valor_item(item))) for item in itens))
-    if consulta["valor_estornado"] + 0.01 < valor_esperado:
+    if (mercado_pago and not consulta['estorno_localizado']) or (not mercado_pago and (consulta["valor_estornado"] < valor_esperado or consulta['estorno_pendente'])):
         raise HTTPException(
             status_code=409,
-            detail="O Asaas ainda não confirmou o estorno integral desta transação.",
+            detail="O provedor ainda não confirmou o estorno integral desta transação.",
         )
 
-    estorno_id = next((item["id"] for item in consulta["estornos"] if item["id"]), None)
+    estorno_id = next((item["id"] for item in consulta["estornos"] if item["id"] and (mercado_pago or item.get('status') == 'DONE')), None)
     lotes_cancelados: dict[int, int] = {}
     saldo_a_distribuir = valor_esperado
     for indice, item in enumerate(itens):
@@ -260,7 +308,7 @@ async def concluir(
     pagamento.sitpagvenda = "CANCELADO"
     cancelar_cashback_da_venda(db, venda.venda_id)
     db.commit()
-    return {"ok": True, "mensagem": "Cancelamento concluído após confirmação do Asaas."}
+    return {"ok": True, "mensagem": "Cancelamento concluído após confirmação do provedor."}
 
 
 @router.post("/{venda_id}/reativar")
@@ -272,7 +320,7 @@ async def reativar(
     organizacao_id = _organizacao_administradora(payload)
     venda, itens, pagamento = _venda_em_processamento(db, venda_id, organizacao_id)
     consulta = await _consultar_estorno(db, venda, pagamento)
-    if consulta["valor_estornado"] > 0:
+    if consulta["valor_estornado"] > 0 or consulta['estorno_pendente']:
         raise HTTPException(
             status_code=409,
             detail=(

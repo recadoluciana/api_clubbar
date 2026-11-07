@@ -8,7 +8,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import APP_ENV, ASAAS_API_KEY
+from app.core.config import APP_ENV, ASAAS_API_KEY, MERCADO_PAGO_API_BASE_URL
 from app.core.credential_crypto import criptografar_credencial, descriptografar_credencial
 from app.core.permissoes_loja import validar_gerenciamento_organizacao
 from app.core.security import get_usuario_logado
@@ -18,6 +18,7 @@ from app.models.checkout_asaas import CheckoutAsaas
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
+from app.services.mercado_pago_service import obter_token_loja
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
 from app.utils.documento import normalizar_cpf_cnpj
@@ -639,6 +640,46 @@ async def _nova_chave_subconta(account_id: str) -> str:
     if not chave:
         raise HTTPException(502, "O Asaas criou a credencial, mas não devolveu sua chave secreta.")
     return str(chave)
+
+
+@router.get('/organizacao/{organizacao_id}/extrato-mercado-pago')
+async def extrato_mercado_pago(
+    organizacao_id: int, loja_id: int, data_inicio: date | None = None,
+    data_fim: date | None = None, offset: int = 0,
+    db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    if str(payload.get('dscargo') or '').upper() not in {'SUPERADMIN', 'ADMIN'}:
+        raise HTTPException(403, 'Somente administradores podem consultar pagamentos da conta Mercado Pago.')
+    _, loja = _resolver_titular(db, organizacao_id, payload, loja_id=loja_id)
+    token, _ = await obter_token_loja(db, loja.loja_id)
+    hoje = date.today()
+    inicio, fim = data_inicio or date(hoje.year, hoje.month, 1), data_fim or hoje
+    if inicio > fim or offset < 0 or offset > 10000:
+        raise HTTPException(422, 'Período ou paginação inválida.')
+    try:
+        async with httpx.AsyncClient(timeout=25) as cliente:
+            resposta = await cliente.get(
+                f'{MERCADO_PAGO_API_BASE_URL}/v1/payments/search',
+                headers={'Authorization': f'Bearer {token}'},
+                params={'sort': 'date_created', 'criteria': 'desc', 'range': 'date_created',
+                        'begin_date': f'{inicio.isoformat()}T00:00:00.000-03:00',
+                        'end_date': f'{fim.isoformat()}T23:59:59.999-03:00',
+                        'limit': 50, 'offset': offset},
+            )
+        if resposta.is_error:
+            raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.')
+        dados = resposta.json()
+    except (httpx.RequestError, ValueError) as exc:
+        raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.') from exc
+    pagamentos = [{
+        'id': str(item.get('id') or ''), 'data': item.get('date_created'),
+        'descricao': item.get('description') or 'Pagamento', 'status': item.get('status'),
+        'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
+        'metodo': item.get('payment_method_id'),
+    } for item in dados.get('results', []) if isinstance(item, dict)]
+    total = int((dados.get('paging') or {}).get('total') or 0)
+    return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total}
 
 
 @router.get("/organizacao/{organizacao_id}/extrato-asaas")
