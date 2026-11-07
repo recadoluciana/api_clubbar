@@ -1466,6 +1466,7 @@ def serve_favicon():
     return FileResponse("app/static/favicon.png")
 
 
+@app.head("/uploads/{chave:path}")
 @app.get("/uploads/{chave:path}")
 def servir_upload(chave: str):
     try:

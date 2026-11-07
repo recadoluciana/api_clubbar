@@ -748,6 +748,7 @@ def listar_eventos_da_loja(
     ]
 
 
+@router.head("/compartilhar/{evento_id}", response_class=HTMLResponse)
 @router.get("/compartilhar/{evento_id}", response_class=HTMLResponse)
 def compartilhar_evento(evento_id: int, db: Session = Depends(get_db)):
     evento = db.query(Evento).filter(
