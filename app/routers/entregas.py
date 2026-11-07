@@ -37,7 +37,6 @@ from app.services.cashback_service import cancelar_cashback_da_venda
 from app.services.localidade_entrega_service import nome_localidade_entrega
 from app.services.cortesia_evento_service import (
     bloquear_evento_para_cortesia,
-    eh_modalidade_cortesia,
     validar_cortesia_unica_por_cpf,
 )
 from app.core.config import ASAAS_CLUBBAR_WALLET_ID
@@ -1820,7 +1819,7 @@ def alterar_participante_itvenda(
     if item.nmparticipante == nome and item.cpfparticipante == cpf:
         return {"ok": True, "alterado": False, "itvenda_id": item.itvenda_id}
 
-    if eh_modalidade_cortesia(preco):
+    if item.vrunititvenda == 0:
         bloquear_evento_para_cortesia(db, evento.evento_id)
         validar_cortesia_unica_por_cpf(
             db,

@@ -22,7 +22,6 @@ from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, 
 from app.services.notificacao_ingressos_service import enviar_ingressos_confirmados_da_venda
 from app.services.cortesia_evento_service import (
     bloquear_evento_para_cortesia,
-    eh_modalidade_cortesia,
     validar_cortesia_unica_por_cpf,
 )
 from app.core.config import APP_ENV, ASAAS_API_KEY, ASAAS_CLUBBAR_WALLET_ID
@@ -117,10 +116,7 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
     cpfs = [p.cpf for p in payload.participantes]
     if len(set(cpfs)) != len(cpfs):
         raise HTTPException(422, "Cada participante deve possuir um CPF distinto")
-    preco = db.query(EventoLotePreco).filter(
-        EventoLotePreco.lotepreco_id == reserva.lotepreco_id,
-    ).first()
-    if eh_modalidade_cortesia(preco):
+    if Decimal(str(reserva.vrtotal or 0)) == 0:
         bloquear_evento_para_cortesia(db, reserva.evento_id)
         for cpf in cpfs:
             validar_cortesia_unica_por_cpf(

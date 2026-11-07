@@ -14,6 +14,7 @@ from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.venda import Venda
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.services.venda_service import gerar_token_qr
+from app.services.cortesia_evento_service import bloquear_evento_para_cortesia, validar_cortesia_unica_por_cpf
 
 
 def _dados_catalogo_item(
@@ -116,6 +117,10 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
         raise HTTPException(409, "A reserva não é gratuita")
     participantes = db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).order_by(ReservaIngressoParticipante.ordem).all()
     if len(participantes) != reserva.qtreservada: raise HTTPException(409, "Participantes da reserva estão incompletos")
+    if len(participantes) != 1:
+        raise HTTPException(409, "O resgate é limitado a um ingresso por CPF para cada evento.")
+    bloquear_evento_para_cortesia(db, reserva.evento_id)
+    validar_cortesia_unica_por_cpf(db, evento_id=reserva.evento_id, cpf=participantes[0].cpfparticipante)
     lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
     if not lote: raise HTTPException(409, "Lote da reserva não encontrado")
     venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PAGA", totalvenda=0)
