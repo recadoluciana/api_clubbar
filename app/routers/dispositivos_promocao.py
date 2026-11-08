@@ -10,6 +10,7 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.routers.consentimento_promocao import _cliente
+from app.services.envio_promocoes_service import enviar_push_promocional, CanalIndisponivel, FalhaEnvio
 
 router = APIRouter(prefix="/clientes/me/dispositivos-promocao", tags=["Dispositivos de promoções"])
 
@@ -51,3 +52,16 @@ def remover(dados: DispositivoIn, usuario=Depends(get_usuario_logado), db: Sessi
     db.query(DispositivoPromocao).filter_by(cliente_id=cliente.cliente_id, token_hash=digest).delete(synchronize_session=False)
     db.commit()
     return {"removido": True}
+
+
+@router.post('/teste')
+def testar(dados: DispositivoIn, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    cliente = _cliente(usuario, db)
+    dispositivo = db.query(DispositivoPromocao).filter_by(cliente_id=cliente.cliente_id, token_hash=_hash(dados.token)).first()
+    if not dispositivo:
+        raise HTTPException(404, 'Este aparelho ainda não foi registrado para receber notificações.')
+    try:
+        enviar_push_promocional(token_dispositivo=dispositivo.token, titulo='Teste Clubbar', mensagem='Suas notificações estão funcionando!')
+    except (CanalIndisponivel, FalhaEnvio) as exc:
+        raise HTTPException(503, 'Não foi possível enviar a notificação de teste agora.') from exc
+    return {'aceito': True}

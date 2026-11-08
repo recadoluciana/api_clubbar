@@ -82,6 +82,7 @@ from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.routers import campanhas_promocionais
 from app.models.campanha_promocional import CampanhaPromocional
 from app.routers import dispositivos_promocao
+from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
 from app.models.dispositivo_promocao import DispositivoPromocao
 
 
@@ -231,6 +232,7 @@ def criar_tabela_consentimento_promocao():
     ConsentimentoPromocao.__table__.create(bind=engine, checkfirst=True)
     CampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
     DispositivoPromocao.__table__.create(bind=engine, checkfirst=True)
+    EnvioCampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
 
 
 @app.on_event("startup")

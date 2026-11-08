@@ -4,6 +4,7 @@ Os provedores são configurados no servidor. Este módulo nunca registra os
 tokens de acesso ou os dados de contato nos logs.
 """
 import os
+import json
 import re
 
 import requests
@@ -15,6 +16,24 @@ class CanalIndisponivel(Exception):
 
 class FalhaEnvio(Exception):
     pass
+
+
+def verificar_configuracao_push() -> None:
+    projeto = os.getenv('FIREBASE_PROJECT_ID', '').strip()
+    if not projeto or not re.fullmatch(r'[a-z0-9-]+', projeto):
+        raise CanalIndisponivel('Notificações do aplicativo ainda não configuradas.')
+    try:
+        import google.auth
+        from google.oauth2 import service_account
+        dados = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '').strip()
+        if dados:
+            credenciais = service_account.Credentials.from_service_account_info(json.loads(dados))
+            if credenciais.project_id != projeto:
+                raise ValueError('Projeto da credencial não corresponde ao Firebase.')
+        else:
+            google.auth.default()
+    except Exception as exc:
+        raise CanalIndisponivel('Credenciais do Firebase ainda não estão configuradas.') from exc
 
 
 def enviar_whatsapp_promocional(*, telefone: str, mensagem: str) -> str:
@@ -76,7 +95,13 @@ def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: st
         import google.auth
         from google.auth.transport.requests import Request
 
-        credenciais, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/firebase.messaging"])
+        escopos = ["https://www.googleapis.com/auth/firebase.messaging"]
+        credencial_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '').strip()
+        if credencial_json:
+            from google.oauth2 import service_account
+            credenciais = service_account.Credentials.from_service_account_info(json.loads(credencial_json), scopes=escopos)
+        else:
+            credenciais, _ = google.auth.default(scopes=escopos)
         credenciais.refresh(Request())
         resposta = requests.post(
             f"https://fcm.googleapis.com/v1/projects/{projeto}/messages:send",
