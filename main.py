@@ -235,6 +235,9 @@ def criar_tabela_consentimento_promocao():
         if "email" not in colunas:
             with engine.begin() as conexao:
                 conexao.execute(text("ALTER TABLE consentimento_promocao ADD COLUMN email BOOLEAN NOT NULL DEFAULT FALSE AFTER push"))
+        if "email" in colunas and "whatsapp" in colunas:
+            with engine.begin() as conexao:
+                conexao.execute(text("UPDATE consentimento_promocao SET email = TRUE WHERE whatsapp = TRUE AND email = FALSE"))
     CampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
     DispositivoPromocao.__table__.create(bind=engine, checkfirst=True)
     EnvioCampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
