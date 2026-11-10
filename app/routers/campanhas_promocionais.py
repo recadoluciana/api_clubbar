@@ -1,5 +1,3 @@
-import os
-
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -13,7 +11,7 @@ from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
 from app.database import SessionLocal
-from app.services.envio_promocoes_service import enviar_push_promocional, enviar_whatsapp_promocional, verificar_configuracao_push, CanalIndisponivel
+from app.services.envio_promocoes_service import enviar_email_promocional, enviar_push_promocional, verificar_configuracao_push, CanalIndisponivel
 from app.routers.painel_gerencial import _extrair_escopo
 
 
@@ -28,7 +26,7 @@ class CampanhaIn(BaseModel):
 
 class EnvioIn(BaseModel):
     push: bool = False
-    whatsapp: bool = False
+    email: bool = False
 
 
 def _loja_permitida(loja_id: int, usuario: dict, db: Session) -> Loja:
@@ -60,7 +58,7 @@ def _processar_envios(campanha_id: int) -> None:
             cliente = db.query(Cliente).filter_by(cliente_id=envio.cliente_id, sitcliente='ATIVO').first()
             dispositivo = db.query(DispositivoPromocao).filter_by(id=envio.dispositivo_id, cliente_id=envio.cliente_id).first() if envio.dispositivo_id else None
             permitido = bool(cliente and consentimento and getattr(consentimento, envio.canal, False))
-            destinatario = (dispositivo.token if dispositivo else None) if envio.canal == 'push' else (cliente.nrtelcliente if cliente else None)
+            destinatario = (dispositivo.token if dispositivo else None) if envio.canal == 'push' else (cliente.emailcliente if cliente else None)
             if not permitido or not destinatario:
                 envio.status = 'IGNORADO'
                 db.commit()
@@ -72,7 +70,7 @@ def _processar_envios(campanha_id: int) -> None:
                 if canal == 'push':
                     enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem)
                 else:
-                    enviar_whatsapp_promocional(telefone=destinatario, mensagem=f'{titulo}: {mensagem}')
+                    enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem)
                 envio.status = 'ENVIADO'
             except Exception:
                 envio.status = 'FALHA'
@@ -105,15 +103,13 @@ def enviar(campanha_id: int, dados: EnvioIn, background: BackgroundTasks, usuari
     _loja_permitida(campanha.loja_id, usuario, db)
     if campanha.status != 'RASCUNHO':
         raise HTTPException(409, 'Esta campanha já foi enviada ou está em processamento.')
-    if not dados.push and not dados.whatsapp:
+    if not dados.push and not dados.email:
         raise HTTPException(422, 'Selecione ao menos um canal.')
     if dados.push:
         try:
             verificar_configuracao_push()
         except CanalIndisponivel as exc:
             raise HTTPException(503, str(exc)) from exc
-    if dados.whatsapp and not all(os.getenv(k) for k in ('WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PROMO_TEMPLATE', 'WHATSAPP_GRAPH_VERSION')):
-        raise HTTPException(503, 'WhatsApp Business ainda não está configurado.')
     total = 0
     if dados.push:
         dispositivos = (db.query(DispositivoPromocao).join(ConsentimentoPromocao, ConsentimentoPromocao.cliente_id == DispositivoPromocao.cliente_id)
@@ -122,11 +118,11 @@ def enviar(campanha_id: int, dados: EnvioIn, background: BackgroundTasks, usuari
         for dispositivo in dispositivos:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=dispositivo.cliente_id, dispositivo_id=dispositivo.id, destinatario_chave=f'p:{dispositivo.id}', canal='push'))
             total += 1
-    if dados.whatsapp:
+    if dados.email:
         clientes = (db.query(Cliente).join(ConsentimentoPromocao, ConsentimentoPromocao.cliente_id == Cliente.cliente_id)
-                    .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.whatsapp.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.nrtelcliente.isnot(None)).all())
+                    .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.email.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None)).all())
         for cliente in clientes:
-            db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=cliente.cliente_id, destinatario_chave=f'w:{cliente.cliente_id}', canal='whatsapp'))
+            db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=cliente.cliente_id, destinatario_chave=f'e:{cliente.cliente_id}', canal='email'))
             total += 1
     if not total:
         raise HTTPException(409, 'Não há clientes autorizados com aparelho ou telefone cadastrado para os canais selecionados.')
