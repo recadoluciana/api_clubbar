@@ -229,6 +229,16 @@ app.include_router(dispositivos_promocao.router)
 
 @app.on_event("startup")
 def criar_tabela_consentimento_promocao():
+    if engine.dialect.name == "mysql":
+        colunas_cliente = {item["name"] for item in inspect(engine).get_columns("cliente")}
+        faltantes = {
+            "recebe_email_promocoes": "ALTER TABLE cliente ADD COLUMN recebe_email_promocoes BOOLEAN NOT NULL DEFAULT TRUE",
+            "recebe_push_promocoes": "ALTER TABLE cliente ADD COLUMN recebe_push_promocoes BOOLEAN NOT NULL DEFAULT TRUE",
+        }
+        for coluna, ddl in faltantes.items():
+            if coluna not in colunas_cliente:
+                with engine.begin() as conexao:
+                    conexao.execute(text(ddl))
     ConsentimentoPromocao.__table__.create(bind=engine, checkfirst=True)
     if engine.dialect.name == "mysql":
         colunas = {item["name"] for item in inspect(engine).get_columns("consentimento_promocao")}

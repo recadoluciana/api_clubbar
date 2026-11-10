@@ -7,7 +7,6 @@ from app.database import get_db
 from app.models.campanha_promocional import CampanhaPromocional
 from app.models.loja import Loja
 from app.models.cliente import Cliente
-from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
 from app.database import SessionLocal
@@ -54,10 +53,9 @@ def _processar_envios(campanha_id: int) -> None:
                 db.rollback()
                 continue
             campanha = db.query(CampanhaPromocional).filter_by(id=campanha_id).first()
-            consentimento = db.query(ConsentimentoPromocao).filter_by(cliente_id=envio.cliente_id, loja_id=campanha.loja_id).first()
             cliente = db.query(Cliente).filter_by(cliente_id=envio.cliente_id, sitcliente='ATIVO').first()
             dispositivo = db.query(DispositivoPromocao).filter_by(id=envio.dispositivo_id, cliente_id=envio.cliente_id).first() if envio.dispositivo_id else None
-            permitido = bool(cliente and consentimento and getattr(consentimento, envio.canal, False))
+            permitido = bool(cliente and getattr(cliente, f'recebe_{envio.canal}_promocoes', False))
             destinatario = (dispositivo.token if dispositivo else None) if envio.canal == 'push' else (cliente.emailcliente if cliente else None)
             if not permitido or not destinatario:
                 envio.status = 'IGNORADO'
@@ -112,15 +110,15 @@ def enviar(campanha_id: int, dados: EnvioIn, background: BackgroundTasks, usuari
             raise HTTPException(503, str(exc)) from exc
     total = 0
     if dados.push:
-        dispositivos = (db.query(DispositivoPromocao).join(ConsentimentoPromocao, ConsentimentoPromocao.cliente_id == DispositivoPromocao.cliente_id)
+        dispositivos = (db.query(DispositivoPromocao)
                         .join(Cliente, Cliente.cliente_id == DispositivoPromocao.cliente_id)
-                        .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.push.is_(True), Cliente.sitcliente == 'ATIVO').all())
+                        .filter(Cliente.recebe_push_promocoes.is_(True), Cliente.sitcliente == 'ATIVO').all())
         for dispositivo in dispositivos:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=dispositivo.cliente_id, dispositivo_id=dispositivo.id, destinatario_chave=f'p:{dispositivo.id}', canal='push'))
             total += 1
     if dados.email:
-        clientes = (db.query(Cliente).join(ConsentimentoPromocao, ConsentimentoPromocao.cliente_id == Cliente.cliente_id)
-                    .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.email.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None), Cliente.emailcliente != '').all())
+        clientes = (db.query(Cliente)
+                    .filter(Cliente.recebe_email_promocoes.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None), Cliente.emailcliente != '').all())
         for cliente in clientes:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=cliente.cliente_id, destinatario_chave=f'e:{cliente.cliente_id}', canal='email'))
             total += 1

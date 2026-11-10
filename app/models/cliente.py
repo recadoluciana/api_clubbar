@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, DateTime, text
+from sqlalchemy import Boolean, Column, BigInteger, String, DateTime, text
 from app.database import Base
 
 class Cliente(Base):
@@ -24,3 +24,5 @@ class Cliente(Base):
     cidadecliente = Column(String(100), nullable=True)
     ufcliente = Column(String(2), nullable=True)
     idcidadeibge = Column(BigInteger, nullable=True)
+    recebe_email_promocoes = Column(Boolean, nullable=False, default=True, server_default=text("'1'"))
+    recebe_push_promocoes = Column(Boolean, nullable=False, default=True, server_default=text("'1'"))
