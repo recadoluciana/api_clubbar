@@ -8,6 +8,9 @@ import json
 import re
 
 import requests
+from app.services.email_service import _enviar_email_smtp
+from app.services.email_templates import template_email_clubbar
+from html import escape
 
 
 class CanalIndisponivel(Exception):
@@ -16,6 +19,27 @@ class CanalIndisponivel(Exception):
 
 class FalhaEnvio(Exception):
     pass
+
+
+def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str) -> str:
+    """Envia a promoção pelo provedor transacional configurado no Clubbar."""
+    if not destinatario or "@" not in destinatario:
+        raise FalhaEnvio("E-mail do destinatário inválido.")
+    titulo = " ".join(titulo.split())
+    mensagem = escape(mensagem.strip()).replace("\n", "<br>")
+    try:
+        _enviar_email_smtp(
+            destinatario,
+            titulo,
+            template_email_clubbar(
+                titulo=escape(titulo),
+                subtitulo="Uma nova promoção está disponível para você.",
+                conteudo_html=f"<p>{mensagem}</p>",
+            ),
+        )
+    except Exception as exc:
+        raise FalhaEnvio("Não foi possível confirmar o envio do e-mail.") from exc
+    return destinatario
 
 
 def verificar_configuracao_push() -> None:

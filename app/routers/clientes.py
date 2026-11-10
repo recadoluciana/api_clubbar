@@ -164,8 +164,8 @@ def atualizar_perfil_cliente(
         # A autorização do WhatsApp não acompanha a troca para outro número.
         db.query(ConsentimentoPromocao).filter(
             ConsentimentoPromocao.cliente_id == cliente_id,
-            ConsentimentoPromocao.whatsapp.is_(True),
-        ).update({ConsentimentoPromocao.whatsapp: False}, synchronize_session=False)
+            ConsentimentoPromocao.email.is_(True),
+        ).update({ConsentimentoPromocao.email: False}, synchronize_session=False)
 
     cli.nmcliente = payload.nmcliente.strip()
     cli.nrtelcliente = telefone

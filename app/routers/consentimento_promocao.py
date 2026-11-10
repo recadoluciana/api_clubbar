@@ -15,7 +15,7 @@ router = APIRouter(prefix="/clientes/me/promocoes", tags=["Preferências de prom
 
 class PreferenciasPromocao(BaseModel):
     push: bool = False
-    whatsapp: bool = False
+    email: bool = False
 
 
 def _cliente(usuario: dict, db: Session) -> Cliente:
@@ -38,14 +38,12 @@ def consultar(loja_id: int, usuario=Depends(get_usuario_logado), db: Session = D
     if not loja:
         raise HTTPException(404, "Estabelecimento não encontrado")
     registro = db.query(ConsentimentoPromocao).filter_by(cliente_id=cliente.cliente_id, loja_id=loja_id).first()
-    return {"loja_id": loja_id, "push": bool(registro and registro.push), "whatsapp": bool(registro and registro.whatsapp)}
+    return {"loja_id": loja_id, "push": bool(registro and registro.push), "email": bool(registro and registro.email)}
 
 
 @router.put("/{loja_id}")
 def atualizar(loja_id: int, dados: PreferenciasPromocao, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
-    if dados.whatsapp and not cliente.nrtelcliente:
-        raise HTTPException(422, "Cadastre seu número de WhatsApp no perfil antes de ativar esta opção.")
     loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
     if not loja:
         raise HTTPException(404, "Estabelecimento não encontrado")
@@ -54,7 +52,7 @@ def atualizar(loja_id: int, dados: PreferenciasPromocao, usuario=Depends(get_usu
         registro = ConsentimentoPromocao(cliente_id=cliente.cliente_id, loja_id=loja_id)
         db.add(registro)
     registro.push = dados.push
-    registro.whatsapp = dados.whatsapp
+    registro.email = dados.email
     try:
         db.commit()
     except IntegrityError:
@@ -66,6 +64,6 @@ def atualizar(loja_id: int, dados: PreferenciasPromocao, usuario=Depends(get_usu
         if registro is None:
             raise
         registro.push = dados.push
-        registro.whatsapp = dados.whatsapp
+        registro.email = dados.email
         db.commit()
-    return {"loja_id": loja_id, "push": registro.push, "whatsapp": registro.whatsapp}
+    return {"loja_id": loja_id, "push": registro.push, "email": registro.email}
