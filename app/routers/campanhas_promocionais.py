@@ -120,12 +120,12 @@ def enviar(campanha_id: int, dados: EnvioIn, background: BackgroundTasks, usuari
             total += 1
     if dados.email:
         clientes = (db.query(Cliente).join(ConsentimentoPromocao, ConsentimentoPromocao.cliente_id == Cliente.cliente_id)
-                    .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.email.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None)).all())
+                    .filter(ConsentimentoPromocao.loja_id == campanha.loja_id, ConsentimentoPromocao.email.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None), Cliente.emailcliente != '').all())
         for cliente in clientes:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=cliente.cliente_id, destinatario_chave=f'e:{cliente.cliente_id}', canal='email'))
             total += 1
     if not total:
-        raise HTTPException(409, 'Não há clientes autorizados com aparelho ou telefone cadastrado para os canais selecionados.')
+        raise HTTPException(409, 'Não há clientes autorizados com e-mail ou dispositivo cadastrado para os canais selecionados.')
     campanha.status = 'EM_ENVIO'
     db.commit()
     background.add_task(_processar_envios, campanha.id)
