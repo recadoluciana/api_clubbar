@@ -1,21 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.cliente import Cliente
-from app.models.consentimento_promocao import ConsentimentoPromocao
-from app.models.loja import Loja
 
 
-router = APIRouter(prefix="/clientes/me/promocoes", tags=["Preferências de promoções"])
+router = APIRouter(prefix="/clientes/me/preferencias-notificacao", tags=["Preferências de notificações"])
 
 
 class PreferenciasPromocao(BaseModel):
-    push: bool = False
-    email: bool = False
+    push: bool = True
+    email: bool = True
 
 
 def _cliente(usuario: dict, db: Session) -> Cliente:
@@ -31,39 +28,16 @@ def _cliente(usuario: dict, db: Session) -> Cliente:
     return cliente
 
 
-@router.get("/{loja_id}")
-def consultar(loja_id: int, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+@router.get("")
+def consultar(usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
-    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
-    if not loja:
-        raise HTTPException(404, "Estabelecimento não encontrado")
-    registro = db.query(ConsentimentoPromocao).filter_by(cliente_id=cliente.cliente_id, loja_id=loja_id).first()
-    return {"loja_id": loja_id, "push": bool(registro and registro.push), "email": bool(registro and registro.email)}
+    return {"push": bool(cliente.recebe_push_promocoes), "email": bool(cliente.recebe_email_promocoes)}
 
 
-@router.put("/{loja_id}")
-def atualizar(loja_id: int, dados: PreferenciasPromocao, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+@router.put("")
+def atualizar(dados: PreferenciasPromocao, usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
-    loja = db.query(Loja).filter(Loja.loja_id == loja_id).first()
-    if not loja:
-        raise HTTPException(404, "Estabelecimento não encontrado")
-    registro = db.query(ConsentimentoPromocao).filter_by(cliente_id=cliente.cliente_id, loja_id=loja_id).first()
-    if registro is None:
-        registro = ConsentimentoPromocao(cliente_id=cliente.cliente_id, loja_id=loja_id)
-        db.add(registro)
-    registro.push = dados.push
-    registro.email = dados.email
-    try:
-        db.commit()
-    except IntegrityError:
-        # Requisições simultâneas podem tentar criar a mesma preferência.
-        db.rollback()
-        registro = db.query(ConsentimentoPromocao).filter_by(
-            cliente_id=cliente.cliente_id, loja_id=loja_id
-        ).first()
-        if registro is None:
-            raise
-        registro.push = dados.push
-        registro.email = dados.email
-        db.commit()
-    return {"loja_id": loja_id, "push": registro.push, "email": registro.email}
+    cliente.recebe_push_promocoes = dados.push
+    cliente.recebe_email_promocoes = dados.email
+    db.commit()
+    return {"push": cliente.recebe_push_promocoes, "email": cliente.recebe_email_promocoes}

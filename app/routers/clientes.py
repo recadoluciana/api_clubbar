@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.carrinho import Carrinho
 from app.models.cliente import Cliente
-from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.clienteasaas import ClienteAsaas
 from app.schemas.cliente import (
     AlterarSenhaClienteRequest,
@@ -158,14 +157,6 @@ def atualizar_perfil_cliente(
             status_code=400,
             detail="Já existe outro cliente cadastrado com este CPF.",
         )
-
-    telefone_anterior = ''.join(filter(str.isdigit, cli.nrtelcliente or ''))
-    if telefone_anterior != (telefone or ''):
-        # A autorização do WhatsApp não acompanha a troca para outro número.
-        db.query(ConsentimentoPromocao).filter(
-            ConsentimentoPromocao.cliente_id == cliente_id,
-            ConsentimentoPromocao.email.is_(True),
-        ).update({ConsentimentoPromocao.email: False}, synchronize_session=False)
 
     cli.nmcliente = payload.nmcliente.strip()
     cli.nrtelcliente = telefone
