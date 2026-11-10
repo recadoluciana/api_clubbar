@@ -13,6 +13,7 @@ router = APIRouter(prefix="/clientes/me/preferencias-notificacao", tags=["Prefer
 class PreferenciasPromocao(BaseModel):
     push: bool = True
     email: bool = True
+    novidades: bool = True
 
 
 def _cliente(usuario: dict, db: Session) -> Cliente:
@@ -31,7 +32,7 @@ def _cliente(usuario: dict, db: Session) -> Cliente:
 @router.get("")
 def consultar(usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
-    return {"push": bool(cliente.recebe_push_promocoes), "email": bool(cliente.recebe_email_promocoes)}
+    return {"push": bool(cliente.recebe_push_promocoes), "email": bool(cliente.recebe_email_promocoes), "novidades": bool(cliente.recebe_novidades_email)}
 
 
 @router.put("")
@@ -39,5 +40,6 @@ def atualizar(dados: PreferenciasPromocao, usuario=Depends(get_usuario_logado), 
     cliente = _cliente(usuario, db)
     cliente.recebe_push_promocoes = dados.push
     cliente.recebe_email_promocoes = dados.email
+    cliente.recebe_novidades_email = dados.novidades
     db.commit()
-    return {"push": cliente.recebe_push_promocoes, "email": cliente.recebe_email_promocoes}
+    return {"push": cliente.recebe_push_promocoes, "email": cliente.recebe_email_promocoes, "novidades": cliente.recebe_novidades_email}

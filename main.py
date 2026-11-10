@@ -234,6 +234,7 @@ def criar_tabela_consentimento_promocao():
         faltantes = {
             "recebe_email_promocoes": "ALTER TABLE cliente ADD COLUMN recebe_email_promocoes BOOLEAN NOT NULL DEFAULT TRUE",
             "recebe_push_promocoes": "ALTER TABLE cliente ADD COLUMN recebe_push_promocoes BOOLEAN NOT NULL DEFAULT TRUE",
+            "recebe_novidades_email": "ALTER TABLE cliente ADD COLUMN recebe_novidades_email BOOLEAN NOT NULL DEFAULT TRUE",
         }
         for coluna, ddl in faltantes.items():
             if coluna not in colunas_cliente:

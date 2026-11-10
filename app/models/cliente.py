@@ -26,3 +26,4 @@ class Cliente(Base):
     idcidadeibge = Column(BigInteger, nullable=True)
     recebe_email_promocoes = Column(Boolean, nullable=False, default=True, server_default=text("'1'"))
     recebe_push_promocoes = Column(Boolean, nullable=False, default=True, server_default=text("'1'"))
+    recebe_novidades_email = Column(Boolean, nullable=False, default=True, server_default=text("'1'"))
