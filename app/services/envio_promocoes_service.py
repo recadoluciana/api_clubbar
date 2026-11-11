@@ -22,7 +22,7 @@ class FalhaEnvio(Exception):
 
 
 def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str) -> str:
-    """Envia a promoção pelo provedor transacional configurado no Clubbar."""
+    """Envia a campanha de marketing pelo provedor transacional do Clubbar."""
     if not destinatario or "@" not in destinatario:
         raise FalhaEnvio("E-mail do destinatário inválido.")
     titulo = " ".join(titulo.split())
@@ -33,7 +33,6 @@ def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str) -
             titulo,
             template_email_clubbar(
                 titulo=escape(titulo),
-                subtitulo="Uma nova promoção está disponível para você.",
                 conteudo_html=f"<p>{mensagem}</p>",
             ),
         )

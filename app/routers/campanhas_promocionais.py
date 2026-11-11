@@ -9,6 +9,7 @@ from app.models.loja import Loja
 from app.models.cliente import Cliente
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
+from app.models.venda import Venda
 from app.database import SessionLocal
 from app.services.envio_promocoes_service import enviar_email_promocional, enviar_push_promocional, verificar_configuracao_push, CanalIndisponivel
 from app.routers.painel_gerencial import _extrair_escopo
@@ -26,6 +27,7 @@ class CampanhaIn(BaseModel):
 class EnvioIn(BaseModel):
     push: bool = False
     email: bool = False
+    cliente_ids: list[int] | None = None
 
 
 def _loja_permitida(loja_id: int, usuario: dict, db: Session) -> Loja:
@@ -36,6 +38,33 @@ def _loja_permitida(loja_id: int, usuario: dict, db: Session) -> Loja:
     if loja is None:
         raise HTTPException(404, 'Estabelecimento não encontrado')
     return loja
+
+
+@router.get('/clientes')
+def clientes_disponiveis(usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    """Clientes ativos que já compraram em algum estabelecimento da organização."""
+    organizacao_id, loja_restrita = _extrair_escopo(usuario)
+    consulta = (db.query(Cliente)
+                .join(Venda, Venda.cliente_id == Cliente.cliente_id)
+                .filter(Venda.organizacao_id == organizacao_id,
+                        Cliente.sitcliente == 'ATIVO') )
+    if loja_restrita is not None:
+        consulta = consulta.filter(Venda.loja_id == loja_restrita)
+    clientes = consulta.distinct().order_by(Cliente.nmcliente.asc()).all()
+    ids = [c.cliente_id for c in clientes]
+    dispositivos = {}
+    if ids:
+        for dispositivo in db.query(DispositivoPromocao).filter(
+            DispositivoPromocao.cliente_id.in_(ids)
+        ).all():
+            dispositivos[dispositivo.cliente_id] = True
+    return [{
+        'cliente_id': c.cliente_id,
+        'nome': c.nmcliente,
+        'email': c.emailcliente,
+        'recebe_email': bool(c.recebe_email_promocoes and c.emailcliente),
+        'recebe_push': bool(c.recebe_push_promocoes and dispositivos.get(c.cliente_id)),
+    } for c in clientes]
 
 
 def _saida(c: CampanhaPromocional) -> dict:
@@ -109,16 +138,21 @@ def enviar(campanha_id: int, dados: EnvioIn, background: BackgroundTasks, usuari
         except CanalIndisponivel as exc:
             raise HTTPException(503, str(exc)) from exc
     total = 0
+    selecionados = set(dados.cliente_ids or [])
     if dados.push:
         dispositivos = (db.query(DispositivoPromocao)
                         .join(Cliente, Cliente.cliente_id == DispositivoPromocao.cliente_id)
-                        .filter(Cliente.recebe_push_promocoes.is_(True), Cliente.sitcliente == 'ATIVO').all())
+                        .filter(Cliente.recebe_push_promocoes.is_(True), Cliente.sitcliente == 'ATIVO')
+                        .filter(DispositivoPromocao.cliente_id.in_(selecionados) if dados.cliente_ids is not None else True)
+                        .all())
         for dispositivo in dispositivos:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=dispositivo.cliente_id, dispositivo_id=dispositivo.id, destinatario_chave=f'p:{dispositivo.id}', canal='push'))
             total += 1
     if dados.email:
         clientes = (db.query(Cliente)
-                    .filter(Cliente.recebe_email_promocoes.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None), Cliente.emailcliente != '').all())
+                    .filter(Cliente.recebe_email_promocoes.is_(True), Cliente.sitcliente == 'ATIVO', Cliente.emailcliente.isnot(None), Cliente.emailcliente != '')
+                    .filter(Cliente.cliente_id.in_(selecionados) if dados.cliente_ids is not None else True)
+                    .all())
         for cliente in clientes:
             db.add(EnvioCampanhaPromocional(campanha_id=campanha.id, cliente_id=cliente.cliente_id, destinatario_chave=f'e:{cliente.cliente_id}', canal='email'))
             total += 1

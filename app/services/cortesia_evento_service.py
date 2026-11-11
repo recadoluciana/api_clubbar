@@ -7,6 +7,7 @@ from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.itvenda import ItVenda
 from app.models.venda import Venda
+from app.models.cliente import Cliente
 
 
 def bloquear_evento_para_cortesia(db: Session, evento_id: int) -> None:
@@ -25,8 +26,9 @@ def validar_cortesia_unica_por_cpf(
 ) -> None:
     """Impede mais de uma cortesia ativa e resgatada por CPF no evento."""
     query = (
-        db.query(ItVenda.itvenda_id)
+        db.query(ItVenda.itvenda_id, Cliente.nmcliente)
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .join(EventoLote, EventoLote.lote_id == ItVenda.lote_id)
         .filter(
             EventoLote.evento_id == evento_id,
@@ -41,8 +43,14 @@ def validar_cortesia_unica_por_cpf(
     if ignorar_itvenda_id is not None:
         query = query.filter(ItVenda.itvenda_id != ignorar_itvenda_id)
     # Leitura atual sob o lock do evento, inclusive em REPEATABLE READ.
-    if query.with_for_update().first():
+    ingresso = query.with_for_update().first()
+    if ingresso:
+        nome = (ingresso.nmcliente or '').strip().split()
+        identificacao = nome[0] if nome else None
+        mensagem = 'Este CPF já resgatou uma cortesia deste evento.'
+        if identificacao:
+            mensagem += f' O resgate foi feito pela conta {identificacao}.'
         raise HTTPException(
             409,
-            "Este CPF já resgatou uma cortesia deste evento.",
+            mensagem,
         )
