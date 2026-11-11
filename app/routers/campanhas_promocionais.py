@@ -51,19 +51,12 @@ def clientes_disponiveis(usuario=Depends(get_usuario_logado), db: Session = Depe
     if loja_restrita is not None:
         consulta = consulta.filter(Venda.loja_id == loja_restrita)
     clientes = consulta.distinct().order_by(Cliente.nmcliente.asc()).all()
-    ids = [c.cliente_id for c in clientes]
-    dispositivos = {}
-    if ids:
-        for dispositivo in db.query(DispositivoPromocao).filter(
-            DispositivoPromocao.cliente_id.in_(ids)
-        ).all():
-            dispositivos[dispositivo.cliente_id] = True
     return [{
         'cliente_id': c.cliente_id,
         'nome': c.nmcliente,
         'email': c.emailcliente,
         'recebe_email': bool(c.recebe_email_promocoes and c.emailcliente),
-        'recebe_push': bool(c.recebe_push_promocoes and dispositivos.get(c.cliente_id)),
+        'recebe_push': bool(c.recebe_push_promocoes),
     } for c in clientes]
 
 
