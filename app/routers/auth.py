@@ -160,20 +160,20 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
 
     cpf = ''.join(filter(str.isdigit, data.nrcpfcliente or ""))
 
-    if not _cpf_valido(cpf):
+    if cpf and not _cpf_valido(cpf):
         raise HTTPException(status_code=422, detail="Informe um CPF válido.")
 
-    cliente_existente = (
-        db.query(Cliente)
-        .filter(Cliente.nrcpfcliente == cpf)
-        .first()
-    )
-
-    if cliente_existente:
-        raise HTTPException(
-            status_code=400,
-            detail="Já existe um cliente cadastrado com este CPF."
+    if cpf:
+        cliente_existente = (
+            db.query(Cliente)
+            .filter(Cliente.nrcpfcliente == cpf)
+            .first()
         )
+        if cliente_existente:
+            raise HTTPException(
+                status_code=400,
+                detail="Já existe um cliente cadastrado com este CPF."
+            )
 
     endereco = (data.endcliente or "").strip()
     numero = (data.nrendcliente or "").strip()
@@ -198,7 +198,7 @@ def register_cliente(data: ClienteRegister, db: Session = Depends(get_db)):
         emailcliente=email,
         senhahashcli=hash_senha(data.senhahashcli),
         nrtelcliente=telefone or None,
-        nrcpfcliente=cpf,
+        nrcpfcliente=cpf or None,
         endcliente=endereco or None,
         nrendcliente=numero or None,
         complcliente=(data.complcliente or "").strip() or None,
