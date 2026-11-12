@@ -446,8 +446,6 @@ def inativar_titular(
     ).first()
     if not titular:
         raise HTTPException(404, "Titular financeiro não encontrado nesta organização")
-    if titular.asaas_account_id:
-        raise HTTPException(409, "Este titular possui uma subconta Asaas e não pode ser inativado.")
     if db.query(Loja).filter(Loja.organizacao_id == organizacao_id, Loja.titularfinanceiro_id == titularfinanceiro_id).first():
         raise HTTPException(409, 'Altere o titular das lojas vinculadas antes de inativá-lo.')
     if db.query(LojaMercadoPago).filter(LojaMercadoPago.titularfinanceiro_id == titularfinanceiro_id, LojaMercadoPago.statusintegracao == 'ATIVA').first():
