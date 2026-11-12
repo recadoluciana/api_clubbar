@@ -332,6 +332,28 @@ def atualizar(modelo_id:int,nmtituloevento:str|None=Form(None),classificacaoetar
     if urlbannerevento and urlbannerevento.filename:x.urlbannerevento=salvar_banner_evento(urlbannerevento)
     _commit_evento_modelo(db);db.refresh(x);return _item(db, x)
 
+@router.post("/{modelo_id}/sincronizar-descricao")
+def sincronizar_descricao(modelo_id: int, payload=Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    modelo = _modelo(db, modelo_id, _org(payload))
+    validar_gerenciamento_organizacao(payload, modelo.organizacao_id)
+    agora = _agora_brasilia()
+    eventos = (
+        db.query(Evento)
+        .filter(
+            Evento.eventomodelo_id == modelo_id,
+            Evento.dtinicioevento > agora,
+            Evento.statusevento != "CANCELADO",
+        )
+        .all()
+    )
+    for evento in eventos:
+        evento.dsdescevento = modelo.dsdescevento
+    db.commit()
+    return {
+        "eventomodelo_id": modelo_id,
+        "eventos_atualizados": len(eventos),
+    }
+
 @router.delete("/{modelo_id}",status_code=204)
 def excluir(modelo_id:int,payload=Depends(get_usuario_logado),db:Session=Depends(get_db)):
     x=_modelo(db,modelo_id,_org(payload));validar_gerenciamento_organizacao(payload,x.organizacao_id)
