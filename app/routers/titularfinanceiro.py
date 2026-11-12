@@ -293,30 +293,6 @@ async def verificar_pagamentos_pendentes_loja(
     return {"pagamentos": [_saida_pendente(item) for item in _pendentes_mercado_pago(db, loja_id)], "verificados": verificacoes}
 
 
-@router.delete(
-    "/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/loja/{loja_id}"
-)
-def desvincular_titular_da_loja(
-    organizacao_id: int,
-    titularfinanceiro_id: int,
-    loja_id: int,
-    db: Session = Depends(get_db),
-    payload: dict = Depends(get_usuario_logado),
-):
-    _validar_escopo(payload, organizacao_id)
-    loja = db.query(Loja).filter(
-        Loja.loja_id == loja_id,
-        Loja.organizacao_id == organizacao_id,
-        Loja.titularfinanceiro_id == titularfinanceiro_id,
-    ).first()
-    if not loja:
-        raise HTTPException(status_code=404, detail="Associação não encontrada")
-
-    loja.titularfinanceiro_id = None
-    db.commit()
-    return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": None}
-
-
 @router.put("/organizacao/{organizacao_id}")
 async def salvar(
     organizacao_id: int,
