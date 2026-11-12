@@ -875,79 +875,7 @@ async def converter_lead_em_parceiro(
                     detail="Titular financeiro não pertence à organização deste lead.",
                 )
 
-        documento_contratante = normalizar_cpf_cnpj(
-            contrato_aceito.cpfcnpjcontratante or estabelecimento.cpfcnpj
-        )
         documento_loja = normalizar_cpf_cnpj(estabelecimento.cpfcnpj)
-        if titular_financeiro is None and documento_contratante:
-            titular_financeiro = db.query(TitularFinanceiro).filter(
-                TitularFinanceiro.cpfcnpj == documento_contratante
-            ).first()
-            if (
-                titular_financeiro
-                and titular_financeiro.organizacao_id
-                != nova_organizacao.organizacao_id
-            ):
-                raise HTTPException(
-                    409,
-                    "O CPF/CNPJ contratante já pertence a outra organização no Clubbar.",
-                )
-            if titular_financeiro is None:
-                titular_financeiro = TitularFinanceiro(
-                    organizacao_id=nova_organizacao.organizacao_id,
-                    tipotitular="PF" if len(documento_contratante) == 11 else "PJ",
-                    cpfcnpj=documento_contratante,
-                    nmrazaosocial=(
-                        contrato_aceito.nmrazaosocial
-                        or estabelecimento.nmestabelecimento
-                    ).strip(),
-                    nmfantasia=estabelecimento.nmestabelecimento.strip(),
-                    email=(
-                        estabelecimento.email_responsavel
-                        or estabelecimento.email
-                        or lead.email
-                    ).strip().lower(),
-                    telefone=(
-                        estabelecimento.telefone_responsavel
-                        or estabelecimento.telefone
-                        or lead.telefone
-                    ).strip(),
-                    cep=(
-                        contrato_aceito.cepcontratante
-                        or estabelecimento.cep
-                        or ""
-                    ),
-                    endereco=(
-                        contrato_aceito.enderecocontratante
-                        or estabelecimento.endereco
-                        or "Não informado"
-                    ),
-                    numero=(
-                        contrato_aceito.numerocontratante
-                        or estabelecimento.numero
-                        or "S/N"
-                    ),
-                    complemento=(
-                        contrato_aceito.complementocontratante
-                        or estabelecimento.complemento
-                    ),
-                    bairro=(
-                        contrato_aceito.bairrocontratante
-                        or estabelecimento.bairro
-                        or "Não informado"
-                    ),
-                    cidade_id=(
-                        contrato_aceito.cidade_id_contratante
-                        or estabelecimento.cidade_id
-                    ),
-                    estado_id=(
-                        contrato_aceito.estado_id_contratante
-                        or estabelecimento.estado_id
-                    ),
-                    vrfaturamentomensal=0,
-                )
-                db.add(titular_financeiro)
-                db.flush()
 
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,
