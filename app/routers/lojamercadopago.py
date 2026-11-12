@@ -319,8 +319,6 @@ def confirmar_mp_titular(organizacao_id: int, titular_id: int, payload: MercadoP
 def desconectar_mp_titular(organizacao_id: int, titular_id: int, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
     _titular_autorizado(db, organizacao_id, titular_id, usuario)
     db.query(TitularFinanceiro).filter(TitularFinanceiro.titularfinanceiro_id == titular_id).with_for_update().first()
-    if db.query(Loja).filter(Loja.organizacao_id == organizacao_id, Loja.titularfinanceiro_id == titular_id, Loja.provedor_pagamento == 'MERCADO_PAGO').first():
-        raise HTTPException(409, 'Altere o provedor das lojas vinculadas antes de desconectar esta conta.')
     config = _conta_titular(db, titular_id)
     if config and db.query(CheckoutMercadoPago).filter(CheckoutMercadoPago.lojamercadopago_id == config.lojamercadopago_id, CheckoutMercadoPago.venda_id.is_(None), CheckoutMercadoPago.status.in_(['PENDING', 'IN_PROCESS', 'ACTIVE'])).first():
         raise HTTPException(409, 'Há pagamentos pendentes nesta conta.')
