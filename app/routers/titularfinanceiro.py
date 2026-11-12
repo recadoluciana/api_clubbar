@@ -15,10 +15,11 @@ from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.loja import Loja
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
-from app.services.mercado_pago_service import obter_token_loja
+from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
 from app.utils.documento import normalizar_cpf_cnpj
@@ -26,6 +27,25 @@ from app.utils.documento import normalizar_cpf_cnpj
 
 router = APIRouter(prefix="/titular-financeiro", tags=["Titular financeiro"])
 ASAAS_BASE_URL = os.getenv("ASAAS_BASE_URL", "https://api-sandbox.asaas.com/v3").rstrip("/")
+
+
+def _pendentes_mercado_pago(db: Session, loja_id: int):
+    return db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.loja_id == loja_id,
+        CheckoutMercadoPago.venda_id.is_(None),
+        CheckoutMercadoPago.status.in_(["PENDING", "IN_PROCESS", "ACTIVE"]),
+    ).order_by(CheckoutMercadoPago.dtcriacao.asc()).all()
+
+
+def _saida_pendente(checkout: CheckoutMercadoPago) -> dict:
+    return {
+        "checkout_id": checkout.checkout_mercadopago_id,
+        "payment_id": str(checkout.payment_id or ""),
+        "status": checkout.status,
+        "valor": float(checkout.valor or 0),
+        "metodo": checkout.metodo_solicitado,
+        "criado_em": checkout.dtcriacao,
+    }
 
 
 class TitularFinanceiroIn(BaseModel):
@@ -221,6 +241,56 @@ def vincular_titular_a_loja(
     sincronizar_integracao_asaas_da_loja(db, loja, titular)
     db.commit()
     return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": titularfinanceiro_id}
+
+
+@router.get("/organizacao/{organizacao_id}/loja/{loja_id}/pagamentos-pendentes")
+def listar_pagamentos_pendentes_loja(
+    organizacao_id: int,
+    loja_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+    ).first()
+    if not loja:
+        raise HTTPException(404, "Estabelecimento não encontrado")
+    return {"pagamentos": [_saida_pendente(item) for item in _pendentes_mercado_pago(db, loja_id)]}
+
+
+@router.post("/organizacao/{organizacao_id}/loja/{loja_id}/pagamentos-pendentes/verificar")
+async def verificar_pagamentos_pendentes_loja(
+    organizacao_id: int,
+    loja_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+    ).first()
+    if not loja:
+        raise HTTPException(404, "Estabelecimento não encontrado")
+    token, _ = await obter_token_loja(db, loja_id)
+    verificacoes = []
+    for checkout in _pendentes_mercado_pago(db, loja_id):
+        if not checkout.payment_id:
+            continue
+        pagamento = await buscar_pagamento_por_id(
+            access_token=token,
+            payment_id=str(checkout.payment_id),
+        )
+        if pagamento and pagamento.get("status"):
+            checkout.status = str(pagamento["status"]).upper()
+            verificacoes.append({
+                "payment_id": str(checkout.payment_id),
+                "status": checkout.status,
+            })
+    db.commit()
+    return {"pagamentos": [_saida_pendente(item) for item in _pendentes_mercado_pago(db, loja_id)], "verificados": verificacoes}
 
 
 @router.delete(
