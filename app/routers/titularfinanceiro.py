@@ -793,7 +793,16 @@ async def extrato_mercado_pago(
         raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.') from exc
     pagamentos = [{
         'id': str(item.get('id') or ''), 'data': item.get('date_created'),
-        'descricao': item.get('description') or 'Pagamento', 'status': item.get('status'),
+        'descricao': item.get('description') or 'Pagamento',
+        'nome_cliente': ' '.join(
+            str(parte).strip()
+            for parte in (
+                (item.get('payer') or {}).get('first_name'),
+                (item.get('payer') or {}).get('last_name'),
+            )
+            if str(parte or '').strip()
+        ) or None,
+        'status': item.get('status'),
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
     } for item in dados.get('results', []) if isinstance(item, dict)]
