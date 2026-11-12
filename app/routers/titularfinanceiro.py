@@ -243,6 +243,29 @@ def vincular_titular_a_loja(
     return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": titularfinanceiro_id}
 
 
+@router.delete(
+    "/organizacao/{organizacao_id}/titular/{titularfinanceiro_id}/loja/{loja_id}"
+)
+def desvincular_titular_da_loja(
+    organizacao_id: int,
+    titularfinanceiro_id: int,
+    loja_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    loja = db.query(Loja).filter(
+        Loja.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+        Loja.titularfinanceiro_id == titularfinanceiro_id,
+    ).first()
+    if not loja:
+        raise HTTPException(404, "Associação entre estabelecimento e titular não encontrada")
+    loja.titularfinanceiro_id = None
+    db.commit()
+    return {"ok": True, "loja_id": loja_id, "titularfinanceiro_id": None}
+
+
 @router.get("/organizacao/{organizacao_id}/loja/{loja_id}/pagamentos-pendentes")
 def listar_pagamentos_pendentes_loja(
     organizacao_id: int,
