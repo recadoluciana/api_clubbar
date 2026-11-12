@@ -127,6 +127,10 @@ async def receber_webhook_mercado_pago(request: Request):
             if ultimo_erro:
                 raise ultimo_erro
             return {'ok': True, 'ignorado': True}
+        if str(checkout.status or '').upper() in {
+            'CANCELLED', 'CANCELED', 'EXPIRED', 'REJECTED', 'REFUNDED',
+        }:
+            return {'ok': True, 'ignorado': True, 'motivo': 'checkout_encerrado'}
         if str(pagamento.get('status') or '').lower() != 'approved':
             return {'ok': True, 'pendente': True}
         recebido = Decimal(str(pagamento.get('transaction_amount') or 0)).quantize(Decimal('0.01'))

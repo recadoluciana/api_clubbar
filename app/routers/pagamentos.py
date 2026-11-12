@@ -811,8 +811,11 @@ async def pagar_mercado_pago_cliente(
         db.query(CheckoutMercadoPago).filter(
             CheckoutMercadoPago.carrinho_id == carrinho_id,
             CheckoutMercadoPago.venda_id.is_(None),
-            CheckoutMercadoPago.status.in_(['PENDING', 'IN_PROCESS']),
+            CheckoutMercadoPago.status.in_(['CREATING', 'PENDING', 'IN_PROCESS', 'ACTIVE']),
         ).update({'status': 'CANCELLED'}, synchronize_session=False)
+        # A tentativa anterior não pode continuar elegível enquanto o novo
+        # método é criado. O webhook também ignora checkouts cancelados.
+        db.commit()
 
         token, conta_mp = await obter_token_mercado_pago_loja(db, payload.loja_id)
         referencia = f'MP-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
