@@ -7,7 +7,8 @@ class ClienteRegister(BaseModel):
     emailcliente: EmailStr
     senhahashcli: str = Field(min_length=6, max_length=72)
     nrtelcliente: Optional[str] = None
-    nrcpfcliente: str = Field(min_length=11, max_length=15)
+    # CPF é coletado na etapa de pagamento, quando for necessário para o PSP.
+    nrcpfcliente: Optional[str] = Field(default=None, max_length=15)
     endcliente: Optional[str] = Field(default=None, max_length=150)
     nrendcliente: Optional[str] = Field(default=None, max_length=20)
     complcliente: Optional[str] = Field(default=None, max_length=80)
