@@ -553,3 +553,16 @@ async def buscar_pagamento_por_id(*, access_token: str, payment_id: str) -> dict
     if resposta.is_error:
         raise HTTPException(502, "Não foi possível consultar a notificação Mercado Pago.")
     return resposta.json()
+
+
+async def cancelar_pagamento_por_id(*, access_token: str, payment_id: str) -> dict:
+    """Cancela um pagamento ainda pendente no Mercado Pago."""
+    async with httpx.AsyncClient(timeout=20) as cliente:
+        resposta = await cliente.put(
+            f"{MERCADO_PAGO_API_BASE_URL}/v1/payments/{payment_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"status": "cancelled"},
+        )
+    if resposta.is_error:
+        raise HTTPException(502, "Não foi possível cancelar o pagamento no Mercado Pago.")
+    return resposta.json()

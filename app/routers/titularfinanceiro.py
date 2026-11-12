@@ -19,7 +19,7 @@ from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
-from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id
+from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id, cancelar_pagamento_por_id
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
 from app.utils.documento import normalizar_cpf_cnpj
@@ -291,6 +291,34 @@ async def verificar_pagamentos_pendentes_loja(
             })
     db.commit()
     return {"pagamentos": [_saida_pendente(item) for item in _pendentes_mercado_pago(db, loja_id)], "verificados": verificacoes}
+
+
+@router.post("/organizacao/{organizacao_id}/loja/{loja_id}/pagamentos-pendentes/{checkout_id}/cancelar")
+async def cancelar_pagamento_pendente_loja(
+    organizacao_id: int,
+    loja_id: int,
+    checkout_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(get_usuario_logado),
+):
+    _validar_escopo(payload, organizacao_id)
+    checkout = db.query(CheckoutMercadoPago).join(
+        Loja, Loja.loja_id == CheckoutMercadoPago.loja_id
+    ).filter(
+        CheckoutMercadoPago.checkout_mercadopago_id == checkout_id,
+        CheckoutMercadoPago.loja_id == loja_id,
+        Loja.organizacao_id == organizacao_id,
+        CheckoutMercadoPago.venda_id.is_(None),
+        CheckoutMercadoPago.status.in_(["PENDING", "IN_PROCESS", "ACTIVE"]),
+    ).first()
+    if not checkout:
+        raise HTTPException(404, "Pagamento pendente não encontrado")
+    token, _ = await obter_token_loja(db, loja_id)
+    if checkout.payment_id:
+        await cancelar_pagamento_por_id(access_token=token, payment_id=str(checkout.payment_id))
+    checkout.status = "CANCELED"
+    db.commit()
+    return {"ok": True, "checkout_id": checkout_id, "status": "CANCELED"}
 
 
 @router.put("/organizacao/{organizacao_id}")
