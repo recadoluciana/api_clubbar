@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 import os
 import uuid
 import shutil
@@ -993,6 +994,17 @@ def deletar_loja(loja_id: int, db: Session = Depends(get_db), payload: dict = De
 
     except HTTPException:
         raise
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Não é possível excluir este estabelecimento porque existem "
+                "dados relacionados a ele. Mantenha-o inativo para preservar "
+                "o histórico de vendas, produtos e eventos."
+            ),
+        )
 
     except Exception as e:
         db.rollback()
