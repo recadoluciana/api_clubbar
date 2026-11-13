@@ -113,23 +113,25 @@ def _out(titular: TitularFinanceiro) -> dict:
 
 
 def _motivos_titular_em_uso(db: Session, titular: TitularFinanceiro) -> list[str]:
-    """Informa vínculos que tornam insegura a exclusão de um titular."""
+    """Informa vínculos operacionais que impedem a exclusão do titular.
+
+    Contratos não entram nesta lista: o contrato pertence ao contratante e ao
+    estabelecimento. O titular financeiro é uma configuração de recebimento
+    da organização, não parte do instrumento contratual.
+    """
     motivos: list[str] = []
     if titular.asaas_account_id or titular.asaas_wallet_id:
         motivos.append("subconta Asaas")
     if db.query(LojaMercadoPago.lojamercadopago_id).filter(
         LojaMercadoPago.titularfinanceiro_id == titular.titularfinanceiro_id,
+        LojaMercadoPago.statusintegracao == "ATIVA",
     ).first():
-        motivos.append("conexão Mercado Pago")
+        motivos.append("conexão Mercado Pago ativa")
     if db.query(Loja.loja_id).filter(
         Loja.organizacao_id == titular.organizacao_id,
         Loja.titularfinanceiro_id == titular.titularfinanceiro_id,
     ).first():
         motivos.append("estabelecimento associado")
-    if db.query(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id).filter(
-        LeadEstabelecimentoContrato.titularfinanceiro_id == titular.titularfinanceiro_id,
-    ).first():
-        motivos.append("contrato")
     if titular.asaas_wallet_id and db.query(CheckoutAsaas.checkout_asaas_id).filter(
         CheckoutAsaas.asaas_wallet_loja == titular.asaas_wallet_id,
     ).first():
@@ -525,7 +527,12 @@ def excluir_titular(
     db: Session = Depends(get_db),
     payload: dict = Depends(get_usuario_logado),
 ):
-    """Exclui apenas um titular que nunca foi utilizado na operação."""
+    """Exclui um titular sem vínculos operacionais ainda ativos.
+
+    Referências antigas de contratos e configurações de pagamento inativas são
+    desvinculadas, preservando os registros históricos e permitindo que o
+    titular seja removido da organização.
+    """
     _validar_escopo(payload, organizacao_id)
     titular = db.query(TitularFinanceiro).filter(
         TitularFinanceiro.titularfinanceiro_id == titularfinanceiro_id,
@@ -542,6 +549,25 @@ def excluir_titular(
             f"{', '.join(motivos)}.",
         )
     try:
+        # O contrato não depende do titular financeiro. Removemos somente a
+        # referência operacional obsoleta; o contrato e seus dados históricos
+        # permanecem intactos.
+        db.query(LeadEstabelecimentoContrato).filter(
+            LeadEstabelecimentoContrato.titularfinanceiro_id == titularfinanceiro_id,
+        ).update(
+            {LeadEstabelecimentoContrato.titularfinanceiro_id: None},
+            synchronize_session=False,
+        )
+
+        # Mantém configurações MP inativas/pendentes para o histórico de
+        # pagamentos, mas sem deixar uma FK apontando para o titular excluído.
+        db.query(LojaMercadoPago).filter(
+            LojaMercadoPago.titularfinanceiro_id == titularfinanceiro_id,
+            LojaMercadoPago.statusintegracao != "ATIVA",
+        ).update(
+            {LojaMercadoPago.titularfinanceiro_id: None},
+            synchronize_session=False,
+        )
         db.delete(titular)
         db.commit()
     except IntegrityError as exc:
