@@ -19,7 +19,7 @@ class ExtratoMercadoPagoTest(unittest.IsolatedAsyncioTestCase):
     @patch('app.routers.titularfinanceiro._resolver_titular')
     async def test_retorna_pagamentos_e_indica_paginacao(self, resolver, token, cliente):
         resolver.return_value = (None, SimpleNamespace(loja_id=2))
-        token.return_value = ('segredo', SimpleNamespace(lojamercadopago_id=10))
+        token.return_value = ('segredo', SimpleNamespace(lojamercadopago_id=10, mercadopago_user_id=None))
         resposta = SimpleNamespace(is_error=False, json=lambda: {'paging': {'total': 2}, 'results': [{'id': 123, 'transaction_amount': 5, 'status': 'approved'}, {'id': 456, 'transaction_amount': 8, 'status': 'approved'}]})
         cliente.return_value.__aenter__.return_value.get = AsyncMock(return_value=resposta)
         db = unittest.mock.MagicMock()
