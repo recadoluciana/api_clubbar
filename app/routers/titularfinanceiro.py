@@ -803,18 +803,42 @@ async def extrato_mercado_pago(
     if inicio > fim or offset < 0 or offset > 10000:
         raise HTTPException(422, 'Período ou paginação inválida.')
     try:
+        pagamentos_loja = []
+        cursor = 0
         async with httpx.AsyncClient(timeout=25) as cliente:
+          while True:
             resposta = await cliente.get(
                 f'{MERCADO_PAGO_API_BASE_URL}/v1/payments/search',
                 headers={'Authorization': f'Bearer {token}'},
                 params={'sort': 'date_created', 'criteria': 'desc', 'range': 'date_created',
                         'begin_date': f'{inicio.isoformat()}T00:00:00.000-03:00',
                         'end_date': f'{fim.isoformat()}T23:59:59.999-03:00',
-                        'limit': 50, 'offset': offset},
+                        'limit': 50, 'offset': cursor},
             )
-        if resposta.is_error:
-            raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.')
-        dados = resposta.json()
+            if resposta.is_error:
+                raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.')
+            dados = resposta.json()
+            itens = [item for item in dados.get('results', []) if isinstance(item, dict)]
+            ids = [str(item.get('id')) for item in itens if item.get('id')]
+            refs = [str(item.get('external_reference')) for item in itens if item.get('external_reference')]
+            if ids or refs:
+                from sqlalchemy import or_
+                condicoes = []
+                if ids:
+                    condicoes.append(CheckoutMercadoPago.payment_id.in_(ids))
+                if refs:
+                    condicoes.append(CheckoutMercadoPago.external_reference.in_(refs))
+                checkouts = db.query(CheckoutMercadoPago).filter(
+                    CheckoutMercadoPago.loja_id == loja.loja_id, or_(*condicoes),
+                ).all()
+                ids_loja = {str(c.payment_id) for c in checkouts if c.payment_id}
+                refs_loja = {str(c.external_reference) for c in checkouts if c.external_reference}
+                pagamentos_loja.extend(item for item in itens if str(item.get('id') or '') in ids_loja or str(item.get('external_reference') or '') in refs_loja)
+            cursor += len(itens)
+            if not itens or cursor >= int((dados.get('paging') or {}).get('total') or 0):
+                break
+            if cursor >= 10000:
+                raise HTTPException(422, 'O período possui muitos pagamentos. Selecione um período menor.')
     except (httpx.RequestError, ValueError) as exc:
         raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.') from exc
     pagamentos = [{
@@ -831,8 +855,8 @@ async def extrato_mercado_pago(
         'status': item.get('status'),
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
-    } for item in dados.get('results', []) if isinstance(item, dict)]
-    total = int((dados.get('paging') or {}).get('total') or 0)
+    } for item in pagamentos_loja[offset:offset + 50]]
+    total = len(pagamentos_loja)
     return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total}
 
 
