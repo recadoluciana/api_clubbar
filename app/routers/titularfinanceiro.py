@@ -6,6 +6,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_, exists
 from sqlalchemy.orm import Session
 
 from app.core.config import APP_ENV, ASAAS_API_KEY, MERCADO_PAGO_API_BASE_URL
@@ -791,17 +792,43 @@ async def _nova_chave_subconta(account_id: str) -> str:
     return str(chave)
 
 
+@router.get('/organizacao/{organizacao_id}/contas-extrato-mercado-pago')
+def contas_extrato_mercado_pago(organizacao_id: int, loja_id: int, db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado)):
+    _validar_escopo(payload, organizacao_id)
+    if str(payload.get('dscargo') or '').upper() not in {'SUPERADMIN', 'ADMIN'}:
+        raise HTTPException(403, 'Somente administradores podem consultar pagamentos da conta Mercado Pago.')
+    _, loja = _resolver_titular(db, organizacao_id, payload, loja_id=loja_id)
+    historico = exists().where(CheckoutMercadoPago.loja_id == loja.loja_id, CheckoutMercadoPago.lojamercadopago_id == LojaMercadoPago.lojamercadopago_id)
+    contas = db.query(LojaMercadoPago).filter(
+        LojaMercadoPago.organizacao_id == organizacao_id, LojaMercadoPago.ambiente == APP_ENV,
+        LojaMercadoPago.mercadopago_user_id.isnot(None),
+        or_(historico, (LojaMercadoPago.titularfinanceiro_id == loja.titularfinanceiro_id) & (LojaMercadoPago.statusintegracao == 'ATIVA')),
+    ).order_by(LojaMercadoPago.dtcriacao.desc()).all()
+    return [{'id': c.lojamercadopago_id, 'nome': c.mercadopago_nome, 'conta': c.mercadopago_user_id, 'status': c.statusintegracao, 'disponivel': bool(c.access_token_criptografado)} for c in contas]
+
+
 @router.get('/organizacao/{organizacao_id}/extrato-mercado-pago')
 async def extrato_mercado_pago(
     organizacao_id: int, loja_id: int, data_inicio: date | None = None,
     data_fim: date | None = None, offset: int = 0,
     db: Session = Depends(get_db), payload: dict = Depends(get_usuario_logado),
+    conta_id: int | None = None,
 ):
     _validar_escopo(payload, organizacao_id)
     if str(payload.get('dscargo') or '').upper() not in {'SUPERADMIN', 'ADMIN'}:
         raise HTTPException(403, 'Somente administradores podem consultar pagamentos da conta Mercado Pago.')
     _, loja = _resolver_titular(db, organizacao_id, payload, loja_id=loja_id)
-    token, _ = await obter_token_loja(db, loja.loja_id)
+    if conta_id is None:
+        token, conta = await obter_token_loja(db, loja.loja_id)
+    else:
+        historico = db.query(CheckoutMercadoPago.checkout_mercadopago_id).filter_by(loja_id=loja.loja_id, lojamercadopago_id=conta_id).first()
+        conta_atual = db.query(LojaMercadoPago).filter_by(lojamercadopago_id=conta_id, organizacao_id=organizacao_id, titularfinanceiro_id=loja.titularfinanceiro_id, ambiente=APP_ENV, statusintegracao='ATIVA').first()
+        if not historico and not conta_atual:
+            raise HTTPException(404, 'Conta não disponível para este estabelecimento.')
+        if conta_atual and not historico:
+            token, conta = await obter_token_loja(db, loja.loja_id)
+        else:
+            token, conta = await obter_token_loja(db, loja.loja_id, lojamercadopago_id=conta_id)
     hoje = date.today()
     inicio, fim = data_inicio or date(hoje.year, hoje.month, 1), data_fim or hoje
     if inicio > fim or offset < 0 or offset > 10000:
@@ -833,7 +860,7 @@ async def extrato_mercado_pago(
                 if refs:
                     condicoes.append(CheckoutMercadoPago.external_reference.in_(refs))
                 checkouts = db.query(CheckoutMercadoPago).filter(
-                    CheckoutMercadoPago.loja_id == loja.loja_id, or_(*condicoes),
+                    CheckoutMercadoPago.loja_id == loja.loja_id, CheckoutMercadoPago.lojamercadopago_id == conta.lojamercadopago_id, or_(*condicoes),
                 ).all()
                 por_id = {str(c.payment_id): c for c in checkouts if c.payment_id}
                 por_ref = {str(c.external_reference): c for c in checkouts if c.external_reference}
