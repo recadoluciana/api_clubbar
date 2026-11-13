@@ -20,11 +20,14 @@ class ExtratoMercadoPagoTest(unittest.IsolatedAsyncioTestCase):
     async def test_retorna_pagamentos_e_indica_paginacao(self, resolver, token, cliente):
         resolver.return_value = (None, SimpleNamespace(loja_id=2))
         token.return_value = ('segredo', None)
-        resposta = SimpleNamespace(is_error=False, json=lambda: {'paging': {'total': 2}, 'results': [{'id': 123, 'transaction_amount': 5, 'status': 'approved'}]})
+        resposta = SimpleNamespace(is_error=False, json=lambda: {'paging': {'total': 2}, 'results': [{'id': 123, 'transaction_amount': 5, 'status': 'approved'}, {'id': 456, 'transaction_amount': 8, 'status': 'approved'}]})
         cliente.return_value.__aenter__.return_value.get = AsyncMock(return_value=resposta)
-        resultado = await extrato_mercado_pago(1, 2, date(2026, 11, 1), date(2026, 11, 7), 0, None, {'role': 'usuario', 'dscargo': 'ADMIN', 'organizacao_id': 1})
+        db = unittest.mock.MagicMock()
+        db.query.return_value.filter.return_value.all.return_value = [SimpleNamespace(payment_id='123', external_reference='ref')]
+        resultado = await extrato_mercado_pago(1, 2, date(2026, 11, 1), date(2026, 11, 7), 0, db, {'role': 'usuario', 'dscargo': 'ADMIN', 'organizacao_id': 1})
         self.assertEqual(resultado['pagamentos'][0]['id'], '123')
-        self.assertTrue(resultado['possui_mais'])
+        self.assertEqual(len(resultado['pagamentos']), 1)
+        self.assertFalse(resultado['possui_mais'])
         self.assertNotIn('segredo', str(resultado))
 
 
