@@ -831,9 +831,13 @@ async def extrato_mercado_pago(
                 checkouts = db.query(CheckoutMercadoPago).filter(
                     CheckoutMercadoPago.loja_id == loja.loja_id, or_(*condicoes),
                 ).all()
-                ids_loja = {str(c.payment_id) for c in checkouts if c.payment_id}
-                refs_loja = {str(c.external_reference) for c in checkouts if c.external_reference}
-                pagamentos_loja.extend(item for item in itens if str(item.get('id') or '') in ids_loja or str(item.get('external_reference') or '') in refs_loja)
+                por_id = {str(c.payment_id): c for c in checkouts if c.payment_id}
+                por_ref = {str(c.external_reference): c for c in checkouts if c.external_reference}
+                for item in itens:
+                    checkout = por_id.get(str(item.get('id') or '')) or por_ref.get(str(item.get('external_reference') or ''))
+                    if checkout:
+                        tipo = 'INGRESSO' if checkout.reserva_ingresso_id and not checkout.carrinho_id else 'PRODUTO' if checkout.carrinho_id and not checkout.reserva_ingresso_id else None
+                        pagamentos_loja.append((item, tipo))
             cursor += len(itens)
             if not itens or cursor >= int((dados.get('paging') or {}).get('total') or 0):
                 break
@@ -844,6 +848,7 @@ async def extrato_mercado_pago(
     pagamentos = [{
         'id': str(item.get('id') or ''), 'data': item.get('date_created'),
         'descricao': item.get('description') or 'Pagamento',
+        'tipo_venda': tipo,
         'nome_cliente': ' '.join(
             str(parte).strip()
             for parte in (
@@ -855,7 +860,7 @@ async def extrato_mercado_pago(
         'status': item.get('status'),
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
-    } for item in pagamentos_loja[offset:offset + 50]]
+    } for item, tipo in pagamentos_loja[offset:offset + 50]]
     total = len(pagamentos_loja)
     return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total}
 
