@@ -994,13 +994,10 @@ async def converter_lead_em_parceiro(
         estabelecimento.dtconversao = datetime.now()
         if cobranca_implantacao:
             cobranca_implantacao.organizacao_id = nova_organizacao.organizacao_id
-        if titular_financeiro:
-            contrato = db.query(LeadEstabelecimentoContrato).filter(
-                LeadEstabelecimentoContrato.leadestabelecimento_id
-                == estabelecimento.leadestabelecimento_id
-            ).order_by(LeadEstabelecimentoContrato.leadestabelecimentocontrato_id.desc()).first()
-            if contrato:
-                contrato.titularfinanceiro_id = titular_financeiro.titularfinanceiro_id
+        # O titular financeiro pertence à configuração de recebimentos da
+        # organização/loja. O contrato registra apenas os dados do contratante
+        # e não deve ser vinculado ao titular para permitir sua manutenção
+        # independente no Partner.
         restantes = (
             db.query(LeadEstabelecimento)
             .filter(
