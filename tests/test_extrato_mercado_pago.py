@@ -23,7 +23,7 @@ class ExtratoMercadoPagoTest(unittest.IsolatedAsyncioTestCase):
         resposta = SimpleNamespace(is_error=False, json=lambda: {'paging': {'total': 2}, 'results': [{'id': 123, 'transaction_amount': 5, 'status': 'approved'}, {'id': 456, 'transaction_amount': 8, 'status': 'approved'}]})
         cliente.return_value.__aenter__.return_value.get = AsyncMock(return_value=resposta)
         db = unittest.mock.MagicMock()
-        db.query.return_value.filter.return_value.all.return_value = [SimpleNamespace(payment_id='123', external_reference='ref', carrinho_id=5, reserva_ingresso_id=None)]
+        db.query.return_value.filter.return_value.all.return_value = [SimpleNamespace(payment_id='123', external_reference='ref', carrinho_id=5, reserva_ingresso_id=None, venda_id=None)]
         resultado = await extrato_mercado_pago(1, 2, date(2026, 11, 1), date(2026, 11, 7), 0, db, {'role': 'usuario', 'dscargo': 'ADMIN', 'organizacao_id': 1})
         self.assertEqual(resultado['pagamentos'][0]['id'], '123')
         self.assertEqual(resultado['pagamentos'][0]['tipo_venda'], 'PRODUTO')

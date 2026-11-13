@@ -16,6 +16,10 @@ from app.database import get_db
 from app.models.loja import Loja
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_mercadopago import CheckoutMercadoPago
+from app.models.itvenda import ItVenda
+from app.models.produto import Produto
+from app.models.reserva_ingresso import ReservaIngresso
+from app.models.evento import Evento
 from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
@@ -837,7 +841,7 @@ async def extrato_mercado_pago(
                     checkout = por_id.get(str(item.get('id') or '')) or por_ref.get(str(item.get('external_reference') or ''))
                     if checkout:
                         tipo = 'INGRESSO' if checkout.reserva_ingresso_id and not checkout.carrinho_id else 'PRODUTO' if checkout.carrinho_id and not checkout.reserva_ingresso_id else None
-                        pagamentos_loja.append((item, tipo))
+                        pagamentos_loja.append((item, tipo, checkout))
             cursor += len(itens)
             if not itens or cursor >= int((dados.get('paging') or {}).get('total') or 0):
                 break
@@ -845,10 +849,22 @@ async def extrato_mercado_pago(
                 raise HTTPException(422, 'O período possui muitos pagamentos. Selecione um período menor.')
     except (httpx.RequestError, ValueError) as exc:
         raise HTTPException(502, 'Não foi possível consultar os pagamentos no Mercado Pago.') from exc
+    pagina = pagamentos_loja[offset:offset + 50]
+    vendas = {c.venda_id for _, _, c in pagina if c.venda_id}
+    reservas = {c.reserva_ingresso_id for _, _, c in pagina if c.reserva_ingresso_id}
+    produtos_por_venda = {}
+    if vendas:
+        for venda_id, nome, quantidade in db.query(ItVenda.venda_id, Produto.nmproduto, ItVenda.qtitvenda).join(Produto, Produto.produto_id == ItVenda.produto_id).filter(ItVenda.venda_id.in_(vendas), ItVenda.tipoitem == 'PRODUTO').all():
+            produtos_por_venda.setdefault(venda_id, []).append({'nome': nome, 'quantidade': quantidade})
+    eventos_por_reserva = {}
+    if reservas:
+        for reserva_id, nome, quantidade in db.query(ReservaIngresso.reserva_ingresso_id, Evento.nmtituloevento, ReservaIngresso.qtreservada).join(Evento, Evento.evento_id == ReservaIngresso.evento_id).filter(ReservaIngresso.reserva_ingresso_id.in_(reservas)).all():
+            eventos_por_reserva[reserva_id] = [{'nome': nome, 'quantidade': quantidade}]
     pagamentos = [{
         'id': str(item.get('id') or ''), 'data': item.get('date_created'),
         'descricao': item.get('description') or 'Pagamento',
         'tipo_venda': tipo,
+        'itens': eventos_por_reserva.get(checkout.reserva_ingresso_id, []) if tipo == 'INGRESSO' else produtos_por_venda.get(checkout.venda_id, []),
         'nome_cliente': ' '.join(
             str(parte).strip()
             for parte in (
@@ -860,7 +876,7 @@ async def extrato_mercado_pago(
         'status': item.get('status'),
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
-    } for item, tipo in pagamentos_loja[offset:offset + 50]]
+    } for item, tipo, checkout in pagina]
     total = len(pagamentos_loja)
     return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total}
 
