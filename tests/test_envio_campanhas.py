@@ -18,7 +18,7 @@ from app.models.campanha_promocional import CampanhaPromocional
 from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
-from app.routers.campanhas_promocionais import EnvioIn, enviar, _processar_envios
+from app.routers.campanhas_promocionais import EnvioIn, enviar, resultado, _processar_envios
 
 
 @compiles(BigInteger, 'sqlite')
@@ -91,3 +91,16 @@ def test_processa_envio_e_registra_aceite_do_provedor(db):
     push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios')
     assert db.query(EnvioCampanhaPromocional).one().status == 'ENVIADO'
     assert db.query(CampanhaPromocional).one().status == 'CONCLUIDA'
+
+
+def test_resultado_apresenta_destinatarios_e_canais(db):
+    usuario = {'role': 'usuario', 'sub': '2', 'organizacao_id': 1, 'dscargo': 'ADMIN'}
+    with patch('app.routers.campanhas_promocionais.verificar_configuracao_push'):
+        enviar(1, EnvioIn(push=True, email=True, cliente_ids=[1]), BackgroundTasks(), usuario, db)
+    dados = resultado(1, usuario, db)
+    assert len(dados['destinatarios']) == 1
+    assert dados['destinatarios'][0]['cliente_id'] == 1
+    assert {e['canal'] for e in dados['destinatarios'][0]['envios']} == {'push', 'email'}
+    with pytest.raises(HTTPException) as erro:
+        resultado(1, {'role': 'usuario', 'sub': '2', 'organizacao_id': 2, 'dscargo': 'ADMIN'}, db)
+    assert erro.value.status_code == 404
