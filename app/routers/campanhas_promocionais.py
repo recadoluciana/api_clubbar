@@ -1,8 +1,11 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import RedirectResponse
+from datetime import datetime, timezone
+from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.security import get_usuario_logado
+from app.core.security import get_usuario_logado, verificar_jwt
 from app.database import get_db
 from app.models.campanha_promocional import CampanhaPromocional
 from app.models.loja import Loja
@@ -88,9 +91,9 @@ def _processar_envios(campanha_id: int) -> None:
             db.commit()
             try:
                 if canal == 'push':
-                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem, plataforma=dispositivo.plataforma)
+                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem, plataforma=dispositivo.plataforma, envio_id=envio.id)
                 else:
-                    enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem)
+                    enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem, envio_id=envio.id)
                 envio.status = 'ENVIADO'
             except Exception:
                 envio.status = 'FALHA'
@@ -123,9 +126,28 @@ def resultado(campanha_id: int, usuario=Depends(get_usuario_logado), db: Session
             'email': cliente.emailcliente if cliente else None,
             'envios': [],
         })
-        destinatario['envios'].append({'canal': envio.canal, 'status': envio.status})
+        destinatario['envios'].append({'canal': envio.canal, 'status': envio.status,
+                                      'clicado_em': envio.clicado_em})
     return {**_saida(campanha), 'entregas': contagem,
             'destinatarios': sorted(destinatarios.values(), key=lambda item: item['nome'].casefold())}
+
+
+@router.get('/clique-email')
+def clique_email(token: str, db: Session = Depends(get_db)):
+    dados = verificar_jwt(token)
+    destino = dados.get('url')
+    if dados.get('tipo') != 'campanha_email_clique' or not isinstance(destino, str):
+        raise HTTPException(400, 'Link inválido')
+    partes = urlsplit(destino)
+    if partes.scheme not in ('http', 'https') or not partes.hostname or partes.username or partes.password:
+        raise HTTPException(400, 'Link inválido')
+    envio = db.query(EnvioCampanhaPromocional).filter_by(id=dados.get('envio_id'), canal='email').first()
+    if not envio:
+        raise HTTPException(404, 'Link indisponível')
+    if envio.clicado_em is None:
+        envio.clicado_em = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+    return RedirectResponse(destino, status_code=302)
 
 
 @router.post('/{campanha_id}/enviar')

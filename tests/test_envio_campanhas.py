@@ -18,7 +18,8 @@ from app.models.campanha_promocional import CampanhaPromocional
 from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
-from app.routers.campanhas_promocionais import EnvioIn, enviar, resultado, _processar_envios
+from app.routers.campanhas_promocionais import EnvioIn, enviar, resultado, clique_email, _processar_envios
+from app.routers.dispositivos_promocao import listar_notificacoes, registrar_clique
 
 
 @compiles(BigInteger, 'sqlite')
@@ -88,7 +89,7 @@ def test_processa_envio_e_registra_aceite_do_provedor(db):
     with patch('app.routers.campanhas_promocionais.SessionLocal', side_effect=lambda: Session(db.get_bind())), patch('app.routers.campanhas_promocionais.enviar_push_promocional', return_value='mensagem') as push:
         _processar_envios(1)
     db.expire_all()
-    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios')
+    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios', envio_id=1)
     assert db.query(EnvioCampanhaPromocional).one().status == 'ENVIADO'
     assert db.query(CampanhaPromocional).one().status == 'CONCLUIDA'
 
@@ -104,3 +105,41 @@ def test_resultado_apresenta_destinatarios_e_canais(db):
     with pytest.raises(HTTPException) as erro:
         resultado(1, {'role': 'usuario', 'sub': '2', 'organizacao_id': 2, 'dscargo': 'ADMIN'}, db)
     assert erro.value.status_code == 404
+
+
+def test_notificacoes_e_cliques_sao_restritos_ao_cliente(db):
+    parceiro = {'role': 'usuario', 'sub': '2', 'organizacao_id': 1, 'dscargo': 'ADMIN'}
+    with patch('app.routers.campanhas_promocionais.verificar_configuracao_push'):
+        enviar(1, EnvioIn(push=True, cliente_ids=[1]), BackgroundTasks(), parceiro, db)
+    envio = db.query(EnvioCampanhaPromocional).one()
+    envio.status = 'ENVIADO'
+    db.commit()
+    cliente = {'role': 'cliente', 'sub': '1'}
+    assert len(listar_notificacoes(cliente, db)) == 1
+    with pytest.raises(HTTPException):
+        registrar_clique(envio.id, {'role': 'cliente', 'sub': '2'}, db)
+    registrar_clique(envio.id, cliente, db)
+    assert resultado(1, parceiro, db)['destinatarios'][0]['envios'][0]['clicado_em'] is not None
+
+
+def test_email_link_registra_clique_e_redireciona(db, monkeypatch):
+    from app.core.security import criar_jwt
+    from app.services.envio_promocoes_service import enviar_email_promocional
+    from datetime import timedelta
+    from urllib.parse import parse_qs, urlsplit
+    import re
+
+    parceiro = {'role': 'usuario', 'sub': '2', 'organizacao_id': 1, 'dscargo': 'ADMIN'}
+    enviar(1, EnvioIn(email=True, cliente_ids=[1]), BackgroundTasks(), parceiro, db)
+    envio = db.query(EnvioCampanhaPromocional).one()
+    enviados = []
+    monkeypatch.setattr('app.services.envio_promocoes_service._enviar_email_smtp', lambda *args: enviados.append(args))
+    enviar_email_promocional(destinatario='1@teste.com', titulo='Teste', mensagem='Acesse https://example.com/oferta.', envio_id=envio.id)
+    link = re.search(r'href="([^"]*clique-email[^\"]*)"', enviados[0][2]).group(1)
+    token = parse_qs(urlsplit(link).query)['token'][0]
+    resposta = clique_email(token, db)
+    assert resposta.headers['location'] == 'https://example.com/oferta'
+    assert envio.clicado_em is not None
+    invalido = criar_jwt({'tipo': 'campanha_email_clique', 'envio_id': envio.id, 'url': 'javascript:alert(1)'}, expires_delta=timedelta(days=1))
+    with pytest.raises(HTTPException):
+        clique_email(invalido, db)

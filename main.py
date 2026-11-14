@@ -252,6 +252,11 @@ def criar_tabela_consentimento_promocao():
     CampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
     DispositivoPromocao.__table__.create(bind=engine, checkfirst=True)
     EnvioCampanhaPromocional.__table__.create(bind=engine, checkfirst=True)
+    if engine.dialect.name == 'mysql':
+        colunas_envio = {item['name'] for item in inspect(engine).get_columns('envio_campanha_promocional')}
+        if 'clicado_em' not in colunas_envio:
+            with engine.begin() as conexao:
+                conexao.execute(text('ALTER TABLE envio_campanha_promocional ADD COLUMN clicado_em DATETIME NULL'))
 
 
 @app.on_event("startup")
