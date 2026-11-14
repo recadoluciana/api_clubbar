@@ -15,5 +15,6 @@ class EnvioCampanhaPromocional(Base):
     destinatario_chave = Column(String(80), nullable=False)
     canal = Column(String(12), nullable=False)
     status = Column(String(20), nullable=False, server_default='PENDENTE')
+    clicado_em = Column(DateTime, nullable=True)
     criado_em = Column(DateTime, nullable=False, server_default=func.now())
     atualizado_em = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

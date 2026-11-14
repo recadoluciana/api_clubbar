@@ -6,11 +6,14 @@ tokens de acesso ou os dados de contato nos logs.
 import os
 import json
 import re
+from urllib.parse import urlencode, urlsplit
 
 import requests
 from app.services.email_service import _enviar_email_smtp
 from app.services.email_templates import template_email_clubbar
 from html import escape
+from app.core.security import criar_jwt
+from app.services.public_urls import url_api_publica
 
 
 class CanalIndisponivel(Exception):
@@ -21,12 +24,31 @@ class FalhaEnvio(Exception):
     pass
 
 
-def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str) -> str:
+def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str, envio_id: int | None = None) -> str:
     """Envia a campanha de marketing pelo provedor transacional do Clubbar."""
     if not destinatario or "@" not in destinatario:
         raise FalhaEnvio("E-mail do destinatário inválido.")
     titulo = " ".join(titulo.split())
-    mensagem = escape(mensagem.strip()).replace("\n", "<br>")
+    texto = mensagem.strip()
+    partes = []
+    inicio = 0
+    for match in re.finditer(r'https?://[^\s<>"\']+', texto, re.IGNORECASE):
+        url = match.group(0).rstrip('.,;:!?)')
+        try:
+            valido = bool(urlsplit(url).hostname)
+        except ValueError:
+            valido = False
+        if not valido:
+            continue
+        partes.append(escape(texto[inicio:match.start()]))
+        destino = url
+        if envio_id is not None:
+            token = criar_jwt({'tipo': 'campanha_email_clique', 'envio_id': envio_id, 'url': url})
+            destino = f"{url_api_publica()}/campanhas-promocionais/clique-email?{urlencode({'token': token})}"
+        partes.append(f'<a href="{escape(destino, quote=True)}">{escape(url)}</a>')
+        inicio = match.start() + len(url)
+    partes.append(escape(texto[inicio:]))
+    mensagem = ''.join(partes).replace("\n", "<br>")
     try:
         _enviar_email_smtp(
             destinatario,
@@ -108,7 +130,7 @@ def enviar_whatsapp_promocional(*, telefone: str, mensagem: str) -> str:
         raise FalhaEnvio("Não foi possível confirmar o envio ao WhatsApp.") from exc
 
 
-def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str, plataforma: str | None = None) -> str:
+def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str, plataforma: str | None = None, envio_id: int | None = None) -> str:
     projeto = os.getenv("FIREBASE_PROJECT_ID", "").strip()
     if not projeto:
         raise CanalIndisponivel("Notificações do aplicativo ainda não configuradas.")
@@ -127,6 +149,8 @@ def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: st
             credenciais, _ = google.auth.default(scopes=escopos)
         credenciais.refresh(Request())
         message = {"token": token_dispositivo, "notification": {"title": titulo, "body": mensagem}}
+        if envio_id is not None:
+            message['data'] = {'campanha_envio_id': str(envio_id)}
         if plataforma == 'ios':
             message['apns'] = {
                 'headers': {'apns-push-type': 'alert', 'apns-priority': '10', 'apns-topic': 'br.com.clubbar.cliente'},
