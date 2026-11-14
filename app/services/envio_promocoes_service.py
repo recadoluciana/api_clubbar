@@ -108,7 +108,7 @@ def enviar_whatsapp_promocional(*, telefone: str, mensagem: str) -> str:
         raise FalhaEnvio("Não foi possível confirmar o envio ao WhatsApp.") from exc
 
 
-def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str) -> str:
+def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str, plataforma: str | None = None) -> str:
     projeto = os.getenv("FIREBASE_PROJECT_ID", "").strip()
     if not projeto:
         raise CanalIndisponivel("Notificações do aplicativo ainda não configuradas.")
@@ -126,10 +126,16 @@ def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: st
         else:
             credenciais, _ = google.auth.default(scopes=escopos)
         credenciais.refresh(Request())
+        message = {"token": token_dispositivo, "notification": {"title": titulo, "body": mensagem}}
+        if plataforma == 'ios':
+            message['apns'] = {
+                'headers': {'apns-push-type': 'alert', 'apns-priority': '10', 'apns-topic': 'br.com.clubbar.cliente'},
+                'payload': {'aps': {'sound': 'default'}},
+            }
         resposta = requests.post(
             f"https://fcm.googleapis.com/v1/projects/{projeto}/messages:send",
             headers={"Authorization": f"Bearer {credenciais.token}"},
-            json={"message": {"token": token_dispositivo, "notification": {"title": titulo, "body": mensagem}}},
+            json={"message": message},
             timeout=15,
         )
         if not resposta.ok:

@@ -34,6 +34,8 @@ def db():
     with Session(engine) as db:
         db.add(Loja(loja_id=1, organizacao_id=1, nmloja='Loja'))
         db.add_all([Cliente(cliente_id=i, nmcliente=f'Cliente {i}', emailcliente=f'{i}@teste.com', senhahashcli='hash', sitcliente='ATIVO') for i in (1, 2)])
+        db.flush()
+        db.query(Cliente).filter_by(cliente_id=2).one().recebe_push_promocoes = False
         db.add(CampanhaPromocional(id=1, loja_id=1, titulo='Oferta', mensagem='Olá', status='RASCUNHO'))
         db.add_all([ConsentimentoPromocao(cliente_id=1, loja_id=1, push=True), ConsentimentoPromocao(cliente_id=2, loja_id=1, push=False)])
         db.add_all([DispositivoPromocao(cliente_id=i, token_hash=str(i), token=f'token{i}', plataforma='ios') for i in (1, 2)])
@@ -70,7 +72,7 @@ def test_respeita_retirada_de_consentimento_antes_do_disparo(db):
     usuario = {'role': 'usuario', 'sub': '2', 'organizacao_id': 1, 'dscargo': 'ADMIN'}
     with patch('app.routers.campanhas_promocionais.verificar_configuracao_push'):
         enviar(1, EnvioIn(push=True), BackgroundTasks(), usuario, db)
-    db.query(ConsentimentoPromocao).filter_by(cliente_id=1).one().push = False
+    db.query(Cliente).filter_by(cliente_id=1).one().recebe_push_promocoes = False
     db.commit()
     with patch('app.routers.campanhas_promocionais.SessionLocal', side_effect=lambda: Session(db.get_bind())), patch('app.routers.campanhas_promocionais.enviar_push_promocional') as push:
         _processar_envios(1)
@@ -86,6 +88,6 @@ def test_processa_envio_e_registra_aceite_do_provedor(db):
     with patch('app.routers.campanhas_promocionais.SessionLocal', side_effect=lambda: Session(db.get_bind())), patch('app.routers.campanhas_promocionais.enviar_push_promocional', return_value='mensagem') as push:
         _processar_envios(1)
     db.expire_all()
-    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá')
+    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios')
     assert db.query(EnvioCampanhaPromocional).one().status == 'ENVIADO'
     assert db.query(CampanhaPromocional).one().status == 'CONCLUIDA'
