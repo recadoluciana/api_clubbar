@@ -88,7 +88,7 @@ def _processar_envios(campanha_id: int) -> None:
             db.commit()
             try:
                 if canal == 'push':
-                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem)
+                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem, plataforma=dispositivo.plataforma)
                 else:
                     enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem)
                 envio.status = 'ENVIADO'

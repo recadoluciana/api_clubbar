@@ -61,7 +61,7 @@ def testar(dados: DispositivoIn, usuario=Depends(get_usuario_logado), db: Sessio
     if not dispositivo:
         raise HTTPException(404, 'Este aparelho ainda não foi registrado para receber notificações.')
     try:
-        enviar_push_promocional(token_dispositivo=dispositivo.token, titulo='Teste Clubbar', mensagem='Suas notificações estão funcionando!')
+        enviar_push_promocional(token_dispositivo=dispositivo.token, titulo='Teste Clubbar', mensagem='Suas notificações estão funcionando!', plataforma=dispositivo.plataforma)
     except (CanalIndisponivel, FalhaEnvio) as exc:
         raise HTTPException(503, 'Não foi possível enviar a notificação de teste agora.') from exc
     return {'aceito': True}
