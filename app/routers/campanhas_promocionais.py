@@ -87,13 +87,15 @@ def _processar_envios(campanha_id: int) -> None:
                 db.commit()
                 continue
             titulo, mensagem, canal = campanha.titulo, campanha.mensagem, envio.canal
+            loja = db.query(Loja).filter_by(loja_id=campanha.loja_id).first()
+            nome_loja = loja.nmloja if loja else None
             envio.status = 'PROCESSANDO'
             db.commit()
             try:
                 if canal == 'push':
-                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem, plataforma=dispositivo.plataforma, envio_id=envio.id)
+                    enviar_push_promocional(token_dispositivo=destinatario, titulo=titulo, mensagem=mensagem, plataforma=dispositivo.plataforma, envio_id=envio.id, nome_loja=nome_loja)
                 else:
-                    enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem, envio_id=envio.id)
+                    enviar_email_promocional(destinatario=destinatario, titulo=titulo, mensagem=mensagem, envio_id=envio.id, nome_loja=nome_loja)
                 envio.status = 'ENVIADO'
             except Exception:
                 envio.status = 'FALHA'

@@ -24,7 +24,7 @@ class FalhaEnvio(Exception):
     pass
 
 
-def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str, envio_id: int | None = None) -> str:
+def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str, envio_id: int | None = None, nome_loja: str | None = None) -> str:
     """Envia a campanha de marketing pelo provedor transacional do Clubbar."""
     if not destinatario or "@" not in destinatario:
         raise FalhaEnvio("E-mail do destinatário inválido.")
@@ -55,7 +55,7 @@ def enviar_email_promocional(*, destinatario: str, titulo: str, mensagem: str, e
             titulo,
             template_email_clubbar(
                 titulo=escape(titulo),
-                conteudo_html=f"<p>{mensagem}</p>",
+                conteudo_html=f"<p><strong>Estabelecimento: {escape(nome_loja)}</strong></p><p>{mensagem}</p>" if nome_loja else f"<p>{mensagem}</p>",
             ),
         )
     except Exception as exc:
@@ -130,7 +130,7 @@ def enviar_whatsapp_promocional(*, telefone: str, mensagem: str) -> str:
         raise FalhaEnvio("Não foi possível confirmar o envio ao WhatsApp.") from exc
 
 
-def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str, plataforma: str | None = None, envio_id: int | None = None) -> str:
+def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: str, plataforma: str | None = None, envio_id: int | None = None, nome_loja: str | None = None) -> str:
     projeto = os.getenv("FIREBASE_PROJECT_ID", "").strip()
     if not projeto:
         raise CanalIndisponivel("Notificações do aplicativo ainda não configuradas.")
@@ -148,7 +148,7 @@ def enviar_push_promocional(*, token_dispositivo: str, titulo: str, mensagem: st
         else:
             credenciais, _ = google.auth.default(scopes=escopos)
         credenciais.refresh(Request())
-        message = {"token": token_dispositivo, "notification": {"title": titulo, "body": mensagem}}
+        message = {"token": token_dispositivo, "notification": {"title": titulo, "body": f"{nome_loja}: {mensagem}" if nome_loja else mensagem}}
         if envio_id is not None:
             message['data'] = {'campanha_envio_id': str(envio_id)}
         if plataforma == 'ios':

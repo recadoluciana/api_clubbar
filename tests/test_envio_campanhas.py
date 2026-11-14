@@ -89,7 +89,7 @@ def test_processa_envio_e_registra_aceite_do_provedor(db):
     with patch('app.routers.campanhas_promocionais.SessionLocal', side_effect=lambda: Session(db.get_bind())), patch('app.routers.campanhas_promocionais.enviar_push_promocional', return_value='mensagem') as push:
         _processar_envios(1)
     db.expire_all()
-    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios', envio_id=1)
+    push.assert_called_once_with(token_dispositivo='token1', titulo='Oferta', mensagem='Olá', plataforma='ios', envio_id=1, nome_loja='Loja')
     assert db.query(EnvioCampanhaPromocional).one().status == 'ENVIADO'
     assert db.query(CampanhaPromocional).one().status == 'CONCLUIDA'
 
@@ -134,7 +134,8 @@ def test_email_link_registra_clique_e_redireciona(db, monkeypatch):
     envio = db.query(EnvioCampanhaPromocional).one()
     enviados = []
     monkeypatch.setattr('app.services.envio_promocoes_service._enviar_email_smtp', lambda *args: enviados.append(args))
-    enviar_email_promocional(destinatario='1@teste.com', titulo='Teste', mensagem='Acesse https://example.com/oferta.', envio_id=envio.id)
+    enviar_email_promocional(destinatario='1@teste.com', titulo='Teste', mensagem='Acesse https://example.com/oferta.', envio_id=envio.id, nome_loja='Loja & Cia')
+    assert 'Loja &amp; Cia' in enviados[0][2]
     link = re.search(r'href="([^"]*clique-email[^\"]*)"', enviados[0][2]).group(1)
     token = parse_qs(urlsplit(link).query)['token'][0]
     resposta = clique_email(token, db)

@@ -21,9 +21,10 @@ def test_envio_usa_parametros_apns_apenas_no_ios(monkeypatch, plataforma):
 
     assert enviar_push_promocional(
         token_dispositivo='dispositivo', titulo='Título', mensagem='Mensagem',
-        plataforma=plataforma, envio_id=42,
+        plataforma=plataforma, envio_id=42, nome_loja='Loja Exemplo',
     ) == 'mensagem-teste'
     mensagem = post.call_args.kwargs['json']['message']
+    assert mensagem['notification']['body'] == 'Loja Exemplo: Mensagem'
     assert mensagem['data'] == {'campanha_envio_id': '42'}
     if plataforma == 'ios':
         assert mensagem['apns']['headers'] == {
