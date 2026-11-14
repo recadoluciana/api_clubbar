@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_usuario_logado
@@ -35,16 +36,18 @@ def _hash(token: str) -> str:
 @router.get('/notificacoes')
 def listar_notificacoes(usuario=Depends(get_usuario_logado), db: Session = Depends(get_db)):
     cliente = _cliente(usuario, db)
-    campanhas = (db.query(CampanhaPromocional, Loja.nmloja)
+    data_envio = func.min(EnvioCampanhaPromocional.criado_em)
+    campanhas = (db.query(CampanhaPromocional, Loja.nmloja, data_envio.label('criado_em'))
                  .join(EnvioCampanhaPromocional, EnvioCampanhaPromocional.campanha_id == CampanhaPromocional.id)
                  .join(Loja, Loja.loja_id == CampanhaPromocional.loja_id)
                  .filter(EnvioCampanhaPromocional.cliente_id == cliente.cliente_id,
                          EnvioCampanhaPromocional.canal == 'push',
                          EnvioCampanhaPromocional.status == 'ENVIADO')
-                 .distinct().order_by(CampanhaPromocional.id.desc()).limit(100).all())
+                 .group_by(CampanhaPromocional.id, Loja.nmloja)
+                 .order_by(data_envio.desc(), CampanhaPromocional.id.desc()).limit(100).all())
     return [{'id': campanha.id, 'titulo': campanha.titulo, 'mensagem': campanha.mensagem,
-             'estabelecimento': nome, 'criado_em': campanha.criado_em}
-            for campanha, nome in campanhas]
+             'estabelecimento': nome, 'criado_em': criado_em}
+            for campanha, nome, criado_em in campanhas]
 
 
 @router.put('/notificacoes/{envio_id}/clique')
