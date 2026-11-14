@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,7 @@ from app.routers.consentimento_promocao import _cliente
 from app.services.envio_promocoes_service import enviar_push_promocional, CanalIndisponivel, FalhaEnvio
 
 router = APIRouter(prefix="/clientes/me/dispositivos-promocao", tags=["Dispositivos de promoções"])
+logger = logging.getLogger(__name__)
 
 
 class DispositivoIn(BaseModel):
@@ -60,6 +62,7 @@ def testar(dados: DispositivoIn, usuario=Depends(get_usuario_logado), db: Sessio
     dispositivo = db.query(DispositivoPromocao).filter_by(cliente_id=cliente.cliente_id, token_hash=_hash(dados.token)).first()
     if not dispositivo:
         raise HTTPException(404, 'Este aparelho ainda não foi registrado para receber notificações.')
+    logger.warning('Teste de notificação solicitado: dispositivo_id=%s plataforma=%s', dispositivo.id, dispositivo.plataforma)
     try:
         enviar_push_promocional(token_dispositivo=dispositivo.token, titulo='Teste Clubbar', mensagem='Suas notificações estão funcionando!', plataforma=dispositivo.plataforma)
     except (CanalIndisponivel, FalhaEnvio) as exc:
