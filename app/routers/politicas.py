@@ -17,7 +17,7 @@ class PoliticaCompraIn(BaseModel):
     titulo: str = Field(min_length=3, max_length=160)
     conteudo: str | None = Field(default=None, max_length=12000)
     tipopolitica: str
-    qtd_dias_cancelamento: int = Field(ge=0, le=365)
+    qtd_dias_cancelamento: int | None = Field(default=None, ge=0, le=365)
     qtd_horas_antecedencia_cancelamento: int | None = Field(default=None, ge=0, le=8760)
     qtd_alteracoes_participante: int | None = Field(default=None, ge=0, le=20)
     qtd_horas_antecedencia_alteracao: int | None = Field(default=None, ge=0, le=8760)
@@ -25,8 +25,10 @@ class PoliticaCompraIn(BaseModel):
     @model_validator(mode="after")
     def validar_campos_do_tipo(self):
         tipo = self.tipopolitica.upper().strip()
-        if tipo not in {"INGRESSO", "PRODUTO"}:
+        if tipo not in {"INGRESSO", "PRODUTO", "PRIVACIDADE"}:
             raise ValueError("Tipo de política inválido.")
+        if tipo != 'PRIVACIDADE' and self.qtd_dias_cancelamento is None:
+            raise ValueError('Informe os dias para cancelamento.')
         if tipo == "INGRESSO" and (
             self.qtd_horas_antecedencia_cancelamento is None
             or self.qtd_alteracoes_participante is None
@@ -43,7 +45,7 @@ class TextoRascunhoIn(BaseModel):
 
 def _tipo(valor: str | None) -> str:
     tipo = (valor or "INGRESSO").upper().strip()
-    if tipo not in {"INGRESSO", "PRODUTO"}:
+    if tipo not in {"INGRESSO", "PRODUTO", "PRIVACIDADE"}:
         raise HTTPException(422, "Tipo de política inválido.")
     return tipo
 
@@ -96,6 +98,8 @@ def _conteudo_dinamico(item: PoliticaCompra) -> str:
 def _conteudo(item: PoliticaCompra) -> str:
     """Mantém as versões legadas legíveis e preserva o texto das novas."""
     conteudo = _normalizar_conteudo(item.conteudo)
+    if getattr(item, 'tipopolitica', None) == 'PRIVACIDADE':
+        return conteudo
     if conteudo and conteudo != "Texto gerado a partir dos parâmetros da política.":
         return conteudo
     return _conteudo_dinamico(item)
@@ -170,7 +174,7 @@ def criar_politica_compra(
         sitpolitica="RASCUNHO",
         operador_id=int(operador.get("sub") or 0) or None,
     )
-    if not item.conteudo:
+    if not item.conteudo and item.tipopolitica != 'PRIVACIDADE':
         item.conteudo = _conteudo_dinamico(item)
     db.add(item)
     db.commit()
@@ -209,6 +213,8 @@ def vigenciar_politica_compra(
         raise HTTPException(404, "Política não encontrada.")
     if item.sitpolitica == "VIGENTE":
         return _out(item)
+    if item.tipopolitica == 'PRIVACIDADE' and not _normalizar_conteudo(item.conteudo):
+        raise HTTPException(422, 'Preencha o texto da política antes de colocá-la vigente.')
     agora = datetime.now()
     for vigente in db.query(PoliticaCompra).filter(
         PoliticaCompra.sitpolitica == "VIGENTE",
