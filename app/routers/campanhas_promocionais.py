@@ -109,10 +109,23 @@ def resultado(campanha_id: int, usuario=Depends(get_usuario_logado), db: Session
         raise HTTPException(404, 'Campanha não encontrada')
     _loja_permitida(campanha.loja_id, usuario, db)
     contagem = {}
-    for envio in db.query(EnvioCampanhaPromocional).filter_by(campanha_id=campanha_id).all():
+    destinatarios = {}
+    registros = (db.query(EnvioCampanhaPromocional, Cliente)
+                 .outerjoin(Cliente, Cliente.cliente_id == EnvioCampanhaPromocional.cliente_id)
+                 .filter(EnvioCampanhaPromocional.campanha_id == campanha_id)
+                 .order_by(EnvioCampanhaPromocional.id).all())
+    for envio, cliente in registros:
         chave = f'{envio.canal}_{envio.status.lower()}'
         contagem[chave] = contagem.get(chave, 0) + 1
-    return {**_saida(campanha), 'entregas': contagem}
+        destinatario = destinatarios.setdefault(envio.cliente_id, {
+            'cliente_id': envio.cliente_id,
+            'nome': cliente.nmcliente if cliente else 'Cliente indisponível',
+            'email': cliente.emailcliente if cliente else None,
+            'envios': [],
+        })
+        destinatario['envios'].append({'canal': envio.canal, 'status': envio.status})
+    return {**_saida(campanha), 'entregas': contagem,
+            'destinatarios': sorted(destinatarios.values(), key=lambda item: item['nome'].casefold())}
 
 
 @router.post('/{campanha_id}/enviar')
