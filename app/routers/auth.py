@@ -48,6 +48,10 @@ def obter_configuracao_social():
 
 def _validar_google(id_token: str | None, access_token: str | None) -> tuple[str, str]:
     client_ids = _valores_de_ambiente('GOOGLE_OAUTH_CLIENT_IDS')
+    # Cliente web do projeto Firebase usado pelo login do aplicativo Android.
+    client_ids += _valores_de_ambiente('GOOGLE_ANDROID_OAUTH_CLIENT_IDS') or [
+        '495413135257-5seomcf9qirheq60iojbf4k5k16bnb9s.apps.googleusercontent.com'
+    ]
     if not client_ids:
         raise HTTPException(status_code=503, detail='Login com Google não configurado.')
 
