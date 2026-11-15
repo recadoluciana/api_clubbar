@@ -1782,7 +1782,7 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=403, detail='Cliente inválido') from exc
 
-    pendentes = (
+    consulta = (
         db.query(CheckoutMercadoPago)
         .filter(
             CheckoutMercadoPago.cliente_id == cliente_id,
@@ -1800,36 +1800,50 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
                 ),
             ),
         )
-        .order_by(CheckoutMercadoPago.checkout_mercadopago_id.asc())
-        .limit(20)
-        .all()
     )
     confirmados = []
-    for checkout in pendentes:
-        try:
-            if checkout.reserva_ingresso_id:
-                from app.routers.reservas_ingressos import status_reserva
+    ultimo_id = 0
+    while True:
+        pendentes = (consulta
+            .filter(CheckoutMercadoPago.checkout_mercadopago_id > ultimo_id)
+            .order_by(CheckoutMercadoPago.checkout_mercadopago_id.asc())
+            .limit(20).all())
+        if not pendentes:
+            break
+        ultimo_id = pendentes[-1].checkout_mercadopago_id
+        for checkout in pendentes:
+            try:
+                if checkout.reserva_ingresso_id:
+                    from app.routers.reservas_ingressos import status_reserva
 
-                resultado = await status_reserva(
-                    int(checkout.reserva_ingresso_id), cliente_id, db
+                    resultado = await status_reserva(
+                        int(checkout.reserva_ingresso_id), cliente_id, db
+                    )
+                    pago = str(resultado.get('status_pagamento') or '').upper() == 'PAGO'
+                else:
+                    resultado = await _consultar_status_checkout_mercado_pago(
+                        checkout=checkout, db=db
+                    )
+                    pago = str(resultado.get('status') or '').upper() == 'PAGO'
+                if pago:
+                    confirmados.append(
+                        {
+                            'pagamento_id': checkout.preference_id,
+                            'venda_id': resultado.get('venda_id'),
+                        }
+                    )
+            except HTTPException as exc:
+                # Uma consulta transitória de um checkout não pode impedir as
+                # demais reconciliações pendentes do mesmo cliente.
+                db.rollback()
+                print('[MERCADO PAGO RECONCILIACAO] Pendente não conciliado:', exc.detail)
+            except Exception:
+                db.rollback()
+                import logging
+                logging.getLogger(__name__).exception(
+                    'Falha inesperada na conciliação Mercado Pago: checkout=%s',
+                    checkout.checkout_mercadopago_id,
                 )
-                pago = str(resultado.get('status_pagamento') or '').upper() == 'PAGO'
-            else:
-                resultado = await _consultar_status_checkout_mercado_pago(
-                    checkout=checkout, db=db
-                )
-                pago = str(resultado.get('status') or '').upper() == 'PAGO'
-            if pago:
-                confirmados.append(
-                    {
-                        'pagamento_id': checkout.preference_id,
-                        'venda_id': resultado.get('venda_id'),
-                    }
-                )
-        except HTTPException as exc:
-            # Uma consulta transitória de um checkout não pode impedir as
-            # demais reconciliações pendentes do mesmo cliente.
-            db.rollback()
-            print('[MERCADO PAGO RECONCILIACAO] Pendente não conciliado:', exc.detail)
+
 
     return {'ok': True, 'pagamentos_confirmados': confirmados}

@@ -107,6 +107,8 @@ async def receber_webhook_mercado_pago(request: Request):
         ultimo_erro = None
         pagamento = None
         for configuracao in configuracoes:
+            if configuracao.loja_id is None:
+                continue
             try:
                 token, _ = await obter_token_loja(db, int(configuracao.loja_id), int(configuracao.lojamercadopago_id))
                 pagamento = await buscar_pagamento_por_id(access_token=token, payment_id=payment_id)
@@ -127,9 +129,8 @@ async def receber_webhook_mercado_pago(request: Request):
             if ultimo_erro:
                 raise ultimo_erro
             return {'ok': True, 'ignorado': True}
-        if str(checkout.status or '').upper() in {
-            'CANCELLED', 'CANCELED', 'EXPIRED', 'REJECTED', 'REFUNDED',
-        }:
+        status_checkout = str(checkout.status or '').upper()
+        if status_checkout == 'REFUNDED':
             return {'ok': True, 'ignorado': True, 'motivo': 'checkout_encerrado'}
         if str(pagamento.get('status') or '').lower() != 'approved':
             return {'ok': True, 'pendente': True}
@@ -137,9 +138,15 @@ async def receber_webhook_mercado_pago(request: Request):
         esperado = Decimal(str(checkout.valor or 0)).quantize(Decimal('0.01'))
         if recebido != esperado:
             raise HTTPException(409, 'Valor Mercado Pago divergente do checkout.')
+        if checkout.payment_id and str(checkout.payment_id) != payment_id:
+            raise HTTPException(409, 'Identificador Mercado Pago divergente.')
         if checkout.venda_id:
             _notificar_confirmacao_mercado_pago(db, checkout)
             return {'ok': True, 'venda_id': checkout.venda_id}
+
+        if status_checkout in {'CANCELLED', 'CANCELED', 'EXPIRED', 'REJECTED'} and not checkout.reserva_ingresso_id:
+            logger.error('Pagamento aprovado em checkout encerrado; conciliação necessária: checkout=%s pagamento=%s', checkout.checkout_mercadopago_id, payment_id)
+            raise HTTPException(503, 'Pagamento aprovado em checkout encerrado; necessária conciliação.')
 
         if checkout.reserva_ingresso_id:
             resultado = await confirmar_pagamento_reserva_mp(

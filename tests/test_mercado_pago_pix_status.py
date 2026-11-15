@@ -114,7 +114,7 @@ def test_reconciliacao_inclui_checkout_aprovado_sem_venda(monkeypatch):
 
     db = Mock()
     query = db.query.return_value
-    query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+    query.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
     asyncio.run(pagamentos.reconciliar_pagamentos_pendentes_mercado_pago(
         db=db, payload={'role': 'cliente', 'sub': '2'},
     ))
@@ -126,3 +126,42 @@ def test_reconciliacao_inclui_checkout_aprovado_sem_venda(monkeypatch):
         where = ' AND '.join(str(f.compile(engine, compile_kwargs={'literal_binds': True})) for f in filtros)
         resultado = conn.exec_driver_sql('SELECT carrinho_id FROM checkout_mercadopago WHERE ' + where).scalars().all()
     assert resultado == [22]
+
+
+def test_reconciliacao_avanca_apos_lote_e_falha_individual(monkeypatch):
+    db = Mock()
+    query = db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value
+    itens = [SimpleNamespace(checkout_mercadopago_id=i, reserva_ingresso_id=None, preference_id=f'pix-{i}') for i in range(1, 22)]
+    query.all.side_effect = [itens[:20], itens[20:], []]
+    async def consultar_checkout(*, checkout, db):
+        if checkout.checkout_mercadopago_id == 1:
+            raise HTTPException(503, 'indisponível')
+        return {'status': 'PAGO' if checkout.checkout_mercadopago_id == 21 else 'PENDENTE', 'venda_id': 42}
+    consulta = AsyncMock(side_effect=consultar_checkout)
+    monkeypatch.setattr(pagamentos, '_consultar_status_checkout_mercado_pago', consulta)
+    resultado = asyncio.run(pagamentos.reconciliar_pagamentos_pendentes_mercado_pago(db=db, payload={'role': 'cliente', 'sub': '2'}))
+    assert consulta.await_count == 21
+    assert resultado['pagamentos_confirmados'] == [{'pagamento_id': 'pix-21', 'venda_id': 42}]
+    db.rollback.assert_called_once()
+
+
+def test_webhook_pagamento_tardio_nao_emite_venda_insegura(monkeypatch):
+    from app.routers import mercado_pago_webhook as webhook
+    checkout = SimpleNamespace(status='CANCELLED', valor=Decimal('5.00'), payment_id='123', venda_id=None, reserva_ingresso_id=None, checkout_mercadopago_id=9)
+    config = SimpleNamespace(loja_id=1, lojamercadopago_id=7)
+    db = Mock()
+    db.query.return_value.filter.return_value.all.return_value = [config]
+    db.query.return_value.filter.return_value.with_for_update.return_value.first.return_value = checkout
+    monkeypatch.setattr(webhook, 'SessionLocal', lambda: db)
+    monkeypatch.setattr(webhook, '_assinatura_valida', lambda *_: True)
+    monkeypatch.setattr(webhook, 'obter_token_loja', AsyncMock(return_value=('token', None)))
+    monkeypatch.setattr(webhook, 'buscar_pagamento_por_id', AsyncMock(return_value={'status': 'approved', 'transaction_amount': 5, 'external_reference': 'ref'}))
+    criar = AsyncMock()
+    monkeypatch.setattr(webhook, 'criar_venda_paga_por_carrinho_gateway', criar)
+    request = SimpleNamespace(json=AsyncMock(return_value={'type': 'payment', 'data': {'id': '123'}, 'user_id': '10'}), query_params={}, headers={})
+    with pytest.raises(HTTPException) as erro:
+        asyncio.run(webhook.receber_webhook_mercado_pago(request))
+    assert erro.value.status_code == 503
+    criar.assert_not_awaited()
+    db.rollback.assert_called_once()
+    db.close.assert_called_once()
