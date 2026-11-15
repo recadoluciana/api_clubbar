@@ -763,6 +763,8 @@ async def pagar_mercado_pago_cliente(
     metodo = str(payload.dsmetodopag or '').upper()
     if metodo not in {'PIX', 'CREDIT_CARD', 'CREDITO'}:
         raise HTTPException(422, 'Método de pagamento Mercado Pago não suportado.')
+    if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.installments not in (None, 1):
+        raise HTTPException(422, 'Compras de produtos devem ser pagas em uma única parcela.')
     if metodo in {'CREDIT_CARD', 'CREDITO'} and (
         not (payload.card_token or '').strip()
         or not (payload.payment_method_id or '').strip()

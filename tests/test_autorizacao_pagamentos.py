@@ -92,6 +92,17 @@ class AutorizacaoPagamentosTest(unittest.TestCase):
         self.assertIn("Token", resposta.json()["detail"])
         preferencia.assert_not_called()
 
+    def test_produto_nao_permite_pagamento_parcelado(self):
+        resposta = self.client.post(
+            "/pagamentos/pagar-mercado-pago",
+            json={"cliente_id": 42, "organizacao_id": 1, "loja_id": 2,
+                  "dsmetodopag": "CREDIT_CARD", "card_token": "token",
+                  "payment_method_id": "visa", "installments": 2},
+            headers=self.cliente,
+        )
+        self.assertEqual  (422, resposta.status_code)
+        self.db.query.assert_not_called()
+
     def test_status_checkout_nao_expoe_compra_de_outro_cliente(self):
         self.db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(cliente_id=42)
         for headers in ({}, self.outro_cliente, self.parceiro):
