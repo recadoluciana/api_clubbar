@@ -160,6 +160,8 @@ async def receber_webhook_mercado_pago(request: Request):
                 },
                 checkout_origem=checkout,
             )
+        if not resultado.get('venda_id'):
+            raise HTTPException(503, 'Pagamento aprovado sem venda vinculada; necessária conciliação.')
         checkout.payment_id = payment_id
         checkout.status = 'APPROVED'
         checkout.venda_id = resultado.get('venda_id')

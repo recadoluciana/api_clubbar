@@ -99,6 +99,16 @@ def test_consulta_repetida_nao_cria_segunda_venda(consulta):
     consulta.por_id.assert_awaited_once()
 
 
+def test_aprovacao_sem_venda_nao_e_reportada_como_compra_concluida(consulta):
+    consulta.criar_venda.return_value = {'ok': True}
+    with pytest.raises(HTTPException) as erro:
+        consultar(consulta)
+    assert erro.value.status_code == 409
+    assert consulta.checkout.venda_id is None
+    consulta.db.commit.assert_not_called()
+    consulta.notificar.assert_not_called()
+
+
 def test_reconciliacao_inclui_checkout_aprovado_sem_venda(monkeypatch):
     from sqlalchemy import create_engine
 

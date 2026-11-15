@@ -15,7 +15,6 @@ for module in pkgutil.iter_modules(app.models.__path__):
 from app.models.loja import Loja
 from app.models.cliente import Cliente
 from app.models.campanha_promocional import CampanhaPromocional
-from app.models.consentimento_promocao import ConsentimentoPromocao
 from app.models.dispositivo_promocao import DispositivoPromocao
 from app.models.envio_campanha_promocional import EnvioCampanhaPromocional
 from app.routers.campanhas_promocionais import EnvioIn, enviar, resultado, clique_email, _processar_envios
@@ -30,7 +29,7 @@ def _bigint_sqlite(_type, _compiler, **_kwargs):
 @pytest.fixture
 def db():
     engine = create_engine('sqlite://')
-    for model in (Loja, Cliente, CampanhaPromocional, ConsentimentoPromocao, DispositivoPromocao, EnvioCampanhaPromocional):
+    for model in (Loja, Cliente, CampanhaPromocional, DispositivoPromocao, EnvioCampanhaPromocional):
         model.__table__.create(engine)
     with Session(engine) as db:
         db.add(Loja(loja_id=1, organizacao_id=1, nmloja='Loja'))
@@ -38,7 +37,6 @@ def db():
         db.flush()
         db.query(Cliente).filter_by(cliente_id=2).one().recebe_push_promocoes = False
         db.add(CampanhaPromocional(id=1, loja_id=1, titulo='Oferta', mensagem='Olá', status='RASCUNHO'))
-        db.add_all([ConsentimentoPromocao(cliente_id=1, loja_id=1, push=True), ConsentimentoPromocao(cliente_id=2, loja_id=1, push=False)])
         db.add_all([DispositivoPromocao(cliente_id=i, token_hash=str(i), token=f'token{i}', plataforma='ios') for i in (1, 2)])
         db.commit()
         yield db

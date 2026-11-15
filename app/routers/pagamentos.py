@@ -954,6 +954,8 @@ async def _consultar_status_checkout_mercado_pago(
         },
         checkout_origem=checkout,
     )
+    if not resultado.get('venda_id'):
+        raise HTTPException(409, 'Pagamento aprovado, mas a compra ainda não foi liberada. É necessária a conciliação.')
     checkout.payment_id = str(pagamento.get('id') or '') or None
     checkout.status = 'APPROVED'
     checkout.venda_id = resultado.get('venda_id')

@@ -176,11 +176,7 @@ async def criar_venda_paga_por_carrinho_gateway(
 
     if not carrinho_db:
         print(f"[{gateway} WEBHOOK] Carrinho não encontrado:", carrinho_id)
-        return {
-            "ok": True,
-            "msg": "Carrinho não encontrado",
-            "carrinho_id": carrinho_id,
-        }
+        raise HTTPException(409, 'Pagamento aprovado, mas o carrinho não foi encontrado. É necessária a conciliação.')
 
     if checkout_origem is not None and (
         carrinho_db.carrinho_id != checkout_origem.carrinho_id
@@ -191,11 +187,7 @@ async def criar_venda_paga_por_carrinho_gateway(
 
     if (carrinho_db.sitcarrinho or "").upper() != "ABERTO":
         print(f"[{gateway} WEBHOOK] Carrinho já fechado:", carrinho_id)
-        return {
-            "ok": True,
-            "msg": "Carrinho já fechado",
-            "carrinho_id": carrinho_id,
-        }
+        raise HTTPException(409, 'Pagamento aprovado, mas o carrinho já está fechado. É necessária a conciliação.')
 
     carrinho = get_carrinho(
         db,

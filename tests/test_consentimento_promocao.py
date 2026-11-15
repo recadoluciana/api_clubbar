@@ -1,42 +1,29 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-import unittest
 
+import pytest
 from fastapi import HTTPException
 
 from app.routers.consentimento_promocao import PreferenciasPromocao, _cliente, atualizar, consultar
 
 
-class ConsentimentoPromocaoTest(unittest.TestCase):
-    def test_canais_desativados_por_padrao(self):
-        preferencias = PreferenciasPromocao()
-        self.assertFalse(preferencias.push)
-        self.assertFalse(preferencias.whatsapp)
+def test_preferencias_padrao_sao_globais_e_ativadas():
+    assert PreferenciasPromocao().model_dump() == {'push': True, 'email': True, 'novidades': True}
 
 
-    def test_parceiro_nao_pode_alterar_preferencias_de_cliente(self):
-        with self.assertRaises(HTTPException) as erro:
-            _cliente({"role": "usuario", "sub": "1"}, MagicMock())
-        self.assertEqual(erro.exception.status_code, 403)
+def test_parceiro_nao_pode_alterar_preferencias_de_cliente():
+    with pytest.raises(HTTPException) as erro:
+        _cliente({'role': 'usuario', 'sub': '1'}, MagicMock())
+    assert erro.value.status_code == 403
 
 
-    def test_cliente_sem_autorizacao_na_loja_recebe_canais_desativados(self):
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.side_effect = [
-            SimpleNamespace(cliente_id=42),
-            SimpleNamespace(loja_id=7),
-        ]
-        db.query.return_value.filter_by.return_value.first.return_value = None
-        resultado = consultar(7, {"role": "cliente", "sub": "42"}, db)
-        self.assertEqual(resultado, {"loja_id": 7, "push": False, "whatsapp": False})
-        db.query.return_value.filter_by.assert_called_once_with(cliente_id=42, loja_id=7)
-
-    def test_whatsapp_exige_telefone_no_perfil(self):
-        db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(
-            cliente_id=42, nrtelcliente=None
-        )
-        with self.assertRaises(HTTPException) as erro:
-            atualizar(7, PreferenciasPromocao(whatsapp=True), {"role": "cliente", "sub": "42"}, db)
-        self.assertEqual(erro.exception.status_code, 422)
-        db.commit.assert_not_called()
+def test_preferencias_sao_lidas_e_salvas_no_cliente():
+    cliente = SimpleNamespace(recebe_push_promocoes=True, recebe_email_promocoes=True, recebe_novidades_email=True)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = cliente
+    usuario = {'role': 'cliente', 'sub': '42'}
+    assert consultar(usuario, db) == {'push': True, 'email': True, 'novidades': True}
+    preferencias = PreferenciasPromocao(push=False, email=False, novidades=True)
+    assert atualizar(preferencias, usuario, db) == {'push': False, 'email': False, 'novidades': True}
+    assert consultar(usuario, db) == {'push': False, 'email': False, 'novidades': True}
+    db.commit.assert_called_once()
