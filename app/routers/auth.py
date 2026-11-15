@@ -4,6 +4,9 @@ import requests
 
 import jwt
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi import Request
+from fastapi.responses import RedirectResponse
+from urllib.parse import parse_qsl, urlencode
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from sqlalchemy.orm import Session
@@ -33,6 +36,25 @@ logger = logging.getLogger(__name__)
 
 _APPLE_ISSUER = 'https://appleid.apple.com'
 _APPLE_KEYS = jwt.PyJWKClient('https://appleid.apple.com/auth/keys')
+
+
+@router.post('/apple/android/callback', include_in_schema=False)
+async def apple_android_callback(request: Request):
+    """Reencaminha o resultado Apple ao aplicativo Android, sem registrá-lo."""
+    if 'application/x-www-form-urlencoded' not in request.headers.get('content-type', ''):
+        raise HTTPException(status_code=415, detail='Formato inválido.')
+    body = await request.body()
+    if len(body) > 32768:
+        raise HTTPException(status_code=413, detail='Resposta muito grande.')
+    try:
+        params = parse_qsl(body.decode('utf-8'), keep_blank_values=True, max_num_fields=20)
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail='Resposta inválida.')
+    allowed = {'code', 'id_token', 'state', 'user', 'error'}
+    if any(key not in allowed for key, _ in params) or len({k for k, _ in params}) != len(params):
+        raise HTTPException(status_code=400, detail='Resposta inválida.')
+    url = 'intent://callback?' + urlencode(params) + '#Intent;package=br.com.clubbar.cliente;scheme=signinwithapple;end'
+    return RedirectResponse(url, status_code=303, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
 
 
 def _valores_de_ambiente(nome: str) -> list[str]:
