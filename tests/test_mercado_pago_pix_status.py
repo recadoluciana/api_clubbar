@@ -97,3 +97,22 @@ def test_consulta_repetida_nao_cria_segunda_venda(consulta):
     assert consultar(consulta)['status'] == 'PAGO'
     consulta.criar_venda.assert_awaited_once()
     consulta.por_id.assert_awaited_once()
+
+
+def test_reconciliacao_inclui_checkout_aprovado_sem_venda(monkeypatch):
+    from sqlalchemy import create_engine
+
+    db = Mock()
+    query = db.query.return_value
+    query.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+    asyncio.run(pagamentos.reconciliar_pagamentos_pendentes_mercado_pago(
+        db=db, payload={'role': 'cliente', 'sub': '2'},
+    ))
+    filtros = query.filter.call_args.args
+    engine = create_engine('sqlite://')
+    with engine.begin() as conn:
+        conn.exec_driver_sql('CREATE TABLE checkout_mercadopago (cliente_id INTEGER, venda_id INTEGER, status TEXT, carrinho_id INTEGER, dtemailconfirmacao TEXT)')
+        conn.exec_driver_sql("INSERT INTO checkout_mercadopago VALUES (2, NULL, 'APPROVED', 22, NULL), (2, NULL, 'CANCELLED', 23, NULL)")
+        where = ' AND '.join(str(f.compile(engine, compile_kwargs={'literal_binds': True})) for f in filtros)
+        resultado = conn.exec_driver_sql('SELECT carrinho_id FROM checkout_mercadopago WHERE ' + where).scalars().all()
+    assert resultado == [22]

@@ -29,7 +29,7 @@ class EntregasPendentesQueryTest(unittest.TestCase):
             return []
 
         with Session(engine) as db, patch.object(Query, 'all', capturar_consulta):
-            self.assertEqual([], listar_itens_nao_entregues(cliente_id=1, loja_id=1, db=db))
+            self.assertEqual([], listar_itens_nao_entregues(cliente_id=1, loja_id=1, db=db, usuario={'role': 'cliente', 'sub': '1'}))
         self.assertEqual(1, len(statements))
         self.assertIn('LEFT OUTER JOIN eventoloteglobal', statements[0])
         self.assertIn('evento.evento_id = eventoloteglobal.evento_id', statements[0])

@@ -147,6 +147,7 @@ def validar_confirmacao_asaas_checkout(
         venda = db.query(Venda).filter(Venda.venda_id == checkout.venda_id).first()
         if (
             not venda
+            or venda.cliente_id != checkout.cliente_id
             or venda.carrinho_id != checkout.carrinho_id
             or venda.loja_id != checkout.loja_id
             or venda.organizacao_id != carrinho.organizacao_id
@@ -180,6 +181,13 @@ async def criar_venda_paga_por_carrinho_gateway(
             "msg": "Carrinho não encontrado",
             "carrinho_id": carrinho_id,
         }
+
+    if checkout_origem is not None and (
+        carrinho_db.carrinho_id != checkout_origem.carrinho_id
+        or carrinho_db.cliente_id != checkout_origem.cliente_id
+        or carrinho_db.loja_id != checkout_origem.loja_id
+    ):
+        raise HTTPException(409, 'Cliente, loja ou carrinho divergente do checkout')
 
     if (carrinho_db.sitcarrinho or "").upper() != "ABERTO":
         print(f"[{gateway} WEBHOOK] Carrinho já fechado:", carrinho_id)

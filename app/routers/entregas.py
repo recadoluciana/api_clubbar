@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_, case
 
 from app.database import get_db
 from app.core.security import get_usuario_logado
+from app.core.cliente_auth import exigir_cliente_autenticado
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
@@ -658,12 +659,14 @@ def listar_itens_nao_entregues(
     cliente_id: int = Query(...),
     loja_id: int = Query(...),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     """
     Lista itens de vendas PAGAS que ainda NÃO foram entregues
     loja_id = 0 -> todas as lojas
     """
 
+    exigir_cliente_autenticado(usuario, cliente_id)
     hoje = _hoje_brasil()
     agora = _agora_brasil()
 
@@ -1551,6 +1554,7 @@ def get_qt_itens_naoentregues(
     cliente_id: int = Query(...),
     loja_id: int = Query(0),
     db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     """
     Retorna a quantidade de itens ainda não entregues na carteira do cliente.
@@ -1560,6 +1564,7 @@ def get_qt_itens_naoentregues(
     - se loja_id = 0, soma todas as lojas
     - se loja_id > 0, filtra pela loja informada
     """
+    exigir_cliente_autenticado(usuario, cliente_id)
     try:
         agora = _agora_brasil()
         query = (
@@ -1630,11 +1635,13 @@ def get_qt_itens_naoentregues(
 @router.get("/lojas", response_model=list[LojaRetiradaOut])
 def listar_lojas_com_retirada_pendente(
     cliente_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    usuario: dict = Depends(get_usuario_logado),
 ):
     """
     Retorna as lojas onde o cliente tem itens pendentes de retirada.
     """
+    exigir_cliente_autenticado(usuario, cliente_id)
     agora = _agora_brasil()
 
     rows = (

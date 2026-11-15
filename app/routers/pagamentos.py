@@ -1788,7 +1788,7 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
                 and_(
                     CheckoutMercadoPago.venda_id.is_(None),
                     CheckoutMercadoPago.status.notin_(
-                        ['APPROVED', 'CANCELLED', 'EXPIRED']
+                        ['CANCELLED', 'EXPIRED']
                     ),
                 ),
                 and_(
