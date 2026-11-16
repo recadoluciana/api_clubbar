@@ -20,6 +20,7 @@ from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.venda import Venda
+from app.utils.datetime_utils import inicio_dia_brasil_em_utc
 from app.schemas.painel_gerencial import (
     EventoCockpitOut,
     EventoEmAndamentoOut,
@@ -37,9 +38,7 @@ def _hoje_local() -> date:
 
 
 def _inicio_local_em_utc_naive(data_local: date) -> datetime:
-    return datetime.combine(data_local, time.min, tzinfo=_FUSO_BRASIL).astimezone(
-        timezone.utc
-    ).replace(tzinfo=None)
+    return inicio_dia_brasil_em_utc(data_local)
 
 
 def _referencia_utc() -> datetime:

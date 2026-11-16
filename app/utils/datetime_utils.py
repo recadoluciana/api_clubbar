@@ -1,8 +1,15 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 
 FUSO_BRASIL = ZoneInfo("America/Sao_Paulo")
+
+
+def inicio_dia_brasil_em_utc(data: date) -> datetime:
+    """Início do dia civil em Brasília, em UTC sem fuso como no banco."""
+    return datetime.combine(data, time.min, tzinfo=FUSO_BRASIL).astimezone(
+        timezone.utc
+    ).replace(tzinfo=None)
 
 
 def para_fuso_br(dt):

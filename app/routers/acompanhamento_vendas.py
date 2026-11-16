@@ -19,6 +19,7 @@ from app.models.loja import Loja
 from app.models.pagvenda import PagVenda
 from app.models.produto import Produto
 from app.models.venda import Venda
+from app.utils.datetime_utils import inicio_dia_brasil_em_utc, iso_utc
 
 
 router = APIRouter(prefix="/acompanhamento-vendas", tags=["Acompanhamento de vendas"])
@@ -165,11 +166,11 @@ def listar_compras_produtos(
         query = query.filter(Venda.loja_id == loja_final)
     if inicio is not None:
         query = query.filter(
-            Venda.dtcriacao >= datetime.combine(inicio, time.min),
+            Venda.dtcriacao >= inicio_dia_brasil_em_utc(inicio),
         )
     if fim is not None:
         query = query.filter(
-            Venda.dtcriacao < datetime.combine(fim + timedelta(days=1), time.min),
+            Venda.dtcriacao < inicio_dia_brasil_em_utc(fim + timedelta(days=1)),
         )
     if situacao == "PENDENTES":
         query = query.filter(ItVenda.identregaitvenda != "SIM")
@@ -201,7 +202,7 @@ def listar_compras_produtos(
                 "quantidade": quantidade,
                 "preco_unitario": preco_unitario,
                 "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
-                "dtcompra": row.dtcompra,
+                "dtcompra": iso_utc(row.dtcompra),
                 "retirado": retirado,
                 "dtretirada": row.dtentregaitvenda,
                 "responsavel_retirada": row.nmuserentregaitvenda or "",
@@ -654,7 +655,7 @@ def listar_ingressos_vendidos_evento(
             "preco": _dinheiro(row.vrunititvenda),
             "taxa": _dinheiro(row.vrtaxaitvenda),
             "venda_id": int(row.venda_id),
-            "dtcompra": row.dtcompra,
+            "dtcompra": iso_utc(row.dtcompra),
             "cliente": row.nmcliente or "Cliente não identificado",
             "telefone_cliente": row.nrtelcliente or "",
             "participante": row.nmparticipante or "Não informado",

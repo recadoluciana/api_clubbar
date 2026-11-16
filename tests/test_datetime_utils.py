@@ -1,10 +1,18 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from app.utils.datetime_utils import formatar_data_br, iso_utc, iso_utc_de_horario_brasil
+from app.utils.datetime_utils import formatar_data_br, inicio_dia_brasil_em_utc, iso_utc, iso_utc_de_horario_brasil
 
 
 class DateTimeUtilsTest(unittest.TestCase):
+    def test_limites_do_dia_brasileiro_sao_convertidos_para_utc(self):
+        inicio = inicio_dia_brasil_em_utc(date(2026, 11, 15))
+        fim = inicio_dia_brasil_em_utc(date(2026, 11, 16))
+        self.assertEqual(inicio, datetime(2026, 11, 15, 3))
+        self.assertEqual(fim, datetime(2026, 11, 16, 3))
+        self.assertTrue(inicio <= datetime(2026, 11, 16, 0, 53, 57) < fim)
+        self.assertTrue(inicio <= datetime(2026, 11, 16, 1, 28, 13) < fim)
+        self.assertFalse(inicio <= datetime(2026, 11, 16, 3) < fim)
     def test_data_utc_do_banco_e_exibida_no_fuso_brasileiro(self):
         self.assertEqual(formatar_data_br(datetime(2026, 8, 23, 5, 0)), "23/08/2026 02:00")
 
