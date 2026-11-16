@@ -65,6 +65,8 @@ class EventoCockpitOut(BaseModel):
 class PainelGerencialOut(BaseModel):
     periodo: PainelPeriodo
     total_hoje: float
+    total_produtos_hoje: float
+    total_ingressos_hoje: float
     total_mes: float
     total_produtos_mes: float
     total_ingressos_mes: float

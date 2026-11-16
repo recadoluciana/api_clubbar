@@ -80,7 +80,7 @@ class PainelGerencialTest(unittest.TestCase):
             3,
             3,
             SimpleNamespace(produtos=Decimal("95.00"), ingressos=Decimal("200.00")),
-            Decimal("115.00"),
+            SimpleNamespace(produtos=Decimal("15.00"), ingressos=Decimal("100.00")),
             SimpleNamespace(
                 produtos_vendidos=5,
                 produtos_cortesias=2,
@@ -132,6 +132,8 @@ class PainelGerencialTest(unittest.TestCase):
 
         self.assertEqual({"inicio": date(2026, 8, 1), "fim": date(2026, 8, 4)}, dados["periodo"])
         self.assertEqual(115.0, dados["total_hoje"])
+        self.assertEqual(15.0, dados["total_produtos_hoje"])
+        self.assertEqual(100.0, dados["total_ingressos_hoje"])
         self.assertEqual(295.0, dados["total_mes"])
         self.assertEqual(95.0, dados["total_produtos_mes"])
         self.assertEqual(200.0, dados["total_ingressos_mes"])
@@ -158,7 +160,7 @@ class PainelGerencialTest(unittest.TestCase):
             0,
             0,
             SimpleNamespace(produtos=Decimal("0"), ingressos=Decimal("0")),
-            Decimal("0"),
+            SimpleNamespace(produtos=Decimal("0"), ingressos=Decimal("0")),
             SimpleNamespace(
                 produtos_vendidos=0,
                 produtos_cortesias=0,

@@ -465,11 +465,12 @@ def painel_gerencial(
     if loja_id is not None:
         filtros_hoje.append(Venda.loja_id == loja_id)
 
-    total_hoje = db.query(
-        func.coalesce(func.sum(valor_liquido_item), 0)
+    totais_hoje = db.query(
+        func.coalesce(func.sum(case((eh_produto, valor_liquido_item), else_=0)), 0).label("produtos"),
+        func.coalesce(func.sum(case((eh_ingresso, valor_liquido_item), else_=0)), 0).label("ingressos"),
     ).select_from(ItVenda).join(
         Venda, Venda.venda_id == ItVenda.venda_id
-    ).filter(*filtros_hoje, ItVenda.sititvenda == "ATIVO").scalar()
+    ).filter(*filtros_hoje, ItVenda.sititvenda == "ATIVO").one()
 
     resumo_quantidades = db.query(
         func.coalesce(
@@ -644,7 +645,9 @@ def painel_gerencial(
 
     return {
         "periodo": {"inicio": primeiro_dia, "fim": ultimo_dia},
-        "total_hoje": _dinheiro(total_hoje),
+        "total_hoje": _dinheiro(Decimal(str(totais_hoje.produtos or 0)) + Decimal(str(totais_hoje.ingressos or 0))),
+        "total_produtos_hoje": _dinheiro(totais_hoje.produtos),
+        "total_ingressos_hoje": _dinheiro(totais_hoje.ingressos),
         "total_mes": total_mes,
         "total_produtos_mes": total_produtos_mes,
         "total_ingressos_mes": total_ingressos_mes,
