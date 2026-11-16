@@ -116,6 +116,7 @@ def listar_compras_produtos(
     inicio: date | None = Query(default=None),
     fim: date | None = Query(default=None),
     limite: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
@@ -179,6 +180,7 @@ def listar_compras_produtos(
 
     rows = (
         query.order_by(Venda.dtcriacao.desc(), ItVenda.itvenda_id.desc())
+        .offset(offset)
         .limit(limite)
         .all()
     )
