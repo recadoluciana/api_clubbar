@@ -8,8 +8,12 @@ def template_email_clubbar(
     conteudo_html: str,
     botao_texto: str | None = None,
     botao_link: str | None = None,
+    logo_personalizada: str | None = None,
+    largura_logo: int = 230,
+    assinatura_extra: str = "",
 ):
-    logo_url = url_logo_email()
+    logo_url = logo_personalizada or url_logo_email()
+    linha_assinatura = f"<br>{assinatura_extra}" if assinatura_extra else ""
     bloco_botao = ""
 
     if botao_texto and botao_link:
@@ -59,9 +63,9 @@ def template_email_clubbar(
             <td align="center" style="background:#000;padding:30px;">
               <img
                 src="{logo_url}"
-                width="230"
+                width="{largura_logo}"
                 alt="Clubbar"
-                style="display:block;width:230px;max-width:100%;height:auto;border:0;"
+                style="display:block;width:{largura_logo}px;max-width:100%;height:auto;border:0;"
               >
             </td>
           </tr>
@@ -93,7 +97,7 @@ def template_email_clubbar(
                   line-height:20px;
                 ">
               <b>Clubbar</b><br>
-              Venda digital para bares, casas noturnas e eventos.<br><br>
+              Venda digital para bares, casas noturnas e eventos.{linha_assinatura}<br><br>
               📧 suporte@clubbar.com.br
             </td>
           </tr>

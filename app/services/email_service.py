@@ -8,7 +8,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from app.services.email_templates import template_email_clubbar
-from app.services.public_urls import url_partner_publico, url_site_publico
+from app.services.public_urls import url_api_publica, url_partner_publico, url_site_publico
 from app.services.ingresso_qrcode_service import gerar_qr_png
 
 
@@ -524,6 +524,9 @@ def enviar_produtos_confirmados(
             titulo="Produto confirmado",
             subtitulo="Seu QR Code de retirada já está disponível.",
             conteudo_html=conteudo,
+            logo_personalizada=f"{url_api_publica()}/static/logo_coruja_clubbar.png",
+            largura_logo=150,
+            assinatura_extra="Sua balada começa aqui.",
         ),
         anexos,
     )

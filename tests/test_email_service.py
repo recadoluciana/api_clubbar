@@ -9,6 +9,7 @@ from app.services.email_service import (
     enviar_produtos_confirmados,
 )
 from app.services.ingresso_qrcode_service import dados_qr_produto
+from app.services.email_templates import template_email_clubbar
 
 
 class RespostaBrevoFalsa:
@@ -41,8 +42,18 @@ class EmailServiceTest(unittest.TestCase):
         self.assertNotIn('Retirada em:', html)
         self.assertIn('text-align:justify', html)
         self.assertIn('/publico/produtos/token/qr.png', html)
+        self.assertIn('/static/logo_coruja_clubbar.png', html)
+        self.assertIn('width="150"', html)
+        self.assertIn('Venda digital para bares, casas noturnas e eventos.', html)
+        self.assertIn('Sua balada começa aqui.', html)
         self.assertEqual('produto-clubbar-1.png', anexos[0]['nome'])
         self.assertTrue(anexos[0]['conteudo'])
+
+    def test_outros_emails_mantem_cabecalho_original(self):
+        html = template_email_clubbar(titulo='Teste', conteudo_html='Conteúdo')
+        self.assertIn('/assets/images/logo.png', html)
+        self.assertIn('width="230"', html)
+        self.assertNotIn('Sua balada começa aqui.', html)
 
     def test_qr_de_produto_usa_prefixo_esperado_pelo_leitor(self):
         self.assertEqual(
