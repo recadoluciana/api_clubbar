@@ -1,6 +1,7 @@
 import asyncio
 import csv
 import io
+import os
 import unittest
 from datetime import date
 from types import SimpleNamespace
@@ -31,6 +32,11 @@ class RelatorioSplitTest(unittest.TestCase):
     def test_admin_e_necessario(self):
         with self.assertRaises(HTTPException):
             asyncio.run(relatorio.gerar(relatorio.Periodo(inicio=date(2026, 1, 1), fim=date(2026, 1, 2)), {'role': 'usuario', 'dscargo': 'OPERADOR', 'organizacao_id': 42}))
+
+    def test_config_aceita_id_uuid_do_notificador(self):
+        config = {'MERCADO_PAGO_REPORT_ACCESS_TOKEN': 'teste', 'MERCADO_PAGO_REPORT_STRUCTURE_ID': '123', 'MERCADO_PAGO_REPORT_NOTIFIER_ID': 'af8e72c5-98ad-4df6-927c-290be33de3bf'}
+        with patch.dict(os.environ, config):
+            self.assertEqual(relatorio._config(), ('teste', 123, config['MERCADO_PAGO_REPORT_NOTIFIER_ID']))
 
     def test_brasilia_periodo_e_gerado_em_utc(self):
         resposta = SimpleNamespace(json=lambda: {'request_id': 321})

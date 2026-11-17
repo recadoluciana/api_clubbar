@@ -33,9 +33,9 @@ def _config():
     token = os.getenv('MERCADO_PAGO_REPORT_ACCESS_TOKEN', '').strip()
     estrutura = os.getenv('MERCADO_PAGO_REPORT_STRUCTURE_ID', '').strip()
     notificador = os.getenv('MERCADO_PAGO_REPORT_NOTIFIER_ID', '').strip()
-    if not token or not estrutura.isdigit() or not notificador.isdigit():
+    if not token or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', estrutura) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', notificador):
         raise HTTPException(503, 'Relatório ainda não configurado. Contate a administração do Clubbar.')
-    return token, int(estrutura), int(notificador)
+    return token, int(estrutura) if estrutura.isdigit() else estrutura, int(notificador) if notificador.isdigit() else notificador
 
 
 def _report_id(comprovante: str, organizacao_id: int) -> str:
