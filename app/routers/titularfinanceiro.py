@@ -25,6 +25,7 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
 from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id, cancelar_pagamento_por_id
+from app.services.extrato_mercado_pago_service import detalhes_financeiros_pagamento
 from app.services.mercado_pago_oauth_service import obter_dados_titular
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
@@ -904,6 +905,7 @@ async def extrato_mercado_pago(
         'status': item.get('status'),
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
+        **detalhes_financeiros_pagamento(item),
     } for item, tipo, checkout in pagina]
     total = len(pagamentos_loja)
     nome_titular = None
