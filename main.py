@@ -73,6 +73,7 @@ from app.routers import manuais
 from app.routers import politicas
 from app.routers import catalogo_ingressos
 from app.routers import campanhas_doacao
+from app.routers import relatorio_split_mercado_pago
 from app.routers import reconciliacao_cancelamentos
 from app.routers import ingresso_publico
 from app.routers import produto_publico
@@ -219,6 +220,7 @@ app.include_router(politicas.router)
 app.include_router(catalogo_ingressos.router)
 app.include_router(campanhas_doacao.router)
 app.include_router(reconciliacao_cancelamentos.router)
+app.include_router(relatorio_split_mercado_pago.router)
 app.include_router(ingresso_publico.router)
 app.include_router(produto_publico.router)
 app.include_router(beneficios_produtos.router)
