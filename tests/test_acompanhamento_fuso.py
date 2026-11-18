@@ -24,7 +24,7 @@ def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
     query.all.return_value = [SimpleNamespace(
         itvenda_id=1, venda_id=34, loja_id=1, nmloja="Loja", cliente_id=1,
         nmcliente="Cliente", emailcliente="", produto_id=1, nmproduto="Água",
-        urlfotoproduto=None, quantidade=1, qtitvenda=1, vrunititvenda=3,
+        urlfotoproduto=None, quantidade=1, qtitvenda=1, vrunititvenda=3, vrtaxaitvenda=Decimal('0.03'),
         dtcompra=datetime(2026, 11, 16, 0, 53, 57), identregaitvenda="NAO",
         dtentregaitvenda=None, nmuserentregaitvenda=None,
     )]
@@ -42,6 +42,8 @@ def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
     ]
     assert valores == [datetime(2026, 9, 1, 3), datetime(2026, 11, 16, 3)]
     assert resultado["itens"][0]["dtcompra"] == "2026-11-16T00:53:57Z"
+    assert resultado["itens"][0]["valor_total"] == 3
+    assert resultado["itens"][0]["valor_apos_comissao"] == 2.97
     query.offset.assert_called_once_with(0)
 
 

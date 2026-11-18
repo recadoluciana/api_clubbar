@@ -223,8 +223,10 @@ def listar_compras_produtos(
         quantidade = int(row.qtitvenda or 0)
         preco_unitario = _dinheiro(row.vrunititvenda)
         bruto = Decimal(str(row.vrunititvenda or 0)) * quantidade
+        comissao = getattr(row, 'vrtaxaitvenda', None)
+        apos_comissao = (bruto - Decimal(str(comissao))) if comissao is not None else (Decimal('0') if bruto == 0 else None)
         liquido = _estimar_liquido_produto(
-            bruto, getattr(row, 'vrtaxaitvenda', None),
+            bruto, comissao,
             getattr(row, 'metodo_pagamento', None),
             getattr(row, 'provedor_pagamento', None),
             getattr(row, 'quantidade_pagamentos', None),
@@ -244,6 +246,7 @@ def listar_compras_produtos(
                 "quantidade": quantidade,
                 "preco_unitario": preco_unitario,
                 "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
+                "valor_apos_comissao": float(apos_comissao) if apos_comissao is not None else None,
                 "liquido_estimado": float(liquido) if liquido is not None else None,
                 "dtcompra": iso_utc(row.dtcompra),
                 "retirado": retirado,
