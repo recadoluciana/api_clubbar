@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, ROUND_CEILING
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.cliente import Cliente
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
@@ -124,6 +125,61 @@ def _estimar_liquido_produto(bruto, comissao, metodo, provedor, quantidade_pagam
     return (bruto - Decimal(str(comissao)) - bruto * TAXAS_PROCESSAMENTO[metodo]).quantize(
         Decimal('0.01'), rounding=ROUND_HALF_UP,
     )
+
+
+def _resumo_financeiro_ingressos(db, evento_id):
+    itens = db.query(ItVenda).join(Venda, Venda.venda_id == ItVenda.venda_id).join(
+        EventoLote, EventoLote.lote_id == ItVenda.lote_id
+    ).filter(EventoLote.evento_id == evento_id, ItVenda.tipoitem == 'INGRESSO',
+             ItVenda.sititvenda == 'ATIVO', Venda.sitvenda == 'PAGA').all()
+    vendas = {item.venda_id for item in itens}
+    if not vendas:
+        return {'bruto_pago': 0.0, 'liquido_previsto': 0.0}
+    todos = db.query(ItVenda).filter(ItVenda.venda_id.in_(vendas)).all()
+    pagamentos = db.query(PagVenda).filter(PagVenda.venda_id.in_(vendas), PagVenda.sitpagvenda == 'PAGO').all()
+    checkouts = db.query(CheckoutMercadoPago).filter(CheckoutMercadoPago.venda_id.in_(vendas)).all()
+    ids_evento = {item.itvenda_id for item in itens}
+    itens_por_venda = {}
+    pagamentos_por_venda = {}
+    checkouts_por_venda = {}
+    for item in todos:
+        itens_por_venda.setdefault(item.venda_id, []).append(item)
+    for pagamento in pagamentos:
+        pagamentos_por_venda.setdefault(pagamento.venda_id, []).append(pagamento)
+    for checkout in checkouts:
+        checkouts_por_venda.setdefault(checkout.venda_id, []).append(checkout)
+    bruto_total = Decimal('0')
+    liquido_total = Decimal('0')
+    bruto_disponivel = True
+    liquido_disponivel = True
+    for venda_id in vendas:
+        itens_venda = itens_por_venda.get(venda_id, [])
+        pags = pagamentos_por_venda.get(venda_id, [])
+        if any(i.itvenda_id not in ids_evento for i in itens_venda) or len(pags) != 1:
+            bruto_disponivel = liquido_disponivel = False
+            continue
+        pag = pags[0]
+        valor = Decimal(str(pag.vrpagvenda)) if pag.vrpagvenda is not None else None
+        if valor is None:
+            bruto_disponivel = liquido_disponivel = False
+            continue
+        bruto_total += valor
+        if valor == 0:
+            continue
+        metodo = str(pag.dsmetodopag or '').upper()
+        if metodo in {'CREDITO', 'CARTAO_CREDITO'}:
+            metodo = 'CREDIT_CARD'
+        checkout = [c for c in checkouts_por_venda.get(venda_id, []) if c.payment_id and str(c.payment_id) == str(pag.idtransacaopagvenda or '')]
+        if (str(pag.provedor or '').upper() != 'MERCADO_PAGO' or metodo not in TAXAS_PROCESSAMENTO
+                or len(checkout) != 1 or checkout[0].vrtaxaclubbar is None):
+            liquido_disponivel = False
+            continue
+        tarifa = (valor * TAXAS_PROCESSAMENTO[metodo]).quantize(Decimal('0.01'), rounding=ROUND_CEILING)
+        liquido_total += valor - Decimal(str(checkout[0].vrtaxaclubbar)) - tarifa
+    return {
+        'bruto_pago': float(bruto_total) if bruto_disponivel else None,
+        'liquido_previsto': float(liquido_total) if liquido_disponivel else None,
+    }
 
 
 @router.get("/produtos")
@@ -629,6 +685,7 @@ def detalhe_vendas_evento(
         "quantidade_restante": quantidade_restante,
         "percentual_ocupacao": percentual_ocupacao,
         "valor_total": _dinheiro(sum(Decimal(str(item["valor_total"])) for item in lotes)),
+        **_resumo_financeiro_ingressos(db, evento_id),
         "lotes": lotes,
     }
 
