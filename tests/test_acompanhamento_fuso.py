@@ -7,6 +7,8 @@ from app.routers.acompanhamento_vendas import listar_compras_produtos, _estimar_
 
 
 def test_estimativa_usa_comissao_historica_e_metodo_de_pagamento():
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0'), 'CREDIT_CARD', 'MERCADO_PAGO', 1) == Decimal('2.85')
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0'), 'PIX', 'MERCADO_PAGO', 1) == Decimal('2.97')
     assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'CREDIT_CARD', 'MERCADO_PAGO', 1) == Decimal('2.55')
     assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 1) == Decimal('2.67')
     assert _estimar_liquido_produto(Decimal('0'), None, None, None, None) == Decimal('0.00')

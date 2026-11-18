@@ -296,6 +296,12 @@ def listar_compras_produtos(
             getattr(row, 'provedor_pagamento', None),
             getattr(row, 'quantidade_pagamentos', None),
         )
+        simulacao_sem_comissao = _estimar_liquido_produto(
+            bruto, Decimal('0'),
+            getattr(row, 'metodo_pagamento', None),
+            getattr(row, 'provedor_pagamento', None),
+            getattr(row, 'quantidade_pagamentos', None),
+        )
         itens.append(
             {
                 "itvenda_id": int(row.itvenda_id),
@@ -313,6 +319,7 @@ def listar_compras_produtos(
                 "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
                 "valor_apos_comissao": float(apos_comissao) if apos_comissao is not None else None,
                 "liquido_estimado": float(liquido) if liquido is not None else None,
+                "simulacao_sem_comissao": float(simulacao_sem_comissao) if simulacao_sem_comissao is not None else None,
                 "dtcompra": iso_utc(row.dtcompra),
                 "retirado": retirado,
                 "dtretirada": row.dtentregaitvenda,
