@@ -127,6 +127,15 @@ def _estimar_liquido_produto(bruto, comissao, metodo, provedor, quantidade_pagam
     )
 
 
+def _valores_lote(valor, taxas, taxas_ausentes):
+    if taxas_ausentes:
+        return {'taxas_cobradas': None, 'bruto_itens': None}
+    return {
+        'taxas_cobradas': _dinheiro(taxas),
+        'bruto_itens': _dinheiro(Decimal(str(valor or 0)) + Decimal(str(taxas or 0))),
+    }
+
+
 def _resumo_financeiro_ingressos(db, evento_id):
     itens = db.query(ItVenda).join(Venda, Venda.venda_id == ItVenda.venda_id).join(
         EventoLote, EventoLote.lote_id == ItVenda.lote_id
@@ -604,13 +613,15 @@ def detalhe_vendas_evento(
     )
     quantidade = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda), else_=0)), 0)
     valor = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda * ItVenda.vrunititvenda), else_=0)), 0)
+    taxas = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.vrtaxaitvenda), else_=0)), 0)
+    taxas_ausentes = func.coalesce(func.sum(case((Venda.venda_id.isnot(None) & ItVenda.vrtaxaitvenda.is_(None), 1), else_=0)), 0)
     rows = db.query(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
         EventoLote.qttotallote, EventoLote.usarcapacidaderestante,
         EventoLote.eventosetor_id,
         EventoLotePreco.tipopreco, EventoLotePreco.vrpreco,
         EventoSetor.nmsetor, EventoSetor.qtcapacidade,
-        quantidade.label("quantidade"), valor.label("valor"),
+        quantidade.label("quantidade"), valor.label("valor"), taxas.label("taxas"), taxas_ausentes.label("taxas_ausentes"),
     ).join(EventoLotePreco, EventoLotePreco.lote_id == EventoLote.lote_id).outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id).outerjoin(
         ItVenda, (ItVenda.lotepreco_id == EventoLotePreco.lotepreco_id) & (ItVenda.sititvenda == "ATIVO")
     ).outerjoin(Venda, (Venda.venda_id == ItVenda.venda_id) & (Venda.sitvenda == "PAGA")).filter(
@@ -669,6 +680,7 @@ def detalhe_vendas_evento(
             "capacidade_lote": capacidade_lote,
             "quantidade_restante": quantidade_restante,
             "valor_total": _dinheiro(row.valor),
+            **_valores_lote(row.valor, row.taxas, row.taxas_ausentes),
         })
     quantidade_total = sum(item["quantidade_vendida"] for item in lotes)
     quantidade_restante = max(capacidade_total - quantidade_total, 0)

@@ -2,7 +2,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from app.routers.acompanhamento_vendas import _resumo_financeiro_ingressos
+from app.routers.acompanhamento_vendas import _resumo_financeiro_ingressos, _valores_lote
 
 
 def executar(itens, todos, pagamentos, checkouts):
@@ -10,6 +10,11 @@ def executar(itens, todos, pagamentos, checkouts):
     db.query.return_value.join.return_value.join.return_value.filter.return_value.all.return_value = itens
     db.query.return_value.filter.return_value.all.side_effect = [todos, pagamentos, checkouts]
     return _resumo_financeiro_ingressos(db, 1)
+
+
+def test_valores_do_lote_incluem_taxas_e_preservam_dados_ausentes():
+    assert _valores_lote(Decimal('5'), Decimal('6.08'), 0) == {'taxas_cobradas': 6.08, 'bruto_itens': 11.08}
+    assert _valores_lote(Decimal('5'), Decimal('0'), 1) == {'taxas_cobradas': None, 'bruto_itens': None}
 
 
 def test_resume_valor_pago_e_previsao_a_partir_do_split():
