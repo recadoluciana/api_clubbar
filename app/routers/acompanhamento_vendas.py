@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,6 +19,7 @@ from app.models.loja import Loja
 from app.models.pagvenda import PagVenda
 from app.models.produto import Produto
 from app.models.venda import Venda
+from app.services.taxa_processamento_ingresso import TAXAS_PROCESSAMENTO
 from app.utils.datetime_utils import inicio_dia_brasil_em_utc, iso_utc
 
 
@@ -109,6 +110,22 @@ def produtos_pendentes(
     }
 
 
+def _estimar_liquido_produto(bruto, comissao, metodo, provedor, quantidade_pagamentos):
+    """Estimativa para produto, não equivale à liquidação do Mercado Pago."""
+    if bruto == 0:
+        return Decimal('0.00')
+    metodo = str(metodo or '').upper()
+    if metodo in {'CREDITO', 'CARTAO_CREDITO'}:
+        metodo = 'CREDIT_CARD'
+    if (str(provedor or '').upper() != 'MERCADO_PAGO'
+            or quantidade_pagamentos != 1 or comissao is None
+            or metodo not in TAXAS_PROCESSAMENTO):
+        return None
+    return (bruto - Decimal(str(comissao)) - bruto * TAXAS_PROCESSAMENTO[metodo]).quantize(
+        Decimal('0.01'), rounding=ROUND_HALF_UP,
+    )
+
+
 @router.get("/produtos")
 def listar_compras_produtos(
     situacao: str = Query(default="TODOS", pattern="^(TODOS|PENDENTES|RETIRADOS)$"),
@@ -133,11 +150,26 @@ def listar_compras_produtos(
     if inicio is not None and fim is not None and inicio > fim:
         raise HTTPException(422, "A data inicial não pode ser posterior à final")
 
+    pagamentos_por_venda = (
+        db.query(
+            PagVenda.venda_id.label('venda_id'),
+            func.count(PagVenda.pagvenda_id).label('quantidade_pagamentos'),
+            func.min(PagVenda.dsmetodopag).label('metodo_pagamento'),
+            func.min(PagVenda.provedor).label('provedor_pagamento'),
+        )
+        .filter(PagVenda.sitpagvenda == 'PAGO')
+        .group_by(PagVenda.venda_id)
+        .subquery()
+    )
     query = (
         db.query(
             ItVenda.itvenda_id,
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
+            ItVenda.vrtaxaitvenda,
+            pagamentos_por_venda.c.quantidade_pagamentos,
+            pagamentos_por_venda.c.metodo_pagamento,
+            pagamentos_por_venda.c.provedor_pagamento,
             ItVenda.identregaitvenda,
             ItVenda.dtentregaitvenda,
             ItVenda.nmuserentregaitvenda,
@@ -154,6 +186,7 @@ def listar_compras_produtos(
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(pagamentos_por_venda, pagamentos_por_venda.c.venda_id == Venda.venda_id)
         .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .filter(
@@ -189,6 +222,13 @@ def listar_compras_produtos(
         retirado = (row.identregaitvenda or "NAO").upper() == "SIM"
         quantidade = int(row.qtitvenda or 0)
         preco_unitario = _dinheiro(row.vrunititvenda)
+        bruto = Decimal(str(row.vrunititvenda or 0)) * quantidade
+        liquido = _estimar_liquido_produto(
+            bruto, getattr(row, 'vrtaxaitvenda', None),
+            getattr(row, 'metodo_pagamento', None),
+            getattr(row, 'provedor_pagamento', None),
+            getattr(row, 'quantidade_pagamentos', None),
+        )
         itens.append(
             {
                 "itvenda_id": int(row.itvenda_id),
@@ -204,6 +244,7 @@ def listar_compras_produtos(
                 "quantidade": quantidade,
                 "preco_unitario": preco_unitario,
                 "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
+                "liquido_estimado": float(liquido) if liquido is not None else None,
                 "dtcompra": iso_utc(row.dtcompra),
                 "retirado": retirado,
                 "dtretirada": row.dtentregaitvenda,

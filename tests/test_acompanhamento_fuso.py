@@ -1,8 +1,19 @@
 from datetime import date, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.routers.acompanhamento_vendas import listar_compras_produtos
+from app.routers.acompanhamento_vendas import listar_compras_produtos, _estimar_liquido_produto
+
+
+def test_estimativa_usa_comissao_historica_e_metodo_de_pagamento():
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'CREDIT_CARD', 'MERCADO_PAGO', 1) == Decimal('2.55')
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 1) == Decimal('2.67')
+    assert _estimar_liquido_produto(Decimal('0'), None, None, None, None) == Decimal('0.00')
+    assert _estimar_liquido_produto(Decimal('3'), None, 'PIX', 'MERCADO_PAGO', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'ASAAS', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'OUTRO', 'MERCADO_PAGO', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 2) is None
 
 
 def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
