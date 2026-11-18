@@ -56,3 +56,32 @@ class ConciliacaoRepasseIngressoTest(unittest.TestCase):
         base['money_release_status'] = 'released'
         del base['transaction_amount_refunded']
         self.assertIsNone(comparar_repasse_ingresso(base, 100)['diferenca_repasse'])
+
+class DetalheAntecipacaoTest(unittest.TestCase):
+    def test_acrescenta_antecipacao_sem_duplicar_tarifas_ja_informadas(self):
+        pagamento = {
+            'fee_details': [
+                {'type': 'mercadopago_fee', 'amount': 0.14, 'fee_payer': 'collector'},
+                {'type': 'application_fee', 'amount': 2.76, 'fee_payer': 'collector'},
+            ],
+            'charges_details': [
+                {'type': 'fee', 'name': 'mercadopago_fee', 'accounts': {'from': 'collector'}, 'amounts': {'original': 0.14, 'refunded': 0}},
+                {'type': 'fee', 'name': 'third_payment', 'accounts': {'from': 'collector'}, 'amounts': {'original': 2.76, 'refunded': 0}},
+                {'type': 'fee', 'name': 'financed_advance_fee', 'accounts': {'from': 'collector'}, 'amounts': {'original': 0.14, 'refunded': 0}},
+            ],
+        }
+        taxas = detalhes_financeiros_pagamento(pagamento)['taxas']
+        self.assertEqual([t['tipo'] for t in taxas], ['mercadopago_fee', 'application_fee', 'financed_advance_fee'])
+        self.assertEqual(taxas[2]['valor'], 0.14)
+        self.assertEqual(taxas[2]['responsavel'], 'collector')
+        self.assertAlmostEqual(sum(t['valor'] for t in taxas), 3.04)
+
+    def test_nao_duplicar_antecipacao_nem_inferir_estorno(self):
+        pagamento = {
+            'fee_details': [{'type': 'financed_advance_fee', 'amount': 0.14}],
+            'charges_details': [{'type': 'fee', 'name': 'financed_advance_fee', 'amounts': {'original': 0.14, 'refunded': 0}}],
+        }
+        self.assertEqual(len(detalhes_financeiros_pagamento(pagamento)['taxas']), 1)
+        pagamento['fee_details'] = []
+        pagamento['charges_details'][0]['amounts']['refunded'] = 0.05
+        self.assertEqual(detalhes_financeiros_pagamento(pagamento)['taxas'], [])

@@ -29,6 +29,26 @@ def detalhes_financeiros_pagamento(pagamento: dict) -> dict:
             'valor': valor,
             'responsavel': str(tarifa.get('fee_payer') or '') or None,
         })
+    # A taxa de antecipação pode aparecer somente em charges_details. Não
+    # reproduza os demais itens de charges_details: eles também podem estar em
+    # fee_details, incluindo a comissão do marketplace e a tarifa principal.
+    tipos_informados = {tarifa['tipo'] for tarifa in saida_tarifas}
+    encargos = pagamento.get('charges_details')
+    if 'financed_advance_fee' not in tipos_informados and isinstance(encargos, list):
+        for encargo in encargos:
+            if not isinstance(encargo, dict) or encargo.get('type') != 'fee' or encargo.get('name') != 'financed_advance_fee':
+                continue
+            valores = encargo.get('amounts') if isinstance(encargo.get('amounts'), dict) else {}
+            valor = _valor(valores.get('original'))
+            estornado = _valor(valores.get('refunded'))
+            if valor is None or estornado != 0:
+                continue
+            contas = encargo.get('accounts') if isinstance(encargo.get('accounts'), dict) else {}
+            saida_tarifas.append({
+                'tipo': 'financed_advance_fee',
+                'valor': valor,
+                'responsavel': str(contas.get('from') or '') or None,
+            })
     parcelas = pagamento.get('installments')
     if isinstance(parcelas, bool) or not isinstance(parcelas, int) or parcelas < 1:
         parcelas = None
