@@ -63,6 +63,38 @@ def detalhes_financeiros_pagamento(pagamento: dict) -> dict:
     }
 
 
+def resumir_vendas_pagamentos(pagamentos) -> dict:
+    """Totais dos pagamentos aprovados identificados para a loja e conta."""
+    bruto = Decimal('0')
+    liquido = Decimal('0')
+    bruto_disponivel = True
+    liquido_disponivel = True
+    parcial = False
+    for pagamento in pagamentos:
+        if str(pagamento.get('status') or '').lower() != 'approved':
+            continue
+        valor = _valor(pagamento.get('transaction_amount'))
+        detalhes = pagamento.get('transaction_details')
+        detalhes = detalhes if isinstance(detalhes, dict) else {}
+        valor_liquido = _valor(detalhes.get('net_received_amount'))
+        reembolso = _valor(pagamento.get('transaction_amount_refunded'))
+        if valor is None:
+            bruto_disponivel = False
+        else:
+            bruto += Decimal(str(valor))
+        if reembolso is not None and reembolso > 0:
+            parcial = True
+        if valor_liquido is None or reembolso is None or reembolso != 0:
+            liquido_disponivel = False
+        else:
+            liquido += Decimal(str(valor_liquido))
+    return {
+        'bruto': float(bruto.quantize(Decimal('0.01'))) if bruto_disponivel else None,
+        'liquido': float(liquido.quantize(Decimal('0.01'))) if liquido_disponivel else None,
+        'reembolso_parcial': parcial,
+    }
+
+
 def comparar_repasse_ingresso(pagamento: dict, valor_ingressos) -> dict:
     """Só compara pagamentos liberados, sem reembolso e com dados completos."""
     detalhes = pagamento.get('transaction_details')

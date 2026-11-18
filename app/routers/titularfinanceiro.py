@@ -25,7 +25,7 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
 from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id, cancelar_pagamento_por_id
-from app.services.extrato_mercado_pago_service import detalhes_financeiros_pagamento, comparar_repasse_ingresso
+from app.services.extrato_mercado_pago_service import detalhes_financeiros_pagamento, comparar_repasse_ingresso, resumir_vendas_pagamentos
 from app.services.mercado_pago_oauth_service import obter_dados_titular
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
@@ -925,7 +925,8 @@ async def extrato_mercado_pago(
             nome_titular = perfil.get('nome')
         except (httpx.HTTPError, ValueError):
             pass
-    return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total, 'nome_titular_conta': nome_titular}
+    return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total, 'nome_titular_conta': nome_titular,
+            'resumo': resumir_vendas_pagamentos(item for item, _, _ in pagamentos_loja)}
 
 
 @router.get("/organizacao/{organizacao_id}/extrato-asaas")
