@@ -926,6 +926,7 @@ async def extrato_mercado_pago(
         except (httpx.HTTPError, ValueError):
             pass
     return {'pagamentos': pagamentos, 'total': total, 'possui_mais': offset + len(pagamentos) < total, 'nome_titular_conta': nome_titular,
+            'conta_extrato': {'id': conta.lojamercadopago_id, 'nome': getattr(conta, 'mercadopago_nome', None), 'conta': conta.mercadopago_user_id},
             'resumo': resumir_vendas_pagamentos(item for item, _, _ in pagamentos_loja)}
 
 

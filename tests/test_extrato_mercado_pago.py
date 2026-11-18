@@ -45,6 +45,7 @@ class ExtratoMercadoPagoTest(unittest.IsolatedAsyncioTestCase):
         db.query.return_value.filter.return_value.all.return_value = [SimpleNamespace(payment_id='123', external_reference='ref', carrinho_id=5, reserva_ingresso_id=None, venda_id=None)]
         resultado = await extrato_mercado_pago(1, 2, date(2026, 11, 1), date(2026, 11, 7), 0, db, {'role': 'usuario', 'dscargo': 'ADMIN', 'organizacao_id': 1})
         self.assertEqual(resultado['pagamentos'][0]['id'], '123')
+        self.assertEqual(resultado['conta_extrato']['id'], 10)
         self.assertEqual(resultado['pagamentos'][0]['tipo_venda'], 'PRODUTO')
         self.assertEqual(len(resultado['pagamentos']), 1)
         self.assertFalse(resultado['possui_mais'])
