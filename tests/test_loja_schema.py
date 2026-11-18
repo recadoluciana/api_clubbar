@@ -69,6 +69,8 @@ class LojaSchemaTest(unittest.TestCase):
         constraints = {item.name for item in Loja.__table__.constraints}
         self.assertIn("fk_loja_titular_org", constraints)
         self.assertFalse(Loja.__table__.c.cpfcnpjloja.unique)
+        self.assertFalse(Loja.__table__.c.cpfcnpjloja.nullable)
+        self.assertIn("ck_loja_cpfcnpj_preenchido", constraints)
 
     def test_titular_financeiro_possui_identificadores_unicos(self):
         constraints = {item.name for item in TitularFinanceiro.__table__.constraints}

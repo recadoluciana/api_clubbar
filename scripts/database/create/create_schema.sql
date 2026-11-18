@@ -362,7 +362,7 @@ CREATE TABLE loja (
   leadestabelecimento_id BIGINT NULL,
   titularfinanceiro_id BIGINT NULL,
   nmloja         VARCHAR(120) NOT NULL,
-  cpfcnpjloja    VARCHAR(14) NULL,
+  cpfcnpjloja    VARCHAR(14) NOT NULL,
   cnpjraiz       VARCHAR(8) NULL,
   tipoestabelecimento VARCHAR(10) NULL,
   nmrazaosocial  VARCHAR(160) NULL,
@@ -410,6 +410,7 @@ CREATE TABLE loja (
     FOREIGN KEY (leadestabelecimento_id) REFERENCES leadestabelecimento(leadestabelecimento_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
+  CONSTRAINT ck_loja_cpfcnpj_preenchido CHECK (CHAR_LENGTH(TRIM(cpfcnpjloja)) > 0),
   UNIQUE KEY uk_loja_leadestabelecimento (leadestabelecimento_id),
   KEY idx_loja_cpfcnpj (cpfcnpjloja),
   KEY idx_loja_cnpjraiz (cnpjraiz)
