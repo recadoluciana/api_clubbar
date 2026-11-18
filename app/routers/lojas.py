@@ -34,7 +34,7 @@ from app.models.eventosetor import EventoSetor
 from app.models.cliente import Cliente
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.services.email_service import enviar_notificacao_cancelamento_parceria_suporte
-from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
+from app.utils.documento import validar_documento_acesso, raiz_cnpj
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -801,15 +801,15 @@ def atualizar_loja(
 
         if cpfcnpjloja is not None:
             try:
-                documento = normalizar_cpf_cnpj(cpfcnpjloja)
+                documento = validar_documento_acesso(cpfcnpjloja)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             duplicada = db.query(Loja).filter(
                 Loja.cpfcnpjloja == documento,
-                Loja.loja_id != loja.loja_id,
+                Loja.organizacao_id != loja.organizacao_id,
             ).first()
             if duplicada:
-                raise HTTPException(409, "Este CPF/CNPJ já pertence a outro estabelecimento")
+                raise HTTPException(409, "Este CPF/CNPJ está vinculado a outra organização. Entre em contato com o suporte.")
             loja.cpfcnpjloja = documento
             loja.cnpjraiz = raiz_cnpj(documento)
             if len(documento or "") != 14:

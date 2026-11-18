@@ -27,13 +27,7 @@ class PortalCodigoTest(unittest.TestCase):
 
     def setUp(self):
         self.engine = create_engine('sqlite:///:memory:')
-        # Simula a base legada antes da migração, que pode conter documentos duplicados.
-        restricao = next(c for c in LeadEstabelecimento.__table__.constraints if c.name == "uk_leadestabelecimento_cpfcnpj")
-        LeadEstabelecimento.__table__.constraints.remove(restricao)
-        try:
-            Base.metadata.create_all(self.engine, tables=[Estado.__table__, Cidade.__table__, LeadParceiro.__table__, LeadEstabelecimento.__table__, LeadAcesso.__table__, LeadCodigoAcesso.__table__])
-        finally:
-            LeadEstabelecimento.__table__.constraints.add(restricao)
+        Base.metadata.create_all(self.engine, tables=[Estado.__table__, Cidade.__table__, LeadParceiro.__table__, LeadEstabelecimento.__table__, LeadAcesso.__table__, LeadCodigoAcesso.__table__])
         self.db = sessionmaker(bind=self.engine)()
         self.db.add(LeadParceiro(leadparceiro_id=1,nmresponsavel='Teste',nmorganizacao='Empresa',email='teste@example.com',telefone='11999999999'))
         self.db.add(LeadEstabelecimento(leadestabelecimento_id=1,leadparceiro_id=1,nmestabelecimento='Teste',tipo='BAR',cpfcnpj='52998224725'))
@@ -102,10 +96,12 @@ class PortalCodigoTest(unittest.TestCase):
             model.__table__.create(self.engine, checkfirst=True)
         self.db.add(LeadParceiro(leadparceiro_id=2, nmresponsavel="Outra", nmorganizacao="Outra empresa", email="outra@example.com", telefone="11999999999"))
         self.db.add_all([
-            LeadEstabelecimento(leadestabelecimento_id=2, leadparceiro_id=1, nmestabelecimento="Segunda loja", tipo="BAR", cpfcnpj="11222333000181"),
+            LeadEstabelecimento(leadestabelecimento_id=2, leadparceiro_id=1, nmestabelecimento="Segunda loja", tipo="BAR", cpfcnpj="52998224725"),
             LeadEstabelecimento(leadestabelecimento_id=3, leadparceiro_id=2, nmestabelecimento="Loja privada", tipo="BAR", cpfcnpj="11144477735"),
         ])
         self.db.commit()
+        self.solicitar()
+        self.assertTrue(self.confirmar(self.enviado[-1][1])["acesso"])
         resumo = obter_resumo(None, self.db.get(LeadParceiro, 1), self.db)
         self.assertEqual([1, 2], [est["leadestabelecimento_id"] for est in resumo["estabelecimentos"]])
         with self.assertRaises(HTTPException) as erro:

@@ -418,6 +418,12 @@ def _preparar_retificacao(db: Session, estabelecimento_id: int, dados: Retificac
             raise HTTPException(422, "A mudança entre CPF e CNPJ exige novo contrato, não retificação.")
         if not dados.confirma_mesma_parte:
             raise HTTPException(422, "Confirme que o CPF/CNPJ corrigido pertence à mesma parte contratante.")
+        duplicado = db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
+            LeadEstabelecimento.cpfcnpj == documento,
+            LeadEstabelecimento.leadparceiro_id != estabelecimento.leadparceiro_id,
+        ).first()
+        if duplicado:
+            raise HTTPException(409, "O CPF/CNPJ informado está vinculado a outra conta. Entre em contato com o suporte.")
     if not all((valor or "").strip() for valor in (dados.endereco, dados.numero, dados.bairro, dados.nmrazaosocial, dados.motivo)):
         raise HTTPException(422, "Preencha os dados corrigidos e a justificativa.")
     numero = db.query(LeadEstabelecimentoContrato.nrretificacao).filter(
@@ -636,7 +642,22 @@ async def aceitar_contrato(
                 raise HTTPException(422, "O termo de retificação contém dados obrigatórios incompletos.")
             if item.hashdocumento != sha256(item.conteudocontrato.encode("utf-8")).hexdigest():
                 raise HTTPException(409, "A integridade do termo de retificação não confere.")
-            estabelecimento.cpfcnpj = item.cpfcnpjcontratante
+            # O CPF/CNPJ do contratante pode ser compartilhado entre contratos;
+            # não substitua a identidade fiscal da loja em uma retificação que
+            # altera apenas taxas ou endereço.
+            anterior = db.query(LeadEstabelecimentoContrato).filter(
+                LeadEstabelecimentoContrato.contratoorigem_id == item.contratoorigem_id,
+                LeadEstabelecimentoContrato.status == "ACEITO",
+                LeadEstabelecimentoContrato.nrretificacao < item.nrretificacao,
+            ).order_by(LeadEstabelecimentoContrato.nrretificacao.desc()).first() or origem
+            if item.cpfcnpjcontratante != anterior.cpfcnpjcontratante:
+                duplicado = db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
+                    LeadEstabelecimento.cpfcnpj == item.cpfcnpjcontratante,
+                    LeadEstabelecimento.leadparceiro_id != estabelecimento.leadparceiro_id,
+                ).first()
+                if duplicado:
+                    raise HTTPException(409, "O CPF/CNPJ informado está vinculado a outra conta. Entre em contato com o suporte.")
+                estabelecimento.cpfcnpj = item.cpfcnpjcontratante
             estabelecimento.cep = item.cepcontratante
             estabelecimento.endereco = item.enderecocontratante
             estabelecimento.numero = item.numerocontratante

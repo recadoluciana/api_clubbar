@@ -55,7 +55,7 @@ class LeadEstabelecimentoCreate(BaseModel):
     email_responsavel: EmailStr | None = None
     tipo: TipoParceiro
     tipovenda: TipoVendaLead = "AMBOS"
-    cpfcnpj: str | None = Field(default=None, max_length=18)
+    cpfcnpj: str = Field(min_length=11, max_length=18)
     telefone: str | None = Field(default=None, min_length=10, max_length=30)
     email: EmailStr | None = None
     estado_id: int = Field(gt=0)
@@ -69,9 +69,12 @@ class LeadEstabelecimentoCreate(BaseModel):
 
     @field_validator("cpfcnpj")
     @classmethod
-    def normalizar_documento_opcional(cls, valor: str | None) -> str | None:
+    def normalizar_documento_obrigatorio(cls, valor: str) -> str:
         try:
-            return normalizar_cpf_cnpj(valor)
+            documento = validar_documento_acesso(valor)
+            if not documento:
+                raise ValueError("Informe o CPF ou CNPJ do estabelecimento.")
+            return documento
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
 
@@ -107,6 +110,8 @@ class LeadEstabelecimentoOut(BaseModel):
     tipo: TipoParceiro
     tipovenda: TipoVendaLead
     cpfcnpj: str | None = None
+    documento_conferido: bool = False
+    nome_titular_conferido: str | None = None
     telefone: str | None = None
     email: str | None = None
     estado_id: int | None = None

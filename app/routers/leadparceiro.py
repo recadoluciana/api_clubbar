@@ -62,7 +62,7 @@ from app.services.email_service import (
     enviar_notificacao_interesse_suporte,
 )
 from app.utils.documento import (
-    normalizar_cpf_cnpj,
+    validar_documento_acesso,
     raiz_cnpj,
     tipo_estabelecimento_inferido,
 )
@@ -167,6 +167,8 @@ def _serializar_estabelecimento(db: Session, item: LeadEstabelecimento) -> dict:
         "tipo": item.tipo,
         "tipovenda": item.tipovenda,
         "cpfcnpj": item.cpfcnpj,
+        "documento_conferido": bool(item.cpfcnpj and item.documento_conferido == item.cpfcnpj and item.nome_titular_conferido),
+        "nome_titular_conferido": item.nome_titular_conferido,
         "telefone": item.telefone,
         "email": item.email,
         "estado_id": item.estado_id,
@@ -230,8 +232,6 @@ def criar_interesse_parceiro(
         caractere for caractere in payload.telefone if caractere.isdigit()
     )
     documentos = {item.cpfcnpj for item in payload.estabelecimentos}
-    if len(documentos) != len(payload.estabelecimentos):
-        raise HTTPException(status_code=409, detail="CPF ou CNPJ já informado para outro estabelecimento.")
     conflito = (db.query(LeadEstabelecimento.leadparceiro_id)
                 .filter(LeadEstabelecimento.cpfcnpj.in_(documentos))
                 .with_for_update().first())
@@ -432,6 +432,38 @@ def buscar_interesse_parceiro(
     return resposta
 
 
+class ConferenciaDocumentoIn(BaseModel):
+    cpfcnpj: str = Field(min_length=11, max_length=18)
+    nome_titular: str = Field(min_length=2, max_length=160)
+
+
+@router.post("/{leadparceiro_id}/estabelecimentos/{leadestabelecimento_id}/conferir-documento")
+def conferir_documento_estabelecimento(
+    leadparceiro_id: int, leadestabelecimento_id: int, dados: ConferenciaDocumentoIn,
+    _: dict = Depends(get_operador_logado), db: Session = Depends(get_db),
+):
+    item = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id,
+        LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
+    ).with_for_update().first()
+    if not item:
+        raise HTTPException(404, "Estabelecimento não encontrado.")
+    try:
+        documento = validar_documento_acesso(dados.cpfcnpj)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    nome = dados.nome_titular.strip()
+    if len(nome) < 2:
+        raise HTTPException(422, "Informe o nome do titular conferido.")
+    if documento != item.cpfcnpj:
+        raise HTTPException(409, "O CPF/CNPJ informado não corresponde ao cadastro atual.")
+    item.documento_conferido = documento
+    item.nome_titular_conferido = nome
+    item.dtconferencia_documento = datetime.now()
+    db.commit()
+    return {"mensagem": "Conferência manual registrada."}
+
+
 @router.post(
     "/{leadparceiro_id}/estabelecimentos",
     response_model=LeadEstabelecimentoOut,
@@ -443,40 +475,10 @@ def adicionar_estabelecimento(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    lead = (
-        db.query(LeadParceiro)
-        .filter(LeadParceiro.leadparceiro_id == leadparceiro_id)
-        .first()
+    raise HTTPException(
+        status_code=403,
+        detail="O cadastro de estabelecimentos do lead deve ser feito pelo site Clubbar.",
     )
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead não encontrado.")
-    cidade = db.query(Cidade).filter(Cidade.cidade_id == payload.cidade_id).first()
-    if not cidade or cidade.estado_id != payload.estado_id:
-        raise HTTPException(
-            status_code=422,
-            detail="Cidade e estado informados são incompatíveis.",
-        )
-    estado = db.get(Estado, payload.estado_id)
-    if not all((valor or "").strip() for valor in (payload.endereco, payload.numero, payload.bairro)):
-        raise HTTPException(422, "Preencha o endereço completo do estabelecimento.")
-    validar_cep_lead(payload.cep, cidade, estado)
-    if payload.cpfcnpj and db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
-        LeadEstabelecimento.cpfcnpj == payload.cpfcnpj
-    ).with_for_update().first():
-        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
-    item = LeadEstabelecimento(
-        leadparceiro_id=leadparceiro_id,
-        **payload.model_dump(),
-    )
-    try:
-        db.add(item)
-        db.flush()
-        garantir_contrato(db, item)
-        db.commit()
-    except IntegrityError as erro:
-        tratar_integridade_documento(db, erro)
-    db.refresh(item)
-    return _serializar_estabelecimento(db, item)
 
 
 @router.put(
@@ -531,7 +533,7 @@ def atualizar_estabelecimento(
     documento = dados.get("cpfcnpj")
     if documento and db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
         LeadEstabelecimento.cpfcnpj == documento,
-        LeadEstabelecimento.leadestabelecimento_id != item.leadestabelecimento_id,
+        LeadEstabelecimento.leadparceiro_id != item.leadparceiro_id,
     ).with_for_update().first():
         raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
     taxa_produtos = dados.pop("vrtaxaprod", None)
@@ -792,6 +794,13 @@ async def converter_lead_em_parceiro(
     if not estabelecimento:
         raise HTTPException(status_code=404, detail="Estabelecimento não encontrado.")
 
+    # A loja herda o documento cadastrado no site para o estabelecimento.
+    try:
+        documento_loja = validar_documento_acesso(estabelecimento.cpfcnpj)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, "CPF/CNPJ do estabelecimento inválido; corrija o cadastro antes da conversão.") from exc
+    if estabelecimento.documento_conferido != documento_loja or not (estabelecimento.nome_titular_conferido or "").strip():
+        raise HTTPException(409, "Aguarde a conferência manual do titular do CPF/CNPJ pela equipe Clubbar.")
     nome_organizacao, nome_loja = _nomes_para_conversao(lead, estabelecimento)
 
     status_estabelecimento = (
@@ -874,8 +883,6 @@ async def converter_lead_em_parceiro(
                     status_code=422,
                     detail="Titular financeiro não pertence à organização deste lead.",
                 )
-
-        documento_loja = normalizar_cpf_cnpj(estabelecimento.cpfcnpj)
 
         nova_loja = Loja(
             organizacao_id=nova_organizacao.organizacao_id,

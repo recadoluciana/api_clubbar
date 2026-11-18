@@ -22,7 +22,7 @@ class Loja(Base):
     )
 
     nmloja = Column(String(120), nullable=False)
-    cpfcnpjloja = Column(String(14), nullable=True, unique=True, index=True)
+    cpfcnpjloja = Column(String(14), nullable=True, index=True)
     cnpjraiz = Column(String(8), nullable=True, index=True)
     tipoestabelecimento = Column(String(10), nullable=True)
     nmrazaosocial = Column(String(160), nullable=True)
