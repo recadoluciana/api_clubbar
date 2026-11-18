@@ -41,3 +41,18 @@ def detalhes_financeiros_pagamento(pagamento: dict) -> dict:
         'data_liberacao': pagamento.get('money_release_date'),
         'situacao_liberacao': pagamento.get('money_release_status'),
     }
+
+
+def comparar_repasse_ingresso(pagamento: dict, valor_ingressos) -> dict:
+    """Só compara pagamentos liberados, sem reembolso e com dados completos."""
+    detalhes = pagamento.get('transaction_details')
+    detalhes = detalhes if isinstance(detalhes, dict) else {}
+    bruto = _valor(valor_ingressos)
+    liquido = _valor(detalhes.get('net_received_amount'))
+    estornado = _valor(pagamento.get('transaction_amount_refunded'))
+    if (str(pagamento.get('status') or '').lower() != 'approved'
+            or str(pagamento.get('money_release_status') or '').lower() != 'released'
+            or bruto is None or liquido is None or estornado != 0):
+        return {'valor_ingressos': None, 'diferenca_repasse': None}
+    diferenca = Decimal(str(liquido)) - Decimal(str(bruto))
+    return {'valor_ingressos': bruto, 'diferenca_repasse': float(diferenca.quantize(Decimal('0.01')))}

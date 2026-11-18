@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -37,4 +38,5 @@ class PagamentoReservaIn(BaseModel):
     payer_email: str | None = None
     payer_document: str | None = None
     device_id: str | None = None
+    valor_total_confirmado: Decimal | None = Field(default=None, gt=0, decimal_places=2)
 

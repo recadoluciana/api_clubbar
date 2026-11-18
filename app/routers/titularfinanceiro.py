@@ -25,7 +25,7 @@ from app.models.contratolead import LeadEstabelecimentoContrato
 from app.services.publicacao_pendente_service import publicar_conteudos_aguardando_asaas
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja, ambiente_asaas
 from app.services.mercado_pago_service import obter_token_loja, buscar_pagamento_por_id, cancelar_pagamento_por_id
-from app.services.extrato_mercado_pago_service import detalhes_financeiros_pagamento
+from app.services.extrato_mercado_pago_service import detalhes_financeiros_pagamento, comparar_repasse_ingresso
 from app.services.mercado_pago_oauth_service import obter_dados_titular
 from app.models.titularfinanceiro import TitularFinanceiro
 from app.models.lojamercadopago import LojaMercadoPago
@@ -882,13 +882,22 @@ async def extrato_mercado_pago(
     vendas = {c.venda_id for _, _, c in pagina if c.venda_id}
     reservas = {c.reserva_ingresso_id for _, _, c in pagina if c.reserva_ingresso_id}
     produtos_por_venda = {}
+    vendas_aptas_conciliacao = set()
     if vendas:
+        # Ignore operações com cancelamento ou item ainda em processamento.
+        situacoes = {}
+        for venda_id, situacao in db.query(ItVenda.venda_id, ItVenda.sititvenda).filter(ItVenda.venda_id.in_(vendas)).all():
+            situacoes.setdefault(venda_id, []).append(str(situacao or '').upper())
+        vendas_aptas_conciliacao = {venda_id for venda_id, itens in situacoes.items() if itens and all(s == 'ATIVO' for s in itens)}
         for venda_id, nome, quantidade in db.query(ItVenda.venda_id, Produto.nmproduto, ItVenda.qtitvenda).join(Produto, Produto.produto_id == ItVenda.produto_id).filter(ItVenda.venda_id.in_(vendas), ItVenda.tipoitem == 'PRODUTO').all():
             produtos_por_venda.setdefault(venda_id, []).append({'nome': nome, 'quantidade': quantidade})
     eventos_por_reserva = {}
+    valores_ingressos_por_reserva = {}
     if reservas:
-        for reserva_id, nome, quantidade in db.query(ReservaIngresso.reserva_ingresso_id, Evento.nmtituloevento, ReservaIngresso.qtreservada).join(Evento, Evento.evento_id == ReservaIngresso.evento_id).filter(ReservaIngresso.reserva_ingresso_id.in_(reservas)).all():
+        for reserva_id, nome, quantidade, valor_unitario in db.query(ReservaIngresso.reserva_ingresso_id, Evento.nmtituloevento, ReservaIngresso.qtreservada, ReservaIngresso.vrunitario).join(Evento, Evento.evento_id == ReservaIngresso.evento_id).filter(ReservaIngresso.reserva_ingresso_id.in_(reservas)).all():
             eventos_por_reserva[reserva_id] = [{'nome': nome, 'quantidade': quantidade}]
+            if valor_unitario is not None and Decimal(str(valor_unitario)) > 0 and quantidade and quantidade > 0:
+                valores_ingressos_por_reserva[reserva_id] = Decimal(str(valor_unitario)) * int(quantidade)
     pagamentos = [{
         'id': str(item.get('id') or ''), 'data': item.get('date_created'),
         'descricao': item.get('description') or 'Pagamento',
@@ -906,6 +915,7 @@ async def extrato_mercado_pago(
         'valor': item.get('transaction_amount'), 'estornado': item.get('transaction_amount_refunded'),
         'metodo': item.get('payment_method_id'),
         **detalhes_financeiros_pagamento(item),
+        **(comparar_repasse_ingresso(item, valores_ingressos_por_reserva.get(checkout.reserva_ingresso_id)) if tipo == 'INGRESSO' and checkout.venda_id in vendas_aptas_conciliacao else {}),
     } for item, tipo, checkout in pagina]
     total = len(pagamentos_loja)
     nome_titular = None

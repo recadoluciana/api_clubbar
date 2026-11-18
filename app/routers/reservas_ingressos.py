@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -41,6 +41,7 @@ from app.services.campanha_doacao_service import (
 )
 from app.utils.datetime_utils import iso_utc
 from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
+from app.services.taxa_processamento_ingresso import cotar_ingressos_mercado_pago
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
@@ -183,6 +184,13 @@ def _reserva_para_pagamento(db: Session, reserva_id: int, cliente_id: int) -> Re
     return reserva
 
 
+def _cotacao_reserva(reserva: ReservaIngresso, metodo: str) -> dict:
+    cotacao = cotar_ingressos_mercado_pago(reserva.vrunitario, reserva.vrtaxa, reserva.qtreservada, metodo)
+    if cotacao['subtotal'] != Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01')):
+        raise HTTPException(409, 'Os valores da reserva divergiram. Faça uma nova reserva.')
+    return cotacao
+
+
 @router.post("/{reserva_id}/pix")
 async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, payload.cliente_id)
@@ -246,6 +254,29 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
         db.rollback(); raise
 
 
+@router.post("/{reserva_id}/cotacao-mercado-pago")
+def cotar_reserva_mercado_pago(
+    reserva_id: int, payload: PagamentoReservaIn, metodo: str = "PIX",
+    db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado),
+):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
+    loja = db.query(Loja).filter(Loja.loja_id == reserva.loja_id).first()
+    if not loja or str(getattr(loja, 'provedor_pagamento', 'ASAAS')).upper() != 'MERCADO_PAGO':
+        raise HTTPException(409, 'Este estabelecimento não usa Mercado Pago.')
+    cotacao = _cotacao_reserva(reserva, metodo)
+    percentual = Decimal(str(reserva.pctaxa or 0))
+    taxa_percentual = (Decimal(str(reserva.vrunitario)) * percentual / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return {
+        **{
+            chave: float(cotacao[chave]) if isinstance(cotacao[chave], Decimal) else cotacao[chave]
+            for chave in ('metodo', 'ingressos', 'conveniencia', 'subtotal', 'processamento', 'total')
+        },
+        'percentual_conveniencia': float(percentual),
+        'minimo_aplicado': Decimal(str(reserva.vrtaxa or 0)) > taxa_percentual,
+    }
+
+
 @router.post("/{reserva_id}/mercado-pago")
 async def gerar_checkout_reserva_mercado_pago(
     reserva_id: int,
@@ -265,6 +296,19 @@ async def gerar_checkout_reserva_mercado_pago(
         metodo = metodo.upper()
         if metodo not in {'PIX', 'CREDIT_CARD', 'CREDITO'}:
             raise HTTPException(422, 'Método Mercado Pago inválido.')
+        # Versões anteriores não apresentam a nova cotação. Preserve o valor
+        # que elas exibiram; nunca acrescente a taxa sem confirmação do cliente.
+        if payload.valor_total_confirmado is None:
+            valor_cobrado = Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01'))
+            taxa_clubbar = Decimal(str(reserva.vrtaxa or 0)) * int(reserva.qtreservada or 1)
+        else:
+            if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.parcelas != 1:
+                raise HTTPException(422, 'Para ingressos, o cartão está disponível somente à vista.')
+            cotacao = _cotacao_reserva(reserva, metodo)
+            if payload.valor_total_confirmado != cotacao['total']:
+                raise HTTPException(409, 'Confirme o valor atualizado do pagamento.')
+            valor_cobrado = cotacao['total']
+            taxa_clubbar = cotacao['comissao_clubbar']
         cliente = db.query(Cliente).filter(
             Cliente.cliente_id == reserva.cliente_id
         ).first()
@@ -275,6 +319,8 @@ async def gerar_checkout_reserva_mercado_pago(
             CheckoutMercadoPago.status.in_(['CREATING', 'PENDING', 'APPROVED', 'PAID']),
         ).order_by(CheckoutMercadoPago.checkout_mercadopago_id.desc()).first()
         if existente:
+            if Decimal(str(existente.valor)).quantize(Decimal('0.01')) != valor_cobrado:
+                raise HTTPException(409, 'Já existe um pagamento com outro valor. Consulte a compra antes de tentar novamente.')
             if metodo == 'PIX' and existente.metodo_solicitado == 'PIX' and existente.payment_id and existente.status == 'PENDING':
                 token_existente, _ = await obter_token_mercado_pago_loja(db, reserva.loja_id, lojamercadopago_id=existente.lojamercadopago_id)
                 pagamento_existente = await buscar_pagamento_mp_por_id(access_token=token_existente, payment_id=existente.payment_id)
@@ -286,14 +332,13 @@ async def gerar_checkout_reserva_mercado_pago(
                             'pix_expiration_date': pagamento_existente.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
                             'data_expiracao': iso_utc(reserva.dtexpiracao),
                             'segundos_restantes': max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
-                            'valor_total': float(reserva.vrtotal), 'gateway': 'MERCADO_PAGO'}
+                            'valor_total': float(existente.valor), 'gateway': 'MERCADO_PAGO'}
             raise HTTPException(409, 'Já existe um pagamento para esta reserva. Confira o status antes de tentar novamente.')
         if metodo in {'CREDIT_CARD', 'CREDITO'} and (not payload.card_token or not payload.payment_method_id):
             raise HTTPException(422, 'Informe os dados tokenizados do cartão.')
         if metodo == 'PIX':
             reserva.dtexpiracao = max(reserva.dtexpiracao, datetime.now() + timedelta(minutes=35))
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
-        taxa_clubbar = Decimal(str(reserva.vrtaxa or 0)) * int(reserva.qtreservada or 1)
         token, conta_mp = await obter_token_mercado_pago_loja(db, reserva.loja_id)
         checkout = CheckoutMercadoPago(
             lojamercadopago_id=conta_mp.lojamercadopago_id,
@@ -304,7 +349,7 @@ async def gerar_checkout_reserva_mercado_pago(
             external_reference=referencia,
             status='CREATING',
             metodo_solicitado=metodo,
-            valor=reserva.vrtotal,
+            valor=valor_cobrado,
             vrtaxaclubbar=taxa_clubbar,
         )
         db.add(checkout)
@@ -312,7 +357,7 @@ async def gerar_checkout_reserva_mercado_pago(
         checkout_criado_id = checkout.checkout_mercadopago_id
         chave = str(uuid.uuid5(uuid.NAMESPACE_URL, f'clubbar:reserva:{referencia}'))
         comum = dict(access_token=token, external_reference=referencia, titulo='INGRESSOS', nome_loja=loja.nmloja,
-                     valor=Decimal(str(reserva.vrtotal)), valor_taxa_clubbar=taxa_clubbar,
+                     valor=valor_cobrado, valor_taxa_clubbar=taxa_clubbar,
                      chave_idempotencia=chave)
         if metodo == 'PIX':
             pagamento = await criar_pagamento_pix_mercado_pago(
@@ -342,7 +387,7 @@ async def gerar_checkout_reserva_mercado_pago(
             'pix_copia_cola': dados_pix.get('qr_code'),
             'encoded_image': dados_pix.get('qr_code_base64'),
             'pix_expiration_date': pagamento.get('date_of_expiration') or iso_utc(reserva.dtexpiracao),
-            'valor_total': float(reserva.vrtotal),
+            'valor_total': float(checkout.valor),
             'data_expiracao': iso_utc(reserva.dtexpiracao),
             'segundos_restantes': max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
             'gateway': 'MERCADO_PAGO',
@@ -408,7 +453,7 @@ async def status_reserva(reserva_id: int, cliente_id: int, db: Session = Depends
             )
         if pagamento_mp:
             recebido = Decimal(str(pagamento_mp.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
-            esperado = Decimal(str(reserva.vrtotal or 0)).quantize(Decimal('0.01'))
+            esperado = Decimal(str(checkout_mp.valor or 0)).quantize(Decimal('0.01'))
             if recebido != esperado:
                 raise HTTPException(409, 'Valor Mercado Pago diverge da reserva.')
             resultado = await confirmar_pagamento_reserva_mp(

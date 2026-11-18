@@ -14,6 +14,7 @@ from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
 from app.models.venda import Venda
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.services.venda_service import gerar_token_qr
+from app.services.taxa_processamento_ingresso import distribuir_processamento
 from app.services.cortesia_evento_service import bloquear_evento_para_cortesia, validar_cortesia_unica_por_cpf
 
 
@@ -67,17 +68,23 @@ def finalizar_reserva_paga(
         pagamento.get("value") if gateway.upper() == "ASAAS"
         else pagamento.get("transaction_amount")
     )).quantize(Decimal("0.01"))
-    esperado = Decimal(str(reserva.vrtotal)).quantize(Decimal("0.01"))
+    valor_reserva = Decimal(str(reserva.vrtotal)).quantize(Decimal("0.01"))
+    esperado = Decimal(str(checkout.valor)).quantize(Decimal("0.01")) if gateway.upper() == "MERCADO_PAGO" else valor_reserva
+    # Rateie o processamento por ingresso para que a soma dos itens e os
+    # reembolsos reflitam o valor efetivamente cobrado. A comissão do Clubbar
+    # continua registrada separadamente no checkout, sem incluir essa parcela.
+    adicional = esperado - valor_reserva
+    parcelas_processamento = distribuir_processamento(adicional, len(participantes))
     if recebido != esperado:
         raise HTTPException(409, "Valor confirmado diverge da reserva")
     lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
     if not lote:
         raise HTTPException(409, "Lote da reserva não encontrado")
-    venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PENDENTE", totalvenda=reserva.vrtotal)
+    venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PENDENTE", totalvenda=esperado)
     db.add(venda)
     db.flush()
-    for participante in participantes:
-        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, lotepreco_id=reserva.lotepreco_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=reserva.vrtaxa, sititvenda="ATIVO", **_dados_catalogo_item(db, reserva, participante))
+    for indice, participante in enumerate(participantes):
+        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, lotepreco_id=reserva.lotepreco_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=Decimal(str(reserva.vrtaxa or 0)) + parcelas_processamento[indice], sititvenda="ATIVO", **_dados_catalogo_item(db, reserva, participante))
         db.add(item)
         db.flush()
         participante.itvenda_id = item.itvenda_id
@@ -91,11 +98,13 @@ def finalizar_reserva_paga(
     checkout_referencia = (
         checkout.checkout_id if gateway.upper() == "ASAAS" else checkout.preference_id
     )
-    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=reserva.vrtotal, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor=gateway.upper(), reference_id=checkout.external_reference, checkout_id=checkout_referencia, lojamercadopago_id=getattr(checkout, 'lojamercadopago_id', None) if gateway.upper() == 'MERCADO_PAGO' else None)
+    pag = PagVenda(venda_id=venda.venda_id, dsmetodopag=metodo, vrpagvenda=esperado, sitpagvenda="PENDENTE", idtransacaopagvenda=payment_id or None, provedor=gateway.upper(), reference_id=checkout.external_reference, checkout_id=checkout_referencia, lojamercadopago_id=getattr(checkout, 'lojamercadopago_id', None) if gateway.upper() == 'MERCADO_PAGO' else None)
     db.add(pag)
     db.flush()
     set_venda_como_paga(db, venda_id=venda.venda_id, gateway=gateway.upper(), payload=pagamento, finalizar_carrinho=False)
     lote.qtvendidalote = int(lote.qtvendidalote or 0) + int(reserva.qtreservada)
+    # Após a confirmação, o total da reserva deve refletir o valor pago.
+    reserva.vrtotal = esperado
     reserva.sitreserva = "CONFIRMADA"
     reserva.venda_id = venda.venda_id
     checkout.venda_id = venda.venda_id

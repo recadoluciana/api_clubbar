@@ -38,3 +38,21 @@ class ExtratoMercadoPagoFinanceiroTest(unittest.TestCase):
         self.assertEqual(len(resultado['taxas']), 1)
         self.assertEqual(resultado['taxas'][0]['valor'], 0)
         self.assertIsNone(resultado['parcelas'])
+
+class ConciliacaoRepasseIngressoTest(unittest.TestCase):
+    def test_sinaliza_diferenca_para_revisao(self):
+        from app.services.extrato_mercado_pago_service import comparar_repasse_ingresso
+        pagamento = {'status': 'approved', 'money_release_status': 'released', 'transaction_amount_refunded': 0, 'transaction_details': {'net_received_amount': 99.98}}
+        resultado = comparar_repasse_ingresso(pagamento, 100)
+        self.assertEqual(resultado, {'valor_ingressos': 100.0, 'diferenca_repasse': -0.02})
+
+    def test_nao_concilia_estorno_ou_pagamento_nao_liberado(self):
+        from app.services.extrato_mercado_pago_service import comparar_repasse_ingresso
+        base = {'status': 'approved', 'money_release_status': 'released', 'transaction_amount_refunded': 1, 'transaction_details': {'net_received_amount': 99}}
+        self.assertIsNone(comparar_repasse_ingresso(base, 100)['diferenca_repasse'])
+        base['transaction_amount_refunded'] = 0
+        base['money_release_status'] = 'pending'
+        self.assertIsNone(comparar_repasse_ingresso(base, 100)['diferenca_repasse'])
+        base['money_release_status'] = 'released'
+        del base['transaction_amount_refunded']
+        self.assertIsNone(comparar_repasse_ingresso(base, 100)['diferenca_repasse'])
