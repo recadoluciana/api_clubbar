@@ -62,6 +62,7 @@ from app.services.email_service import (
     enviar_notificacao_interesse_suporte,
 )
 from app.utils.documento import (
+    normalizar_cpf_cnpj,
     validar_documento_acesso,
     raiz_cnpj,
     tipo_estabelecimento_inferido,
@@ -435,6 +436,56 @@ def buscar_interesse_parceiro(
 class ConferenciaDocumentoIn(BaseModel):
     cpfcnpj: str = Field(min_length=11, max_length=18)
     nome_titular: str = Field(min_length=2, max_length=160)
+
+
+class CorrecaoDocumentoEstabelecimentoIn(BaseModel):
+    documento_atual: str = Field(min_length=11, max_length=18)
+    novo_documento: str = Field(min_length=11, max_length=18)
+    nome_titular: str = Field(min_length=2, max_length=160)
+
+
+@router.post("/{leadparceiro_id}/estabelecimentos/{leadestabelecimento_id}/corrigir-documento")
+def corrigir_documento_estabelecimento(
+    leadparceiro_id: int, leadestabelecimento_id: int, dados: CorrecaoDocumentoEstabelecimentoIn,
+    _: dict = Depends(get_operador_logado), db: Session = Depends(get_db),
+):
+    item = db.query(LeadEstabelecimento).filter(
+        LeadEstabelecimento.leadestabelecimento_id == leadestabelecimento_id,
+        LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
+    ).with_for_update().first()
+    if not item:
+        raise HTTPException(404, "Estabelecimento não encontrado.")
+    try:
+        documento = validar_documento_acesso(dados.novo_documento)
+        atual = normalizar_cpf_cnpj(dados.documento_atual)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if atual != item.cpfcnpj:
+        raise HTTPException(409, "O documento foi alterado. Atualize a tela antes de continuar.")
+    nome = dados.nome_titular.strip()
+    if len(nome) < 2:
+        raise HTTPException(422, "Informe o nome do titular conferido.")
+    if db.query(LeadEstabelecimento.leadestabelecimento_id).filter(
+        LeadEstabelecimento.cpfcnpj == documento,
+        LeadEstabelecimento.leadparceiro_id != item.leadparceiro_id,
+    ).first():
+        raise HTTPException(409, "O CPF/CNPJ está vinculado a outra conta. Revise o cadastro com o suporte.")
+    loja = db.query(Loja).filter(Loja.leadestabelecimento_id == item.leadestabelecimento_id).with_for_update().first()
+    if loja and db.query(Loja.loja_id).filter(
+        Loja.cpfcnpjloja == documento, Loja.organizacao_id != loja.organizacao_id,
+    ).first():
+        raise HTTPException(409, "O CPF/CNPJ está vinculado a outra organização. Revise o cadastro com o suporte.")
+    item.cpfcnpj = documento
+    item.documento_conferido = documento
+    item.nome_titular_conferido = nome
+    item.dtconferencia_documento = datetime.now()
+    if loja:
+        loja.cpfcnpjloja = documento
+        loja.cnpjraiz = raiz_cnpj(documento)
+        if len(documento) != 14:
+            loja.tipoestabelecimento = None
+    db.commit()
+    return {"mensagem": "Documento do estabelecimento corrigido."}
 
 
 @router.post("/{leadparceiro_id}/estabelecimentos/{leadestabelecimento_id}/conferir-documento")

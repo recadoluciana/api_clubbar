@@ -262,7 +262,7 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertEqual(self.est.vrtaxaprod, Decimal('6.00'))
         self.assertEqual(self.db.get(LeadEstabelecimentoContrato, termo["leadestabelecimentocontrato_id"]).status, "ACEITO")
 
-    def test_retificacao_rejeita_novo_documento_de_outra_loja(self):
+    def test_retificacao_de_contratante_nao_confunde_documento_de_outro_lead(self):
         self.contrato_aceito()
         self.db.add(LeadParceiro(leadparceiro_id=2, nmresponsavel="Outra", telefone="11999990000", email="outra@example.com"))
         self.db.add(LeadEstabelecimento(
@@ -270,16 +270,49 @@ class ContratoAutomaticoTest(unittest.TestCase):
             cpfcnpj="98765432100",
         ))
         self.db.commit()
-        with self.assertRaises(HTTPException) as error:
-            criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
-        self.assertEqual(error.exception.status_code, 409)
+        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        asyncio.run(aceitar_contrato(termo["leadestabelecimentocontrato_id"], req, self.db.get(LeadParceiro, 1), self.db))
+        self.assertEqual(self.est.cpfcnpj, "11144477735")
 
-    def test_retificacao_de_documento_atualiza_cadastro_quando_permitida(self):
+    def test_retificacao_do_contratante_preserva_documento_do_estabelecimento(self):
         self.contrato_aceito()
         termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
         asyncio.run(aceitar_contrato(termo["leadestabelecimentocontrato_id"], req, self.db.get(LeadParceiro, 1), self.db))
-        self.assertEqual(self.est.cpfcnpj, "98765432100")
+        self.assertEqual(self.est.cpfcnpj, "11144477735")
+        self.assertEqual(self.db.get(LeadEstabelecimentoContrato, termo["leadestabelecimentocontrato_id"]).cpfcnpjcontratante, "98765432100")
+
+    def test_correcao_documento_sincroniza_loja_e_preserva_titular_e_contrato(self):
+        from app.routers.leadparceiro import corrigir_documento_estabelecimento, CorrecaoDocumentoEstabelecimentoIn
+        original = self.contrato_aceito()
+        texto, documento_contrato = original.conteudocontrato, original.cpfcnpjcontratante
+        org = Organizacao(organizacao_id=1, nmorganizacao="Empresa", emailorganizacao="teste@example.com", telorganizacao="11999999999")
+        titular = TitularFinanceiro(titularfinanceiro_id=1, organizacao_id=1, tipotitular="PJ", cpfcnpj="11222333000181", nmrazaosocial="Titular", email="titular@example.com", telefone="11999999999", cep="30130000", endereco="Rua", numero="1", bairro="Centro", cidade_id=1, estado_id=1)
+        loja = Loja(loja_id=1, organizacao_id=1, leadestabelecimento_id=1, titularfinanceiro_id=1, nmloja="Nome público", cpfcnpjloja="11144477735")
+        self.db.add_all([org, titular, loja])
+        self.db.commit()
+        dados = CorrecaoDocumentoEstabelecimentoIn(documento_atual="11144477735", novo_documento="52998224725", nome_titular="Titular conferido")
+        corrigir_documento_estabelecimento(1, 1, dados, {}, self.db)
+        self.assertEqual(self.est.cpfcnpj, "52998224725")
+        self.assertEqual(loja.cpfcnpjloja, "52998224725")
+        self.assertEqual(loja.nmloja, "Nome público")
+        self.assertEqual(titular.cpfcnpj, "11222333000181")
+        self.assertEqual(loja.titularfinanceiro_id, 1)
+        self.assertEqual((original.conteudocontrato, original.cpfcnpjcontratante), (texto, documento_contrato))
+        self.assertEqual(self.est.documento_conferido, "52998224725")
+
+    def test_correcao_rejeita_documento_desatualizado_ou_de_outra_conta(self):
+        from app.routers.leadparceiro import corrigir_documento_estabelecimento, CorrecaoDocumentoEstabelecimentoIn
+        self.db.add(LeadParceiro(leadparceiro_id=2, nmresponsavel="Outro", telefone="11999990000", email="outro@example.com"))
+        self.db.add(LeadEstabelecimento(leadparceiro_id=2, nmestabelecimento="Outra loja", tipo="BAR", cpfcnpj="52998224725"))
+        self.db.commit()
+        for atual, novo in (("52998224725", "11144477735"), ("11144477735", "52998224725")):
+            with self.subTest(atual=atual):
+                with self.assertRaises(HTTPException) as erro:
+                    corrigir_documento_estabelecimento(1, 1, CorrecaoDocumentoEstabelecimentoIn(documento_atual=atual, novo_documento=novo, nome_titular="Titular"), {}, self.db)
+                self.assertEqual(409, erro.exception.status_code)
+        self.assertEqual(self.est.cpfcnpj, "11144477735")
 
     def test_conferencia_manual_registra_titular_e_exige_documento_atual(self):
         from app.routers.leadparceiro import conferir_documento_estabelecimento, ConferenciaDocumentoIn

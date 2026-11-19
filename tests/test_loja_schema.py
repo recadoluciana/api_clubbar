@@ -11,6 +11,18 @@ from app.routers.lojas import criar_loja, atualizar_loja
 
 
 class LojaSchemaTest(unittest.TestCase):
+    def test_edicao_nao_altera_documento_da_loja_diretamente(self):
+        loja = Loja(loja_id=2, organizacao_id=1, cpfcnpjloja="52998224725")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = loja
+        parametros = {nome: None for nome in inspect.signature(atualizar_loja).parameters if nome not in {"loja_id", "db", "payload"}}
+        parametros['cpfcnpjloja'] = '11144477735'
+        with patch('app.routers.lojas.validar_permissao_mutacao_loja'), patch('app.routers.lojas.validar_localidade'):
+            with self.assertRaises(HTTPException) as erro:
+                atualizar_loja(2, db=db, payload={}, **parametros)
+        self.assertEqual(409, erro.exception.status_code)
+        self.assertEqual(loja.cpfcnpjloja, '52998224725')
+        db.commit.assert_not_called()
     def test_edicao_rejeita_cpf_invalido_sem_gravar(self):
         loja = Loja(loja_id=2, organizacao_id=1, cpfcnpjloja="52998224725")
         db = MagicMock()
