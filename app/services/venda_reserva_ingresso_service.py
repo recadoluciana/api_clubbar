@@ -11,6 +11,7 @@ from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
+from app.models.compra_evento import CompraEvento
 from app.models.venda import Venda
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.services.venda_service import gerar_token_qr
@@ -119,6 +120,14 @@ def finalizar_reserva_paga(
         reserva_item.vrtotal = esperado if len(grupo) == 1 else reserva_item.vrtotal
         reserva_item.sitreserva = "CONFIRMADA"
         reserva_item.venda_id = venda.venda_id
+    if getattr(reserva, "compra_evento_id", None):
+        compra = db.query(CompraEvento).filter(
+            CompraEvento.compra_evento_id == reserva.compra_evento_id
+        ).with_for_update().first()
+        if compra:
+            compra.status = "PAGA"
+            compra.venda_id = venda.venda_id
+            compra.valor_total = esperado
     checkout.venda_id = venda.venda_id
     checkout.payment_id = payment_id or checkout.payment_id
     checkout.status = "PAID"
