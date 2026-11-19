@@ -364,6 +364,26 @@ def garantir_classificacao_etaria_evento() -> None:
 
 
 @app.on_event("startup")
+def garantir_grupo_reserva_ingresso() -> None:
+    """Garante a coluna usada para agrupar modalidades em um único checkout."""
+    try:
+        colunas = {coluna["name"] for coluna in inspect(engine).get_columns("reserva_ingresso")}
+        if "grupo_reserva_id" not in colunas:
+            with engine.begin() as conexao:
+                conexao.execute(text(
+                    "ALTER TABLE reserva_ingresso ADD COLUMN grupo_reserva_id VARCHAR(36) NULL"
+                ))
+                conexao.execute(text(
+                    "CREATE INDEX ix_reserva_ingresso_grupo_reserva_id "
+                    "ON reserva_ingresso (grupo_reserva_id)"
+                ))
+        logger.info("Grupo de reserva de ingressos verificado.")
+    except Exception:
+        logger.exception("Não foi possível garantir o grupo de reserva de ingressos.")
+        raise
+
+
+@app.on_event("startup")
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)
