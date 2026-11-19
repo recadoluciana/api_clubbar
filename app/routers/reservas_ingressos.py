@@ -16,6 +16,7 @@ from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
 from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
+from app.models.eventolote import EventoLote
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ItemReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
@@ -83,6 +84,8 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
     # participantes forem informados. Assim o app não exibe uma opção antiga
     # ou pertencente a outra modalidade e depois a recusa no checkout.
     beneficios_validos = beneficios_validos_para_reserva(db, reserva)
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).first()
+    preco = db.query(EventoLotePreco).filter(EventoLotePreco.lotepreco_id == reserva.lotepreco_id).first()
     return {
         "reserva_ingresso_id": reserva.reserva_ingresso_id,
         "organizacao_id": reserva.organizacao_id,
@@ -102,6 +105,14 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
         "data_expiracao": iso_utc(reserva.dtexpiracao),
         "segundos_restantes": max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
         "venda_id": reserva.venda_id,
+        "nome_lote": (
+            f"Lote {lote.lote_global.nrlote}"
+            if lote and getattr(lote, "lote_global", None) and lote.lote_global.nrlote is not None
+            else "Lote"
+        ),
+        "nome_setor": getattr(getattr(lote, "setor", None), "nmsetor", None),
+        "nome_modalidade": getattr(preco, "nmpreco", None),
+        "exige_beneficio": bool(beneficios_validos),
         "beneficios_validos": [
             _beneficio_saida(beneficio)
             for beneficio in beneficios_validos.values()
@@ -297,7 +308,14 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         except Exception as exc:
             # A emissão nunca pode falhar porque o e-mail está indisponível.
             print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
-    return {**_saida(db, reserva), **(resultado_gratuito or {})}
+    itens_grupo = _grupo(db, reserva)
+    resposta = _saida(db, reserva)
+    resposta["itens"] = [_saida(db, item) for item in itens_grupo]
+    resposta["quantidade"] = sum(item.qtreservada for item in itens_grupo)
+    resposta["valor_total"] = float(sum((Decimal(str(item.vrtotal)) for item in itens_grupo), Decimal("0")))
+    if getattr(reserva, "compra_evento_id", None):
+        resposta["compra_evento_id"] = reserva.compra_evento_id
+    return {**resposta, **(resultado_gratuito or {})}
 
 
 @router.delete("/{reserva_id}")
