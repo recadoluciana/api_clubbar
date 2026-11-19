@@ -16,7 +16,7 @@ from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
 from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
-from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
+from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ItemReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
@@ -48,6 +48,11 @@ router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
 
 def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
+    compra_evento_id = getattr(reserva, 'compra_evento_id', None)
+    if compra_evento_id:
+        return db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == compra_evento_id
+        ).order_by(ReservaIngresso.reserva_ingresso_id).all()
     grupo_id = getattr(reserva, 'grupo_reserva_id', None)
     if not grupo_id:
         return [reserva]
@@ -161,6 +166,73 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
     except Exception:
         db.rollback()
         raise
+
+
+@router.post("/compra-evento")
+def criar_compra_evento_item(payload: ItemReservaIngressoCreate, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    """Adiciona o primeiro ingresso à sacola temporária do evento."""
+    exigir_cliente_autenticado(usuario, cliente_id)
+    try:
+        reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
+            lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
+            tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
+        compra = CompraEvento(
+            organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id,
+            cliente_id=cliente_id, evento_id=reserva.evento_id,
+            valor_total=reserva.vrtotal, dtexpiracao=reserva.dtexpiracao,
+        )
+        db.add(compra); db.flush()
+        reserva.compra_evento_id = compra.compra_evento_id
+        db.add(CompraEventoItem(
+            compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
+            reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
+            valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
+            subtotal=reserva.vrtotal,
+        ))
+        db.commit(); db.refresh(reserva)
+        resposta = _saida(db, reserva)
+        resposta["compra_evento_id"] = compra.compra_evento_id
+        resposta["itens"] = [_saida(db, reserva)]
+        return resposta
+    except Exception:
+        db.rollback(); raise
+
+
+@router.post("/compra-evento/{compra_evento_id}/ingressos")
+def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReservaIngressoCreate, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, cliente_id)
+    compra = db.query(CompraEvento).filter(
+        CompraEvento.compra_evento_id == compra_evento_id,
+        CompraEvento.cliente_id == cliente_id,
+        CompraEvento.status == "ABERTA",
+    ).with_for_update().first()
+    if not compra:
+        raise HTTPException(404, "Compra de evento não encontrada")
+    try:
+        reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
+            lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
+            tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
+        if reserva.evento_id != compra.evento_id or reserva.loja_id != compra.loja_id:
+            raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
+        reserva.compra_evento_id = compra_evento_id
+        compra.valor_total = Decimal(str(compra.valor_total or 0)) + Decimal(str(reserva.vrtotal))
+        compra.dtexpiracao = min(compra.dtexpiracao, reserva.dtexpiracao)
+        db.add(CompraEventoItem(
+            compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
+            reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
+            valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
+            subtotal=reserva.vrtotal,
+        ))
+        db.commit(); db.refresh(reserva)
+        itens = _grupo(db, reserva)
+        resposta = _saida(db, reserva)
+        resposta["compra_evento_id"] = compra_evento_id
+        resposta["itens"] = [_saida(db, item) for item in itens]
+        resposta["quantidade"] = sum(item.qtreservada for item in itens)
+        resposta["valor_total"] = float(sum((Decimal(str(item.vrtotal)) for item in itens), Decimal("0")))
+        return resposta
+    except Exception:
+        db.rollback(); raise
     except Exception:
         db.rollback()
         raise
