@@ -19,6 +19,7 @@ from app.models.lojamercadopago import LojaMercadoPago
 from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.clienteidentidadesocial import ClienteIdentidadeSocial
 from app.models.politicacompra import PoliticaCompra
+from app.models.compra_evento import CompraEvento, CompraEventoItem
 from app.middleware.auditoria import AuditoriaMiddleware
 from app.services.auditoria_service import registrar_eventos_auditoria
 from app.services.storage_service import obter_arquivo
@@ -384,6 +385,30 @@ def garantir_grupo_reserva_ingresso() -> None:
 
 
 @app.on_event("startup")
+def garantir_compra_evento() -> None:
+    """Cria a compra temporária de evento sem tocar no carrinho de produtos."""
+    try:
+        CompraEvento.__table__.create(bind=engine, checkfirst=True)
+        CompraEventoItem.__table__.create(bind=engine, checkfirst=True)
+        colunas = {coluna["name"] for coluna in inspect(engine).get_columns("reserva_ingresso")}
+        if "compra_evento_id" not in colunas:
+            with engine.begin() as conexao:
+                conexao.execute(text(
+                    "ALTER TABLE reserva_ingresso ADD COLUMN compra_evento_id BIGINT NULL"
+                ))
+                conexao.execute(text(
+                    "CREATE INDEX ix_reserva_ingresso_compra_evento_id ON reserva_ingresso (compra_evento_id)"
+                ))
+                conexao.execute(text(
+                    "ALTER TABLE reserva_ingresso ADD CONSTRAINT fk_reserva_compra_evento "
+                    "FOREIGN KEY (compra_evento_id) REFERENCES compra_evento(compra_evento_id)"
+                ))
+        logger.info("Compra temporária de evento verificada.")
+    except Exception:
+        logger.exception("Não foi possível garantir a compra temporária de evento.")
+        raise
+
+
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)

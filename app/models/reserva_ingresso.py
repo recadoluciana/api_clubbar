@@ -9,6 +9,7 @@ class ReservaIngresso(Base):
 
     reserva_ingresso_id = Column(BigInteger, primary_key=True, autoincrement=True)
     grupo_reserva_id = Column(String(36), nullable=True, index=True)
+    compra_evento_id = Column(BigInteger, ForeignKey("compra_evento.compra_evento_id"), nullable=True, index=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False)
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id"), nullable=False)

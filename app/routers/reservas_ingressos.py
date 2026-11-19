@@ -10,6 +10,7 @@ from app.core.security import get_usuario_logado
 from app.core.cliente_auth import exigir_cliente_autenticado
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
+from app.models.compra_evento import CompraEvento, CompraEventoItem
 from app.models.checkout_asaas import CheckoutAsaas
 from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
@@ -124,16 +125,34 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
     grupo_id = str(uuid.uuid4())
     try:
         reservas = []
+        compra = None
         for item in payload.itens:
             reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
                 lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
                 tipo_beneficio=item.tipo_beneficio, quantidade=item.quantidade)
             reserva.grupo_reserva_id = grupo_id
             reservas.append(reserva)
+        principal = reservas[0]
+        compra = CompraEvento(
+            organizacao_id=principal.organizacao_id, loja_id=principal.loja_id,
+            cliente_id=principal.cliente_id, evento_id=principal.evento_id,
+            valor_total=sum((Decimal(str(item.vrtotal)) for item in reservas), Decimal("0")),
+            dtexpiracao=min(item.dtexpiracao for item in reservas),
+        )
+        db.add(compra)
+        db.flush()
+        for item in reservas:
+            item.compra_evento_id = compra.compra_evento_id
+            db.add(CompraEventoItem(
+                compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
+                reserva_ingresso_id=item.reserva_ingresso_id, quantidade=item.qtreservada,
+                valor_unitario=item.vrunitario, valor_taxa=item.vrtaxa,
+                subtotal=item.vrtotal,
+            ))
         db.commit()
         for reserva in reservas: db.refresh(reserva)
-        principal = reservas[0]
         resposta = _saida(db, principal)
+        resposta["compra_evento_id"] = compra.compra_evento_id
         resposta["grupo_reserva_id"] = grupo_id
         resposta["itens"] = [_saida(db, item) for item in reservas]
         resposta["quantidade"] = sum(item.qtreservada for item in reservas)
@@ -218,6 +237,16 @@ def cancelar_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get
     if reserva.sitreserva == "CONFIRMADA":
         raise HTTPException(409, "Reserva já confirmada como venda")
     reserva.sitreserva = "CANCELADA"
+    if getattr(reserva, "compra_evento_id", None):
+        compra = db.query(CompraEvento).filter(
+            CompraEvento.compra_evento_id == reserva.compra_evento_id
+        ).with_for_update().first()
+        if compra:
+            compra.status = "CANCELADA"
+            db.query(ReservaIngresso).filter(
+                ReservaIngresso.compra_evento_id == compra.compra_evento_id,
+                ReservaIngresso.sitreserva != "CONFIRMADA",
+            ).update({ReservaIngresso.sitreserva: "CANCELADA"}, synchronize_session=False)
     db.commit()
     return {"ok": True, "status": "CANCELADA"}
 
@@ -238,7 +267,6 @@ def _cotacao_reserva(db: Session | ReservaIngresso, reserva: ReservaIngresso | s
         metodo = str(reserva)
         reserva = db
         db = None
-    assert isinstance(reserva, ReservaIngresso) or db is None
     itens = _grupo(db, reserva) if db is not None else [reserva]
     cotacao = cotar_itens_mercado_pago(itens, metodo)
     esperado = _valor_grupo(db, reserva) if db is not None else Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01'))
