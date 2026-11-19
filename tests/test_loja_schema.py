@@ -1,14 +1,42 @@
 import unittest
+import inspect
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 from fastapi import HTTPException
 
 import main  # Carrega todos os modelos relacionados antes de configurar os mapeamentos.
 from app.models.loja import Loja
 from app.models.titularfinanceiro import TitularFinanceiro
-from app.routers.lojas import criar_loja
+from app.routers.lojas import criar_loja, atualizar_loja
 
 
 class LojaSchemaTest(unittest.TestCase):
+    def test_edicao_nao_altera_documento_da_loja_diretamente(self):
+        loja = Loja(loja_id=2, organizacao_id=1, cpfcnpjloja="52998224725")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = loja
+        parametros = {nome: None for nome in inspect.signature(atualizar_loja).parameters if nome not in {"loja_id", "db", "payload"}}
+        parametros['cpfcnpjloja'] = '11144477735'
+        with patch('app.routers.lojas.validar_permissao_mutacao_loja'), patch('app.routers.lojas.validar_localidade'):
+            with self.assertRaises(HTTPException) as erro:
+                atualizar_loja(2, db=db, payload={}, **parametros)
+        self.assertEqual(409, erro.exception.status_code)
+        self.assertEqual(loja.cpfcnpjloja, '52998224725')
+        db.commit.assert_not_called()
+    def test_edicao_rejeita_cpf_invalido_sem_gravar(self):
+        loja = Loja(loja_id=2, organizacao_id=1, cpfcnpjloja="52998224725")
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = loja
+        parametros = {nome: None for nome in inspect.signature(atualizar_loja).parameters
+                      if nome not in {"loja_id", "db", "payload"}}
+        parametros['cpfcnpjloja'] = '51870068612'
+        with patch('app.routers.lojas.validar_permissao_mutacao_loja'), patch('app.routers.lojas.validar_localidade'):
+            with self.assertRaises(HTTPException) as erro:
+                atualizar_loja(2, db=db, payload={}, **parametros)
+        self.assertEqual(422, erro.exception.status_code)
+        self.assertEqual(loja.cpfcnpjloja, '52998224725')
+        db.commit.assert_not_called()
+
     def test_criacao_direta_de_loja_e_bloqueada(self):
         with self.assertRaises(HTTPException) as erro:
             criar_loja({"role": "SUPERADMIN"})
@@ -52,7 +80,9 @@ class LojaSchemaTest(unittest.TestCase):
 
         constraints = {item.name for item in Loja.__table__.constraints}
         self.assertIn("fk_loja_titular_org", constraints)
-        self.assertTrue(Loja.__table__.c.cpfcnpjloja.unique)
+        self.assertFalse(Loja.__table__.c.cpfcnpjloja.unique)
+        self.assertFalse(Loja.__table__.c.cpfcnpjloja.nullable)
+        self.assertIn("ck_loja_cpfcnpj_preenchido", constraints)
 
     def test_titular_financeiro_possui_identificadores_unicos(self):
         constraints = {item.name for item in TitularFinanceiro.__table__.constraints}

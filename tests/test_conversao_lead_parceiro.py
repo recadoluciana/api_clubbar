@@ -1,5 +1,7 @@
 import inspect
 import unittest
+import asyncio
+from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 from app.models.leadparceiro import LeadParceiro
@@ -11,10 +13,48 @@ from app.routers.leadparceiro import (
     _nomes_para_conversao,
     _endereco_loja_do_estabelecimento,
     converter_lead_em_parceiro,
+    adicionar_estabelecimento,
 )
+from app.schemas.leadparceiro import ConverterLeadParceiroIn
 
 
 class ConversaoLeadParceiroTest(unittest.TestCase):
+    def test_inclusao_de_estabelecimento_pelo_admin_e_bloqueada(self):
+        with self.assertRaises(HTTPException) as erro:
+            adicionar_estabelecimento(1, None, {}, None)
+        self.assertEqual(403, erro.exception.status_code)
+
+    def test_conversao_exige_documento_do_estabelecimento(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = LeadParceiro(leadparceiro_id=1)
+        db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.first.return_value = LeadEstabelecimento(cpfcnpj=None)
+        dados = ConverterLeadParceiroIn(leadestabelecimento_id=1, tipo_loja='BAR', email_responsavel='teste@example.com')
+        with self.assertRaises(HTTPException) as erro:
+            asyncio.run(converter_lead_em_parceiro(1, dados, {}, db))
+        self.assertEqual(422, erro.exception.status_code)
+        self.assertIn('CPF/CNPJ do estabelecimento', erro.exception.detail)
+        db.add.assert_not_called()
+
+    def test_conversao_rejeita_documento_invalido(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = LeadParceiro(leadparceiro_id=1)
+        db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.first.return_value = LeadEstabelecimento(cpfcnpj='51870068612')
+        dados = ConverterLeadParceiroIn(leadestabelecimento_id=1, tipo_loja='BAR', email_responsavel='teste@example.com')
+        with self.assertRaises(HTTPException) as erro:
+            asyncio.run(converter_lead_em_parceiro(1, dados, {}, db))
+        self.assertEqual(422, erro.exception.status_code)
+        db.add.assert_not_called()
+
+    def test_conversao_exige_conferencia_do_documento_atual(self):
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = LeadParceiro(leadparceiro_id=1)
+        db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.first.return_value = LeadEstabelecimento(
+            cpfcnpj='52998224725', documento_conferido='11144477735', nome_titular_conferido='Titular')
+        dados = ConverterLeadParceiroIn(leadestabelecimento_id=1, tipo_loja='BAR', email_responsavel='teste@example.com')
+        with self.assertRaises(HTTPException) as erro:
+            asyncio.run(converter_lead_em_parceiro(1, dados, {}, db))
+        self.assertEqual(409, erro.exception.status_code)
+        db.add.assert_not_called()
     def test_endereco_da_loja_vem_inteiro_do_estabelecimento(self):
         estabelecimento = LeadEstabelecimento(
             endereco="Rua do Bar",

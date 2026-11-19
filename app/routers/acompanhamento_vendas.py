@@ -1,5 +1,5 @@
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP, ROUND_CEILING
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.security import get_usuario_logado
 from app.database import get_db
 from app.models.cliente import Cliente
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.evento import Evento
 from app.models.eventolote import EventoLote
 from app.models.eventoloteglobal import EventoLoteGlobal
@@ -19,6 +20,7 @@ from app.models.loja import Loja
 from app.models.pagvenda import PagVenda
 from app.models.produto import Produto
 from app.models.venda import Venda
+from app.services.taxa_processamento_ingresso import TAXAS_PROCESSAMENTO
 from app.utils.datetime_utils import inicio_dia_brasil_em_utc, iso_utc
 
 
@@ -109,6 +111,86 @@ def produtos_pendentes(
     }
 
 
+def _estimar_liquido_produto(bruto, comissao, metodo, provedor, quantidade_pagamentos):
+    """Estimativa para produto, não equivale à liquidação do Mercado Pago."""
+    if bruto == 0:
+        return Decimal('0.00')
+    metodo = str(metodo or '').upper()
+    if metodo in {'CREDITO', 'CARTAO_CREDITO'}:
+        metodo = 'CREDIT_CARD'
+    if (str(provedor or '').upper() != 'MERCADO_PAGO'
+            or quantidade_pagamentos != 1 or comissao is None
+            or metodo not in TAXAS_PROCESSAMENTO):
+        return None
+    return (bruto - Decimal(str(comissao)) - bruto * TAXAS_PROCESSAMENTO[metodo]).quantize(
+        Decimal('0.01'), rounding=ROUND_HALF_UP,
+    )
+
+
+def _valores_lote(valor, taxas, taxas_ausentes):
+    if taxas_ausentes:
+        return {'taxas_cobradas': None, 'bruto_itens': None}
+    return {
+        'taxas_cobradas': _dinheiro(taxas),
+        'bruto_itens': _dinheiro(Decimal(str(valor or 0)) + Decimal(str(taxas or 0))),
+    }
+
+
+def _resumo_financeiro_ingressos(db, evento_id):
+    itens = db.query(ItVenda).join(Venda, Venda.venda_id == ItVenda.venda_id).join(
+        EventoLote, EventoLote.lote_id == ItVenda.lote_id
+    ).filter(EventoLote.evento_id == evento_id, ItVenda.tipoitem == 'INGRESSO',
+             ItVenda.sititvenda == 'ATIVO', Venda.sitvenda == 'PAGA').all()
+    vendas = {item.venda_id for item in itens}
+    if not vendas:
+        return {'bruto_pago': 0.0, 'liquido_previsto': 0.0}
+    todos = db.query(ItVenda).filter(ItVenda.venda_id.in_(vendas)).all()
+    pagamentos = db.query(PagVenda).filter(PagVenda.venda_id.in_(vendas), PagVenda.sitpagvenda == 'PAGO').all()
+    checkouts = db.query(CheckoutMercadoPago).filter(CheckoutMercadoPago.venda_id.in_(vendas)).all()
+    ids_evento = {item.itvenda_id for item in itens}
+    itens_por_venda = {}
+    pagamentos_por_venda = {}
+    checkouts_por_venda = {}
+    for item in todos:
+        itens_por_venda.setdefault(item.venda_id, []).append(item)
+    for pagamento in pagamentos:
+        pagamentos_por_venda.setdefault(pagamento.venda_id, []).append(pagamento)
+    for checkout in checkouts:
+        checkouts_por_venda.setdefault(checkout.venda_id, []).append(checkout)
+    bruto_total = Decimal('0')
+    liquido_total = Decimal('0')
+    bruto_disponivel = True
+    liquido_disponivel = True
+    for venda_id in vendas:
+        itens_venda = itens_por_venda.get(venda_id, [])
+        pags = pagamentos_por_venda.get(venda_id, [])
+        if any(i.itvenda_id not in ids_evento for i in itens_venda) or len(pags) != 1:
+            bruto_disponivel = liquido_disponivel = False
+            continue
+        pag = pags[0]
+        valor = Decimal(str(pag.vrpagvenda)) if pag.vrpagvenda is not None else None
+        if valor is None:
+            bruto_disponivel = liquido_disponivel = False
+            continue
+        bruto_total += valor
+        if valor == 0:
+            continue
+        metodo = str(pag.dsmetodopag or '').upper()
+        if metodo in {'CREDITO', 'CARTAO_CREDITO'}:
+            metodo = 'CREDIT_CARD'
+        checkout = [c for c in checkouts_por_venda.get(venda_id, []) if c.payment_id and str(c.payment_id) == str(pag.idtransacaopagvenda or '')]
+        if (str(pag.provedor or '').upper() != 'MERCADO_PAGO' or metodo not in TAXAS_PROCESSAMENTO
+                or len(checkout) != 1 or checkout[0].vrtaxaclubbar is None):
+            liquido_disponivel = False
+            continue
+        tarifa = (valor * TAXAS_PROCESSAMENTO[metodo]).quantize(Decimal('0.01'), rounding=ROUND_CEILING)
+        liquido_total += valor - Decimal(str(checkout[0].vrtaxaclubbar)) - tarifa
+    return {
+        'bruto_pago': float(bruto_total) if bruto_disponivel else None,
+        'liquido_previsto': float(liquido_total) if liquido_disponivel else None,
+    }
+
+
 @router.get("/produtos")
 def listar_compras_produtos(
     situacao: str = Query(default="TODOS", pattern="^(TODOS|PENDENTES|RETIRADOS)$"),
@@ -133,11 +215,26 @@ def listar_compras_produtos(
     if inicio is not None and fim is not None and inicio > fim:
         raise HTTPException(422, "A data inicial não pode ser posterior à final")
 
+    pagamentos_por_venda = (
+        db.query(
+            PagVenda.venda_id.label('venda_id'),
+            func.count(PagVenda.pagvenda_id).label('quantidade_pagamentos'),
+            func.min(PagVenda.dsmetodopag).label('metodo_pagamento'),
+            func.min(PagVenda.provedor).label('provedor_pagamento'),
+        )
+        .filter(PagVenda.sitpagvenda == 'PAGO')
+        .group_by(PagVenda.venda_id)
+        .subquery()
+    )
     query = (
         db.query(
             ItVenda.itvenda_id,
             ItVenda.qtitvenda,
             ItVenda.vrunititvenda,
+            ItVenda.vrtaxaitvenda,
+            pagamentos_por_venda.c.quantidade_pagamentos,
+            pagamentos_por_venda.c.metodo_pagamento,
+            pagamentos_por_venda.c.provedor_pagamento,
             ItVenda.identregaitvenda,
             ItVenda.dtentregaitvenda,
             ItVenda.nmuserentregaitvenda,
@@ -154,6 +251,7 @@ def listar_compras_produtos(
         )
         .join(Venda, Venda.venda_id == ItVenda.venda_id)
         .join(Loja, Loja.loja_id == Venda.loja_id)
+        .outerjoin(pagamentos_por_venda, pagamentos_por_venda.c.venda_id == Venda.venda_id)
         .outerjoin(Cliente, Cliente.cliente_id == Venda.cliente_id)
         .join(Produto, Produto.produto_id == ItVenda.produto_id)
         .filter(
@@ -189,6 +287,15 @@ def listar_compras_produtos(
         retirado = (row.identregaitvenda or "NAO").upper() == "SIM"
         quantidade = int(row.qtitvenda or 0)
         preco_unitario = _dinheiro(row.vrunititvenda)
+        bruto = Decimal(str(row.vrunititvenda or 0)) * quantidade
+        comissao = getattr(row, 'vrtaxaitvenda', None)
+        apos_comissao = (bruto - Decimal(str(comissao))) if comissao is not None else (Decimal('0') if bruto == 0 else None)
+        liquido = _estimar_liquido_produto(
+            bruto, comissao,
+            getattr(row, 'metodo_pagamento', None),
+            getattr(row, 'provedor_pagamento', None),
+            getattr(row, 'quantidade_pagamentos', None),
+        )
         itens.append(
             {
                 "itvenda_id": int(row.itvenda_id),
@@ -204,6 +311,8 @@ def listar_compras_produtos(
                 "quantidade": quantidade,
                 "preco_unitario": preco_unitario,
                 "valor_total": _dinheiro(Decimal(str(row.vrunititvenda or 0)) * quantidade),
+                "valor_apos_comissao": float(apos_comissao) if apos_comissao is not None else None,
+                "liquido_estimado": float(liquido) if liquido is not None else None,
                 "dtcompra": iso_utc(row.dtcompra),
                 "retirado": retirado,
                 "dtretirada": row.dtentregaitvenda,
@@ -504,13 +613,15 @@ def detalhe_vendas_evento(
     )
     quantidade = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda), else_=0)), 0)
     valor = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.qtitvenda * ItVenda.vrunititvenda), else_=0)), 0)
+    taxas = func.coalesce(func.sum(case((Venda.venda_id.isnot(None), ItVenda.vrtaxaitvenda), else_=0)), 0)
+    taxas_ausentes = func.coalesce(func.sum(case((Venda.venda_id.isnot(None) & ItVenda.vrtaxaitvenda.is_(None), 1), else_=0)), 0)
     rows = db.query(
         EventoLote.lote_id, EventoLote.nrlote, EventoLote.nmlote,
         EventoLote.qttotallote, EventoLote.usarcapacidaderestante,
         EventoLote.eventosetor_id,
         EventoLotePreco.tipopreco, EventoLotePreco.vrpreco,
         EventoSetor.nmsetor, EventoSetor.qtcapacidade,
-        quantidade.label("quantidade"), valor.label("valor"),
+        quantidade.label("quantidade"), valor.label("valor"), taxas.label("taxas"), taxas_ausentes.label("taxas_ausentes"),
     ).join(EventoLotePreco, EventoLotePreco.lote_id == EventoLote.lote_id).outerjoin(EventoSetor, EventoSetor.eventosetor_id == EventoLote.eventosetor_id).outerjoin(
         ItVenda, (ItVenda.lotepreco_id == EventoLotePreco.lotepreco_id) & (ItVenda.sititvenda == "ATIVO")
     ).outerjoin(Venda, (Venda.venda_id == ItVenda.venda_id) & (Venda.sitvenda == "PAGA")).filter(
@@ -569,6 +680,7 @@ def detalhe_vendas_evento(
             "capacidade_lote": capacidade_lote,
             "quantidade_restante": quantidade_restante,
             "valor_total": _dinheiro(row.valor),
+            **_valores_lote(row.valor, row.taxas, row.taxas_ausentes),
         })
     quantidade_total = sum(item["quantidade_vendida"] for item in lotes)
     quantidade_restante = max(capacidade_total - quantidade_total, 0)
@@ -585,6 +697,7 @@ def detalhe_vendas_evento(
         "quantidade_restante": quantidade_restante,
         "percentual_ocupacao": percentual_ocupacao,
         "valor_total": _dinheiro(sum(Decimal(str(item["valor_total"])) for item in lotes)),
+        **_resumo_financeiro_ingressos(db, evento_id),
         "lotes": lotes,
     }
 

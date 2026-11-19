@@ -110,9 +110,10 @@ def test_erro_servidor_mp_nao_e_tratado_como_recusa_definitiva(monkeypatch, meto
 
 
 @pytest.mark.parametrize('metodo', ['PIX', 'CREDIT_CARD'])
-def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
+@pytest.mark.parametrize('nova_cotacao', [True, False])
+def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo, nova_cotacao):
     reserva = SimpleNamespace(cliente_id=3, loja_id=1, vrtotal=Decimal('7.99'),
-                              vrtaxa=Decimal('2.99'), qtreservada=1,
+                              vrunitario=Decimal('5.00'), vrtaxa=Decimal('2.99'), qtreservada=1,
                               dtexpiracao=datetime.now() + timedelta(minutes=5))
     cliente = SimpleNamespace(emailcliente='cliente@example.com', nrcpfcliente='12345678909')
     conta = SimpleNamespace(lojamercadopago_id=6)
@@ -154,13 +155,15 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
     pix, cartao = AsyncMock(side_effect=criar), AsyncMock(side_effect=criar)
     monkeypatch.setattr(router, 'criar_pagamento_pix_mercado_pago', pix)
     monkeypatch.setattr(router, 'criar_pagamento_cartao_mercado_pago', cartao)
-    payload = PagamentoReservaIn(cliente_id=3, card_token='token-ficticio', payment_method_id='master', payer_email='cliente@example.com')
+    valor = Decimal('8.09') if nova_cotacao else Decimal('7.99')
+    payload = PagamentoReservaIn(cliente_id=3, card_token='token-ficticio', payment_method_id='master', payer_email='cliente@example.com', valor_total_confirmado=valor if nova_cotacao else None)
     resultado = asyncio.run(router.gerar_checkout_reserva_mercado_pago(2, payload, metodo, db, {}))
     criador = pix if metodo == 'PIX' else cartao
     criador.assert_awaited_once()
     assert criador.await_args.kwargs['nome_loja'] == 'Forró do X'
-    assert criador.await_args.kwargs['valor'] == Decimal('7.99')
-    assert criador.await_args.kwargs['valor_taxa_clubbar'] == Decimal('2.99')
+    assert criador.await_args.kwargs['valor'] == valor
+    assert salvo[0].valor == valor
+    assert criador.await_args.kwargs['valor_taxa_clubbar'] == ((Decimal('3.00') if metodo == 'PIX' else Decimal('2.68')) if nova_cotacao else Decimal('2.99'))
     assert resultado['pagamento_id'] == salvo[0].external_reference
     if metodo == 'PIX':
         assert resultado['pix_copia_cola'] == 'pix-ficticio'
@@ -169,19 +172,50 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo):
 
 
 def test_segunda_cobranca_da_mesma_reserva_e_bloqueada(monkeypatch):
-    reserva = SimpleNamespace(cliente_id=3, loja_id=1)
+    reserva = SimpleNamespace(cliente_id=3, loja_id=1, vrtotal=Decimal('7.99'), vrunitario=Decimal('5.00'), vrtaxa=Decimal('2.99'), qtreservada=1)
     db = MagicMock()
     loja_query, cliente_query, checkout_query = MagicMock(), MagicMock(), MagicMock()
     loja_query.filter.return_value.first.return_value = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
     cliente_query.filter.return_value.first.return_value = SimpleNamespace()
-    checkout_query.filter.return_value.order_by.return_value.first.return_value = SimpleNamespace(status='CREATING')
+    checkout_query.filter.return_value.order_by.return_value.first.return_value = SimpleNamespace(status='CREATING', valor=Decimal('8.09'))
     db.query.side_effect = lambda model: {Loja: loja_query, Cliente: cliente_query, CheckoutMercadoPago: checkout_query}[model]
     monkeypatch.setattr(router, 'exigir_cliente_autenticado', MagicMock())
     monkeypatch.setattr(router, '_reserva_para_pagamento', MagicMock(return_value=reserva))
     criador = AsyncMock()
     monkeypatch.setattr(router, 'criar_pagamento_cartao_mercado_pago', criador)
-    payload = PagamentoReservaIn(cliente_id=3, card_token='token', payment_method_id='master')
+    payload = PagamentoReservaIn(cliente_id=3, card_token='token', payment_method_id='master', valor_total_confirmado=Decimal('8.09'))
     with pytest.raises(HTTPException) as error:
         asyncio.run(router.gerar_checkout_reserva_mercado_pago(2, payload, 'CREDIT_CARD', db, {}))
     assert error.value.status_code == 409
     criador.assert_not_awaited()
+
+@pytest.mark.parametrize('valor,parcelas', [(Decimal('7.99'), 1), (Decimal('8.09'), 2)])
+def test_nao_cobra_com_valor_divergente_ou_parcelamento_novo(monkeypatch, valor, parcelas):
+    reserva = SimpleNamespace(cliente_id=3, loja_id=1, vrtotal=Decimal('7.99'), vrunitario=Decimal('5.00'), vrtaxa=Decimal('2.99'), qtreservada=1)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
+    monkeypatch.setattr(router, 'exigir_cliente_autenticado', MagicMock())
+    monkeypatch.setattr(router, '_reserva_para_pagamento', MagicMock(return_value=reserva))
+    criador = AsyncMock()
+    monkeypatch.setattr(router, 'criar_pagamento_cartao_mercado_pago', criador)
+    payload = PagamentoReservaIn(cliente_id=3, card_token='token', payment_method_id='master', parcelas=parcelas, valor_total_confirmado=valor)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(router.gerar_checkout_reserva_mercado_pago(2, payload, 'CREDIT_CARD', db, {}))
+    assert error.value.status_code in {409, 422}
+    criador.assert_not_awaited()
+    db.add.assert_not_called()
+
+
+def test_cotacao_mostra_componentes_ao_cliente_sem_expor_estimativa_interna(monkeypatch):
+    reserva = SimpleNamespace(cliente_id=3, loja_id=1, vrtotal=Decimal('110.00'), vrunitario=Decimal('100.00'), vrtaxa=Decimal('10.00'), pctaxa=Decimal('10'), qtreservada=1)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = SimpleNamespace(provedor_pagamento='MERCADO_PAGO')
+    monkeypatch.setattr(router, 'exigir_cliente_autenticado', MagicMock())
+    monkeypatch.setattr(router, '_reserva_para_pagamento', MagicMock(return_value=reserva))
+    resultado = router.cotar_reserva_mercado_pago(2, PagamentoReservaIn(cliente_id=3), 'CREDIT_CARD', db, {})
+    assert resultado['conveniencia'] == 10
+    assert resultado['processamento'] == 2
+    assert resultado['total'] == 112
+    assert resultado['percentual_conveniencia'] == 10
+    assert resultado['minimo_aplicado'] is False
+    assert 'comissao_clubbar' not in resultado and 'tarifa_mp_estimada' not in resultado

@@ -34,7 +34,7 @@ from app.models.eventosetor import EventoSetor
 from app.models.cliente import Cliente
 from app.services.titular_financeiro_service import sincronizar_integracao_asaas_da_loja
 from app.services.email_service import enviar_notificacao_cancelamento_parceria_suporte
-from app.utils.documento import normalizar_cpf_cnpj, raiz_cnpj
+from app.utils.documento import validar_documento_acesso
 
 router = APIRouter(prefix="/lojas", tags=["Lojas"])
 
@@ -801,19 +801,11 @@ def atualizar_loja(
 
         if cpfcnpjloja is not None:
             try:
-                documento = normalizar_cpf_cnpj(cpfcnpjloja)
+                documento = validar_documento_acesso(cpfcnpjloja)
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
-            duplicada = db.query(Loja).filter(
-                Loja.cpfcnpjloja == documento,
-                Loja.loja_id != loja.loja_id,
-            ).first()
-            if duplicada:
-                raise HTTPException(409, "Este CPF/CNPJ já pertence a outro estabelecimento")
-            loja.cpfcnpjloja = documento
-            loja.cnpjraiz = raiz_cnpj(documento)
-            if len(documento or "") != 14:
-                loja.tipoestabelecimento = None
+            if documento != loja.cpfcnpjloja:
+                raise HTTPException(409, "O CPF/CNPJ do estabelecimento deve ser corrigido pela equipe Clubbar no cadastro do lead.")
 
         if tipoestabelecimento is not None:
             tipo_fiscal = tipoestabelecimento.strip().upper()
@@ -821,13 +813,15 @@ def atualizar_loja(
                 raise HTTPException(422, "Tipo fiscal deve ser MATRIZ ou FILIAL")
             if len(loja.cpfcnpjloja or "") != 14:
                 raise HTTPException(422, "Matriz ou filial só pode ser informado para CNPJ")
-            loja.tipoestabelecimento = tipo_fiscal
+            if tipo_fiscal != loja.tipoestabelecimento:
+                raise HTTPException(409, "A identidade fiscal deve ser corrigida pela equipe Clubbar.")
 
         if nmrazaosocial is not None:
             razao = nmrazaosocial.strip()
             if not razao:
                 raise HTTPException(422, "Razão social não pode ficar vazia")
-            loja.nmrazaosocial = razao
+            if razao != (loja.nmrazaosocial or ""):
+                raise HTTPException(409, "A identidade fiscal deve ser corrigida pela equipe Clubbar.")
 
         if titularfinanceiro_id is not None:
             if titularfinanceiro_id != loja.titularfinanceiro_id:

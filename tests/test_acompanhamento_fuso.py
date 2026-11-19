@@ -1,8 +1,21 @@
 from datetime import date, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.routers.acompanhamento_vendas import listar_compras_produtos
+from app.routers.acompanhamento_vendas import listar_compras_produtos, _estimar_liquido_produto
+
+
+def test_estimativa_usa_comissao_historica_e_metodo_de_pagamento():
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0'), 'CREDIT_CARD', 'MERCADO_PAGO', 1) == Decimal('2.85')
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0'), 'PIX', 'MERCADO_PAGO', 1) == Decimal('2.97')
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'CREDIT_CARD', 'MERCADO_PAGO', 1) == Decimal('2.55')
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 1) == Decimal('2.67')
+    assert _estimar_liquido_produto(Decimal('0'), None, None, None, None) == Decimal('0.00')
+    assert _estimar_liquido_produto(Decimal('3'), None, 'PIX', 'MERCADO_PAGO', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'ASAAS', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'OUTRO', 'MERCADO_PAGO', 1) is None
+    assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 2) is None
 
 
 def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
@@ -13,7 +26,7 @@ def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
     query.all.return_value = [SimpleNamespace(
         itvenda_id=1, venda_id=34, loja_id=1, nmloja="Loja", cliente_id=1,
         nmcliente="Cliente", emailcliente="", produto_id=1, nmproduto="Água",
-        urlfotoproduto=None, quantidade=1, qtitvenda=1, vrunititvenda=3,
+        urlfotoproduto=None, quantidade=1, qtitvenda=1, vrunititvenda=3, vrtaxaitvenda=Decimal('0.03'),
         dtcompra=datetime(2026, 11, 16, 0, 53, 57), identregaitvenda="NAO",
         dtentregaitvenda=None, nmuserentregaitvenda=None,
     )]
@@ -31,6 +44,8 @@ def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
     ]
     assert valores == [datetime(2026, 9, 1, 3), datetime(2026, 11, 16, 3)]
     assert resultado["itens"][0]["dtcompra"] == "2026-11-16T00:53:57Z"
+    assert resultado["itens"][0]["valor_total"] == 3
+    assert resultado["itens"][0]["valor_apos_comissao"] == 2.97
     query.offset.assert_called_once_with(0)
 
 

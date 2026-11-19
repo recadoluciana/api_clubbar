@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -8,6 +9,19 @@ class ReservaIngressoCreate(BaseModel):
     beneficio_id: int | None = None
     tipo_beneficio: str | None = None
     quantidade: int = Field(ge=1, le=5)
+
+
+class ItemReservaIngressoCreate(BaseModel):
+    lote_id: int
+    lotepreco_id: int
+    beneficio_id: int | None = None
+    tipo_beneficio: str | None = None
+    quantidade: int = Field(ge=1, le=5)
+
+
+class ReservaIngressoGrupoCreate(BaseModel):
+    cliente_id: int
+    itens: list[ItemReservaIngressoCreate] = Field(min_length=1, max_length=5)
 
 
 class ParticipanteReservaIn(BaseModel):
@@ -37,4 +51,5 @@ class PagamentoReservaIn(BaseModel):
     payer_email: str | None = None
     payer_document: str | None = None
     device_id: str | None = None
+    valor_total_confirmado: Decimal | None = Field(default=None, gt=0, decimal_places=2)
 

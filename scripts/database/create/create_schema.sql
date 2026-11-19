@@ -120,7 +120,10 @@ CREATE TABLE leadestabelecimento (
   email_responsavel VARCHAR(160) NULL,
   tipo VARCHAR(30) NOT NULL,
   tipovenda ENUM('PRODUTOS','INGRESSOS','AMBOS') NOT NULL DEFAULT 'AMBOS',
-  cpfcnpj VARCHAR(14) NULL,
+  cpfcnpj VARCHAR(14) NOT NULL,
+  documento_conferido VARCHAR(14) NULL,
+  nome_titular_conferido VARCHAR(160) NULL,
+  dtconferencia_documento DATETIME NULL,
   telefone VARCHAR(30) NULL,
   email VARCHAR(160) NULL,
   estado_id BIGINT NULL,
@@ -150,9 +153,10 @@ CREATE TABLE leadestabelecimento (
   CONSTRAINT chk_leadestabelecimento_tipo CHECK (
     tipo IN ('BAR','CASA_NOTURNA','PRODUTOR_EVENTOS','CASA_EVENTOS','RESTAURANTE','CONVENIENCIA','HAMBURGUERIA','PIZZARIA','LANCHONETE')
   ),
+  CONSTRAINT ck_leadestabelecimento_cpfcnpj_preenchido CHECK (CHAR_LENGTH(TRIM(cpfcnpj)) > 0),
   INDEX idx_leadestabelecimento_lead (leadparceiro_id),
   INDEX idx_leadestabelecimento_status (status),
-  UNIQUE KEY uk_leadestabelecimento_cpfcnpj (cpfcnpj)
+  KEY idx_leadestabelecimento_documento (cpfcnpj)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE leadmensagem (
@@ -358,7 +362,7 @@ CREATE TABLE loja (
   leadestabelecimento_id BIGINT NULL,
   titularfinanceiro_id BIGINT NULL,
   nmloja         VARCHAR(120) NOT NULL,
-  cpfcnpjloja    VARCHAR(14) NULL,
+  cpfcnpjloja    VARCHAR(14) NOT NULL,
   cnpjraiz       VARCHAR(8) NULL,
   tipoestabelecimento VARCHAR(10) NULL,
   nmrazaosocial  VARCHAR(160) NULL,
@@ -406,8 +410,9 @@ CREATE TABLE loja (
     FOREIGN KEY (leadestabelecimento_id) REFERENCES leadestabelecimento(leadestabelecimento_id)
     ON DELETE RESTRICT ON UPDATE RESTRICT,
 
+  CONSTRAINT ck_loja_cpfcnpj_preenchido CHECK (CHAR_LENGTH(TRIM(cpfcnpjloja)) > 0),
   UNIQUE KEY uk_loja_leadestabelecimento (leadestabelecimento_id),
-  UNIQUE KEY uk_loja_cpfcnpj (cpfcnpjloja),
+  KEY idx_loja_cpfcnpj (cpfcnpjloja),
   KEY idx_loja_cnpjraiz (cnpjraiz)
 ) ENGINE=InnoDB DEFAULT CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci;
 
@@ -1329,6 +1334,7 @@ CREATE INDEX idx_itvenda_entrega
 
 CREATE TABLE reserva_ingresso (
   reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  grupo_reserva_id VARCHAR(36) NULL,
   organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
   evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, lotepreco_id BIGINT NOT NULL,
   beneficio_id BIGINT NULL,

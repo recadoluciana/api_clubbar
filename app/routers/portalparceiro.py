@@ -215,10 +215,11 @@ def cadastrar_estabelecimento(
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     outro = (db.query(LeadEstabelecimento.leadparceiro_id)
-             .filter(LeadEstabelecimento.cpfcnpj == documento)
+             .filter(LeadEstabelecimento.cpfcnpj == documento,
+                     LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
              .with_for_update().first())
     if outro:
-        raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
+        raise HTTPException(409, "CPF ou CNPJ já vinculado a outra conta. Entre em contato com o suporte.")
     item = LeadEstabelecimento(
         leadparceiro_id=lead.leadparceiro_id,
         nmestabelecimento=dados.nmestabelecimento.strip(),
@@ -328,10 +329,10 @@ def atualizar_estabelecimento_portal(
         documento = _validar_documento_portal(dados.cpfcnpj or "")
         outro = (db.query(LeadEstabelecimento.leadparceiro_id)
                  .filter(LeadEstabelecimento.cpfcnpj == documento,
-                         LeadEstabelecimento.leadestabelecimento_id != item.leadestabelecimento_id)
+                         LeadEstabelecimento.leadparceiro_id != lead.leadparceiro_id)
                  .with_for_update().first())
         if outro:
-            raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
+            raise HTTPException(409, "CPF ou CNPJ já vinculado a outra conta. Entre em contato com o suporte.")
         item.cpfcnpj = documento
     item.estado_id = dados.estado_id
     item.cidade_id = dados.cidade_id

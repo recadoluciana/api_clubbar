@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String
+from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Integer, Numeric, String, Index
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -8,6 +8,7 @@ class ReservaIngresso(Base):
     __tablename__ = "reserva_ingresso"
 
     reserva_ingresso_id = Column(BigInteger, primary_key=True, autoincrement=True)
+    grupo_reserva_id = Column(String(36), nullable=True, index=True)
     organizacao_id = Column(BigInteger, ForeignKey("organizacao.organizacao_id"), nullable=False)
     loja_id = Column(BigInteger, ForeignKey("loja.loja_id"), nullable=False)
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id"), nullable=False)

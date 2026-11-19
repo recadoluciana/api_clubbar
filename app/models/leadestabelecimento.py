@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import BigInteger, Column, DateTime, Enum, ForeignKey, Numeric, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, CheckConstraint, Column, DateTime, Enum, ForeignKey, Numeric, String, Text, text
 
 from app.database import Base
 
@@ -16,7 +16,9 @@ class StatusLeadEstabelecimento(str, enum.Enum):
 
 class LeadEstabelecimento(Base):
     __tablename__ = "leadestabelecimento"
-    __table_args__ = (UniqueConstraint("cpfcnpj", name="uk_leadestabelecimento_cpfcnpj"),)
+    __table_args__ = (
+        CheckConstraint("length(trim(cpfcnpj)) > 0", name="ck_leadestabelecimento_cpfcnpj_preenchido"),
+    )
 
     leadestabelecimento_id = Column(BigInteger, primary_key=True, autoincrement=True)
     leadparceiro_id = Column(
@@ -35,7 +37,10 @@ class LeadEstabelecimento(Base):
         nullable=False,
         server_default="AMBOS",
     )
-    cpfcnpj = Column(String(14), nullable=True)
+    cpfcnpj = Column(String(14), nullable=False)
+    documento_conferido = Column(String(14), nullable=True)
+    nome_titular_conferido = Column(String(160), nullable=True)
+    dtconferencia_documento = Column(DateTime, nullable=True)
     telefone = Column(String(30), nullable=True)
     email = Column(String(160), nullable=True)
     estado_id = Column(BigInteger, ForeignKey("estado.estado_id"), nullable=True)
