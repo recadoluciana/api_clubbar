@@ -244,9 +244,39 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
         return resposta
     except Exception:
         db.rollback(); raise
-    except Exception:
-        db.rollback()
-        raise
+
+
+@router.delete("/compra-evento/{compra_evento_id}/ingressos/{reserva_id}")
+def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, cliente_id)
+    compra = db.query(CompraEvento).filter(
+        CompraEvento.compra_evento_id == compra_evento_id,
+        CompraEvento.cliente_id == cliente_id,
+        CompraEvento.status == "ABERTA",
+    ).with_for_update().first()
+    reserva = db.query(ReservaIngresso).filter(
+        ReservaIngresso.reserva_ingresso_id == reserva_id,
+        ReservaIngresso.compra_evento_id == compra_evento_id,
+        ReservaIngresso.cliente_id == cliente_id,
+    ).with_for_update().first()
+    if not compra or not reserva:
+        raise HTTPException(404, "Item da compra não encontrado")
+    db.query(CompraEventoItem).filter(
+        CompraEventoItem.compra_evento_id == compra_evento_id,
+        CompraEventoItem.reserva_ingresso_id == reserva_id,
+    ).delete(synchronize_session=False)
+    reserva.sitreserva = "CANCELADA"
+    restante = db.query(ReservaIngresso).filter(
+        ReservaIngresso.compra_evento_id == compra_evento_id,
+        ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+    ).all()
+    if restante:
+        compra.valor_total = sum((Decimal(str(item.vrtotal)) for item in restante), Decimal("0"))
+    else:
+        compra.valor_total = Decimal("0")
+        compra.status = "CANCELADA"
+    db.commit()
+    return {"ok": True, "compra_evento_id": compra_evento_id, "valor_total": float(compra.valor_total), "quantidade": sum(item.qtreservada for item in restante)}
 
 
 @router.put("/{reserva_id}/participantes")
