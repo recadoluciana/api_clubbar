@@ -15,7 +15,7 @@ from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
 from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
-from app.schemas.reserva_ingresso import ReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
+from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
@@ -41,9 +41,26 @@ from app.services.campanha_doacao_service import (
 )
 from app.utils.datetime_utils import iso_utc
 from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
-from app.services.taxa_processamento_ingresso import cotar_ingressos_mercado_pago
+from app.services.taxa_processamento_ingresso import cotar_ingressos_mercado_pago, cotar_itens_mercado_pago
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
+
+
+def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
+    grupo_id = getattr(reserva, 'grupo_reserva_id', None)
+    if not grupo_id:
+        return [reserva]
+    return db.query(ReservaIngresso).filter(
+        ReservaIngresso.grupo_reserva_id == grupo_id
+    ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+
+
+def _valor_grupo(db: Session, reserva: ReservaIngresso) -> Decimal:
+    return sum((Decimal(str(item.vrtotal or 0)) for item in _grupo(db, reserva)), Decimal("0")).quantize(Decimal("0.01"))
+
+
+def _taxa_grupo(db: Session, reserva: ReservaIngresso) -> Decimal:
+    return sum((Decimal(str(item.vrtaxa or 0)) * int(item.qtreservada or 0) for item in _grupo(db, reserva)), Decimal("0")).quantize(Decimal("0.01"))
 
 
 def _beneficio_saida(beneficio) -> dict:
@@ -97,6 +114,34 @@ def reservar(payload: ReservaIngressoCreate, db: Session = Depends(get_db), usua
     except HTTPException:
         db.rollback()
         raise
+
+
+@router.post("/grupo")
+def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if sum(item.quantidade for item in payload.itens) > 5:
+        raise HTTPException(422, "O limite é de 5 ingressos por transação.")
+    grupo_id = str(uuid.uuid4())
+    try:
+        reservas = []
+        for item in payload.itens:
+            reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
+                lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
+                tipo_beneficio=item.tipo_beneficio, quantidade=item.quantidade)
+            reserva.grupo_reserva_id = grupo_id
+            reservas.append(reserva)
+        db.commit()
+        for reserva in reservas: db.refresh(reserva)
+        principal = reservas[0]
+        resposta = _saida(db, principal)
+        resposta["grupo_reserva_id"] = grupo_id
+        resposta["itens"] = [_saida(db, item) for item in reservas]
+        resposta["quantidade"] = sum(item.qtreservada for item in reservas)
+        resposta["valor_total"] = float(sum((Decimal(str(item.vrtotal)) for item in reservas), Decimal("0")))
+        return resposta
+    except Exception:
+        db.rollback()
+        raise
     except Exception:
         db.rollback()
         raise
@@ -112,7 +157,9 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         reserva.sitreserva = "EXPIRADA"
         db.commit()
         raise HTTPException(409, "A reserva de ingressos expirou")
-    if len(payload.participantes) != reserva.qtreservada:
+    reservas_grupo = _grupo(db, reserva)
+    total_quantidade = sum(item.qtreservada for item in reservas_grupo)
+    if len(payload.participantes) != total_quantidade:
         raise HTTPException(422, "Informe exatamente um participante para cada ingresso")
     cpfs = [p.cpf for p in payload.participantes]
     if len(set(cpfs)) != len(cpfs):
@@ -125,25 +172,27 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
                 evento_id=reserva.evento_id,
                 cpf=cpf,
             )
-    beneficios_validos = beneficios_validos_para_reserva(db, reserva)
-    if beneficios_validos and any(p.beneficio_id is None for p in payload.participantes):
-        raise HTTPException(422, "Selecione um benefício para cada participante")
-    for participante in payload.participantes:
-        if participante.beneficio_id is not None and participante.beneficio_id not in beneficios_validos:
+    db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id.in_([r.reserva_ingresso_id for r in reservas_grupo])).delete(synchronize_session=False)
+    posicao = 0
+    for reserva_item in reservas_grupo:
+        beneficios_validos = beneficios_validos_para_reserva(db, reserva_item)
+        participantes_item = payload.participantes[posicao:posicao + reserva_item.qtreservada]
+        if beneficios_validos and any(p.beneficio_id is None for p in participantes_item):
+            raise HTTPException(422, "Selecione um benefício para cada participante")
+        for participante in participantes_item:
+          if participante.beneficio_id is not None and participante.beneficio_id not in beneficios_validos:
             raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
-    db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).delete()
-    for ordem, participante in enumerate(payload.participantes, 1):
-        beneficio = beneficios_validos.get(participante.beneficio_id)
-        db.add(ReservaIngressoParticipante(
-            reserva_ingresso_id=reserva_id,
-            ordem=ordem,
-            nmparticipante=participante.nome.strip(),
-            cpfparticipante=participante.cpf,
+          beneficio = beneficios_validos.get(participante.beneficio_id)
+          ordem = participantes_item.index(participante) + 1
+          db.add(ReservaIngressoParticipante(
+            reserva_ingresso_id=reserva_item.reserva_ingresso_id, ordem=ordem,
+            nmparticipante=participante.nome.strip(), cpfparticipante=participante.cpf,
             beneficio_id=beneficio.beneficio_id if beneficio else None,
             tipobeneficio=beneficio.cdbeneficio if beneficio else None,
             nmbeneficiosnapshot=beneficio.nmbeneficio if beneficio else None,
-        ))
-    reserva.sitreserva = "AGUARDANDO_PAGAMENTO"
+          ))
+        posicao += reserva_item.qtreservada
+    for reserva_item in reservas_grupo: reserva_item.sitreserva = "AGUARDANDO_PAGAMENTO"
     # A reserva gratuita é finalizada nesta mesma transação. Garanta que os
     # participantes recém-inseridos já possam ser consultados pelo serviço.
     db.flush()
@@ -184,9 +233,16 @@ def _reserva_para_pagamento(db: Session, reserva_id: int, cliente_id: int) -> Re
     return reserva
 
 
-def _cotacao_reserva(reserva: ReservaIngresso, metodo: str) -> dict:
-    cotacao = cotar_ingressos_mercado_pago(reserva.vrunitario, reserva.vrtaxa, reserva.qtreservada, metodo)
-    if cotacao['subtotal'] != Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01')):
+def _cotacao_reserva(db: Session | ReservaIngresso, reserva: ReservaIngresso | str, metodo: str | None = None) -> dict:
+    if metodo is None:
+        metodo = str(reserva)
+        reserva = db
+        db = None
+    assert isinstance(reserva, ReservaIngresso) or db is None
+    itens = _grupo(db, reserva) if db is not None else [reserva]
+    cotacao = cotar_itens_mercado_pago(itens, metodo)
+    esperado = _valor_grupo(db, reserva) if db is not None else Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01'))
+    if cotacao['subtotal'] != esperado:
         raise HTTPException(409, 'Os valores da reserva divergiram. Faça uma nova reserva.')
     return cotacao
 
@@ -196,6 +252,8 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
+        valor_grupo = _valor_grupo(db, reserva)
+        taxa_grupo = _taxa_grupo(db, reserva)
         referencia = f"PIX-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
         api_key_loja, wallet_loja = obter_conta_asaas_da_loja(db, reserva.loja_id)
         campanha_doacao = obter_campanha_para_reserva(db, reserva)
@@ -204,16 +262,16 @@ async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Se
         )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         customer_id = await obter_ou_criar_customer_asaas_loja(db, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, api_key=api_key_loja)
-        taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
-        cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao), due_date=datetime.now().date().isoformat())
+        taxa_clubbar = taxa_grupo
+        cobranca = await criar_cobranca_pix_asaas(customer_id=customer_id, valor=float(valor_grupo), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao), due_date=datetime.now().date().isoformat())
         pagamento, qr = cobranca["payment"], cobranca["qrCode"]
         payment_id = str(pagamento["id"])
-        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=payment_id, payment_id=payment_id, pix_qr_code_id=None, pix_payload=str(qr["payload"]), pix_encoded_image=str(qr.get("encodedImage") or ""), pix_expiration_date=reserva.dtexpiracao, external_reference=referencia, status="PENDING", valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
+        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=payment_id, payment_id=payment_id, pix_qr_code_id=None, pix_payload=str(qr["payload"]), pix_encoded_image=str(qr.get("encodedImage") or ""), pix_expiration_date=reserva.dtexpiracao, external_reference=referencia, status="PENDING", valor=valor_grupo, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         db.flush()
         registrar_snapshot_doacao(db, checkout_asaas_id=checkout.checkout_asaas_id, campanha=campanha_doacao)
         db.commit()
-        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "pix_qr_code_id": checkout.pix_qr_code_id, "pix_copia_cola": checkout.pix_payload, "encoded_image": checkout.pix_encoded_image, "pix_expiration_date": iso_utc(checkout.pix_expiration_date), "expiration_date": iso_utc(reserva.dtexpiracao), "valor_total": float(reserva.vrtotal), "status": "PENDENTE"}
+        return {"reserva_ingresso_id": reserva_id, "pagamento_id": checkout.checkout_id, "pix_qr_code_id": checkout.pix_qr_code_id, "pix_copia_cola": checkout.pix_payload, "encoded_image": checkout.pix_encoded_image, "pix_expiration_date": iso_utc(checkout.pix_expiration_date), "expiration_date": iso_utc(reserva.dtexpiracao), "valor_total": float(valor_grupo), "status": "PENDENTE"}
     except HTTPException:
         db.rollback(); raise
 
@@ -223,6 +281,8 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
+        valor_grupo = _valor_grupo(db, reserva)
+        taxa_grupo = _taxa_grupo(db, reserva)
         cliente = db.query(Cliente).filter(Cliente.cliente_id == reserva.cliente_id).first()
         if not cliente:
             raise HTTPException(404, "Cliente não encontrado")
@@ -241,10 +301,10 @@ async def gerar_checkout_reserva(reserva_id: int, payload: PagamentoReservaIn, d
         )
         await garantir_webhook_pagamentos_asaas(api_key_loja)
         referencia = f"CLUBBAR-{APP_ENV.lower()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:10]}"
-        taxa_clubbar = reserva.vrtaxa * reserva.qtreservada
-        permite_parcelamento = float(reserva.vrtotal) >= 100
-        resposta = await criar_checkout_asaas(valor=float(reserva.vrtotal), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao, parcelado=permite_parcelamento, para_checkout=True), items=[{"externalReference": f"LOTE-{reserva.lote_id}", "name": "Ingresso Clubbar", "description": f"{reserva.qtreservada} ingresso(s)", "quantity": reserva.qtreservada, "value": float(reserva.vrunitario + reserva.vrtaxa)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
-        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=reserva.vrtotal, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
+        taxa_clubbar = taxa_grupo
+        permite_parcelamento = float(valor_grupo) >= 100
+        resposta = await criar_checkout_asaas(valor=float(valor_grupo), descricao=f"Ingressos reserva {reserva_id}", external_reference=referencia, carrinho_id=None, reserva_ingresso_id=reserva_id, api_key=api_key_loja, splits=montar_splits_pagamento(taxa_clubbar, campanha_doacao=campanha_doacao, parcelado=permite_parcelamento, para_checkout=True), items=[{"externalReference": f"RESERVA-{reserva_id}", "name": "Ingressos Clubbar", "description": "Ingressos de modalidades selecionadas", "quantity": 1, "value": float(valor_grupo)}], billing_types=["CREDIT_CARD"], origem_checkout="CLIENT", max_installment_count=6 if permite_parcelamento else 1, minutes_to_expire=max(10, segundos_restantes // 60), nome_cliente=cliente.nmcliente, email_cliente=cliente.emailcliente, cpf_cliente=cliente.nrcpfcliente, celular_cliente=cliente.nrtelcliente, endcliente=cliente.endcliente, nrendcliente=cliente.nrendcliente, complcliente=cliente.complcliente, bairrocliente=cliente.bairrocliente, cepcliente=cliente.cepcliente)
+        checkout = CheckoutAsaas(carrinho_id=None, reserva_ingresso_id=reserva_id, cliente_id=reserva.cliente_id, loja_id=reserva.loja_id, checkout_id=str(resposta["id"]), external_reference=referencia, status=str(resposta.get("status") or "ACTIVE"), checkout_url=str(resposta["link"]), valor=valor_grupo, vrtaxaclubbar=taxa_clubbar, asaas_wallet_loja=wallet_loja, asaas_wallet_clubbar=ASAAS_CLUBBAR_WALLET_ID)
         db.add(checkout)
         db.flush()
         registrar_snapshot_doacao(db, checkout_asaas_id=checkout.checkout_asaas_id, campanha=campanha_doacao)
@@ -264,7 +324,7 @@ def cotar_reserva_mercado_pago(
     loja = db.query(Loja).filter(Loja.loja_id == reserva.loja_id).first()
     if not loja or str(getattr(loja, 'provedor_pagamento', 'ASAAS')).upper() != 'MERCADO_PAGO':
         raise HTTPException(409, 'Este estabelecimento não usa Mercado Pago.')
-    cotacao = _cotacao_reserva(reserva, metodo)
+    cotacao = _cotacao_reserva(db, reserva, metodo)
     percentual = Decimal(str(reserva.pctaxa or 0))
     taxa_percentual = (Decimal(str(reserva.vrunitario)) * percentual / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
     return {
@@ -299,12 +359,12 @@ async def gerar_checkout_reserva_mercado_pago(
         # Versões anteriores não apresentam a nova cotação. Preserve o valor
         # que elas exibiram; nunca acrescente a taxa sem confirmação do cliente.
         if payload.valor_total_confirmado is None:
-            valor_cobrado = Decimal(str(reserva.vrtotal)).quantize(Decimal('0.01'))
-            taxa_clubbar = Decimal(str(reserva.vrtaxa or 0)) * int(reserva.qtreservada or 1)
+            valor_cobrado = _valor_grupo(db, reserva)
+            taxa_clubbar = _taxa_grupo(db, reserva)
         else:
             if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.parcelas != 1:
                 raise HTTPException(422, 'Para ingressos, o cartão está disponível somente à vista.')
-            cotacao = _cotacao_reserva(reserva, metodo)
+            cotacao = _cotacao_reserva(db, reserva, metodo)
             if payload.valor_total_confirmado != cotacao['total']:
                 raise HTTPException(409, 'Confirme o valor atualizado do pagamento.')
             valor_cobrado = cotacao['total']

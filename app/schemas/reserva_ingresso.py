@@ -11,6 +11,19 @@ class ReservaIngressoCreate(BaseModel):
     quantidade: int = Field(ge=1, le=5)
 
 
+class ItemReservaIngressoCreate(BaseModel):
+    lote_id: int
+    lotepreco_id: int
+    beneficio_id: int | None = None
+    tipo_beneficio: str | None = None
+    quantidade: int = Field(ge=1, le=5)
+
+
+class ReservaIngressoGrupoCreate(BaseModel):
+    cliente_id: int
+    itens: list[ItemReservaIngressoCreate] = Field(min_length=1, max_length=5)
+
+
 class ParticipanteReservaIn(BaseModel):
     nome: str = Field(min_length=3, max_length=150)
     cpf: str

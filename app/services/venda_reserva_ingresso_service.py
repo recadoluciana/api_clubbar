@@ -55,8 +55,15 @@ def finalizar_reserva_paga(
         return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id}
     if reserva.sitreserva not in {"AGUARDANDO_PAGAMENTO", "PREENCHENDO"}:
         raise HTTPException(409, "Reserva não está aguardando pagamento")
-    participantes = db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).order_by(ReservaIngressoParticipante.ordem).all()
-    if len(participantes) != reserva.qtreservada:
+    grupo_id = getattr(reserva, "grupo_reserva_id", None)
+    grupo = db.query(ReservaIngresso).filter(
+        ReservaIngresso.grupo_reserva_id == grupo_id
+    ).with_for_update().all() if grupo_id else [reserva]
+    ids_grupo = [item.reserva_ingresso_id for item in grupo]
+    participantes = db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id.in_(ids_grupo)
+    ).order_by(ReservaIngressoParticipante.reserva_ingresso_id, ReservaIngressoParticipante.ordem).all()
+    if len(participantes) != sum(item.qtreservada for item in grupo):
         raise HTTPException(409, "Participantes da reserva estão incompletos")
     status = str(pagamento.get("status") or "").upper()
     confirmados = {"RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"}
@@ -68,7 +75,7 @@ def finalizar_reserva_paga(
         pagamento.get("value") if gateway.upper() == "ASAAS"
         else pagamento.get("transaction_amount")
     )).quantize(Decimal("0.01"))
-    valor_reserva = Decimal(str(reserva.vrtotal)).quantize(Decimal("0.01"))
+    valor_reserva = sum((Decimal(str(item.vrtotal)) for item in grupo), Decimal("0")).quantize(Decimal("0.01"))
     esperado = Decimal(str(checkout.valor)).quantize(Decimal("0.01")) if gateway.upper() == "MERCADO_PAGO" else valor_reserva
     # Rateie o processamento por ingresso para que a soma dos itens e os
     # reembolsos reflitam o valor efetivamente cobrado. A comissão do Clubbar
@@ -77,14 +84,17 @@ def finalizar_reserva_paga(
     parcelas_processamento = distribuir_processamento(adicional, len(participantes))
     if recebido != esperado:
         raise HTTPException(409, "Valor confirmado diverge da reserva")
-    lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
-    if not lote:
-        raise HTTPException(409, "Lote da reserva não encontrado")
+    lotes = {item.lote_id: db.query(EventoLote).filter(EventoLote.lote_id == item.lote_id).with_for_update().first() for item in grupo}
+    if any(not lote for lote in lotes.values()): raise HTTPException(409, "Lote da reserva não encontrado")
     venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PENDENTE", totalvenda=esperado)
     db.add(venda)
     db.flush()
-    for indice, participante in enumerate(participantes):
-        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva.lote_id, lotepreco_id=reserva.lotepreco_id, qtitvenda=1, vrunititvenda=reserva.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva.pctaxa, vrtaxaitvenda=Decimal(str(reserva.vrtaxa or 0)) + parcelas_processamento[indice], sititvenda="ATIVO", **_dados_catalogo_item(db, reserva, participante))
+    indice = 0
+    for reserva_item in grupo:
+      itens_reserva = [p for p in participantes if getattr(p, 'reserva_ingresso_id', reserva_item.reserva_ingresso_id) == reserva_item.reserva_ingresso_id]
+      for participante in itens_reserva:
+        item = ItVenda(venda_id=venda.venda_id, tipoitem="INGRESSO", produto_id=None, lote_id=reserva_item.lote_id, lotepreco_id=reserva_item.lotepreco_id, qtitvenda=1, vrunititvenda=reserva_item.vrunitario, identregaitvenda="NAO", qrtokenitvenda=gerar_token_qr(), nmparticipante=participante.nmparticipante, cpfparticipante=participante.cpfparticipante, pctaxaitvenda=reserva_item.pctaxa, vrtaxaitvenda=Decimal(str(reserva_item.vrtaxa or 0)) + parcelas_processamento[indice], sititvenda="ATIVO", **_dados_catalogo_item(db, reserva_item, participante))
+        indice += 1
         db.add(item)
         db.flush()
         participante.itvenda_id = item.itvenda_id
@@ -102,11 +112,13 @@ def finalizar_reserva_paga(
     db.add(pag)
     db.flush()
     set_venda_como_paga(db, venda_id=venda.venda_id, gateway=gateway.upper(), payload=pagamento, finalizar_carrinho=False)
-    lote.qtvendidalote = int(lote.qtvendidalote or 0) + int(reserva.qtreservada)
+    for reserva_item in grupo:
+        lotes[reserva_item.lote_id].qtvendidalote = int(lotes[reserva_item.lote_id].qtvendidalote or 0) + int(reserva_item.qtreservada)
     # Após a confirmação, o total da reserva deve refletir o valor pago.
-    reserva.vrtotal = esperado
-    reserva.sitreserva = "CONFIRMADA"
-    reserva.venda_id = venda.venda_id
+    for reserva_item in grupo:
+        reserva_item.vrtotal = esperado if len(grupo) == 1 else reserva_item.vrtotal
+        reserva_item.sitreserva = "CONFIRMADA"
+        reserva_item.venda_id = venda.venda_id
     checkout.venda_id = venda.venda_id
     checkout.payment_id = payment_id or checkout.payment_id
     checkout.status = "PAID"

@@ -31,6 +31,27 @@ def cotar_ingressos_mercado_pago(valor_unitario: Decimal, taxa_unitaria: Decimal
             'tarifa_mp_estimada': tarifa_mp, 'comissao_clubbar': comissao}
 
 
+def cotar_itens_mercado_pago(itens, metodo: str) -> dict:
+    """Cota uma transação com modalidades distintas, arredondando por ingresso."""
+    metodo = 'CREDIT_CARD' if str(metodo).upper() == 'CREDITO' else str(metodo).upper()
+    if metodo not in TAXAS_PROCESSAMENTO: raise HTTPException(422, 'Método de pagamento inválido.')
+    ingressos = conveniencia = processamento = Decimal('0')
+    quantidade = 0
+    for item in itens:
+        qtd = int(item.qtreservada)
+        unit = Decimal(str(item.vrunitario)).quantize(CENTAVOS)
+        taxa = Decimal(str(item.vrtaxa)).quantize(CENTAVOS)
+        ingressos += unit * qtd; conveniencia += taxa * qtd; quantidade += qtd
+        processamento += (unit * TAXA_PROCESSAMENTO_CLIENTE).quantize(CENTAVOS, rounding=ROUND_HALF_UP) * qtd
+    subtotal = ingressos + conveniencia
+    total = subtotal + processamento
+    tarifa = (total * TAXAS_PROCESSAMENTO[metodo]).quantize(CENTAVOS, rounding=ROUND_CEILING)
+    return {'metodo': metodo, 'ingressos': ingressos, 'conveniencia': conveniencia,
+            'subtotal': subtotal, 'processamento': processamento, 'total': total,
+            'tarifa_mp_estimada': tarifa, 'comissao_clubbar': max(Decimal('0'), conveniencia + processamento - tarifa),
+            'quantidade': quantidade}
+
+
 def distribuir_processamento(valor: Decimal, quantidade: int) -> list[Decimal]:
     valor = Decimal(str(valor)).quantize(CENTAVOS)
     if quantidade <= 0 or valor < 0:

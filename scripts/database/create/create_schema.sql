@@ -1334,6 +1334,7 @@ CREATE INDEX idx_itvenda_entrega
 
 CREATE TABLE reserva_ingresso (
   reserva_ingresso_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  grupo_reserva_id VARCHAR(36) NULL,
   organizacao_id BIGINT NOT NULL, loja_id BIGINT NOT NULL, cliente_id BIGINT NOT NULL,
   evento_id BIGINT NOT NULL, lote_id BIGINT NOT NULL, lotepreco_id BIGINT NOT NULL,
   beneficio_id BIGINT NULL,
