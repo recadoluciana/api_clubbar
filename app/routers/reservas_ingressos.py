@@ -308,7 +308,14 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         except Exception as exc:
             # A emissão nunca pode falhar porque o e-mail está indisponível.
             print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
-    return {**_saida(db, reserva), **(resultado_gratuito or {})}
+    itens_grupo = _grupo(db, reserva)
+    resposta = _saida(db, reserva)
+    resposta["itens"] = [_saida(db, item) for item in itens_grupo]
+    resposta["quantidade"] = sum(item.qtreservada for item in itens_grupo)
+    resposta["valor_total"] = float(sum((Decimal(str(item.vrtotal)) for item in itens_grupo), Decimal("0")))
+    if getattr(reserva, "compra_evento_id", None):
+        resposta["compra_evento_id"] = reserva.compra_evento_id
+    return {**resposta, **(resultado_gratuito or {})}
 
 
 @router.delete("/{reserva_id}")
