@@ -33,7 +33,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from app.utils.documento import normalizar_cpf_cnpj
+from app.utils.documento import normalizar_cpf_cnpj, validar_documento_acesso
 from app.utils.datetime_utils import formatar_data_br
 
 
@@ -411,13 +411,17 @@ def _preparar_retificacao(db: Session, estabelecimento_id: int, dados: Retificac
         anterior_documento = normalizar_cpf_cnpj(anterior.cpfcnpjcontratante)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if not documento or not anterior_documento:
+        raise HTTPException(422, "O contrato e a retificação precisam ter CPF/CNPJ informado.")
     if anterior_documento != documento:
-        if estabelecimento.status == StatusLeadEstabelecimento.CONVERTIDO:
-            raise HTTPException(409, "Após a conversão, a correção do CPF/CNPJ exige revisão do cadastro financeiro da empresa.")
         if len(anterior_documento) != len(documento):
             raise HTTPException(422, "A mudança entre CPF e CNPJ exige novo contrato, não retificação.")
         if not dados.confirma_mesma_parte:
             raise HTTPException(422, "Confirme que o CPF/CNPJ corrigido pertence à mesma parte contratante.")
+        try:
+            validar_documento_acesso(documento)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
     if not all((valor or "").strip() for valor in (dados.endereco, dados.numero, dados.bairro, dados.nmrazaosocial, dados.motivo)):
         raise HTTPException(422, "Preencha os dados corrigidos e a justificativa.")
     numero = db.query(LeadEstabelecimentoContrato.nrretificacao).filter(

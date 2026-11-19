@@ -241,10 +241,10 @@ class ContratoAutomaticoTest(unittest.TestCase):
     def test_cpf_cnpj_alterado_exige_confirmacao_mesma_parte(self):
         self.contrato_aceito()
         with self.assertRaises(HTTPException) as error:
-            previsualizar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100"), {}, self.db)
+            previsualizar_retificacao(1, self.dados_retificacao(cpfcnpj="52998224725"), {}, self.db)
         self.assertEqual(error.exception.status_code, 422)
-        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
-        self.assertEqual(termo["cpfcnpjcontratante"], "98765432100")
+        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="52998224725", confirma_mesma_parte=True), {}, self.db)
+        self.assertEqual(termo["cpfcnpjcontratante"], "52998224725")
         cancelar_retificacao(termo["leadestabelecimentocontrato_id"], {}, self.db)
         self.assertEqual(self.est.cpfcnpj, "11144477735")
 
@@ -267,21 +267,28 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.db.add(LeadParceiro(leadparceiro_id=2, nmresponsavel="Outra", telefone="11999990000", email="outra@example.com"))
         self.db.add(LeadEstabelecimento(
             leadparceiro_id=2, nmestabelecimento="Outra loja", tipo="BAR",
-            cpfcnpj="98765432100",
+            cpfcnpj="52998224725",
         ))
         self.db.commit()
-        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
+        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="52998224725", confirma_mesma_parte=True), {}, self.db)
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
         asyncio.run(aceitar_contrato(termo["leadestabelecimentocontrato_id"], req, self.db.get(LeadParceiro, 1), self.db))
         self.assertEqual(self.est.cpfcnpj, "11144477735")
 
     def test_retificacao_do_contratante_preserva_documento_do_estabelecimento(self):
-        self.contrato_aceito()
-        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="98765432100", confirma_mesma_parte=True), {}, self.db)
+        original = self.contrato_aceito()
+        from app.models.leadestabelecimento import StatusLeadEstabelecimento
+        self.est.status = StatusLeadEstabelecimento.CONVERTIDO
+        self.db.commit()
+        with self.assertRaises(HTTPException):
+            criar_retificacao(1, self.dados_retificacao(cpfcnpj="12345678900", confirma_mesma_parte=True), {}, self.db)
+        termo = criar_retificacao(1, self.dados_retificacao(cpfcnpj="52998224725", confirma_mesma_parte=True), {}, self.db)
+        self.assertEqual(original.cpfcnpjcontratante, '12345678901')
         req = Request({"type": "http", "client": ("127.0.0.1", 123)})
         asyncio.run(aceitar_contrato(termo["leadestabelecimentocontrato_id"], req, self.db.get(LeadParceiro, 1), self.db))
         self.assertEqual(self.est.cpfcnpj, "11144477735")
-        self.assertEqual(self.db.get(LeadEstabelecimentoContrato, termo["leadestabelecimentocontrato_id"]).cpfcnpjcontratante, "98765432100")
+        self.assertEqual(self.db.get(LeadEstabelecimentoContrato, termo["leadestabelecimentocontrato_id"]).cpfcnpjcontratante, "52998224725")
+        self.assertEqual(original.cpfcnpjcontratante, '12345678901')
 
     def test_correcao_documento_sincroniza_loja_e_preserva_titular_e_contrato(self):
         from app.routers.leadparceiro import corrigir_documento_estabelecimento, CorrecaoDocumentoEstabelecimentoIn
