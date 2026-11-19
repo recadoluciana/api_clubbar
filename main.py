@@ -409,6 +409,7 @@ def garantir_compra_evento() -> None:
         raise
 
 
+@app.on_event("startup")
 def garantir_estrutura_campanhas_doacao() -> None:
     """Cria a estrutura idempotente das campanhas e seus snapshots financeiros."""
     CampanhaDoacao.__table__.create(bind=engine, checkfirst=True)
