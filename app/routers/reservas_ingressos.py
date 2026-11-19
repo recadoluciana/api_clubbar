@@ -16,6 +16,7 @@ from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.cliente import Cliente
 from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
+from app.models.eventolote import EventoLote
 from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ItemReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
@@ -83,6 +84,8 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
     # participantes forem informados. Assim o app não exibe uma opção antiga
     # ou pertencente a outra modalidade e depois a recusa no checkout.
     beneficios_validos = beneficios_validos_para_reserva(db, reserva)
+    lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).first()
+    preco = db.query(EventoLotePreco).filter(EventoLotePreco.lotepreco_id == reserva.lotepreco_id).first()
     return {
         "reserva_ingresso_id": reserva.reserva_ingresso_id,
         "organizacao_id": reserva.organizacao_id,
@@ -102,6 +105,14 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
         "data_expiracao": iso_utc(reserva.dtexpiracao),
         "segundos_restantes": max(0, int((reserva.dtexpiracao - datetime.now()).total_seconds())),
         "venda_id": reserva.venda_id,
+        "nome_lote": (
+            f"Lote {lote.lote_global.nrlote}"
+            if lote and getattr(lote, "lote_global", None) and lote.lote_global.nrlote is not None
+            else "Lote"
+        ),
+        "nome_setor": getattr(getattr(lote, "setor", None), "nmsetor", None),
+        "nome_modalidade": getattr(preco, "nmpreco", None),
+        "exige_beneficio": bool(beneficios_validos),
         "beneficios_validos": [
             _beneficio_saida(beneficio)
             for beneficio in beneficios_validos.values()
