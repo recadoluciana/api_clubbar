@@ -131,7 +131,7 @@ def test_reconciliacao_inclui_checkout_aprovado_sem_venda(monkeypatch):
 def test_reconciliacao_avanca_apos_lote_e_falha_individual(monkeypatch):
     db = Mock()
     query = db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value
-    itens = [SimpleNamespace(checkout_mercadopago_id=i, reserva_ingresso_id=None, preference_id=f'pix-{i}') for i in range(1, 22)]
+    itens = [SimpleNamespace(checkout_mercadopago_id=i, reserva_ingresso_id=None, preference_id=f'pix-{i}', venda_id=None) for i in range(1, 22)]
     query.all.side_effect = [itens[:20], itens[20:], []]
     async def consultar_checkout(*, checkout, db):
         if checkout.checkout_mercadopago_id == 1:
@@ -143,6 +143,35 @@ def test_reconciliacao_avanca_apos_lote_e_falha_individual(monkeypatch):
     assert consulta.await_count == 21
     assert resultado['pagamentos_confirmados'] == [{'pagamento_id': 'pix-21', 'venda_id': 42}]
     db.rollback.assert_called_once()
+
+
+def test_reconciliacao_tenta_email_sem_repetir_confirmacao(monkeypatch):
+    db = Mock()
+    query = db.query.return_value.filter.return_value.filter.return_value.order_by.return_value.limit.return_value
+    checkout = SimpleNamespace(checkout_mercadopago_id=1, reserva_ingresso_id=None, preference_id='pix-1', venda_id=42)
+    query.all.side_effect = [[checkout], []]
+    consulta = AsyncMock(return_value={'status': 'PAGO', 'venda_id': 42})
+    monkeypatch.setattr(pagamentos, '_consultar_status_checkout_mercado_pago', consulta)
+    resultado = asyncio.run(pagamentos.reconciliar_pagamentos_pendentes_mercado_pago(db=db, payload={'role': 'cliente', 'sub': '2'}))
+    consulta.assert_awaited_once()
+    assert resultado['pagamentos_confirmados'] == []
+
+
+def test_reconciliacao_nao_repete_confirmacao_de_reserva_ja_vendida(monkeypatch):
+    from app.routers import reservas_ingressos
+
+    db = Mock()
+    checkout_query = Mock()
+    reserva_query = Mock()
+    db.query.side_effect = [checkout_query, reserva_query]
+    checkout = SimpleNamespace(checkout_mercadopago_id=1, reserva_ingresso_id=7, preference_id='pix-1', venda_id=None)
+    checkout_query.filter.return_value.filter.return_value.order_by.return_value.limit.return_value.all.side_effect = [[checkout], []]
+    reserva_query.filter.return_value.first.return_value = SimpleNamespace(venda_id=42)
+    consulta = AsyncMock(return_value={'status_pagamento': 'PAGO', 'venda_id': 42})
+    monkeypatch.setattr(reservas_ingressos, 'status_reserva', consulta)
+    resultado = asyncio.run(pagamentos.reconciliar_pagamentos_pendentes_mercado_pago(db=db, payload={'role': 'cliente', 'sub': '2'}))
+    consulta.assert_awaited_once()
+    assert resultado['pagamentos_confirmados'] == []
 
 
 def test_webhook_pagamento_tardio_nao_emite_venda_insegura(monkeypatch):

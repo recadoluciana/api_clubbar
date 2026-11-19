@@ -1815,9 +1815,16 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
         ultimo_id = pendentes[-1].checkout_mercadopago_id
         for checkout in pendentes:
             try:
+                venda_ja_confirmada = checkout.venda_id is not None
                 if checkout.reserva_ingresso_id:
                     from app.routers.reservas_ingressos import status_reserva
 
+                    if not venda_ja_confirmada:
+                        reserva = db.query(ReservaIngresso).filter(
+                            ReservaIngresso.reserva_ingresso_id == checkout.reserva_ingresso_id,
+                            ReservaIngresso.cliente_id == cliente_id,
+                        ).first()
+                        venda_ja_confirmada = bool(reserva and reserva.venda_id)
                     resultado = await status_reserva(
                         int(checkout.reserva_ingresso_id), cliente_id, db
                     )
@@ -1827,7 +1834,7 @@ async def reconciliar_pagamentos_pendentes_mercado_pago(
                         checkout=checkout, db=db
                     )
                     pago = str(resultado.get('status') or '').upper() == 'PAGO'
-                if pago:
+                if pago and not venda_ja_confirmada:
                     confirmados.append(
                         {
                             'pagamento_id': checkout.preference_id,
