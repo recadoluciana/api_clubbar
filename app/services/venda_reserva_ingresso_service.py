@@ -143,10 +143,18 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
     if not reserva: raise HTTPException(404, "Reserva não encontrada")
     if reserva.venda_id: return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id, "gratuito": True}
-    if Decimal(str(reserva.vrtotal)).quantize(Decimal("0.01")) != Decimal("0.00"):
+    grupo = _grupo(db, reserva)
+    if any(Decimal(str(item.vrtotal)).quantize(Decimal("0.01")) != Decimal("0.00") for item in grupo):
         raise HTTPException(409, "A reserva não é gratuita")
-    participantes = db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).order_by(ReservaIngressoParticipante.ordem).all()
-    if len(participantes) != reserva.qtreservada: raise HTTPException(409, "Participantes da reserva estão incompletos")
+    ids_grupo = [item.reserva_ingresso_id for item in grupo]
+    participantes = db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id.in_(ids_grupo)
+    ).order_by(
+        ReservaIngressoParticipante.reserva_ingresso_id,
+        ReservaIngressoParticipante.ordem,
+    ).all()
+    if len(participantes) != sum(item.qtreservada for item in grupo):
+        raise HTTPException(409, "Participantes da reserva estão incompletos")
     bloquear_evento_para_cortesia(db, reserva.evento_id)
     for participante in participantes:
         validar_cortesia_unica_por_cpf(
@@ -154,15 +162,27 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
             evento_id=reserva.evento_id,
             cpf=participante.cpfparticipante,
         )
-    lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
-    if not lote: raise HTTPException(409, "Lote da reserva não encontrado")
+    lotes = {
+        item.lote_id: db.query(EventoLote).filter(
+            EventoLote.lote_id == item.lote_id
+        ).with_for_update().first()
+        for item in grupo
+    }
+    if any(lote is None for lote in lotes.values()):
+        raise HTTPException(409, "Lote da reserva não encontrado")
     venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PAGA", totalvenda=0)
     db.add(venda); db.flush()
+    por_reserva = {}
     for participante in participantes:
-        item=ItVenda(venda_id=venda.venda_id,tipoitem="INGRESSO",produto_id=None,lote_id=reserva.lote_id,lotepreco_id=reserva.lotepreco_id,qtitvenda=1,vrunititvenda=0,identregaitvenda="NAO",qrtokenitvenda=gerar_token_qr(),nmparticipante=participante.nmparticipante,cpfparticipante=participante.cpfparticipante,pctaxaitvenda=0,vrtaxaitvenda=0,sititvenda="ATIVO",**_dados_catalogo_item(db, reserva, participante))
-        db.add(item);db.flush();participante.itvenda_id=item.itvenda_id
+        por_reserva.setdefault(participante.reserva_ingresso_id, []).append(participante)
+    for reserva_item in grupo:
+        for participante in por_reserva.get(reserva_item.reserva_ingresso_id, []):
+            item=ItVenda(venda_id=venda.venda_id,tipoitem="INGRESSO",produto_id=None,lote_id=reserva_item.lote_id,lotepreco_id=reserva_item.lotepreco_id,qtitvenda=1,vrunititvenda=0,identregaitvenda="NAO",qrtokenitvenda=gerar_token_qr(),nmparticipante=participante.nmparticipante,cpfparticipante=participante.cpfparticipante,pctaxaitvenda=0,vrtaxaitvenda=0,sititvenda="ATIVO",**_dados_catalogo_item(db, reserva_item, participante))
+            db.add(item);db.flush();participante.itvenda_id=item.itvenda_id
     pag=PagVenda(venda_id=venda.venda_id,dsmetodopag="GRATUITO",vrpagvenda=0,sitpagvenda="PAGO",idtransacaopagvenda=f"GRATUITO-{reserva_id}",dtconftranspagvenda=datetime.now(),provedor="CLUBBAR",reference_id=f"GRATUITO-RESERVA-{reserva_id}")
     db.add(pag);db.flush()
-    lote.qtvendidalote=int(lote.qtvendidalote or 0)+int(reserva.qtreservada)
-    reserva.sitreserva="CONFIRMADA";reserva.venda_id=venda.venda_id
+    for reserva_item in grupo:
+        lote = lotes[reserva_item.lote_id]
+        lote.qtvendidalote=int(lote.qtvendidalote or 0)+int(reserva_item.qtreservada)
+        reserva_item.sitreserva="CONFIRMADA";reserva_item.venda_id=venda.venda_id
     return {"ok":True,"venda_id":venda.venda_id,"pagvenda_id":pag.pagvenda_id,"gratuito":True}
