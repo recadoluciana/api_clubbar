@@ -48,6 +48,13 @@ from app.services.taxa_processamento_ingresso import cotar_ingressos_mercado_pag
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
 
 
+def _eh_cortesia(db: Session, lotepreco_id: int) -> bool:
+    preco = db.query(EventoLotePreco).filter(
+        EventoLotePreco.lotepreco_id == lotepreco_id
+    ).first()
+    return bool(preco and Decimal(str(preco.vrpreco or 0)) <= 0)
+
+
 def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
     compra_evento_id = getattr(reserva, 'compra_evento_id', None)
     if compra_evento_id:
@@ -138,6 +145,12 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     if sum(item.quantidade for item in payload.itens) > 5:
         raise HTTPException(422, "O limite é de 5 ingressos por transação.")
+    quantidade_cortesias = sum(
+        item.quantidade for item in payload.itens
+        if _eh_cortesia(db, item.lotepreco_id)
+    )
+    if quantidade_cortesias > 2:
+        raise HTTPException(422, "O limite é de 2 cortesias por transação.")
     grupo_id = str(uuid.uuid4())
     try:
         reservas = []
@@ -219,6 +232,18 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
     ).with_for_update().first()
     if not compra:
         raise HTTPException(404, "Compra de evento não encontrada")
+    if _eh_cortesia(db, payload.lotepreco_id):
+        reservas_atuais = db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == compra_evento_id,
+            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ).all()
+        quantidade_cortesias = sum(
+            int(item.qtreservada or 0)
+            for item in reservas_atuais
+            if _eh_cortesia(db, item.lotepreco_id)
+        )
+        if quantidade_cortesias + payload.quantidade > 2:
+            raise HTTPException(422, "O limite é de 2 cortesias por transação.")
     try:
         reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
             lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
