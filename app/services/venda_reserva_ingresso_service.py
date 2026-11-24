@@ -147,10 +147,13 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
         raise HTTPException(409, "A reserva não é gratuita")
     participantes = db.query(ReservaIngressoParticipante).filter(ReservaIngressoParticipante.reserva_ingresso_id == reserva_id).order_by(ReservaIngressoParticipante.ordem).all()
     if len(participantes) != reserva.qtreservada: raise HTTPException(409, "Participantes da reserva estão incompletos")
-    if len(participantes) != 1:
-        raise HTTPException(409, "O resgate é limitado a um ingresso por CPF para cada evento.")
     bloquear_evento_para_cortesia(db, reserva.evento_id)
-    validar_cortesia_unica_por_cpf(db, evento_id=reserva.evento_id, cpf=participantes[0].cpfparticipante)
+    for participante in participantes:
+        validar_cortesia_unica_por_cpf(
+            db,
+            evento_id=reserva.evento_id,
+            cpf=participante.cpfparticipante,
+        )
     lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).with_for_update().first()
     if not lote: raise HTTPException(409, "Lote da reserva não encontrado")
     venda = Venda(organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id, cliente_id=reserva.cliente_id, carrinho_id=None, reserva_ingresso_id=reserva.reserva_ingresso_id, usuario_id=None, tipovenda="INGRESSO", dsplataforma="ANDROID", sitvenda="PAGA", totalvenda=0)
