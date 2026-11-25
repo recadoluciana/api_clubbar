@@ -365,7 +365,10 @@ def informar_participantes(reserva_id: int, payload: ParticipantesReservaUpdate,
         except Exception as exc:
             # A emissão nunca pode falhar porque o e-mail está indisponível.
             print("[INGRESSO] Não foi possível enviar e-mail:", repr(exc))
-    itens_grupo = _grupo(db, reserva)
+    # Após o resgate gratuito as reservas passam para CONFIRMADA e deixam de
+    # pertencer ao agrupamento de checkout. A resposta, porém, ainda precisa
+    # devolver os itens que acabaram de ser finalizados para o app.
+    itens_grupo = reservas_grupo
     resposta = _saida(db, reserva)
     resposta["itens"] = [_saida(db, item) for item in itens_grupo]
     resposta["quantidade"] = sum(item.qtreservada for item in itens_grupo)
