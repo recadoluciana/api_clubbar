@@ -578,7 +578,7 @@ async def gerar_checkout_reserva_mercado_pago(
         if metodo in {'CREDIT_CARD', 'CREDITO'} and (not payload.card_token or not payload.payment_method_id):
             raise HTTPException(422, 'Informe os dados tokenizados do cartão.')
         if metodo == 'PIX':
-            reserva.dtexpiracao = max(reserva.dtexpiracao, datetime.now() + timedelta(minutes=35))
+            reserva.dtexpiracao = max(reserva.dtexpiracao, datetime.now() + timedelta(minutes=15))
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
         token, conta_mp = await obter_token_mercado_pago_loja(db, reserva.loja_id)
         checkout = CheckoutMercadoPago(
