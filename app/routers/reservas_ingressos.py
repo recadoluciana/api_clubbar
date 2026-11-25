@@ -237,20 +237,61 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
         if quantidade_cortesias + payload.quantidade > 2:
             raise HTTPException(422, "O limite é de 2 cortesias por transação.")
     try:
-        reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
+        reserva_nova = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
             lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
             tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
-        if reserva.evento_id != compra.evento_id or reserva.loja_id != compra.loja_id:
+        if reserva_nova.evento_id != compra.evento_id or reserva_nova.loja_id != compra.loja_id:
             raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
-        reserva.compra_evento_id = compra_evento_id
-        compra.valor_total = Decimal(str(compra.valor_total or 0)) + Decimal(str(reserva.vrtotal))
+        reservas_ativas = db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == compra_evento_id,
+            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ).with_for_update().all()
+        reserva = next(
+            (
+                item for item in reservas_ativas
+                if item.lote_id == payload.lote_id
+                and item.lotepreco_id == payload.lotepreco_id
+                and item.beneficio_id == payload.beneficio_id
+            ),
+            None,
+        )
+        if reserva:
+            # A reserva temporária criada apenas para validar estoque é
+            # consolidada na reserva existente da mesma modalidade.
+            reserva.qtreservada = int(reserva.qtreservada or 0) + int(reserva_nova.qtreservada or 0)
+            reserva.vrtotal = Decimal(str(reserva.vrtotal or 0)) + Decimal(str(reserva_nova.vrtotal or 0))
+            reserva.dtexpiracao = min(reserva.dtexpiracao, reserva_nova.dtexpiracao)
+            db.delete(reserva_nova)
+            item_compra = db.query(CompraEventoItem).filter(
+                CompraEventoItem.compra_evento_id == compra_evento_id,
+                CompraEventoItem.reserva_ingresso_id == reserva.reserva_ingresso_id,
+            ).with_for_update().first()
+            if item_compra:
+                item_compra.quantidade = reserva.qtreservada
+                item_compra.subtotal = reserva.vrtotal
+            else:
+                db.add(CompraEventoItem(
+                    compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
+                    reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
+                    valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
+                    subtotal=reserva.vrtotal,
+                ))
+        else:
+            reserva = reserva_nova
+            reserva.compra_evento_id = compra_evento_id
+            db.add(CompraEventoItem(
+                compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
+                reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
+                valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
+                subtotal=reserva.vrtotal,
+            ))
+        compra.valor_total = sum(
+            (Decimal(str(item.vrtotal or 0)) for item in reservas_ativas if item is not reserva_nova),
+            Decimal("0"),
+        )
+        if reserva not in reservas_ativas:
+            compra.valor_total += Decimal(str(reserva.vrtotal or 0))
         compra.dtexpiracao = min(compra.dtexpiracao, reserva.dtexpiracao)
-        db.add(CompraEventoItem(
-            compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
-            reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
-            valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
-            subtotal=reserva.vrtotal,
-        ))
         db.commit(); db.refresh(reserva)
         itens = _grupo(db, reserva)
         resposta = _saida(db, reserva)
