@@ -237,20 +237,31 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
         if quantidade_cortesias + payload.quantidade > 2:
             raise HTTPException(422, "O limite é de 2 cortesias por transação.")
     try:
-        reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
-            lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
-            tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
-        if reserva.evento_id != compra.evento_id or reserva.loja_id != compra.loja_id:
-            raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
-        reserva.compra_evento_id = compra_evento_id
-        compra.valor_total = Decimal(str(compra.valor_total or 0)) + Decimal(str(reserva.vrtotal))
-        db.add(CompraEventoItem(
-            compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
-            reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
-            valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
-            subtotal=reserva.vrtotal,
-        ))
-        compra.dtexpiracao = min(compra.dtexpiracao, reserva.dtexpiracao)
+        reservas_novas = []
+        for _ in range(int(payload.quantidade)):
+            reserva_item = criar_reserva(
+                db, cliente_id=cliente_id, lote_id=payload.lote_id,
+                lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
+                tipo_beneficio=payload.tipo_beneficio, quantidade=1,
+            )
+            if reserva_item.evento_id != compra.evento_id or reserva_item.loja_id != compra.loja_id:
+                raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
+            reserva_item.compra_evento_id = compra_evento_id
+            reservas_novas.append(reserva_item)
+            db.add(CompraEventoItem(
+                compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
+                reserva_ingresso_id=reserva_item.reserva_ingresso_id, quantidade=1,
+                valor_unitario=reserva_item.vrunitario, valor_taxa=reserva_item.vrtaxa,
+                subtotal=reserva_item.vrtotal,
+            ))
+        compra.valor_total = Decimal(str(compra.valor_total or 0)) + sum(
+            (Decimal(str(item.vrtotal or 0)) for item in reservas_novas), Decimal("0")
+        )
+        compra.dtexpiracao = min(
+            compra.dtexpiracao,
+            *(item.dtexpiracao for item in reservas_novas),
+        )
+        reserva = reservas_novas[-1]
         db.commit(); db.refresh(reserva)
         itens = _grupo(db, reserva)
         resposta = _saida(db, reserva)
