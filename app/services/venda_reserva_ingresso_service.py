@@ -134,7 +134,10 @@ def finalizar_reserva_paga(
     for reserva_item in grupo:
         reserva_item.vrtotal = esperado if len(grupo) == 1 else reserva_item.vrtotal
         reserva_item.sitreserva = "CONFIRMADA"
-        reserva_item.venda_id = venda.venda_id
+        # A venda representa o agrupamento inteiro e venda_id é único na
+        # reserva. Apenas a reserva principal referencia a venda.
+        if reserva_item.reserva_ingresso_id == reserva.reserva_ingresso_id:
+            reserva_item.venda_id = venda.venda_id
     if getattr(reserva, "compra_evento_id", None):
         compra = db.query(CompraEvento).filter(
             CompraEvento.compra_evento_id == reserva.compra_evento_id
@@ -196,8 +199,18 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
             db.add(item);db.flush();participante.itvenda_id=item.itvenda_id
     pag=PagVenda(venda_id=venda.venda_id,dsmetodopag="GRATUITO",vrpagvenda=0,sitpagvenda="PAGO",idtransacaopagvenda=f"GRATUITO-{reserva_id}",dtconftranspagvenda=datetime.now(),provedor="CLUBBAR",reference_id=f"GRATUITO-RESERVA-{reserva_id}")
     db.add(pag);db.flush()
+    if getattr(reserva, "compra_evento_id", None):
+        compra = db.query(CompraEvento).filter(
+            CompraEvento.compra_evento_id == reserva.compra_evento_id
+        ).with_for_update().first()
+        if compra:
+            compra.venda_id = venda.venda_id
+            compra.status = "PAGA"
+            compra.valor_total = Decimal("0")
     for reserva_item in grupo:
         lote = lotes[reserva_item.lote_id]
         lote.qtvendidalote=int(lote.qtvendidalote or 0)+int(reserva_item.qtreservada)
-        reserva_item.sitreserva="CONFIRMADA";reserva_item.venda_id=venda.venda_id
+        reserva_item.sitreserva="CONFIRMADA"
+        if reserva_item.reserva_ingresso_id == reserva.reserva_ingresso_id:
+            reserva_item.venda_id = venda.venda_id
     return {"ok":True,"venda_id":venda.venda_id,"pagvenda_id":pag.pagvenda_id,"gratuito":True}
