@@ -293,7 +293,13 @@ def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, clien
         compra.valor_total = Decimal("0")
         compra.status = "CANCELADA"
     db.commit()
-    return {"ok": True, "compra_evento_id": compra_evento_id, "valor_total": float(compra.valor_total), "quantidade": sum(item.qtreservada for item in restante)}
+    return {
+        "ok": True,
+        "compra_evento_id": compra_evento_id,
+        "valor_total": float(compra.valor_total),
+        "quantidade": sum(item.qtreservada for item in restante),
+        "itens": [_saida(db, item) for item in restante],
+    }
 
 
 @router.put("/{reserva_id}/participantes")
