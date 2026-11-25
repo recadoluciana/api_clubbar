@@ -366,19 +366,22 @@ def garantir_classificacao_etaria_evento() -> None:
 
 @app.on_event("startup")
 def garantir_grupo_reserva_ingresso() -> None:
-    """Garante a coluna usada para agrupar modalidades em um único checkout."""
+    """Remove o agrupador legado substituído por compra_evento_id."""
     try:
-        colunas = {coluna["name"] for coluna in inspect(engine).get_columns("reserva_ingresso")}
-        if "grupo_reserva_id" not in colunas:
+        inspector = inspect(engine)
+        colunas = {coluna["name"] for coluna in inspector.get_columns("reserva_ingresso")}
+        indices = {indice["name"] for indice in inspector.get_indexes("reserva_ingresso")}
+        if "grupo_reserva_id" in colunas:
             with engine.begin() as conexao:
+                if "ix_reserva_ingresso_grupo_reserva_id" in indices:
+                    conexao.execute(text(
+                        "DROP INDEX ix_reserva_ingresso_grupo_reserva_id "
+                        "ON reserva_ingresso"
+                    ))
                 conexao.execute(text(
-                    "ALTER TABLE reserva_ingresso ADD COLUMN grupo_reserva_id VARCHAR(36) NULL"
+                    "ALTER TABLE reserva_ingresso DROP COLUMN grupo_reserva_id"
                 ))
-                conexao.execute(text(
-                    "CREATE INDEX ix_reserva_ingresso_grupo_reserva_id "
-                    "ON reserva_ingresso (grupo_reserva_id)"
-                ))
-        logger.info("Grupo de reserva de ingressos verificado.")
+        logger.info("Agrupador legado de reserva removido; compra_evento_id é o único agrupador.")
     except Exception:
         logger.exception("Não foi possível garantir o grupo de reserva de ingressos.")
         raise
