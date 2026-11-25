@@ -282,6 +282,9 @@ def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, clien
         CompraEventoItem.compra_evento_id == compra_evento_id,
         CompraEventoItem.reserva_ingresso_id == reserva_id,
     ).delete(synchronize_session=False)
+    db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id == reserva_id,
+    ).delete(synchronize_session=False)
     reserva.sitreserva = "CANCELADA"
     restante = db.query(ReservaIngresso).filter(
         ReservaIngresso.compra_evento_id == compra_evento_id,
