@@ -26,12 +26,7 @@ def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
         return db.query(ReservaIngresso).filter(
             ReservaIngresso.compra_evento_id == compra_evento_id
         ).order_by(ReservaIngresso.reserva_ingresso_id).all()
-    grupo_id = getattr(reserva, "grupo_reserva_id", None)
-    if not grupo_id:
-        return [reserva]
-    return db.query(ReservaIngresso).filter(
-        ReservaIngresso.grupo_reserva_id == grupo_id
-    ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+    return [reserva]
 
 
 def _dados_catalogo_item(
@@ -71,10 +66,12 @@ def finalizar_reserva_paga(
         return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id}
     if reserva.sitreserva not in {"AGUARDANDO_PAGAMENTO", "PREENCHENDO"}:
         raise HTTPException(409, "Reserva não está aguardando pagamento")
-    grupo_id = getattr(reserva, "grupo_reserva_id", None)
-    grupo = db.query(ReservaIngresso).filter(
-        ReservaIngresso.grupo_reserva_id == grupo_id
-    ).with_for_update().all() if grupo_id else [reserva]
+    if getattr(reserva, "compra_evento_id", None):
+        grupo = db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == reserva.compra_evento_id
+        ).with_for_update().all()
+    else:
+        grupo = [reserva]
     ids_grupo = [item.reserva_ingresso_id for item in grupo]
     participantes = db.query(ReservaIngressoParticipante).filter(
         ReservaIngressoParticipante.reserva_ingresso_id.in_(ids_grupo)

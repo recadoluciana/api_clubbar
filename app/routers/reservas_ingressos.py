@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -62,13 +61,7 @@ def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
             ReservaIngresso.compra_evento_id == compra_evento_id,
             ReservaIngresso.sitreserva.in_(('PREENCHENDO', 'AGUARDANDO_PAGAMENTO')),
         ).order_by(ReservaIngresso.reserva_ingresso_id).all()
-    grupo_id = getattr(reserva, 'grupo_reserva_id', None)
-    if not grupo_id:
-        return [reserva]
-    return db.query(ReservaIngresso).filter(
-        ReservaIngresso.grupo_reserva_id == grupo_id,
-        ReservaIngresso.sitreserva.in_(('PREENCHENDO', 'AGUARDANDO_PAGAMENTO')),
-    ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+    return [reserva]
 
 
 def _valor_grupo(db: Session, reserva: ReservaIngresso) -> Decimal:
@@ -153,7 +146,6 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
     )
     if quantidade_cortesias > 2:
         raise HTTPException(422, "O limite é de 2 cortesias por transação.")
-    grupo_id = str(uuid.uuid4())
     try:
         reservas = []
         compra = None
@@ -161,7 +153,6 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
             reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
                 lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
                 tipo_beneficio=item.tipo_beneficio, quantidade=item.quantidade)
-            reserva.grupo_reserva_id = grupo_id
             reservas.append(reserva)
         principal = reservas[0]
         compra = CompraEvento(
@@ -184,7 +175,6 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
         for reserva in reservas: db.refresh(reserva)
         resposta = _saida(db, principal)
         resposta["compra_evento_id"] = compra.compra_evento_id
-        resposta["grupo_reserva_id"] = grupo_id
         resposta["itens"] = [_saida(db, item) for item in reservas]
         resposta["quantidade"] = sum(item.qtreservada for item in reservas)
         resposta["valor_total"] = float(sum((Decimal(str(item.vrtotal)) for item in reservas), Decimal("0")))
