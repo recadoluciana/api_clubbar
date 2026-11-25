@@ -59,13 +59,15 @@ def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
     compra_evento_id = getattr(reserva, 'compra_evento_id', None)
     if compra_evento_id:
         return db.query(ReservaIngresso).filter(
-            ReservaIngresso.compra_evento_id == compra_evento_id
+            ReservaIngresso.compra_evento_id == compra_evento_id,
+            ReservaIngresso.sitreserva.in_(('PREENCHENDO', 'AGUARDANDO_PAGAMENTO')),
         ).order_by(ReservaIngresso.reserva_ingresso_id).all()
     grupo_id = getattr(reserva, 'grupo_reserva_id', None)
     if not grupo_id:
         return [reserva]
     return db.query(ReservaIngresso).filter(
-        ReservaIngresso.grupo_reserva_id == grupo_id
+        ReservaIngresso.grupo_reserva_id == grupo_id,
+        ReservaIngresso.sitreserva.in_(('PREENCHENDO', 'AGUARDANDO_PAGAMENTO')),
     ).order_by(ReservaIngresso.reserva_ingresso_id).all()
 
 
@@ -382,18 +384,31 @@ def cancelar_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get
     if reserva.sitreserva == "CONFIRMADA":
         raise HTTPException(409, "Reserva já confirmada como venda")
     reserva.sitreserva = "CANCELADA"
+    restante = []
     if getattr(reserva, "compra_evento_id", None):
         compra = db.query(CompraEvento).filter(
             CompraEvento.compra_evento_id == reserva.compra_evento_id
         ).with_for_update().first()
         if compra:
-            compra.status = "CANCELADA"
             db.query(ReservaIngresso).filter(
                 ReservaIngresso.compra_evento_id == compra.compra_evento_id,
                 ReservaIngresso.sitreserva != "CONFIRMADA",
             ).update({ReservaIngresso.sitreserva: "CANCELADA"}, synchronize_session=False)
+            restante = db.query(ReservaIngresso).filter(
+                ReservaIngresso.compra_evento_id == compra.compra_evento_id,
+                ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+            ).all()
+            compra.valor_total = sum((Decimal(str(item.vrtotal or 0)) for item in restante), Decimal("0"))
+            compra.status = "ABERTA" if restante else "CANCELADA"
     db.commit()
-    return {"ok": True, "status": "CANCELADA"}
+    return {
+        "ok": True,
+        "status": "CANCELADA",
+        "compra_evento_id": getattr(reserva, "compra_evento_id", None),
+        "quantidade": sum(int(item.qtreservada or 0) for item in restante),
+        "valor_total": float(sum((Decimal(str(item.vrtotal or 0)) for item in restante), Decimal("0"))),
+        "itens": [_saida(db, item) for item in restante],
+    }
 
 
 def _reserva_para_pagamento(db: Session, reserva_id: int, cliente_id: int) -> ReservaIngresso:
