@@ -20,27 +20,33 @@ def para_fuso_br(dt):
             dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
         except Exception:
             return dt
-    # Datas automáticas do banco são armazenadas em UTC sem tzinfo pelo MySQL.
+    # Datas do banco são armazenadas como horário civil de Brasília sem tzinfo.
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=FUSO_BRASIL)
     return dt.astimezone(FUSO_BRASIL)
 
 
 def iso_utc(dt):
-    if not dt:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    """Serializa horário persistido como horário de Brasília.
 
-
-def iso_utc_de_horario_brasil(dt):
-    """Serializa horários civis de Brasília gravados sem fuso como UTC."""
+    O nome é mantido por compatibilidade com os chamadores existentes.
+    A API agora expõe o offset de Brasília para que as telas não precisem
+    interpretar um horário civil como UTC.
+    """
     if not dt:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=FUSO_BRASIL)
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(FUSO_BRASIL).isoformat()
+
+
+def iso_utc_de_horario_brasil(dt):
+    """Serializa horários civis persistidos em Brasília com o offset local."""
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=FUSO_BRASIL)
+    return dt.astimezone(FUSO_BRASIL).isoformat()
 
 
 def formatar_data_br(dt):
