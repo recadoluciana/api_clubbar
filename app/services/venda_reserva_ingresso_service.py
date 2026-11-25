@@ -19,6 +19,21 @@ from app.services.taxa_processamento_ingresso import distribuir_processamento
 from app.services.cortesia_evento_service import bloquear_evento_para_cortesia, validar_cortesia_unica_por_cpf
 
 
+def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
+    """Retorna todos os itens que pertencem à mesma reserva agrupada."""
+    compra_evento_id = getattr(reserva, "compra_evento_id", None)
+    if compra_evento_id:
+        return db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == compra_evento_id
+        ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+    grupo_id = getattr(reserva, "grupo_reserva_id", None)
+    if not grupo_id:
+        return [reserva]
+    return db.query(ReservaIngresso).filter(
+        ReservaIngresso.grupo_reserva_id == grupo_id
+    ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+
+
 def _dados_catalogo_item(
     db: Session,
     reserva: ReservaIngresso,
