@@ -756,6 +756,7 @@ def listar_itens_nao_entregues(
             )
         )
         .add_columns(
+            Evento.evento_id,
             Evento.nmtituloevento,
             Evento.dtinicioevento,
             Evento.nmlocalevento,
@@ -797,6 +798,7 @@ def listar_itens_nao_entregues(
             "dtexpiraitvenda_fmt": row.dtexpiraitvenda.strftime("%d/%m/%Y") if row.dtexpiraitvenda else None,
             "dtcriacao": iso_utc(row.dtcriacao),
             "dtcriacao_fmt": formatar_data_br(row.dtcriacao) if row.dtcriacao else None,
+            "evento_id": row.evento_id,
             "nmevento": row.nmtituloevento,
             "dtinicioevento": row.dtinicioevento,
             "dtinicioevento_fmt": row.dtinicioevento.strftime("%d/%m/%Y %H:%M") if row.dtinicioevento else None,

@@ -34,10 +34,12 @@ class EntregasPendentesQueryTest(unittest.TestCase):
         self.assertEqual(1, len(statements))
         self.assertIn('LEFT OUTER JOIN eventoloteglobal', statements[0])
         self.assertIn('evento.evento_id = eventoloteglobal.evento_id', statements[0])
+        self.assertIn('evento.evento_id,', statements[0])
 
     def test_carteira_devolve_taxa_registrada_e_preserva_taxa_ausente(self):
         class Linha:
             idtipoproduto = 'I'
+            evento_id = 7
             vrunititvenda = Decimal('10.00')
             qtitvenda = 1
 
@@ -53,6 +55,7 @@ class EntregasPendentesQueryTest(unittest.TestCase):
         self.assertEqual(itens[0]['vrunititvenda'], 10.0)
         self.assertEqual(itens[0]['vrtaxaitvenda'], 2.99)
         self.assertIsNone(itens[1]['vrtaxaitvenda'])
+        self.assertEqual([7, 7], [item['evento_id'] for item in itens])
 
 
 if __name__ == '__main__':
