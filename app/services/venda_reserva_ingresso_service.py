@@ -20,12 +20,13 @@ from app.services.cortesia_evento_service import bloquear_evento_para_cortesia, 
 
 
 def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
-    """Retorna todos os itens que pertencem à mesma reserva agrupada."""
+    """Retorna e bloqueia somente as reservas ativas da compra."""
     compra_evento_id = getattr(reserva, "compra_evento_id", None)
     if compra_evento_id:
         return db.query(ReservaIngresso).filter(
-            ReservaIngresso.compra_evento_id == compra_evento_id
-        ).order_by(ReservaIngresso.reserva_ingresso_id).all()
+            ReservaIngresso.compra_evento_id == compra_evento_id,
+            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ).order_by(ReservaIngresso.reserva_ingresso_id).with_for_update().all()
     return [reserva]
 
 
@@ -66,12 +67,7 @@ def finalizar_reserva_paga(
         return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id}
     if reserva.sitreserva not in {"AGUARDANDO_PAGAMENTO", "PREENCHENDO"}:
         raise HTTPException(409, "Reserva não está aguardando pagamento")
-    if getattr(reserva, "compra_evento_id", None):
-        grupo = db.query(ReservaIngresso).filter(
-            ReservaIngresso.compra_evento_id == reserva.compra_evento_id
-        ).with_for_update().all()
-    else:
-        grupo = [reserva]
+    grupo = _grupo(db, reserva)
     ids_grupo = [item.reserva_ingresso_id for item in grupo]
     participantes = db.query(ReservaIngressoParticipante).filter(
         ReservaIngressoParticipante.reserva_ingresso_id.in_(ids_grupo)
@@ -158,6 +154,8 @@ def finalizar_reserva_gratuita(db: Session, *, reserva_id: int) -> dict:
     reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
     if not reserva: raise HTTPException(404, "Reserva não encontrada")
     if reserva.venda_id: return {"ok": True, "already_processed": True, "venda_id": reserva.venda_id, "gratuito": True}
+    if reserva.sitreserva not in {"PREENCHENDO", "AGUARDANDO_PAGAMENTO"}:
+        raise HTTPException(409, "Reserva não está ativa")
     grupo = _grupo(db, reserva)
     if any(Decimal(str(item.vrtotal)).quantize(Decimal("0.01")) != Decimal("0.00") for item in grupo):
         raise HTTPException(409, "A reserva não é gratuita")
