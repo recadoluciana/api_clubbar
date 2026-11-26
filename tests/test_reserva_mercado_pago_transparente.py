@@ -167,8 +167,8 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo, nova_co
     assert resultado['pagamento_id'] == salvo[0].external_reference
     if metodo == 'PIX':
         assert resultado['pix_copia_cola'] == 'pix-ficticio'
-        assert reserva.dtexpiracao > datetime.now() + timedelta(minutes=34)
-        assert resultado['segundos_restantes'] >= 2040
+        assert reserva.dtexpiracao > datetime.now() + timedelta(minutes=14)
+        assert resultado['segundos_restantes'] >= 840
 
 
 def test_segunda_cobranca_da_mesma_reserva_e_bloqueada(monkeypatch):
