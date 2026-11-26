@@ -1,5 +1,6 @@
 import unittest
 import warnings
+from decimal import Decimal
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
@@ -33,6 +34,25 @@ class EntregasPendentesQueryTest(unittest.TestCase):
         self.assertEqual(1, len(statements))
         self.assertIn('LEFT OUTER JOIN eventoloteglobal', statements[0])
         self.assertIn('evento.evento_id = eventoloteglobal.evento_id', statements[0])
+
+    def test_carteira_devolve_taxa_registrada_e_preserva_taxa_ausente(self):
+        class Linha:
+            idtipoproduto = 'I'
+            vrunititvenda = Decimal('10.00')
+            qtitvenda = 1
+
+            def __init__(self, taxa):
+                self.vrtaxaitvenda = taxa
+
+            def __getattr__(self, nome):
+                return None
+
+        engine = create_engine('sqlite://')
+        with Session(engine) as db, patch.object(Query, 'all', return_value=[Linha(Decimal('2.99')), Linha(None)]):
+            itens = listar_itens_nao_entregues(cliente_id=1, loja_id=1, db=db, usuario={'role': 'cliente', 'sub': '1'})
+        self.assertEqual(itens[0]['vrunititvenda'], 10.0)
+        self.assertEqual(itens[0]['vrtaxaitvenda'], 2.99)
+        self.assertIsNone(itens[1]['vrtaxaitvenda'])
 
 
 if __name__ == '__main__':
