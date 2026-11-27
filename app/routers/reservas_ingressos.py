@@ -17,7 +17,7 @@ from app.models.cliente import Cliente
 from app.models.loja import Loja
 from app.models.eventolotepreco import EventoLotePreco
 from app.models.eventolote import EventoLote
-from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ItemReservaIngressoCreate, ParticipantesReservaUpdate, PagamentoReservaIn
+from app.schemas.reserva_ingresso import ReservaIngressoCreate, ReservaIngressoGrupoCreate, ItemReservaIngressoCreate, ParticipanteReservaIn, ParticipantesReservaUpdate, PagamentoReservaIn
 from app.services.reserva_ingresso_service import criar_reserva, beneficios_validos_para_reserva
 from app.services.asaas_service import criar_checkout_asaas, criar_cobranca_pix_asaas, obter_ou_criar_customer_asaas_loja, buscar_pagamento_confirmado_por_id, buscar_pagamento_confirmado_por_checkout, buscar_pagamento_confirmado_por_qrcode_pix, buscar_pagamento_confirmado_por_referencia, cancelar_pagamento_asaas, validar_endereco_cobranca_para_cartao
 from app.services.venda_reserva_ingresso_service import finalizar_reserva_paga, finalizar_reserva_gratuita
@@ -89,7 +89,12 @@ def _saida(db: Session, reserva: ReservaIngresso) -> dict:
     beneficios_validos = beneficios_validos_para_reserva(db, reserva)
     lote = db.query(EventoLote).filter(EventoLote.lote_id == reserva.lote_id).first()
     preco = db.query(EventoLotePreco).filter(EventoLotePreco.lotepreco_id == reserva.lotepreco_id).first()
+    participantes = db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id == reserva.reserva_ingresso_id
+    ).order_by(ReservaIngressoParticipante.ordem).all()
     return {
+        "participantes": [{"nome": p.nmparticipante, "cpf": p.cpfparticipante,
+                           "beneficio_id": p.beneficio_id} for p in participantes],
         "reserva_ingresso_id": reserva.reserva_ingresso_id,
         "organizacao_id": reserva.organizacao_id,
         "loja_id": reserva.loja_id,
@@ -328,6 +333,63 @@ def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, clien
         "quantidade": sum(item.qtreservada for item in restante),
         "itens": [_saida(db, item) for item in restante],
     }
+
+
+@router.put("/{reserva_id}/participante")
+def salvar_participante_individual(reserva_id: int, payload: ParticipanteReservaIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).first()
+    if not reserva:
+        raise HTTPException(404, "Reserva não encontrada")
+    exigir_cliente_autenticado(usuario, reserva.cliente_id)
+    if reserva.compra_evento_id:
+        compra = db.query(CompraEvento).filter(
+            CompraEvento.compra_evento_id == reserva.compra_evento_id,
+            CompraEvento.cliente_id == reserva.cliente_id,
+            CompraEvento.status == "ABERTA",
+        ).with_for_update().first()
+        if not compra:
+            raise HTTPException(409, "Compra não está disponível para edição")
+    reserva = db.query(ReservaIngresso).filter(ReservaIngresso.reserva_ingresso_id == reserva_id).with_for_update().first()
+    if not reserva or reserva.sitreserva not in {"PREENCHENDO", "AGUARDANDO_PAGAMENTO"} or reserva.dtexpiracao <= datetime.now():
+        raise HTTPException(409, "A reserva de ingressos expirou ou não está disponível")
+    if reserva.qtreservada != 1:
+        raise HTTPException(409, "Esta reserva não corresponde a um ingresso individual")
+    nome = payload.nome.strip()
+    if len(nome) < 3:
+        raise HTTPException(422, "Informe o nome completo do participante")
+    grupo = _grupo(db, reserva)
+    ids = [item.reserva_ingresso_id for item in grupo]
+    duplicado = db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id.in_(ids),
+        ReservaIngressoParticipante.reserva_ingresso_id != reserva_id,
+        ReservaIngressoParticipante.cpfparticipante == payload.cpf,
+    ).first()
+    if duplicado:
+        raise HTTPException(422, "Cada participante deve possuir um CPF distinto")
+    beneficios = beneficios_validos_para_reserva(db, reserva)
+    if beneficios and payload.beneficio_id is None:
+        raise HTTPException(422, "Selecione um benefício para o participante")
+    if payload.beneficio_id is not None and payload.beneficio_id not in beneficios:
+        raise HTTPException(422, "Selecione um benefício válido para esta modalidade")
+    if Decimal(str(reserva.vrtotal or 0)) == 0:
+        bloquear_evento_para_cortesia(db, reserva.evento_id)
+        validar_cortesia_unica_por_cpf(db, evento_id=reserva.evento_id, cpf=payload.cpf)
+    beneficio = beneficios.get(payload.beneficio_id)
+    participante = db.query(ReservaIngressoParticipante).filter(
+        ReservaIngressoParticipante.reserva_ingresso_id == reserva_id,
+        ReservaIngressoParticipante.ordem == 1,
+    ).first()
+    if participante is None:
+        participante = ReservaIngressoParticipante(reserva_ingresso_id=reserva_id, ordem=1)
+        db.add(participante)
+    participante.nmparticipante = nome
+    participante.cpfparticipante = payload.cpf
+    participante.beneficio_id = beneficio.beneficio_id if beneficio else None
+    participante.tipobeneficio = beneficio.cdbeneficio if beneficio else None
+    participante.nmbeneficiosnapshot = beneficio.nmbeneficio if beneficio else None
+    db.commit()
+    return {"ok": True, "reserva_ingresso_id": reserva_id,
+            "participante": {"nome": nome, "cpf": payload.cpf, "beneficio_id": payload.beneficio_id}}
 
 
 @router.put("/{reserva_id}/participantes")
