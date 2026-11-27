@@ -171,6 +171,7 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
         db.add(compra)
         db.flush()
         for item in reservas:
+            item.dtexpiracao = compra.dtexpiracao
             item.compra_evento_id = compra.compra_evento_id
             db.add(CompraEventoItem(
                 compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
@@ -238,6 +239,7 @@ def criar_compra_evento_item(payload: ItemReservaIngressoCreate, cliente_id: int
         )
         db.add(compra); db.flush()
         for reserva in reservas:
+            reserva.dtexpiracao = compra.dtexpiracao
             reserva.compra_evento_id = compra.compra_evento_id
             db.add(CompraEventoItem(
                 compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
@@ -268,6 +270,8 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
     ).with_for_update().first()
     if not compra:
         raise HTTPException(404, "Compra de evento não encontrada")
+    if compra.dtexpiracao <= datetime.now():
+        raise HTTPException(409, "A reserva de ingressos expirou")
     if _eh_cortesia(db, payload.lotepreco_id):
         reservas_atuais = db.query(ReservaIngresso).filter(
             ReservaIngresso.compra_evento_id == compra_evento_id,
@@ -291,6 +295,7 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
             if reserva_item.evento_id != compra.evento_id or reserva_item.loja_id != compra.loja_id:
                 raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
             reserva_item.compra_evento_id = compra_evento_id
+            reserva_item.dtexpiracao = compra.dtexpiracao
             reservas_novas.append(reserva_item)
             db.add(CompraEventoItem(
                 compra_evento_id=compra_evento_id, tipoitem="INGRESSO",

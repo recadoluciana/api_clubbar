@@ -62,6 +62,7 @@ def test_primeira_compra_cria_um_item_por_ingresso(monkeypatch, gratuito):
     assert [item.reserva_ingresso_id for item in itens] == [1, 2]
     assert [item.quantidade for item in itens] == [1, 1]
     assert [reserva.compra_evento_id for reserva in reservas] == [42, 42]
+    assert all(reserva.dtexpiracao == compra.dtexpiracao for reserva in reservas)
     assert [item['quantidade'] for item in resposta['itens']] == [1, 1]
     assert resposta['quantidade'] == 2
     assert resposta['valor_total'] == (0 if gratuito else 66)
@@ -78,13 +79,14 @@ def test_falha_no_segundo_ingresso_reverte_transacao(monkeypatch):
 
 
 def test_grupo_cria_reservas_individuais(monkeypatch):
-    db, _, adicionados = _preparar(monkeypatch)
+    db, reservas, adicionados = _preparar(monkeypatch)
     resposta = router.reservar_grupo(ReservaIngressoGrupoCreate(cliente_id=7, itens=[_item(2)]), db, {})
     itens = [item for item in adicionados if isinstance(item, CompraEventoItem)]
     assert [item.reserva_ingresso_id for item in itens] == [1, 2]
     assert [item.quantidade for item in itens] == [1, 1]
     assert resposta['quantidade'] == 2
     assert resposta['valor_total'] == 66
+    assert reservas[0].dtexpiracao == reservas[1].dtexpiracao
     db.commit.assert_called_once()
 
 
@@ -122,3 +124,23 @@ def test_excluir_um_ingresso_mantem_outro_na_compra(monkeypatch):
     assert resposta['valor_total'] == 33
     assert [item['reserva_ingresso_id'] for item in resposta['itens']] == [2]
     db.commit.assert_called_once()
+
+def test_adicao_posterior_mantem_prazo_original(monkeypatch):
+    db, reservas, _ = _preparar(monkeypatch)
+    prazo = datetime.now() + timedelta(minutes=3)
+    compra = SimpleNamespace(dtexpiracao=prazo, evento_id=3, loja_id=2, valor_total=Decimal('33'))
+    db.query.return_value.filter.return_value.with_for_update.return_value.first.return_value = compra
+    monkeypatch.setattr(router, '_grupo', lambda db, reserva: reservas)
+    router.adicionar_ingresso_compra_evento(42, _item(2), 7, db, {})
+    assert all(reserva.dtexpiracao == prazo for reserva in reservas)
+    assert compra.dtexpiracao == prazo
+
+
+def test_nao_adiciona_ingresso_a_compra_expirada(monkeypatch):
+    db, reservas, _ = _preparar(monkeypatch)
+    compra = SimpleNamespace(dtexpiracao=datetime.now() - timedelta(seconds=1))
+    db.query.return_value.filter.return_value.with_for_update.return_value.first.return_value = compra
+    with pytest.raises(HTTPException) as erro:
+        router.adicionar_ingresso_compra_evento(42, _item(1), 7, db, {})
+    assert erro.value.status_code == 409
+    assert not reservas
