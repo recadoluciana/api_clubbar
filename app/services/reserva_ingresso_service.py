@@ -33,7 +33,7 @@ LIMITE_INGRESSOS_POR_TRANSACAO = 5
 # A reserva evita que duas pessoas comprem a mesma vaga ao mesmo tempo. O
 # prazo curto protege o estoque sem fazer o ingresso parecer esgotado para
 # quem está aguardando uma compra abandonada.
-PRAZO_RESERVA_INGRESSO = timedelta(minutes=15)
+PRAZO_RESERVA_INGRESSO = timedelta(minutes=10)
 
 
 def _agora_brasilia() -> datetime:

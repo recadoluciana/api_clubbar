@@ -41,11 +41,12 @@ from app.services.campanha_doacao_service import (
     registrar_snapshot_doacao,
     validar_campanha_para_split,
 )
-from app.utils.datetime_utils import iso_utc
+from app.utils.datetime_utils import iso_utc, FUSO_BRASIL
 from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
 from app.services.taxa_processamento_ingresso import cotar_ingressos_mercado_pago, cotar_itens_mercado_pago
 
 router = APIRouter(prefix="/reservas-ingressos", tags=["Reservas de ingressos"])
+PIX_ASAAS_INGRESSOS_ATIVO = False
 
 
 def _eh_cortesia(db: Session, lotepreco_id: int) -> bool:
@@ -162,6 +163,8 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
                     tipo_beneficio=item.tipo_beneficio, quantidade=1)
                 reservas.append(reserva)
         principal = reservas[0]
+        if any(item.evento_id != principal.evento_id or item.loja_id != principal.loja_id for item in reservas):
+            raise HTTPException(409, "Selecione ingressos de um único evento e estabelecimento.")
         compra = CompraEvento(
             organizacao_id=principal.organizacao_id, loja_id=principal.loja_id,
             cliente_id=principal.cliente_id, evento_id=principal.evento_id,
@@ -323,6 +326,84 @@ def adicionar_ingresso_compra_evento(compra_evento_id: int, payload: ItemReserva
         db.rollback(); raise
 
 
+@router.post("/compra-evento/{compra_evento_id}/ingressos-grupo")
+def adicionar_grupo_compra_evento(compra_evento_id: int, payload: ReservaIngressoGrupoCreate,
+                                 db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    """Inclui a seleção inteira na mesma transação e preserva o prazo original."""
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    try:
+        compra = db.query(CompraEvento).filter(
+            CompraEvento.compra_evento_id == compra_evento_id,
+            CompraEvento.cliente_id == payload.cliente_id,
+            CompraEvento.status == "ABERTA",
+        ).with_for_update().first()
+        if not compra:
+            raise HTTPException(404, "Compra de evento não encontrada")
+        if compra.dtexpiracao <= datetime.now():
+            raise HTTPException(409, "A reserva de ingressos expirou")
+        existentes = db.query(ReservaIngresso).filter(
+            ReservaIngresso.compra_evento_id == compra_evento_id,
+            ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
+        ).all()
+        ids = [item.reserva_ingresso_id for item in existentes]
+        if ids and (
+            db.query(CheckoutMercadoPago).filter(
+                CheckoutMercadoPago.reserva_ingresso_id.in_(ids),
+                CheckoutMercadoPago.status.in_(("CREATING", "PENDING", "APPROVED", "PAID")),
+            ).first()
+            or db.query(CheckoutAsaas).filter(
+                CheckoutAsaas.reserva_ingresso_id.in_(ids),
+                CheckoutAsaas.status.in_(("PENDING", "ACTIVE", "CONFIRMED", "RECEIVED")),
+            ).first()
+        ):
+            raise HTTPException(409, "Já existe um pagamento para esta reserva. Confira o pagamento antes de alterar os ingressos.")
+        quantidade = sum(int(item.qtreservada or 0) for item in existentes)
+        if quantidade + sum(item.quantidade for item in payload.itens) > 5:
+            raise HTTPException(422, "O limite é de 5 ingressos por transação.")
+        if any(_eh_cortesia(db, item.lotepreco_id) for item in payload.itens):
+            raise HTTPException(422, "Resgate cortesias individualmente.")
+        for item in payload.itens:
+            for _ in range(item.quantidade):
+                reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
+                    lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
+                    tipo_beneficio=item.tipo_beneficio, quantidade=1)
+                if reserva.evento_id != compra.evento_id or reserva.loja_id != compra.loja_id:
+                    raise HTTPException(409, "O ingresso pertence a outro evento ou estabelecimento")
+                reserva.compra_evento_id = compra_evento_id
+                reserva.dtexpiracao = compra.dtexpiracao
+                db.add(CompraEventoItem(compra_evento_id=compra_evento_id, tipoitem="INGRESSO",
+                    reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=1,
+                    valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa, subtotal=reserva.vrtotal))
+                existentes.append(reserva)
+        compra.valor_total = sum((Decimal(str(item.vrtotal or 0)) for item in existentes), Decimal("0"))
+        db.commit()
+        principal = existentes[0]
+        resposta = _saida(db, principal)
+        resposta.update(compra_evento_id=compra_evento_id,
+            itens=[_saida(db, item) for item in existentes],
+            quantidade=sum(item.qtreservada for item in existentes), valor_total=float(compra.valor_total))
+        return resposta
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _impedir_alteracao_com_pagamento(db: Session, reserva: ReservaIngresso) -> None:
+    ids = [item.reserva_ingresso_id for item in _grupo(db, reserva)]
+    if not ids:
+        ids = [reserva.reserva_ingresso_id]
+    pagamento_mp = db.query(CheckoutMercadoPago).filter(
+        CheckoutMercadoPago.reserva_ingresso_id.in_(ids),
+        CheckoutMercadoPago.status.in_(("CREATING", "PENDING", "APPROVED", "PAID")),
+    ).first()
+    pagamento_asaas = db.query(CheckoutAsaas).filter(
+        CheckoutAsaas.reserva_ingresso_id.in_(ids),
+        CheckoutAsaas.status.in_(("PENDING", "ACTIVE", "CONFIRMED", "RECEIVED")),
+    ).first()
+    if pagamento_mp or pagamento_asaas:
+        raise HTTPException(409, "Já existe um pagamento para esta reserva. Confira o pagamento antes de alterar os ingressos.")
+
+
 @router.delete("/compra-evento/{compra_evento_id}/ingressos/{reserva_id}")
 def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, cliente_id)
@@ -338,6 +419,7 @@ def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, clien
     ).with_for_update().first()
     if not compra or not reserva:
         raise HTTPException(404, "Item da compra não encontrado")
+    _impedir_alteracao_com_pagamento(db, reserva)
     db.query(CompraEventoItem).filter(
         CompraEventoItem.compra_evento_id == compra_evento_id,
         CompraEventoItem.reserva_ingresso_id == reserva_id,
@@ -504,6 +586,7 @@ def cancelar_reserva(reserva_id: int, cliente_id: int, db: Session = Depends(get
         raise HTTPException(404, "Reserva não encontrada")
     if reserva.sitreserva == "CONFIRMADA":
         raise HTTPException(409, "Reserva já confirmada como venda")
+    _impedir_alteracao_com_pagamento(db, reserva)
     reserva.sitreserva = "CANCELADA"
     restante = []
     if getattr(reserva, "compra_evento_id", None):
@@ -559,6 +642,10 @@ def _cotacao_reserva(db: Session | ReservaIngresso, reserva: ReservaIngresso | s
 @router.post("/{reserva_id}/pix")
 async def gerar_pix_reserva(reserva_id: int, payload: PagamentoReservaIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, payload.cliente_id)
+    # O Pix de cobrança dinâmica do Asaas pode continuar válido após a
+    # reserva; não criamos novas cobranças até existir expiração segura.
+    if not PIX_ASAAS_INGRESSOS_ATIVO:
+        raise HTTPException(409, "Pix temporariamente indisponível para ingressos neste estabelecimento. Escolha cartão de crédito.")
     try:
         reserva = _reserva_para_pagamento(db, reserva_id, payload.cliente_id)
         valor_grupo = _valor_grupo(db, reserva)
@@ -706,7 +793,11 @@ async def gerar_checkout_reserva_mercado_pago(
         if metodo in {'CREDIT_CARD', 'CREDITO'} and (not payload.card_token or not payload.payment_method_id):
             raise HTTPException(422, 'Informe os dados tokenizados do cartão.')
         if metodo == 'PIX':
-            reserva.dtexpiracao = max(reserva.dtexpiracao, datetime.now() + timedelta(minutes=15))
+            # O Mercado Pago exige 30 minutos para o Pix. Protege todo o grupo
+            # até a validade do código, incluindo margem para latência da API.
+            prazo_pix = datetime.now() + timedelta(minutes=31)
+            for item in _grupo(db, reserva):
+                item.dtexpiracao = max(item.dtexpiracao, prazo_pix)
         referencia = f'MP-{APP_ENV.upper()}-RESERVA-{reserva_id}-{uuid.uuid4().hex[:12]}'
         token, conta_mp = await obter_token_mercado_pago_loja(db, reserva.loja_id)
         checkout = CheckoutMercadoPago(
@@ -740,6 +831,18 @@ async def gerar_checkout_reserva_mercado_pago(
                 payer_email=payload.payer_email or cliente.emailcliente,
                 payer_document=payload.payer_document or cliente.nrcpfcliente, device_id=payload.device_id,
             )
+        if metodo == 'PIX' and pagamento.get('date_of_expiration'):
+            try:
+                prazo_provedor = datetime.fromisoformat(str(pagamento['date_of_expiration']).replace('Z', '+00:00'))
+                if prazo_provedor.tzinfo is not None:
+                    prazo_provedor = prazo_provedor.astimezone(FUSO_BRASIL).replace(tzinfo=None)
+                if prazo_provedor > datetime.now():
+                    for item in _grupo(db, reserva):
+                        item.dtexpiracao = prazo_provedor
+            except (ValueError, TypeError):
+                # A margem anterior mantém o estoque reservado enquanto o
+                # provedor não fornecer uma data válida.
+                pass
         checkout = db.query(CheckoutMercadoPago).filter(
             CheckoutMercadoPago.checkout_mercadopago_id == checkout.checkout_mercadopago_id
         ).with_for_update().first()
