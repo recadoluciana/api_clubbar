@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.compra_evento import CompraEvento, CompraEventoItem
 from app.models.reserva_ingresso import ReservaIngresso
 from app.models.reserva_ingresso_participante import ReservaIngressoParticipante
@@ -15,7 +17,7 @@ from app.routers import reservas_ingressos as router
 @pytest.mark.parametrize('quantidade', [1, 2])
 def test_exclusao_consulta_restantes_com_autoflush_desativado(monkeypatch, quantidade):
     engine = create_engine('sqlite:///:memory:')
-    modelos = (CompraEvento, ReservaIngresso, CompraEventoItem, ReservaIngressoParticipante)
+    modelos = (CompraEvento, ReservaIngresso, CompraEventoItem, ReservaIngressoParticipante, CheckoutMercadoPago, CheckoutAsaas)
     with engine.begin() as conn:
         for modelo in modelos:
             colunas = ', '.join(

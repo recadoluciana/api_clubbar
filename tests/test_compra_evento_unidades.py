@@ -99,6 +99,7 @@ def test_limite_de_cortesias_na_primeira_compra(monkeypatch):
     db.rollback.assert_called_once()
 
 def test_excluir_um_ingresso_mantem_outro_na_compra(monkeypatch):
+    monkeypatch.setattr(router, '_impedir_alteracao_com_pagamento', lambda *args: None)
     db, reservas, _ = _preparar(monkeypatch)
     router.criar_compra_evento_item(_item(2), 7, db, {})
     db.reset_mock()

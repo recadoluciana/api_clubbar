@@ -147,6 +147,9 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo, nova_co
     monkeypatch.setattr(router, '_reserva_para_pagamento', MagicMock(return_value=reserva))
     monkeypatch.setattr(router, 'obter_token_mercado_pago_loja', AsyncMock(return_value=('token', conta)))
     pagamento = {'id': 99, 'status': 'pending', 'point_of_interaction': {'transaction_data': {'qr_code': 'pix-ficticio'}}}
+    prazo_pix = (datetime.now() + timedelta(minutes=35)).replace(microsecond=0)
+    if metodo == 'PIX':
+        pagamento['date_of_expiration'] = prazo_pix.isoformat()
     async def criar(**kwargs):
         assert db.commit.call_count >= 1
         assert salvo[0].status == 'CREATING'
@@ -167,7 +170,7 @@ def test_reserva_cria_pagamento_direto_com_comissao(monkeypatch, metodo, nova_co
     assert resultado['pagamento_id'] == salvo[0].external_reference
     if metodo == 'PIX':
         assert resultado['pix_copia_cola'] == 'pix-ficticio'
-        assert reserva.dtexpiracao > datetime.now() + timedelta(minutes=14)
+        assert reserva.dtexpiracao == prazo_pix
         assert resultado['segundos_restantes'] >= 840
 
 
