@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import RedirectResponse
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -147,7 +148,7 @@ def clique_email(token: str, db: Session = Depends(get_db)):
     if not envio:
         raise HTTPException(404, 'Link indisponível')
     if envio.clicado_em is None:
-        envio.clicado_em = datetime.now(timezone.utc).replace(tzinfo=None)
+        envio.clicado_em = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
         db.commit()
     return RedirectResponse(destino, status_code=302)
 

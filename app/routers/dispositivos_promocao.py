@@ -1,6 +1,7 @@
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -57,7 +58,7 @@ def registrar_clique(envio_id: int, usuario=Depends(get_usuario_logado), db: Ses
     if not envio:
         raise HTTPException(404, 'Notificação não encontrada')
     if envio.clicado_em is None:
-        envio.clicado_em = datetime.now(timezone.utc).replace(tzinfo=None)
+        envio.clicado_em = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
         db.commit()
     return {'registrado': True}
 

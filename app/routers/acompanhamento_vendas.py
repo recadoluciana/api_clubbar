@@ -21,7 +21,7 @@ from app.models.pagvenda import PagVenda
 from app.models.produto import Produto
 from app.models.venda import Venda
 from app.services.taxa_processamento_ingresso import TAXAS_PROCESSAMENTO
-from app.utils.datetime_utils import inicio_dia_brasil_em_utc, iso_utc
+from app.utils.datetime_utils import iso_utc
 
 
 router = APIRouter(prefix="/acompanhamento-vendas", tags=["Acompanhamento de vendas"])
@@ -265,11 +265,11 @@ def listar_compras_produtos(
         query = query.filter(Venda.loja_id == loja_final)
     if inicio is not None:
         query = query.filter(
-            Venda.dtcriacao >= inicio_dia_brasil_em_utc(inicio),
+            Venda.dtcriacao >= datetime.combine(inicio, time.min),
         )
     if fim is not None:
         query = query.filter(
-            Venda.dtcriacao < inicio_dia_brasil_em_utc(fim + timedelta(days=1)),
+            Venda.dtcriacao < datetime.combine(fim + timedelta(days=1), time.min),
         )
     if situacao == "PENDENTES":
         query = query.filter(ItVenda.identregaitvenda != "SIM")
