@@ -123,6 +123,11 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 BeneficioProdutoCampanha.beneficioprodutocampanha_id == resgate.campanha_id).first() if resgate else None
             if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (resgate.dtexpiracao and resgate.dtexpiracao < agora):
                 raise HTTPException(409, "O benefício não está mais disponível.")
+            existente = db.query(ItCarrinho.itcarrinho_id).join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id).filter(
+                ItCarrinho.beneficioprodutoresgate_id == resgate.beneficioprodutoresgate_id,
+                Carrinho.sitcarrinho == "ABERTO").first()
+            if existente:
+                raise HTTPException(409, "Este desconto já está no carrinho.")
             vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
             beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
         if payload.campanha_id is not None:
@@ -239,7 +244,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         qt=int(payload.qt),
         obs=item.dsobsitcar,
         nmparticipante=item.nmparticipante,
-        cpfparticipante=item.cpfparticipante,        
+        cpfparticipante=item.cpfparticipante,
 
     )
 
@@ -385,6 +390,7 @@ def obter_itens_carrinho(
             ItCarrinho.produto_id,
             ItCarrinho.cardapioitem_id,
             ItCarrinho.beneficioprodutocampanha_id,
+            ItCarrinho.beneficioprodutoresgate_id,
             Produto.nmproduto,
             Produto.dsproduto,
             ItCarrinho.vrunitario.label("vrprecoprod"),
@@ -438,6 +444,7 @@ def obter_itens_carrinho(
                 "produto_id": i.produto_id,
                 "cardapioitem_id": i.cardapioitem_id,
                 "campanha_id": campanha_id,
+                "beneficio_resgate_id": i.beneficioprodutoresgate_id,
                 "qtitenspacote": int(campanha.qtitenspacote)
                 if campanha and campanha.qtitenspacote
                 else None,
@@ -478,6 +485,7 @@ def remover_uma_unidade(
     observacao: str = Query(""),
     cardapioitem_id: int | None = Query(None),
     campanha_id: int | None = Query(None),
+    beneficio_resgate_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
     observacao = (observacao or "").strip()
@@ -491,6 +499,11 @@ def remover_uma_unidade(
         else "AND beneficioprodutocampanha_id IS NULL"
     )
 
+    filtro_beneficio = (
+        "AND beneficioprodutoresgate_id = :beneficio_resgate_id"
+        if beneficio_resgate_id is not None
+        else "AND beneficioprodutoresgate_id IS NULL"
+    )
     res = db.execute(
         text(f"""
             DELETE FROM itcarrinho
@@ -499,6 +512,7 @@ def remover_uma_unidade(
               AND COALESCE(dsobsitcar, '') = :observacao
               {filtro_cardapio}
               {filtro_campanha}
+              {filtro_beneficio}
             ORDER BY dtcriacao DESC, itcarrinho_id DESC
             LIMIT 1
         """),
@@ -508,6 +522,7 @@ def remover_uma_unidade(
             "observacao": observacao,
             "cardapioitem_id": cardapioitem_id,
             "campanha_id": campanha_id,
+            "beneficio_resgate_id": beneficio_resgate_id,
         },
     )
     db.commit()
@@ -522,7 +537,7 @@ def remover_uma_unidade(
 def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)):
     row = db.execute(
         text("""
-            SELECT itcarrinho_id, vrunitario
+            SELECT itcarrinho_id, vrunitario, beneficioprodutoresgate_id
             FROM itcarrinho
             WHERE itcarrinho_id = :itcarrinho_id
         """),
@@ -531,6 +546,8 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
 
     if not row:
         raise HTTPException(status_code=404, detail="Item do carrinho não encontrado")
+    if row.beneficioprodutoresgate_id is not None:
+        raise HTTPException(status_code=422, detail="O prêmio da roleta vale para uma unidade.")
     if float(row.vrunitario or 0) <= 0:
         raise HTTPException(
             status_code=422,

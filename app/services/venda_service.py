@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
-from app.models.beneficio_produto import BeneficioProdutoCampanha
+from app.models.beneficio_produto import BeneficioProdutoCampanha, BeneficioProdutoResgate
 from app.utils.datetime_utils import FUSO_BRASIL
 
 import uuid
@@ -157,6 +157,11 @@ def adicionar_itens_produto_venda(
         ).all()
     }
 
+    premios = [int(item["beneficio_resgate_id"]) for item in itens if item.get("beneficio_resgate_id") is not None]
+    if len(premios) != len(set(premios)):
+        raise HTTPException(409, "O desconto da roleta só pode ser usado uma vez.")
+    venda = db.query(Venda).filter(Venda.venda_id == venda_id).first() if premios else None
+
     for item in itens:
         produto_id = int(item["produto_id"])
         quantidade_linhas = int(
@@ -164,6 +169,23 @@ def adicionar_itens_produto_venda(
         )
         campanha_id = item.get("campanha_id")
         campanha = campanhas.get(int(campanha_id)) if campanha_id else None
+        premio_id = item.get("beneficio_resgate_id")
+        if premio_id is not None:
+            premio = (db.query(BeneficioProdutoResgate)
+                .filter(BeneficioProdutoResgate.beneficioprodutoresgate_id == int(premio_id))
+                .with_for_update().first())
+            agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+            if (not venda or not premio or premio.cliente_id != venda.cliente_id
+                or premio.produto_id != produto_id or premio.situacao != "DISPONIVEL"
+                or (premio.dtexpiracao is not None and premio.dtexpiracao < agora)
+                or quantidade_linhas != 1 or campanha_id is not None):
+                raise HTTPException(409, "O desconto da roleta não está mais disponível. Remova o item do carrinho e tente novamente.")
+            em_outra_venda = (db.query(ItVenda.itvenda_id).join(Venda, Venda.venda_id == ItVenda.venda_id)
+                .filter(ItVenda.beneficioprodutoresgate_id == int(premio_id),
+                        ItVenda.venda_id != venda_id, ItVenda.sititvenda == "ATIVO",
+                        Venda.sitvenda.in_(("PENDENTE", "PAGA"))).first())
+            if em_outra_venda:
+                raise HTTPException(409, "Este desconto já está vinculado a outra compra.")
 
         if campanha and campanha.tipo == "PACOTE":
             fichas_por_pacote = int(campanha.qtitenspacote or 0)
@@ -296,7 +318,7 @@ async def criar_ou_obter_venda_idempotente(
             "pagvenda_id": int(pag.pagvenda_id) if pag else 0,
             "reference_id": pag.reference_id if pag else f"VENDA-{venda_paga.venda_id}",
             "already_paid": True,
-        }    
+        }
     ## >>>>>>>>>>>>>>>>>>>>>>>>>>>>>> fim >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     venda = (
