@@ -191,6 +191,31 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
         raise
 
 
+class ResgateDiretoIn(ReservaIngressoCreate):
+    participante: ParticipanteReservaIn
+
+
+@router.post("/resgate-cortesia")
+def resgatar_cortesia_direta(payload: ResgateDiretoIn, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
+    """Reserva e resgata uma única cortesia em uma transação, sem sacola."""
+    exigir_cliente_autenticado(usuario, payload.cliente_id)
+    if payload.quantidade != 1:
+        raise HTTPException(422, "Resgate uma cortesia por vez.")
+    try:
+        if not _eh_cortesia(db, payload.lotepreco_id):
+            raise HTTPException(422, "Esta modalidade não é uma cortesia.")
+        reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=payload.lote_id,
+            lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
+            tipo_beneficio=payload.tipo_beneficio, quantidade=1)
+        if Decimal(str(reserva.vrtotal or 0)) != 0:
+            raise HTTPException(409, "A cortesia deve ter valor zero.")
+        return informar_participantes(reserva.reserva_ingresso_id,
+            ParticipantesReservaUpdate(participantes=[payload.participante]), db, usuario)
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.post("/compra-evento")
 def criar_compra_evento_item(payload: ItemReservaIngressoCreate, cliente_id: int, db: Session = Depends(get_db), usuario: dict = Depends(get_usuario_logado)):
     """Adiciona o primeiro ingresso à sacola temporária do evento."""
