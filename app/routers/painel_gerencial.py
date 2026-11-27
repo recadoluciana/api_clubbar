@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -20,7 +20,7 @@ from app.models.itvenda import ItVenda
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.venda import Venda
-from app.utils.datetime_utils import inicio_dia_brasil_em_utc
+from app.utils.datetime_utils import para_fuso_br
 from app.schemas.painel_gerencial import (
     EventoCockpitOut,
     EventoEmAndamentoOut,
@@ -37,26 +37,18 @@ def _hoje_local() -> date:
     return datetime.now(_FUSO_BRASIL).date()
 
 
-def _inicio_local_em_utc_naive(data_local: date) -> datetime:
-    return inicio_dia_brasil_em_utc(data_local)
+def _inicio_dia_brasilia(data_local: date) -> datetime:
+    return datetime.combine(data_local, time.min)
 
 
-def _referencia_utc() -> datetime:
-    """Instante de referência serializável com o fuso UTC explícito."""
-    return datetime.now(timezone.utc)
+def _referencia_brasilia() -> datetime:
+    """Instante de referência com o fuso de Brasília explícito."""
+    return datetime.now(_FUSO_BRASIL)
 
 
-def _desde_em_utc_naive(desde: datetime) -> datetime:
-    """Normaliza a referência recebida para comparação com colunas UTC-naive.
-
-    Referências antigas do KPI não tinham sufixo de fuso e representavam o
-    horário brasileiro. Mantemos essa compatibilidade durante a atualização.
-    """
-    if desde.tzinfo is None:
-        return desde.replace(tzinfo=_FUSO_BRASIL).astimezone(timezone.utc).replace(
-            tzinfo=None
-        )
-    return desde.astimezone(timezone.utc).replace(tzinfo=None)
+def _desde_em_brasilia_naive(desde: datetime) -> datetime:
+    """Converte a referência recebida para o horário civil persistido no banco."""
+    return desde if desde.tzinfo is None else desde.astimezone(_FUSO_BRASIL).replace(tzinfo=None)
 
 
 def _inteiro_positivo(valor: object, nome: str) -> int:
@@ -134,11 +126,9 @@ def _periodo_consulta(
     return data_inicio, data_fim
 
 
-def _local_em_utc_naive(momento_local: datetime) -> datetime:
-    """Converte horários operacionais do evento (Brasília) para UTC no banco."""
-    return momento_local.replace(tzinfo=_FUSO_BRASIL).astimezone(timezone.utc).replace(
-        tzinfo=None
-    )
+def _horario_brasilia_naive(momento_local: datetime) -> datetime:
+    """Horário civil de Brasília para comparação com os registros do banco."""
+    return momento_local if momento_local.tzinfo is None else momento_local.astimezone(_FUSO_BRASIL).replace(tzinfo=None)
 
 
 def _fim_evento_operacional(db: Session, evento: Evento) -> datetime:
@@ -234,8 +224,8 @@ def _resumo_operacao_produtos(
     O cardápio atual não possui estoque por unidade, por isso o número de
     disponibilizados fica nulo em vez de sugerir uma quantidade inexistente.
     """
-    inicio_utc = _local_em_utc_naive(evento.dtinicioevento)
-    fim_utc = _local_em_utc_naive(min(fim_evento, agora))
+    inicio_brasilia = _horario_brasilia_naive(evento.dtinicioevento)
+    fim_brasilia = _horario_brasilia_naive(min(fim_evento, agora))
     linhas = (
         db.query(
             ItVenda.qtitvenda,
@@ -249,8 +239,8 @@ def _resumo_operacao_produtos(
             Venda.organizacao_id == evento.organizacao_id,
             Venda.loja_id == evento.loja_id,
             Venda.sitvenda == "PAGA",
-            Venda.dtcriacao >= inicio_utc,
-            Venda.dtcriacao <= fim_utc,
+            Venda.dtcriacao >= inicio_brasilia,
+            Venda.dtcriacao <= fim_brasilia,
             ItVenda.tipoitem == "PRODUTO",
             ItVenda.sititvenda == "ATIVO",
         )
@@ -405,11 +395,11 @@ def painel_gerencial(
     primeiro_dia, ultimo_dia = _periodo_consulta(
         ano, mes, data_inicio, data_fim
     )
-    inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
+    inicio_mes = _inicio_dia_brasilia(primeiro_dia)
     hoje = _hoje_local()
-    inicio_hoje = _inicio_local_em_utc_naive(hoje)
-    fim_hoje_exclusivo = _inicio_local_em_utc_naive(hoje + timedelta(days=1))
-    fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
+    inicio_hoje = _inicio_dia_brasilia(hoje)
+    fim_hoje_exclusivo = _inicio_dia_brasilia(hoje + timedelta(days=1))
+    fim_exclusivo = _inicio_dia_brasilia(ultimo_dia + timedelta(days=1))
 
     lojas_query = db.query(Loja.loja_id, Loja.nmloja).filter(
         Loja.organizacao_id == organizacao_id
@@ -707,8 +697,8 @@ def detalhes_vendas(
     primeiro_dia, ultimo_dia = _periodo_consulta(
         ano, mes, data_inicio, data_fim
     )
-    inicio_mes = _inicio_local_em_utc_naive(primeiro_dia)
-    fim_exclusivo = _inicio_local_em_utc_naive(ultimo_dia + timedelta(days=1))
+    inicio_mes = _inicio_dia_brasilia(primeiro_dia)
+    fim_exclusivo = _inicio_dia_brasilia(ultimo_dia + timedelta(days=1))
     filtros = [
         Venda.organizacao_id == organizacao_id,
         Venda.sitvenda == "PAGA",
@@ -782,10 +772,10 @@ def detalhes_vendas(
                     "valor_total": _dinheiro(
                         Decimal(str(row.vrunititvenda or 0)) * quantidade
                     ),
-                    "data_compra": row.dtcompra.replace(tzinfo=timezone.utc),
+                    "data_compra": para_fuso_br(row.dtcompra),
                     "retirado": (row.identregaitvenda or "NAO").upper() == "SIM",
                     "data_retirada": (
-                        row.dtentregaitvenda.replace(tzinfo=timezone.utc)
+                        para_fuso_br(row.dtentregaitvenda)
                         if row.dtentregaitvenda
                         else None
                     ),
@@ -879,10 +869,10 @@ def detalhes_vendas(
                     "valor_total": _dinheiro(
                         Decimal(str(row.vrunititvenda or 0)) * quantidade
                     ),
-                    "data_compra": row.dtcompra.replace(tzinfo=timezone.utc),
+                    "data_compra": para_fuso_br(row.dtcompra),
                     "utilizado": (row.identregaitvenda or "NAO").upper() == "SIM",
                     "data_validacao": (
-                        row.dtentregaitvenda.replace(tzinfo=timezone.utc)
+                        para_fuso_br(row.dtentregaitvenda)
                         if row.dtentregaitvenda
                         else None
                     ),
@@ -913,10 +903,10 @@ def notificacoes_vendas(
         usuario,
         consolidado_por_organizacao=True,
     )
-    referencia = _referencia_utc()
+    referencia = _referencia_brasilia()
     if desde is None:
         return {"referencia": referencia, "vendas": []}
-    desde = _desde_em_utc_naive(desde)
+    desde = _desde_em_brasilia_naive(desde)
 
     momento_venda = func.coalesce(Venda.dtultatu, Venda.dtcriacao)
     movimentacoes = (
@@ -948,9 +938,8 @@ def notificacoes_vendas(
                 ),
                 "tipo": str(movimentacao.tipovenda),
                 "valor": _dinheiro(movimentacao.valor),
-                # As vendas são registradas em UTC. O sufixo explícito evita
-                # que o app interprete este valor como horário local.
-                "momento": movimentacao.momento.replace(tzinfo=timezone.utc),
+                # O banco registra o horário civil de Brasília.
+                "momento": para_fuso_br(movimentacao.momento),
             }
             for movimentacao in movimentacoes
         ],

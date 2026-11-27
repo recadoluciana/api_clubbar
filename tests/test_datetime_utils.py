@@ -13,21 +13,21 @@ class DateTimeUtilsTest(unittest.TestCase):
         self.assertTrue(inicio <= datetime(2026, 11, 16, 0, 53, 57) < fim)
         self.assertTrue(inicio <= datetime(2026, 11, 16, 1, 28, 13) < fim)
         self.assertFalse(inicio <= datetime(2026, 11, 16, 3) < fim)
-    def test_data_utc_do_banco_e_exibida_no_fuso_brasileiro(self):
-        self.assertEqual(formatar_data_br(datetime(2026, 8, 23, 5, 0)), "23/08/2026 02:00")
+    def test_data_do_banco_em_brasilia_e_exibida_sem_deslocamento(self):
+        self.assertEqual(formatar_data_br(datetime(2026, 8, 23, 5, 0)), "23/08/2026 05:00")
 
-    def test_datetime_ingenuo_do_banco_e_serializado_como_utc(self):
-        self.assertEqual(iso_utc(datetime(2026, 8, 23, 5, 0)), "2026-08-23T05:00:00Z")
+    def test_datetime_do_banco_e_serializado_com_fuso_brasilia(self):
+        self.assertEqual(iso_utc(datetime(2026, 8, 23, 5, 0)), "2026-08-23T05:00:00-03:00")
 
-    def test_horario_de_entrega_em_brasilia_e_serializado_como_instante_utc(self):
+    def test_horario_de_entrega_e_serializado_em_brasilia(self):
         despacho = datetime(2026, 11, 4, 21, 20)
         serializado = iso_utc_de_horario_brasil(despacho)
-        self.assertEqual(serializado, "2026-11-05T00:20:00Z")
+        self.assertEqual(serializado, "2026-11-04T21:20:00-03:00")
         self.assertEqual(formatar_data_br(serializado), "04/11/2026 21:20")
         self.assertIsNone(iso_utc_de_horario_brasil(None))
         self.assertEqual(
             iso_utc_de_horario_brasil(datetime(2026, 11, 5, 0, 20, tzinfo=timezone.utc)),
-            "2026-11-05T00:20:00Z",
+            "2026-11-04T21:20:00-03:00",
         )
 
 

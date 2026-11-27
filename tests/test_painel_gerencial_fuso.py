@@ -1,28 +1,30 @@
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from unittest.mock import patch
 
 from fastapi import HTTPException
 
 from app.routers.painel_gerencial import (
-    _inicio_local_em_utc_naive,
+    _inicio_dia_brasilia,
+    _desde_em_brasilia_naive,
+    _horario_brasilia_naive,
     _periodo_selecionado,
 )
 
 
 class PainelGerencialFusoTest(unittest.TestCase):
-    def test_inicio_do_dia_brasileiro_e_convertido_para_utc(self):
+    def test_inicio_do_dia_e_meia_noite_de_brasilia(self):
         self.assertEqual(
-            datetime(2026, 8, 7, 3, 0, 0),
-            _inicio_local_em_utc_naive(date(2026, 8, 7)),
+            datetime(2026, 8, 7, 0, 0, 0),
+            _inicio_dia_brasilia(date(2026, 8, 7)),
         )
 
-    def test_venda_utc_da_noite_anterior_fica_dentro_do_dia_brasileiro(self):
-        inicio = _inicio_local_em_utc_naive(date(2026, 8, 7))
-        fim = _inicio_local_em_utc_naive(date(2026, 8, 8))
+    def test_venda_do_inicio_do_dia_seguinte_fica_fora_do_dia_anterior(self):
+        inicio = _inicio_dia_brasilia(date(2026, 8, 7))
+        fim = _inicio_dia_brasilia(date(2026, 8, 8))
         venda = datetime(2026, 8, 8, 1, 58, 42)
-        self.assertTrue(inicio <= venda < fim)
+        self.assertFalse(inicio <= venda < fim)
 
     @patch("app.routers.painel_gerencial._hoje_local")
     def test_mes_atual_termina_no_dia_atual(self, hoje_local):
@@ -39,6 +41,12 @@ class PainelGerencialFusoTest(unittest.TestCase):
             (date(2026, 2, 1), date(2026, 2, 28)),
             _periodo_selecionado(2026, 2),
         )
+
+    def test_referencia_utc_e_convertida_para_comparacao_em_brasilia(self):
+        referencia = datetime(2026, 8, 8, 1, 58, 42, tzinfo=timezone.utc)
+        self.assertEqual(datetime(2026, 8, 7, 22, 58, 42), _desde_em_brasilia_naive(referencia))
+        self.assertEqual(datetime(2026, 8, 7, 22, 58, 42), _desde_em_brasilia_naive(datetime(2026, 8, 7, 22, 58, 42)))
+        self.assertEqual(datetime(2026, 8, 7, 22, 58, 42), _horario_brasilia_naive(referencia))
 
     @patch("app.routers.painel_gerencial._hoje_local")
     def test_mes_futuro_e_rejeitado(self, hoje_local):

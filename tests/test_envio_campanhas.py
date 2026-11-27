@@ -1,6 +1,8 @@
 import importlib
 import pkgutil
 from unittest.mock import patch
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -32,7 +34,7 @@ def db():
     for model in (Loja, Cliente, CampanhaPromocional, DispositivoPromocao, EnvioCampanhaPromocional):
         model.__table__.create(engine)
     with Session(engine) as db:
-        db.add(Loja(loja_id=1, organizacao_id=1, nmloja='Loja'))
+        db.add(Loja(loja_id=1, organizacao_id=1, nmloja='Loja', cpfcnpjloja='11222333000181'))
         db.add_all([Cliente(cliente_id=i, nmcliente=f'Cliente {i}', emailcliente=f'{i}@teste.com', senhahashcli='hash', sitcliente='ATIVO') for i in (1, 2)])
         db.flush()
         db.query(Cliente).filter_by(cliente_id=2).one().recebe_push_promocoes = False
@@ -116,7 +118,10 @@ def test_notificacoes_e_cliques_sao_restritos_ao_cliente(db):
     assert len(listar_notificacoes(cliente, db)) == 1
     with pytest.raises(HTTPException):
         registrar_clique(envio.id, {'role': 'cliente', 'sub': '2'}, db)
+    antes = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
     registrar_clique(envio.id, cliente, db)
+    depois = datetime.now(ZoneInfo("America/Sao_Paulo")).replace(tzinfo=None)
+    assert antes - timedelta(seconds=1) <= envio.clicado_em <= depois + timedelta(seconds=1)
     assert resultado(1, parceiro, db)['destinatarios'][0]['envios'][0]['clicado_em'] is not None
 
 

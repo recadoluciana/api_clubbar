@@ -18,7 +18,7 @@ def test_estimativa_usa_comissao_historica_e_metodo_de_pagamento():
     assert _estimar_liquido_produto(Decimal('3'), Decimal('0.30'), 'PIX', 'MERCADO_PAGO', 2) is None
 
 
-def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
+def test_compras_filtram_dias_e_informam_fuso_de_brasilia():
     banco = MagicMock()
     query = banco.query.return_value
     for metodo in ("join", "outerjoin", "filter", "order_by", "offset", "limit"):
@@ -42,8 +42,8 @@ def test_compras_filtram_dias_de_brasilia_e_informam_fuso_utc():
         for criterio in chamada.args
         if getattr(getattr(criterio, "left", None), "name", None) == "dtcriacao"
     ]
-    assert valores == [datetime(2026, 9, 1, 3), datetime(2026, 11, 16, 3)]
-    assert resultado["itens"][0]["dtcompra"] == "2026-11-16T00:53:57Z"
+    assert valores == [datetime(2026, 9, 1, 0), datetime(2026, 11, 16, 0)]
+    assert resultado["itens"][0]["dtcompra"] == "2026-11-16T00:53:57-03:00"
     assert resultado["itens"][0]["valor_total"] == 3
     assert resultado["itens"][0]["valor_apos_comissao"] == 2.97
     query.offset.assert_called_once_with(0)

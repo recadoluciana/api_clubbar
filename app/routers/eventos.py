@@ -519,7 +519,7 @@ def listar_ingressos_para_ticketman(
     def _em_brasilia(valor: datetime | None) -> datetime | None:
         if valor is None:
             return None
-        return valor.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Sao_Paulo"))
+        return valor.replace(tzinfo=ZoneInfo("America/Sao_Paulo")) if valor.tzinfo is None else valor.astimezone(ZoneInfo("America/Sao_Paulo"))
 
     return {
         "situacao": situacao,

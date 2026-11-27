@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 import secrets
 import string
 from zoneinfo import ZoneInfo
@@ -41,21 +41,13 @@ def _gerar_senha_temporaria() -> str:
     return "".join(secrets.choice(_ALFABETO_SENHA_TEMPORARIA) for _ in range(10))
 
 
-def _limites_data_utc(data_local: date) -> tuple[datetime, datetime]:
-    inicio_local = datetime.combine(
-        data_local,
-        datetime.min.time(),
-        tzinfo=_FUSO_BRASIL,
-    )
-    fim_local = inicio_local + timedelta(days=1)
-    return (
-        inicio_local.astimezone(timezone.utc).replace(tzinfo=None),
-        fim_local.astimezone(timezone.utc).replace(tzinfo=None),
-    )
+def _limites_data_brasilia(data_local: date) -> tuple[datetime, datetime]:
+    inicio = datetime.combine(data_local, datetime.min.time())
+    return inicio, inicio + timedelta(days=1)
 
 
-def _limites_hoje_utc() -> tuple[datetime, datetime]:
-    return _limites_data_utc(datetime.now(_FUSO_BRASIL).date())
+def _limites_hoje_brasilia() -> tuple[datetime, datetime]:
+    return _limites_data_brasilia(datetime.now(_FUSO_BRASIL).date())
 
 
 @router.get("/dashboard")
@@ -63,7 +55,7 @@ def dashboard_superadmin(
     _: dict = Depends(get_operador_logado),
     db: Session = Depends(get_db),
 ):
-    hoje_inicio, hoje_fim = _limites_hoje_utc()
+    hoje_inicio, hoje_fim = _limites_hoje_brasilia()
 
     # =========================================================
     # LEADS NOVOS
@@ -649,12 +641,12 @@ def detalhar_vendas_hoje(
         raise HTTPException(422, "A data final não pode ser anterior à data inicial")
     if (fim_consulta - inicio_consulta).days >= 30:
         raise HTTPException(422, "O período máximo para consulta é de 30 dias")
-    inicio_utc, _ = _limites_data_utc(inicio_consulta)
-    _, fim_utc = _limites_data_utc(fim_consulta)
+    inicio_brasilia, _ = _limites_data_brasilia(inicio_consulta)
+    _, fim_brasilia = _limites_data_brasilia(fim_consulta)
     filtros = [
         Venda.sitvenda == "PAGA",
-        Venda.dtcriacao >= inicio_utc,
-        Venda.dtcriacao < fim_utc,
+        Venda.dtcriacao >= inicio_brasilia,
+        Venda.dtcriacao < fim_brasilia,
     ]
     if organizacao_id is not None:
         filtros.append(Venda.organizacao_id == organizacao_id)
