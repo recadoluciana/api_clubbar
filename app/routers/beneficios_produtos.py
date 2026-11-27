@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -24,6 +25,11 @@ from app.services.pagamento_status_service import set_venda_como_paga
 from app.utils.datetime_utils import FUSO_BRASIL
 
 router = APIRouter(prefix="/beneficios-produtos", tags=["Benefícios de produtos"])
+PERCENTUAIS_ROLETA = (10, 20)
+MAX_GIROS_POR_PRODUTO_EM_24H = 2
+JANELA_GIRO_HORAS = 24
+JANELA_DESCONTO_DIAS = 10
+
 def _agora() -> datetime:
     return datetime.now(FUSO_BRASIL).replace(tzinfo=None)
 
@@ -32,7 +38,7 @@ class CampanhaIn(BaseModel):
     organizacao_id: int
     loja_id: int
     produto_id: int
-    tipo: str = Field(pattern="^(CORTESIA|PERCENTUAL|PACOTE)$")
+    tipo: str = Field(pattern="^(CORTESIA|PERCENTUAL|PACOTE|ROLETA)$")
     nmcampanha: str = Field(min_length=2, max_length=120)
     dthrinicio: datetime
     dthrfim: datetime | None = None
@@ -136,6 +142,7 @@ def _validar_nao_sobrepoe_campanha(
         "CORTESIA": "cortesia",
         "PERCENTUAL": "promoção percentual",
         "PACOTE": "promoção por quantidade",
+        "ROLETA": "roleta",
     }
     raise HTTPException(
         status_code=status.HTTP_409_CONFLICT,
@@ -246,6 +253,51 @@ def _tem_cortesia_pendente(db: Session, *, cliente_id: int, produto_id: int) -> 
     )
 
 
+def _tem_desconto_recente(db: Session, *, cliente_id: int, produto_id: int, agora: datetime) -> bool:
+    """Verifica em itvenda uma compra paga com desconto da roleta nos últimos 10 dias."""
+    return (
+        db.query(ItVenda.itvenda_id)
+        .join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .join(
+            BeneficioProdutoResgate,
+            BeneficioProdutoResgate.beneficioprodutoresgate_id
+            == ItVenda.beneficioprodutoresgate_id,
+        )
+        .filter(
+            Venda.cliente_id == cliente_id,
+            Venda.sitvenda == "PAGA",
+            ItVenda.tipoitem == "PRODUTO",
+            ItVenda.produto_id == produto_id,
+            ItVenda.sititvenda == "ATIVO",
+            ItVenda.dtcriacao >= agora - timedelta(days=JANELA_DESCONTO_DIAS),
+            BeneficioProdutoResgate.percentual_desconto > 0,
+            BeneficioProdutoResgate.percentual_desconto < 100,
+        )
+        .first()
+        is not None
+    )
+
+
+def _proxima_rodada_roleta(giros: list, agora: datetime) -> datetime | None:
+    """Retorna a liberação após o segundo giro feito dentro de 24 horas."""
+    if len(giros) < MAX_GIROS_POR_PRODUTO_EM_24H:
+        return None
+    ultimo_giro, penultimo_giro = giros[:MAX_GIROS_POR_PRODUTO_EM_24H]
+    proxima_rodada = ultimo_giro.dtresgate + timedelta(hours=JANELA_GIRO_HORAS)
+    if penultimo_giro.dtresgate < ultimo_giro.dtresgate - timedelta(
+        hours=JANELA_GIRO_HORAS
+    ):
+        return None
+    return proxima_rodada if agora < proxima_rodada else None
+
+
+def _texto_tempo_restante(data_final: datetime, agora: datetime) -> str:
+    segundos = max(0, int((data_final - agora).total_seconds()))
+    horas, restante = divmod(segundos, 3600)
+    minutos, segundos = divmod(restante, 60)
+    return f"{horas:02}h {minutos:02}min {segundos:02}s"
+
+
 def _validar_escopo(db: Session, dados: CampanhaIn, usuario: dict) -> None:
     loja = db.query(Loja).filter(Loja.loja_id == dados.loja_id, Loja.organizacao_id == dados.organizacao_id).first()
     produto = db.query(Produto).filter(Produto.produto_id == dados.produto_id, Produto.organizacao_id == dados.organizacao_id, Produto.sitproduto == "ATIVO").first()
@@ -332,7 +384,7 @@ def ofertas_ativas(
     itens = db.query(BeneficioProdutoCampanha).filter(
         BeneficioProdutoCampanha.loja_id == loja_id,
         BeneficioProdutoCampanha.situacao == "ATIVA",
-        BeneficioProdutoCampanha.tipo.in_(("CORTESIA", "PERCENTUAL", "PACOTE")),
+        BeneficioProdutoCampanha.tipo.in_(("CORTESIA", "PERCENTUAL", "PACOTE", "ROLETA")),
         BeneficioProdutoCampanha.dthrinicio <= agora,
         or_(
             BeneficioProdutoCampanha.dthrfim.is_(None),
@@ -361,8 +413,108 @@ def ofertas_ativas(
                 oferta["motivo_indisponibilidade"] = (
                     "Você já possui uma cortesia válida deste produto aguardando retirada."
                 )
+        elif item.tipo == "ROLETA" and cliente_id is not None:
+            ultimos = (db.query(BeneficioProdutoResgate)
+                .join(BeneficioProdutoCampanha, BeneficioProdutoCampanha.beneficioprodutocampanha_id == BeneficioProdutoResgate.campanha_id)
+                .filter(BeneficioProdutoResgate.cliente_id == cliente_id,
+                        BeneficioProdutoResgate.produto_id == item.produto_id,
+                        BeneficioProdutoCampanha.tipo == "ROLETA")
+                .order_by(BeneficioProdutoResgate.dtresgate.desc())
+                .limit(MAX_GIROS_POR_PRODUTO_EM_24H).all())
+            proxima = _proxima_rodada_roleta(ultimos, agora)
+            oferta["proxima_rodada_em"] = proxima.isoformat() if proxima else None
         retorno.append(oferta)
     return retorno
+
+
+@router.post("/{campanha_id}/girar")
+def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    exigir_cliente_autenticado(usuario, dados.cliente_id)
+    agora = _agora()
+    campanha = db.query(BeneficioProdutoCampanha).filter(BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id).with_for_update().first()
+    if not campanha or campanha.tipo != "ROLETA" or campanha.situacao != "ATIVA" or not _periodo_ativo(campanha, agora):
+        raise HTTPException(409, "Esta roleta não está disponível agora.")
+    if _tem_cortesia_pendente(
+        db, cliente_id=dados.cliente_id, produto_id=int(campanha.produto_id)
+    ):
+        raise HTTPException(
+            409,
+            "Você possui uma cortesia deste produto aguardando retirada.",
+        )
+    if _tem_desconto_recente(
+        db,
+        cliente_id=dados.cliente_id,
+        produto_id=int(campanha.produto_id),
+        agora=agora,
+    ):
+        raise HTTPException(
+            409,
+            "Este produto já recebeu desconto para você nos últimos 10 dias.",
+        )
+
+    inicio_janela = agora - timedelta(hours=JANELA_GIRO_HORAS)
+    giros_recentes = (
+        db.query(BeneficioProdutoResgate)
+        .join(
+            BeneficioProdutoCampanha,
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id
+            == BeneficioProdutoResgate.campanha_id,
+        )
+        .filter(
+            BeneficioProdutoResgate.cliente_id == dados.cliente_id,
+            BeneficioProdutoResgate.produto_id == campanha.produto_id,
+            BeneficioProdutoResgate.dtresgate >= inicio_janela,
+            BeneficioProdutoCampanha.tipo == "ROLETA",
+        )
+        .with_for_update()
+        .all()
+    )
+    # Depois do segundo giro, a nova tentativa só é liberada 24 horas após
+    # esse último giro (e não 24 horas após o primeiro).
+    ultimos_dois_giros = (
+        db.query(BeneficioProdutoResgate)
+        .join(
+            BeneficioProdutoCampanha,
+            BeneficioProdutoCampanha.beneficioprodutocampanha_id
+            == BeneficioProdutoResgate.campanha_id,
+        )
+        .filter(
+            BeneficioProdutoResgate.cliente_id == dados.cliente_id,
+            BeneficioProdutoResgate.produto_id == campanha.produto_id,
+            BeneficioProdutoCampanha.tipo == "ROLETA",
+        )
+        .order_by(BeneficioProdutoResgate.dtresgate.desc())
+        .limit(MAX_GIROS_POR_PRODUTO_EM_24H)
+        .all()
+    )
+    proxima_rodada = _proxima_rodada_roleta(ultimos_dois_giros, agora)
+    if proxima_rodada:
+        raise HTTPException(
+            409,
+            "Você já usou suas duas tentativas para este produto. "
+            f"Próxima rodada em {_texto_tempo_restante(proxima_rodada, agora)}.",
+        )
+
+    # O segundo giro substitui o prêmio ainda disponível do primeiro. Assim,
+    # não ficam dois descontos pendentes para o mesmo produto.
+    if giros_recentes:
+        for giro in giros_recentes:
+            if giro.situacao == "DISPONIVEL":
+                em_compra = (db.query(ItVenda.itvenda_id)
+                    .join(Venda, Venda.venda_id == ItVenda.venda_id)
+                    .filter(ItVenda.beneficioprodutoresgate_id == giro.beneficioprodutoresgate_id,
+                            ItVenda.sititvenda == "ATIVO",
+                            Venda.sitvenda.in_(("PENDENTE", "PAGA"))).first())
+                if em_compra:
+                    raise HTTPException(409, "Este desconto já está vinculado a uma compra. Conclua ou cancele a compra antes de girar novamente.")
+                giro.situacao = "CANCELADO"
+
+    total = _total_resgates_validos(db, campanha_id)
+    if campanha.qtlimite is not None and total >= campanha.qtlimite: raise HTTPException(409, "Esta promoção já atingiu o limite.")
+    percentual = secrets.choice(PERCENTUAIS_ROLETA)
+    resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=percentual, situacao="DISPONIVEL", dtexpiracao=agora + timedelta(minutes=20))
+    db.add(resgate); db.commit(); db.refresh(resgate)
+    return {"resgate_id": int(resgate.beneficioprodutoresgate_id), "percentual_desconto": percentual, "expira_em": resgate.dtexpiracao, "mensagem": f"Você ganhou {percentual}% de desconto!" if percentual else "Desta vez não houve desconto. Você pode tentar novamente!"}
 
 
 @router.post("/{campanha_id}/resgatar-cortesia")
