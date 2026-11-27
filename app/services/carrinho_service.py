@@ -38,7 +38,7 @@ def revalidar_precos_carrinho(db: Session, carrinho: Carrinho) -> list[dict]:
     itens = db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho.carrinho_id).all()
     alteracoes = []
     for item in itens:
-        # O prêmio já foi sorteado e fica congelado por poucos minutos. Não o
+        # O prêmio já foi sorteado e permanece no carrinho. Não o
         # substituímos por regras posteriores do cardápio durante a compra.
         if (
             getattr(item, "beneficioprodutoresgate_id", None)

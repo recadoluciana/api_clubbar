@@ -136,7 +136,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             ).with_for_update().first()
             campanha = db.query(BeneficioProdutoCampanha).filter(
                 BeneficioProdutoCampanha.beneficioprodutocampanha_id == resgate.campanha_id).first() if resgate else None
-            if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (resgate.dtexpiracao and resgate.dtexpiracao < agora):
+            if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (campanha.tipo != "ROLETA" and resgate.dtexpiracao and resgate.dtexpiracao < agora):
                 raise HTTPException(409, "O benefício não está mais disponível.")
             existente = db.query(ItCarrinho.itcarrinho_id).join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id).filter(
                 ItCarrinho.beneficioprodutoresgate_id == resgate.beneficioprodutoresgate_id,
@@ -144,6 +144,8 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             if existente:
                 raise HTTPException(409, "Este desconto já está no carrinho.")
             vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
+            if campanha.tipo == "ROLETA":
+                resgate.dtexpiracao = None
             beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
         if payload.campanha_id is not None:
             campanha_promocional = (

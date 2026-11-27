@@ -17,6 +17,7 @@ from app.models.beneficio_produto import BeneficioProdutoCampanha, BeneficioProd
 from app.models.loja import Loja
 from app.models.produto import Produto
 from app.models.carrinho import Carrinho
+from app.models.itcarrinho import ItCarrinho
 from app.models.venda import Venda
 from app.models.itvenda import ItVenda
 from app.models.pagvenda import PagVenda
@@ -500,6 +501,12 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
     if giros_recentes:
         for giro in giros_recentes:
             if giro.situacao == "DISPONIVEL":
+                em_carrinho = (db.query(ItCarrinho.itcarrinho_id)
+                    .join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id)
+                    .filter(ItCarrinho.beneficioprodutoresgate_id == giro.beneficioprodutoresgate_id,
+                            Carrinho.sitcarrinho == "ABERTO").first())
+                if em_carrinho:
+                    raise HTTPException(409, "Este desconto já está no carrinho. Conclua a compra ou remova o item antes de girar novamente.")
                 em_compra = (db.query(ItVenda.itvenda_id)
                     .join(Venda, Venda.venda_id == ItVenda.venda_id)
                     .filter(ItVenda.beneficioprodutoresgate_id == giro.beneficioprodutoresgate_id,
@@ -512,9 +519,38 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
     total = _total_resgates_validos(db, campanha_id)
     if campanha.qtlimite is not None and total >= campanha.qtlimite: raise HTTPException(409, "Esta promoção já atingiu o limite.")
     percentual = secrets.choice(PERCENTUAIS_ROLETA)
-    resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=percentual, situacao="DISPONIVEL", dtexpiracao=agora + timedelta(minutes=20))
+    resgate = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=campanha.produto_id, percentual_desconto=percentual, situacao="DISPONIVEL", dtexpiracao=None)
     db.add(resgate); db.commit(); db.refresh(resgate)
     return {"resgate_id": int(resgate.beneficioprodutoresgate_id), "percentual_desconto": percentual, "expira_em": resgate.dtexpiracao, "mensagem": f"Você ganhou {percentual}% de desconto!" if percentual else "Desta vez não houve desconto. Você pode tentar novamente!"}
+
+
+@router.post("/{campanha_id}/premios/{resgate_id}/dispensar")
+def dispensar_premio_roleta(campanha_id: int, resgate_id: int, dados: GiroIn,
+                            usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    exigir_cliente_autenticado(usuario, dados.cliente_id)
+    resgate = (db.query(BeneficioProdutoResgate)
+        .join(BeneficioProdutoCampanha, BeneficioProdutoCampanha.beneficioprodutocampanha_id == BeneficioProdutoResgate.campanha_id)
+        .filter(BeneficioProdutoResgate.beneficioprodutoresgate_id == resgate_id,
+                BeneficioProdutoResgate.campanha_id == campanha_id,
+                BeneficioProdutoResgate.cliente_id == dados.cliente_id,
+                BeneficioProdutoCampanha.tipo == "ROLETA")
+        .with_for_update().first())
+    if not resgate:
+        raise HTTPException(404, "Prêmio não encontrado.")
+    if resgate.situacao == "CANCELADO":
+        return {"ok": True}
+    if resgate.situacao != "DISPONIVEL":
+        raise HTTPException(409, "Este prêmio já foi utilizado.")
+    em_carrinho = (db.query(ItCarrinho.itcarrinho_id).join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id)
+        .filter(ItCarrinho.beneficioprodutoresgate_id == resgate_id, Carrinho.sitcarrinho == "ABERTO").first())
+    em_compra = (db.query(ItVenda.itvenda_id).join(Venda, Venda.venda_id == ItVenda.venda_id)
+        .filter(ItVenda.beneficioprodutoresgate_id == resgate_id, ItVenda.sititvenda == "ATIVO",
+                Venda.sitvenda.in_(("PENDENTE", "PAGA"))).first())
+    if em_carrinho or em_compra:
+        raise HTTPException(409, "Este prêmio já está em uso.")
+    resgate.situacao = "CANCELADO"
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{campanha_id}/resgatar-cortesia")
