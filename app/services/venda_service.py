@@ -175,9 +175,13 @@ def adicionar_itens_produto_venda(
                 .filter(BeneficioProdutoResgate.beneficioprodutoresgate_id == int(premio_id))
                 .with_for_update().first())
             agora = datetime.now(FUSO_BRASIL).replace(tzinfo=None)
+            campanha_premio = (db.query(BeneficioProdutoCampanha)
+                .filter(BeneficioProdutoCampanha.beneficioprodutocampanha_id == premio.campanha_id).first()
+                if premio else None)
             if (not venda or not premio or premio.cliente_id != venda.cliente_id
                 or premio.produto_id != produto_id or premio.situacao != "DISPONIVEL"
-                or (premio.dtexpiracao is not None and premio.dtexpiracao < agora)
+                or (premio.dtexpiracao is not None and premio.dtexpiracao < agora
+                    and (not campanha_premio or campanha_premio.tipo != "ROLETA"))
                 or quantidade_linhas != 1 or campanha_id is not None):
                 raise HTTPException(409, "O desconto da roleta não está mais disponível. Remova o item do carrinho e tente novamente.")
             em_outra_venda = (db.query(ItVenda.itvenda_id).join(Venda, Venda.venda_id == ItVenda.venda_id)

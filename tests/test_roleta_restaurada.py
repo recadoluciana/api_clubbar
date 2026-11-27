@@ -46,13 +46,13 @@ def test_giro_permite_campanha_sem_fim_e_emite_desconto():
         resultado = router.girar_roleta(1, router.GiroIn(cliente_id=4), {}, db)
     assert resultado["resgate_id"] == 99
     assert resultado["percentual_desconto"] == 20
-    assert resultado["expira_em"] == agora + timedelta(minutes=20)
+    assert resultado["expira_em"] is None
 
 
 def test_premio_expirado_nao_e_aceito_no_fechamento():
     db = MagicMock()
     venda = SimpleNamespace(cliente_id=4)
-    premio = SimpleNamespace(cliente_id=4, produto_id=3, situacao="DISPONIVEL",
+    premio = SimpleNamespace(cliente_id=4, produto_id=3, campanha_id=1, situacao="DISPONIVEL",
         dtexpiracao=datetime(2000, 1, 1))
     def query(model):
         consulta = MagicMock()
@@ -62,6 +62,7 @@ def test_premio_expirado_nao_e_aceito_no_fechamento():
             consulta.filter.return_value.with_for_update.return_value.first.return_value = premio
         if model is BeneficioProdutoCampanha:
             consulta.filter.return_value.all.return_value = []
+            consulta.filter.return_value.first.return_value = SimpleNamespace(tipo="PERCENTUAL")
         return consulta
     db.query.side_effect = query
     with pytest.raises(HTTPException) as erro:
@@ -95,3 +96,13 @@ def test_economia_legada_e_exibida_apenas_quando_exata():
     from app.routers.carrinho import _economia_roleta_legada
     assert _economia_roleta_legada(19.80, 10) == 2.20
     assert _economia_roleta_legada(0.05, 10) is None
+
+def test_descartar_premio_cancela_o_resgate():
+    db = MagicMock()
+    premio = SimpleNamespace(situacao="DISPONIVEL")
+    db.query.return_value.join.return_value.filter.return_value.with_for_update.return_value.first.return_value = premio
+    db.query.return_value.join.return_value.filter.return_value.first.return_value = None
+    with patch.object(router, "exigir_cliente_autenticado"):
+        assert router.dispensar_premio_roleta(1, 99, router.GiroIn(cliente_id=4), {}, db) == {"ok": True}
+    assert premio.situacao == "CANCELADO"
+    db.commit.assert_called_once()
