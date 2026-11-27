@@ -29,6 +29,20 @@ from app.utils.datetime_utils import FUSO_BRASIL
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
 
+def _economia_roleta_legada(valor_final: float, percentual: float) -> float | None:
+    """Reconstrói o preço anterior somente quando os centavos são inequívocos."""
+    if not 0 < percentual < 100 or valor_final <= 0:
+        return None
+    fator = 1 - percentual / 100
+    estimado = round(valor_final / fator * 100)
+    candidatos = [centavos for centavos in range(max(0, estimado - 2), estimado + 3)
+                  if round((centavos / 100) * fator, 2) == round(valor_final, 2)]
+    if len(candidatos) != 1:
+        return None
+    return round(candidatos[0] / 100 - valor_final, 2)
+
+
+
 @router.post("/adicionar", response_model=AddItemOut)
 def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
     if payload.idtipoproduto == "P" and not payload.produto_id:
@@ -108,6 +122,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             dtinidesconto=item_cardapio.dtinidesconto,
             dtfimdesconto=item_cardapio.dtfimdesconto,
         )
+        preco_antes_promocao = vrunitario_final
         beneficio_resgate_id_final = None
         campanha_id_final = None
         if payload.beneficio_resgate_id is not None:
@@ -223,6 +238,7 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
             beneficioprodutoresgate_id=beneficio_resgate_id_final,
             beneficioprodutocampanha_id=campanha_id_final,
             vrunitario=vrunitario_final,
+            vrpreco_original=(preco_antes_promocao * int(campanha_promocional.qtitenspacote or 1) if campanha_id_final and campanha_promocional.tipo == "PACOTE" else preco_antes_promocao) if (beneficio_resgate_id_final or campanha_id_final) else None,
             qtitcarrinho=1,
             dsobsitcar=(payload.obs or "").strip() or None,
             lote_id=lote_id_final,
@@ -391,6 +407,7 @@ def obter_itens_carrinho(
             ItCarrinho.cardapioitem_id,
             ItCarrinho.beneficioprodutocampanha_id,
             ItCarrinho.beneficioprodutoresgate_id,
+            ItCarrinho.vrpreco_original,
             Produto.nmproduto,
             Produto.dsproduto,
             ItCarrinho.vrunitario.label("vrprecoprod"),
@@ -420,6 +437,10 @@ def obter_itens_carrinho(
         .all()
     }
 
+    resgate_ids = {int(item.beneficioprodutoresgate_id) for item in itens_db
+                   if item.beneficioprodutoresgate_id is not None and item.vrpreco_original is None}
+    resgates = {int(item.beneficioprodutoresgate_id): item for item in db.query(BeneficioProdutoResgate)
+                .filter(BeneficioProdutoResgate.beneficioprodutoresgate_id.in_(resgate_ids or {-1})).all()}
     itens = []
     total = 0.0
     qt_total = 0
@@ -437,6 +458,13 @@ def obter_itens_carrinho(
         tipo_produto = "P"
         campanha_id = i.beneficioprodutocampanha_id
         campanha = campanhas.get(int(campanha_id)) if campanha_id else None
+        economia = (round(max(0, float(i.vrpreco_original) - vrprecofinal) * qt, 2)
+                    if i.vrpreco_original is not None else None)
+        if economia is None and i.beneficioprodutoresgate_id is not None:
+            resgate = resgates.get(int(i.beneficioprodutoresgate_id))
+            if resgate:
+                unitaria = _economia_roleta_legada(vrprecofinal, float(resgate.percentual_desconto or 0))
+                economia = round(unitaria * qt, 2) if unitaria is not None else None
 
         itens.append(
             {
@@ -445,6 +473,7 @@ def obter_itens_carrinho(
                 "cardapioitem_id": i.cardapioitem_id,
                 "campanha_id": campanha_id,
                 "beneficio_resgate_id": i.beneficioprodutoresgate_id,
+                "valor_economia": economia,
                 "qtitenspacote": int(campanha.qtitenspacote)
                 if campanha and campanha.qtitenspacote
                 else None,
@@ -563,6 +592,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 vrunitario,
                 lote_id,
                 beneficioprodutocampanha_id,
+                vrpreco_original,
                 qtitcarrinho,
                 dsobsitcar
             )
@@ -573,6 +603,7 @@ def adicionar_um_item_carrinho(itcarrinho_id: int, db: Session = Depends(get_db)
                 vrunitario,
                 lote_id,
                 beneficioprodutocampanha_id,
+                vrpreco_original,
                 1,
                 dsobsitcar
             FROM itcarrinho
