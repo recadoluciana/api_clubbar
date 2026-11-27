@@ -151,10 +151,11 @@ def reservar_grupo(payload: ReservaIngressoGrupoCreate, db: Session = Depends(ge
         reservas = []
         compra = None
         for item in payload.itens:
-            reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
-                lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
-                tipo_beneficio=item.tipo_beneficio, quantidade=item.quantidade)
-            reservas.append(reserva)
+            for _ in range(item.quantidade):
+                reserva = criar_reserva(db, cliente_id=payload.cliente_id, lote_id=item.lote_id,
+                    lotepreco_id=item.lotepreco_id, beneficio_id=item.beneficio_id,
+                    tipo_beneficio=item.tipo_beneficio, quantidade=1)
+                reservas.append(reserva)
         principal = reservas[0]
         compra = CompraEvento(
             organizacao_id=principal.organizacao_id, loja_id=principal.loja_id,
@@ -190,26 +191,38 @@ def criar_compra_evento_item(payload: ItemReservaIngressoCreate, cliente_id: int
     """Adiciona o primeiro ingresso à sacola temporária do evento."""
     exigir_cliente_autenticado(usuario, cliente_id)
     try:
-        reserva = criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
-            lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
-            tipo_beneficio=payload.tipo_beneficio, quantidade=payload.quantidade)
+        if _eh_cortesia(db, payload.lotepreco_id) and payload.quantidade > 2:
+            raise HTTPException(422, "O limite é de 2 cortesias por transação.")
+        reservas = [
+            criar_reserva(db, cliente_id=cliente_id, lote_id=payload.lote_id,
+                lotepreco_id=payload.lotepreco_id, beneficio_id=payload.beneficio_id,
+                tipo_beneficio=payload.tipo_beneficio, quantidade=1)
+            for _ in range(payload.quantidade)
+        ]
+        principal = reservas[0]
+        total = sum((Decimal(str(item.vrtotal)) for item in reservas), Decimal("0"))
         compra = CompraEvento(
-            organizacao_id=reserva.organizacao_id, loja_id=reserva.loja_id,
-            cliente_id=cliente_id, evento_id=reserva.evento_id,
-            valor_total=reserva.vrtotal, dtexpiracao=reserva.dtexpiracao,
+            organizacao_id=principal.organizacao_id, loja_id=principal.loja_id,
+            cliente_id=cliente_id, evento_id=principal.evento_id,
+            valor_total=total, dtexpiracao=min(item.dtexpiracao for item in reservas),
         )
         db.add(compra); db.flush()
-        reserva.compra_evento_id = compra.compra_evento_id
-        db.add(CompraEventoItem(
-            compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
-            reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=reserva.qtreservada,
-            valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
-            subtotal=reserva.vrtotal,
-        ))
-        db.commit(); db.refresh(reserva)
-        resposta = _saida(db, reserva)
+        for reserva in reservas:
+            reserva.compra_evento_id = compra.compra_evento_id
+            db.add(CompraEventoItem(
+                compra_evento_id=compra.compra_evento_id, tipoitem="INGRESSO",
+                reserva_ingresso_id=reserva.reserva_ingresso_id, quantidade=1,
+                valor_unitario=reserva.vrunitario, valor_taxa=reserva.vrtaxa,
+                subtotal=reserva.vrtotal,
+            ))
+        db.commit()
+        for reserva in reservas:
+            db.refresh(reserva)
+        resposta = _saida(db, principal)
         resposta["compra_evento_id"] = compra.compra_evento_id
-        resposta["itens"] = [_saida(db, reserva)]
+        resposta["itens"] = [_saida(db, reserva) for reserva in reservas]
+        resposta["quantidade"] = len(reservas)
+        resposta["valor_total"] = float(total)
         return resposta
     except Exception:
         db.rollback(); raise
