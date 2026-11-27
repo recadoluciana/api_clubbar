@@ -346,6 +346,8 @@ def remover_ingresso_compra_evento(compra_evento_id: int, reserva_id: int, clien
         ReservaIngressoParticipante.reserva_ingresso_id == reserva_id,
     ).delete(synchronize_session=False)
     reserva.sitreserva = "CANCELADA"
+    # A sessão usa autoflush=False: a consulta deve refletir o cancelamento.
+    db.flush()
     restante = db.query(ReservaIngresso).filter(
         ReservaIngresso.compra_evento_id == compra_evento_id,
         ReservaIngresso.sitreserva.in_(("PREENCHENDO", "AGUARDANDO_PAGAMENTO")),
