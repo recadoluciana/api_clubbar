@@ -89,3 +89,9 @@ def test_mesmo_premio_nao_pode_ser_incluido_duas_vezes_na_venda():
         adicionar_itens_produto_venda(db, venda_id=5, itens=itens)
     assert erro.value.status_code == 409
     db.add.assert_not_called()
+
+
+def test_economia_legada_e_exibida_apenas_quando_exata():
+    from app.routers.carrinho import _economia_roleta_legada
+    assert _economia_roleta_legada(19.80, 10) == 2.20
+    assert _economia_roleta_legada(0.05, 10) is None

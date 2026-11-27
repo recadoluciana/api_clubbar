@@ -784,6 +784,8 @@ def garantir_cardapios_compartilhados() -> None:
                 colunas_itcarrinho = {
                     coluna["name"] for coluna in inspector.get_columns("itcarrinho")
                 }
+                if "vrpreco_original" not in colunas_itcarrinho:
+                    conexao.execute(text("ALTER TABLE itcarrinho ADD COLUMN vrpreco_original DECIMAL(10,2) NULL"))
                 if "beneficioprodutocampanha_id" not in colunas_itcarrinho:
                     conexao.execute(text(
                         "ALTER TABLE itcarrinho "
