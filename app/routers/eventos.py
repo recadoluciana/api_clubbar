@@ -668,7 +668,6 @@ def listar_eventos_com_cortesias_disponiveis(
             EventoLote.situacao == "ATIVO",
             EventoLotePreco.situacao == "ATIVO",
             func.upper(EventoLotePreco.tipopreco) == "CORTESIA",
-            EventoLotePreco.vrpreco == 0,
         )
     )
     if cidade_id:
@@ -693,7 +692,6 @@ def listar_eventos_com_cortesias_disponiveis(
             and any(
                 preco.situacao == "ATIVO"
                 and (preco.tipopreco or "").upper() == "CORTESIA"
-                and preco.vrpreco == 0
                 for preco in configuracao.precos
             )
             for configuracao in lote_atual.configuracoes_setor

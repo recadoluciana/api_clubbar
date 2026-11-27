@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, or_
@@ -239,7 +240,7 @@ def _dados_preco_catalogo(db: Session, preco) -> dict:
         "modalidade_id": modalidade.modalidade_id,
         "nmpreco": preco.nmpreco if modalidade.permitepersonalizarnome else modalidade.nmmodalidade,
         "tipopreco": modalidade.cdmodalidade,
-        "vrpreco": preco.vrpreco,
+        "vrpreco": Decimal("0.00") if eh_cortesia else preco.vrpreco,
         "qtlimitemodalidade": preco.qtlimitemodalidade,
         "nrminutosaposinicio": preco.nrminutosaposinicio if eh_cortesia else None,
         "travarentradaaposlimite": bool(preco.travarentradaaposlimite) if eh_cortesia else False,
@@ -392,7 +393,7 @@ def _saida_configuracao(db: Session, lote: EventoLote, evento: Evento) -> dict:
                 "modalidade_id": preco.modalidade_id,
                 "nmpreco": preco.nmpreco,
                 "tipopreco": preco.tipopreco,
-                "vrpreco": float(preco.vrpreco),
+                "vrpreco": 0.0 if (preco.tipopreco or "").strip().upper() == "CORTESIA" else float(preco.vrpreco),
                 "qtlimitemodalidade": (
                     int(preco.qtlimitemodalidade)
                     if preco.qtlimitemodalidade is not None

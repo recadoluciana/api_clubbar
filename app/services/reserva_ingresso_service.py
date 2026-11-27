@@ -318,18 +318,18 @@ def criar_reserva(
     )
     if not preco:
         raise HTTPException(404, "Modalidade de preço não encontrada")
-    if Decimal(str(preco.vrpreco or 0)) <= 0 and quantidade != 1:
-        raise HTTPException(
-            422,
-            "Cortesia limitada a 1 ingresso por transação.",
-        )
-
     modalidade = db.query(ModalidadeIngresso).filter(
         ModalidadeIngresso.modalidade_id == preco.modalidade_id,
         ModalidadeIngresso.situacao == "ATIVO",
     ).first()
     if not modalidade:
         raise HTTPException(422, "A modalidade deste ingresso não está disponível")
+    # Corrige o preço cadastrado incorretamente ao reservar a cortesia, dentro
+    # da mesma transação e sem alterar reservas ou vendas históricas.
+    if (modalidade.cdmodalidade or "").strip().upper() == "CORTESIA":
+        preco.vrpreco = Decimal("0.00")
+    if Decimal(str(preco.vrpreco or 0)) <= 0 and quantidade != 1:
+        raise HTTPException(422, "Cortesia limitada a 1 ingresso por transação.")
     beneficio_item = None
     exige_beneficio = bool(modalidade.exigebeneficio or preco.aplicacotalegal)
     if exige_beneficio:

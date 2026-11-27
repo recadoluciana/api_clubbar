@@ -52,7 +52,7 @@ def _eh_cortesia(db: Session, lotepreco_id: int) -> bool:
     preco = db.query(EventoLotePreco).filter(
         EventoLotePreco.lotepreco_id == lotepreco_id
     ).first()
-    return bool(preco and Decimal(str(preco.vrpreco or 0)) <= 0)
+    return bool(preco and ((preco.tipopreco or "").strip().upper() == "CORTESIA" or Decimal(str(preco.vrpreco or 0)) <= 0))
 
 
 def _grupo(db: Session, reserva: ReservaIngresso) -> list[ReservaIngresso]:
