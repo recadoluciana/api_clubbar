@@ -3,6 +3,7 @@ import main  # Registra todos os modelos relacionados antes de configurar os map
 from datetime import datetime, timedelta
 from unittest.mock import patch
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import create_engine, Integer
 from sqlalchemy.orm import sessionmaker
 from app.database import Base
@@ -57,11 +58,19 @@ class PortalCodigoTest(unittest.TestCase):
         self.assertEqual([], self.enviado)
 
     def test_codigo_valido_somente_uma_vez(self):
-        self.solicitar()
+        with patch('app.routers.portalparceiro.randbelow', return_value=42) as sorteio:
+            self.solicitar()
+        sorteio.assert_called_once_with(1_000_000)
         self.assertEqual(self.enviado[0][0], 'teste@example.com')
         codigo = self.enviado[0][1]
+        self.assertEqual(codigo, '000042')
         self.assertTrue(self.confirmar(codigo)['acesso'])
         with self.assertRaises(HTTPException): self.confirmar(codigo)
+
+    def test_confirmacao_exige_seis_digitos(self):
+        for codigo in ('12345', '1234567', '12345678', '12a456'):
+            with self.subTest(codigo=codigo), self.assertRaises(ValidationError):
+                PortalConfirmarCodigo(documento='52998224725', codigo=codigo)
 
     def test_sessoes_de_dispositivos_diferentes_continuam_validas(self):
         from fastapi.security import HTTPAuthorizationCredentials
@@ -151,7 +160,7 @@ class PortalCodigoTest(unittest.TestCase):
 
     def test_cinco_tentativas_invalidam_codigo(self):
         self.solicitar(); codigo = self.enviado[0][1]
-        errado = '00000000' if codigo != '00000000' else '11111111'
+        errado = '000000' if codigo != '000000' else '111111'
         for _ in range(5):
             with self.assertRaises(HTTPException): self.confirmar(errado)
         with self.assertRaises(HTTPException): self.confirmar(codigo)

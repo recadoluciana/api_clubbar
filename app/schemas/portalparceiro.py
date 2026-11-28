@@ -20,7 +20,7 @@ class PortalSolicitarCodigo(BaseModel):
 
 
 class PortalConfirmarCodigo(PortalSolicitarCodigo):
-    codigo: str = Field(pattern=r"^[0-9]{8}$")
+    codigo: str = Field(pattern=r"^[0-9]{6}$")
 
 
 class PortalRecuperarDados(BaseModel):
