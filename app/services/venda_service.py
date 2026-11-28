@@ -158,9 +158,38 @@ def adicionar_itens_produto_venda(
     }
 
     premios = [int(item["beneficio_resgate_id"]) for item in itens if item.get("beneficio_resgate_id") is not None]
-    if len(premios) != len(set(premios)):
-        raise HTTPException(409, "O desconto da roleta só pode ser usado uma vez.")
     venda = db.query(Venda).filter(Venda.venda_id == venda_id).first() if premios else None
+    produtos_por_premio = {}
+    for item in itens:
+        if item.get("beneficio_resgate_id") is not None:
+            chave = int(item["beneficio_resgate_id"])
+            produtos_por_premio.setdefault(chave, set()).add(int(item["produto_id"]))
+    if any(len(produtos) != 1 for produtos in produtos_por_premio.values()):
+        raise HTTPException(409, "O prêmio só pode ser usado para o produto sorteado.")
+    if premios:
+        registros = db.query(BeneficioProdutoResgate).filter(
+            BeneficioProdutoResgate.beneficioprodutoresgate_id.in_(set(premios))).all()
+        contagem = {}
+        for registro in registros:
+            if registro.carrinho_id is not None:
+                contagem[registro.campanha_id] = contagem.get(registro.campanha_id, 0) + 1
+        for campanha_id_roleta in sorted(contagem):
+            campanha_roleta = (db.query(BeneficioProdutoCampanha).filter(
+                BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id_roleta)
+                .with_for_update().first())
+            if campanha_roleta and campanha_roleta.qtlimite is not None:
+                usados = db.query(BeneficioProdutoResgate.beneficioprodutoresgate_id).filter(
+                    BeneficioProdutoResgate.campanha_id == campanha_id_roleta,
+                    BeneficioProdutoResgate.situacao == "USADO").count()
+                pendentes = db.query(ItVenda.beneficioprodutoresgate_id).join(
+                    Venda, Venda.venda_id == ItVenda.venda_id).join(
+                    BeneficioProdutoResgate, BeneficioProdutoResgate.beneficioprodutoresgate_id == ItVenda.beneficioprodutoresgate_id).filter(
+                    BeneficioProdutoResgate.campanha_id == campanha_id_roleta,
+                    BeneficioProdutoResgate.situacao == "DISPONIVEL",
+                    ItVenda.sititvenda == "ATIVO", Venda.sitvenda == "PENDENTE",
+                    Venda.venda_id != venda_id).distinct().count()
+                if usados + pendentes + contagem[campanha_id_roleta] > int(campanha_roleta.qtlimite):
+                    raise HTTPException(409, "Os prêmios restantes estão reservados em outras compras. Tente novamente mais tarde.")
 
     for item in itens:
         produto_id = int(item["produto_id"])
@@ -183,7 +212,8 @@ def adicionar_itens_produto_venda(
                 or (premio.carrinho_id is not None and premio.carrinho_id != venda.carrinho_id)
                 or (premio.dtexpiracao is not None and premio.dtexpiracao < agora
                     and (not campanha_premio or campanha_premio.tipo != "ROLETA"))
-                or quantidade_linhas != 1 or campanha_id is not None):
+                or (premio.carrinho_id is not None and premio.carrinho_id != venda.carrinho_id)
+                or (premio.carrinho_id is None and (quantidade_linhas != 1 or campanha_id is not None))):
                 raise HTTPException(409, "O desconto da roleta não está mais disponível. Remova o item do carrinho e tente novamente.")
             em_outra_venda = (db.query(ItVenda.itvenda_id).join(Venda, Venda.venda_id == ItVenda.venda_id)
                 .filter(ItVenda.beneficioprodutoresgate_id == int(premio_id),

@@ -99,9 +99,9 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
-    "http://127.0.0.1:3001",    
+    "http://127.0.0.1:3001",
     "http://localhost:3002",
-    "http://127.0.0.1:3002",    
+    "http://127.0.0.1:3002",
     "http://localhost:5500",
     "http://127.0.0.1:5500",
 
@@ -781,12 +781,17 @@ def garantir_cardapios_compartilhados() -> None:
                         "ADD COLUMN vrpacote DECIMAL(10,2) NULL AFTER qtitenspacote"
                     ))
             if "beneficioprodutoresgate" in tabelas:
-                colunas = {c["name"] for c in inspector.get_columns("beneficioprodutoresgate")}
-                if "carrinho_id" not in colunas:
+                colunas_resgate = {coluna["name"] for coluna in inspector.get_columns("beneficioprodutoresgate")}
+                if "carrinho_id" not in colunas_resgate:
                     conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD COLUMN carrinho_id BIGINT NULL"))
+                if "origem_giro" not in colunas_resgate:
+                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD COLUMN origem_giro VARCHAR(20) NULL"))
+                indices_resgate = {indice["name"] for indice in inspect(conexao).get_indexes("beneficioprodutoresgate")}
+                if "uk_roleta_carrinho_produto_origem" not in indices_resgate:
+                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD UNIQUE KEY uk_roleta_carrinho_produto_origem (carrinho_id, produto_id, origem_giro)"))
             if "checkout_asaas_item" in tabelas:
-                colunas = {c["name"] for c in inspector.get_columns("checkout_asaas_item")}
-                if "beneficioprodutoresgate_id" not in colunas:
+                colunas_checkout_item = {coluna["name"] for coluna in inspector.get_columns("checkout_asaas_item")}
+                if "beneficioprodutoresgate_id" not in colunas_checkout_item:
                     conexao.execute(text("ALTER TABLE checkout_asaas_item ADD COLUMN beneficioprodutoresgate_id BIGINT NULL"))
             if "itcarrinho" in tabelas:
                 colunas_itcarrinho = {
@@ -1606,7 +1611,7 @@ def servir_upload(chave: str):
 @app.get("/.well-known/assetlinks.json")
 def assetlinks():
     return FileResponse("app/static/.well-known/assetlinks.json")
-    
+
 @app.get("/{full_path:path}")
 def serve_flutter_routes(full_path: str):
     if (
