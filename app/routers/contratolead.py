@@ -710,20 +710,30 @@ async def aceitar_contrato(
         ):
             estabelecimento.status = StatusLeadEstabelecimento.ACEITOU_PARCERIA
             estabelecimento.dtaceite = item.dtaceite
+    conversao_pendente = False
     if item.tipoinstrumento != "RETIFICACAO":
         estabelecimento = db.get(LeadEstabelecimento, item.leadestabelecimento_id)
         status_atual = getattr(estabelecimento.status, "value", estabelecimento.status)
         if status_atual != StatusLeadEstabelecimento.CONVERTIDO.value:
+            from app.routers.leadparceiro import EmailResponsavelJaCadastrado
             try:
                 # A sessão de produção não faz autoflush; a conversão precisa
                 # enxergar o aceite ainda dentro da mesma transação.
                 db.flush()
                 await _converter_apos_assinatura(db, lead, estabelecimento)
+            except EmailResponsavelJaCadastrado:
+                # A assinatura é registrada; a associação ao usuário existente
+                # precisa ser resolvida sem transferir acesso entre empresas.
+                db.commit()
+                conversao_pendente = True
             except Exception:
                 db.rollback()
                 raise
         db.refresh(item)
-    return _out(item)
+    resultado = _out(item)
+    if conversao_pendente:
+        resultado["ativacao_pendente"] = True
+    return resultado
 
 
 @portal_router.get("/contratos/{leadestabelecimentocontrato_id}/implantacao")
