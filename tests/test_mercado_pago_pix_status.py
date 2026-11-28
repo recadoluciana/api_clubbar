@@ -30,6 +30,7 @@ def consulta(monkeypatch):
     monkeypatch.setattr(pagamentos, 'buscar_pagamento_mercado_pago_por_id', por_id)
     monkeypatch.setattr(pagamentos, 'buscar_pagamento_mercado_pago', por_referencia)
     monkeypatch.setattr(pagamentos, '_notificar_confirmacao_mercado_pago', notificar)
+    monkeypatch.setattr(pagamentos, 'cancelar_uso_pendente', Mock())
     monkeypatch.setattr(venda_gateway_service, 'criar_venda_paga_por_carrinho_gateway', criar_venda)
     return SimpleNamespace(
         checkout=checkout, db=db, token=token, por_id=por_id,
@@ -41,13 +42,22 @@ def consultar(c):
     return asyncio.run(pagamentos._consultar_status_checkout_mercado_pago(checkout=c.checkout, db=c.db))
 
 
-@pytest.mark.parametrize('status', ['pending', 'in_process', 'rejected', 'cancelled'])
+@pytest.mark.parametrize('status', ['pending', 'in_process'])
 def test_pix_nao_aprovado_nunca_libera_compra(consulta, status):
     consulta.por_id.return_value['status'] = status
     assert consultar(consulta)['status'] == 'PENDENTE'
     consulta.criar_venda.assert_not_awaited()
     consulta.db.commit.assert_not_called()
     consulta.notificar.assert_not_called()
+
+
+@pytest.mark.parametrize('status', ['rejected', 'cancelled'])
+def test_pagamento_encerrado_libera_cashback_sem_criar_venda(consulta, status):
+    consulta.por_id.return_value['status'] = status
+    assert consultar(consulta)['status'] == 'CANCELADO'
+    pagamentos.cancelar_uso_pendente.assert_called_once_with(consulta.db, consulta.checkout)
+    consulta.criar_venda.assert_not_awaited()
+    consulta.db.commit.assert_called_once()
 
 
 def test_pix_aprovado_consulta_id_na_conta_original_e_libera_compra(consulta):
@@ -82,7 +92,7 @@ def test_checkout_pro_sem_payment_id_continua_consultando_referencia(consulta):
     assert consultar(consulta)['status'] == 'PAGO'
     consulta.por_id.assert_not_awaited()
     consulta.por_referencia.assert_awaited_once_with(
-        access_token='token-conta-original', external_reference='pedido-original',
+        access_token='token-conta-original', external_reference='pedido-original', incluir_pendentes=True,
     )
 
 

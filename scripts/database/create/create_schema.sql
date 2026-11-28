@@ -2109,6 +2109,7 @@ CREATE TABLE cashback_movimento (
     venda_origem_id BIGINT DEFAULT NULL,
     venda_uso_id BIGINT DEFAULT NULL,
     checkout_asaas_id BIGINT DEFAULT NULL,
+    checkout_mercadopago_id BIGINT DEFAULT NULL,
     cashback_movimento_origem_id BIGINT DEFAULT NULL,
 
     tipomovimento VARCHAR(15)
@@ -2472,6 +2473,7 @@ CREATE TABLE checkout_mercadopago (
   checkout_url varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   metodo_solicitado varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   valor decimal(10,2) NOT NULL,
+  vrcashbackusado decimal(10,2) NOT NULL DEFAULT '0.00',
   vrtaxaclubbar decimal(10,2) NOT NULL DEFAULT '0.00',
   dadosentrega text COLLATE utf8mb4_unicode_ci,
   dsorigemconfirmacao varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -2492,6 +2494,11 @@ CREATE TABLE checkout_mercadopago (
   CONSTRAINT checkout_mercadopago_ibfk_1 FOREIGN KEY (reserva_ingresso_id) REFERENCES reserva_ingresso (reserva_ingresso_id),
   CONSTRAINT checkout_mercadopago_ibfk_2 FOREIGN KEY (venda_id) REFERENCES venda (venda_id)
 ) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE cashback_movimento
+  ADD INDEX idx_cashback_movimento_checkout_mp (checkout_mercadopago_id),
+  ADD CONSTRAINT fk_cashback_movimento_checkout_mp FOREIGN KEY (checkout_mercadopago_id)
+    REFERENCES checkout_mercadopago(checkout_mercadopago_id);
 
 CREATE TABLE eventomodalidade (
   evento_id bigint NOT NULL,

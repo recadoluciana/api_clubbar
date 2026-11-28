@@ -217,7 +217,7 @@ async def criar_venda_paga_por_carrinho_gateway(
     valor_carrinho = Decimal(str(total_recalculado or 0)).quantize(
         Decimal('0.01')
     )
-    checkout_cashback = db.query(CheckoutAsaas).filter(CheckoutAsaas.carrinho_id == carrinho_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).with_for_update().first() if gateway == "ASAAS" else None
+    checkout_cashback = (db.query(CheckoutAsaas).filter(CheckoutAsaas.carrinho_id == carrinho_id).order_by(CheckoutAsaas.checkout_asaas_id.desc()).with_for_update().first() if gateway == "ASAAS" else checkout_origem if gateway == "MERCADO_PAGO" else None)
     desconto_cashback = Decimal(str(getattr(checkout_cashback, "vrcashbackusado", 0) or 0)).quantize(Decimal("0.01"))
     if valor_pago != valor_carrinho - desconto_cashback:
         raise HTTPException(

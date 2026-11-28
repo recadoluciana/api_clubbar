@@ -8,6 +8,7 @@ from app.models.cashback_config import CashbackConfig
 from app.models.cashback_movimento import CashbackMovimento
 from app.models.cashback_saldo import CashbackSaldo
 from app.models.checkout_asaas import CheckoutAsaas
+from app.models.checkout_mercadopago import CheckoutMercadoPago
 from app.models.itvenda import ItVenda
 from app.models.produto import Produto
 from app.models.cardapio import CardapioItem
@@ -99,12 +100,23 @@ def reservar_uso(db: Session, *, cliente_id: int, organizacao_id: int, loja_id: 
     return usado, debitos
 
 
-def vincular_uso_ao_checkout(db: Session, debitos: list[CashbackMovimento], checkout: CheckoutAsaas) -> None:
-    for debito in debitos: debito.checkout_asaas_id = checkout.checkout_asaas_id
+def _chave_checkout(checkout):
+    if isinstance(checkout, CheckoutMercadoPago):
+        return CashbackMovimento.checkout_mercadopago_id, checkout.checkout_mercadopago_id
+    return CashbackMovimento.checkout_asaas_id, checkout.checkout_asaas_id
 
 
-def cancelar_uso_pendente(db: Session, checkout: CheckoutAsaas) -> None:
-    debitos = db.query(CashbackMovimento).filter(CashbackMovimento.checkout_asaas_id == checkout.checkout_asaas_id, CashbackMovimento.tipomovimento == "DEBITO", CashbackMovimento.sitcashback == "PENDENTE").with_for_update().all()
+def vincular_uso_ao_checkout(db: Session, debitos: list[CashbackMovimento], checkout) -> None:
+    for debito in debitos:
+        if isinstance(checkout, CheckoutMercadoPago):
+            debito.checkout_mercadopago_id = checkout.checkout_mercadopago_id
+        else:
+            debito.checkout_asaas_id = checkout.checkout_asaas_id
+
+
+def cancelar_uso_pendente(db: Session, checkout) -> None:
+    coluna, identificador = _chave_checkout(checkout)
+    debitos = db.query(CashbackMovimento).filter(coluna == identificador, CashbackMovimento.tipomovimento == "DEBITO", CashbackMovimento.sitcashback == "PENDENTE").with_for_update().all()
     if not debitos: return
     saldo = db.query(CashbackSaldo).filter(CashbackSaldo.cliente_id == checkout.cliente_id, CashbackSaldo.loja_id == checkout.loja_id).with_for_update().first()
     if not saldo:
@@ -115,11 +127,13 @@ def cancelar_uso_pendente(db: Session, checkout: CheckoutAsaas) -> None:
         debito.sitcashback = "CANCELADO"; debito.observacao = "Reserva liberada sem confirmação do pagamento"
 
 
-def confirmar_uso(db: Session, checkout: CheckoutAsaas, venda_id: int) -> None:
-    for debito in db.query(CashbackMovimento).filter(CashbackMovimento.checkout_asaas_id == checkout.checkout_asaas_id, CashbackMovimento.tipomovimento == "DEBITO", CashbackMovimento.sitcashback == "PENDENTE").with_for_update().all():
+def confirmar_uso(db: Session, checkout, venda_id: int) -> None:
+    coluna, identificador = _chave_checkout(checkout)
+    for debito in db.query(CashbackMovimento).filter(coluna == identificador, CashbackMovimento.tipomovimento == "DEBITO", CashbackMovimento.sitcashback == "PENDENTE").with_for_update().all():
         debito.sitcashback = "UTILIZADO"; debito.venda_uso_id = venda_id; debito.dtutilizacao = datetime.now()
         origem = db.query(CashbackMovimento).filter(CashbackMovimento.cashback_movimento_id == debito.cashback_movimento_origem_id).first()
         if origem:
+            db.flush()
             total_usado = dinheiro(db.query(func.coalesce(func.sum(CashbackMovimento.vrcashback), 0)).filter(CashbackMovimento.cashback_movimento_origem_id == origem.cashback_movimento_id, CashbackMovimento.sitcashback == "UTILIZADO").scalar())
             if total_usado >= dinheiro(origem.vrcashback): origem.sitcashback = "UTILIZADO"
 

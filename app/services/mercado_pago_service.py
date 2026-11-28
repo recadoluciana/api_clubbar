@@ -527,7 +527,7 @@ async def criar_pagamento_cartao(
     return retorno
 
 
-async def buscar_pagamento_por_referencia(*, access_token: str, external_reference: str) -> dict | None:
+async def buscar_pagamento_por_referencia(*, access_token: str, external_reference: str, incluir_pendentes: bool = False) -> dict | None:
     async with httpx.AsyncClient(timeout=20) as cliente:
         resposta = await cliente.get(
             f"{MERCADO_PAGO_API_BASE_URL}/v1/payments/search",
@@ -537,7 +537,7 @@ async def buscar_pagamento_por_referencia(*, access_token: str, external_referen
     if resposta.is_error:
         raise HTTPException(502, "Não foi possível consultar o pagamento no Mercado Pago.")
     for pagamento in resposta.json().get("results") or []:
-        if str(pagamento.get("status") or "").lower() == "approved":
+        if incluir_pendentes or str(pagamento.get("status") or "").lower() == "approved":
             return pagamento
     return None
 

@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -142,6 +142,6 @@ def disponivel(cliente_id: int, loja_id: int, total_compra: float, db: Session =
     saldo = atualizar_estados(db, cliente_id, loja_id)
     if saldo: db.commit(); db.refresh(saldo)
     percentual_limite = dinheiro(config.pcmaxusocompra or 30) if config else dinheiro(30)
-    limite = dinheiro(total_compra) * percentual_limite / 100
-    valor = min(dinheiro(saldo.vrdisponivel if saldo else 0), dinheiro(limite)) if config else dinheiro(0)
+    limite = (dinheiro(total_compra) * percentual_limite / 100).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+    valor = min(dinheiro(saldo.vrdisponivel if saldo else 0), limite, max(dinheiro(total_compra) - dinheiro(5), Decimal('0'))) if config else dinheiro(0)
     return {"ativo": bool(config), "saldo_disponivel": float(saldo.vrdisponivel or 0) if saldo else 0, "limite_compra": float(dinheiro(limite)), "valor_utilizavel": float(valor), "percentual_maximo_uso": float(percentual_limite)}
