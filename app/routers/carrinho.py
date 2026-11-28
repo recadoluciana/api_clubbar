@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi import Query
+from decimal import Decimal, ROUND_HALF_UP
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -45,6 +46,11 @@ def _economia_roleta_legada(valor_final: float, percentual: float) -> float | No
 
 @router.post("/adicionar", response_model=AddItemOut)
 def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
+    return _adicionar_item(payload, db)
+
+
+def _adicionar_item(payload: AddItemIn, db: Session, *, premio_do_giro: BeneficioProdutoResgate | None = None,
+                    preco_confirmado: Decimal | None = None):
     if payload.idtipoproduto == "P" and not payload.produto_id:
         raise HTTPException(status_code=400, detail="produto_id obrigatório")
 
@@ -138,12 +144,17 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
                 BeneficioProdutoCampanha.beneficioprodutocampanha_id == resgate.campanha_id).first() if resgate else None
             if not resgate or not campanha or campanha.loja_id != payload.loja_id or campanha.organizacao_id != payload.organizacao_id or (campanha.tipo != "ROLETA" and resgate.dtexpiracao and resgate.dtexpiracao < agora):
                 raise HTTPException(409, "O benefício não está mais disponível.")
+            if resgate.carrinho_id is not None:
+                raise HTTPException(409, "Este giro já foi aplicado.")
             existente = db.query(ItCarrinho.itcarrinho_id).join(Carrinho, Carrinho.carrinho_id == ItCarrinho.carrinho_id).filter(
                 ItCarrinho.beneficioprodutoresgate_id == resgate.beneficioprodutoresgate_id,
                 Carrinho.sitcarrinho == "ABERTO").first()
             if existente:
                 raise HTTPException(409, "Este desconto já está no carrinho.")
-            vrunitario_final = round(vrunitario_final * (1 - float(resgate.percentual_desconto or 0) / 100), 2)
+            vrunitario_final = (Decimal(str(vrunitario_final)) * (1 - Decimal(str(resgate.percentual_desconto or 0)) / 100)).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if preco_confirmado is not None and vrunitario_final != preco_confirmado:
+                raise HTTPException(409, "O preço mudou. Atualize o cardápio antes de girar novamente.")
             if campanha.tipo == "ROLETA":
                 resgate.dtexpiracao = None
             beneficio_resgate_id_final = int(resgate.beneficioprodutoresgate_id)
@@ -217,6 +228,9 @@ def adicionar_item(payload: AddItemIn, db: Session = Depends(get_db)):
         )
         db.add(carr)
         db.flush()
+
+    if premio_do_giro is not None:
+        premio_do_giro.carrinho_id = carr.carrinho_id
 
     if vrunitario_final <= 0:
         ja_adicionada = db.query(ItCarrinho.itcarrinho_id).filter(

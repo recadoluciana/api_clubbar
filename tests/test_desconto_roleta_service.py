@@ -41,4 +41,3 @@ def test_indice_preserva_giros_antigos_e_limita_giro_de_carrinho():
         assert False, 'Um segundo giro de carrinho não deve criar outro registro'
     except sqlite3.IntegrityError:
         pass
-

@@ -67,7 +67,7 @@ def test_giradas_sao_por_produto_no_carrinho_e_mantem_melhor_preco():
 def test_premio_expirado_nao_e_aceito_no_fechamento():
     db = MagicMock()
     venda = SimpleNamespace(cliente_id=4)
-    premio = SimpleNamespace(cliente_id=4, produto_id=3, campanha_id=1, situacao="DISPONIVEL",
+    premio = SimpleNamespace(cliente_id=4, produto_id=3, campanha_id=1, carrinho_id=None, situacao="DISPONIVEL",
         dtexpiracao=datetime(2000, 1, 1))
     def query(model):
         consulta = MagicMock()
@@ -84,6 +84,88 @@ def test_premio_expirado_nao_e_aceito_no_fechamento():
         adicionar_itens_produto_venda(db, venda_id=5, itens=[{"produto_id": 3, "beneficio_resgate_id": 99}])
     assert erro.value.status_code == 409
     db.add.assert_not_called()
+
+
+def test_apenas_confirmacao_adiciona_uma_unidade_com_preco_do_giro(monkeypatch):
+    from sqlalchemy import BigInteger, create_engine
+    from sqlalchemy.ext.compiler import compiles
+    from sqlalchemy.orm import Session
+    from app.models.cardapio import Cardapio, CardapioItem, CardapioLoja, CardapioVersao
+    from app.models.carrinho import Carrinho
+    from app.models.itcarrinho import ItCarrinho
+    import main  # Registra os modelos e seus relacionamentos no SQLite.
+    from app.models.produto import Produto
+    from app.routers.carrinho import adicionar_item
+    from app.schemas.carrinho import AddItemIn
+
+    @compiles(BigInteger, "sqlite")
+    def sqlite_integer(tipo, compiler, **kw):
+        return "INTEGER"
+
+    engine = create_engine("sqlite://")
+    for modelo in (Produto, Cardapio, CardapioLoja, CardapioVersao, CardapioItem,
+                   Carrinho, ItCarrinho, BeneficioProdutoCampanha, BeneficioProdutoResgate):
+        modelo.__table__.create(engine)
+    with Session(engine, autoflush=False) as db:
+        db.add_all([
+            Produto(produto_id=3, organizacao_id=1, nmproduto="Suco"),
+            Cardapio(cardapio_id=8, organizacao_id=1, nmcardapio="Bar"),
+            CardapioLoja(loja_id=2, cardapio_id=8),
+            CardapioVersao(cardapioversao_id=9, cardapio_id=8, nrversao=1, statusversao="PUBLICADA"),
+            CardapioItem(cardapioitem_id=10, cardapioversao_id=9, cardapioversaocategoria_id=7, produto_id=3, vrpreco=10),
+            BeneficioProdutoCampanha(beneficioprodutocampanha_id=1, organizacao_id=1, loja_id=2,
+                produto_id=3, nmcampanha="Suco", tipo="ROLETA", dthrinicio=datetime(2020, 1, 1)),
+        ])
+        db.commit()
+        cliente = {"role": "cliente", "sub": "4"}
+        dados = router.GiroProdutoIn(cliente_id=4, produto_id=3, loja_id=2, cardapioitem_id=10)
+        inclusao = AddItemIn(**dados.model_dump(), organizacao_id=1, idtipoproduto="P")
+        adicionar_item(inclusao, db)
+        with pytest.raises(HTTPException) as legado:
+            router.girar_e_adicionar(1, dados, cliente)
+        assert legado.value.status_code == 410
+        campanha = db.get(BeneficioProdutoCampanha, 1)
+        campanha.qtlimite = 3
+        db.commit()
+        percentuais = iter((10, 20, 0, 10, 20))
+        monkeypatch.setattr(router.secrets, "choice", lambda opcoes: next(percentuais))
+        confirmar = router.ConfirmacaoGiroIn(**dados.model_dump(), preco_confirmado=9)
+        descartado = router.sortear_produto(1, dados, cliente, db)["resgate_id"]
+        router.dispensar_premio_roleta(1, descartado, dados, cliente, db)
+        with pytest.raises(HTTPException):
+            router.confirmar_giro(1, descartado, confirmar, cliente, db)
+        anterior = router.sortear_produto(1, dados, cliente, db)["resgate_id"]
+        for quantidade, (percentual, preco) in enumerate(((0, 10), (10, 9), (20, 8)), start=1):
+            giro = router.sortear_produto(1, dados, cliente, db)
+            assert giro["percentual_desconto"] == percentual
+            assert db.query(ItCarrinho).count() == quantidade
+            assert router._total_resgates_validos(db, 1) == quantidade - 1
+            confirmar = router.ConfirmacaoGiroIn(**dados.model_dump(), preco_confirmado=preco)
+            resgate = giro["resgate_id"]
+            if quantidade == 1:
+                with pytest.raises(HTTPException):
+                    router.confirmar_giro(1, anterior, confirmar, cliente, db)
+                with pytest.raises(HTTPException):
+                    adicionar_item(inclusao.model_copy(update={"beneficio_resgate_id": resgate}), db)
+                with pytest.raises(HTTPException):
+                    router.confirmar_giro(1, resgate, confirmar.model_copy(update={"produto_id": 99}), cliente, db)
+                with pytest.raises(HTTPException):
+                    router.confirmar_giro(1, resgate, confirmar, {"role": "cliente", "sub": "5"}, db)
+                with pytest.raises(HTTPException, match="preço mudou"):
+                    router.confirmar_giro(1, resgate, confirmar.model_copy(update={"preco_confirmado": 1}), cliente, db)
+                db.rollback()
+            assert router.confirmar_giro(1, resgate, confirmar, cliente, db) == {"ok": True}
+            assert router.confirmar_giro(1, resgate, confirmar, cliente, db) == {"ok": True}
+        linhas = db.query(ItCarrinho).order_by(ItCarrinho.itcarrinho_id).all()
+        assert [i.vrunitario for i in linhas] == [10, 10, 9, 8]
+        assert len({i.beneficioprodutoresgate_id for i in linhas}) == 4
+        with pytest.raises(HTTPException, match="já foi aplicado"):
+            adicionar_item(inclusao.model_copy(update={"beneficio_resgate_id": linhas[-1].beneficioprodutoresgate_id}), db)
+        with pytest.raises(HTTPException):
+            router.sortear_produto(1, dados, cliente, db)
+        db.rollback()
+        assert router._total_resgates_validos(db, 1) == 3
+        assert db.query(ItCarrinho).count() == 4
 
 
 def test_nao_pode_duplicar_item_premiado_no_carrinho():

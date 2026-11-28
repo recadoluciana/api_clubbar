@@ -506,6 +506,7 @@ async def criar_venda_paga_por_checkout_snapshot(
                 "cardapioitem_id": getattr(item, "cardapioitem_id", None),
                 "beneficio_resgate_id": getattr(item, "beneficioprodutoresgate_id", None),
                 "campanha_id": getattr(item, "beneficioprodutocampanha_id", None),
+                "beneficio_resgate_id": getattr(item, "beneficioprodutoresgate_id", None),
                 "qtitcarrinho": item.quantidade,
                 "vrunitario": item.vrunitario,
                 "dsobsitcar": item.dsobsitem,
