@@ -409,14 +409,14 @@ def ofertas_ativas(
             if item.tipo == "ROLETA"
             else _total_resgates_validos(db, int(item.beneficioprodutocampanha_id))
         )
-        if item.qtlimite is not None and usados >= item.qtlimite: continue
+        cortesia_pendente = (
+            item.tipo == "CORTESIA" and cliente_id is not None
+            and _tem_cortesia_pendente(db, cliente_id=cliente_id, produto_id=int(item.produto_id))
+        )
+        if item.qtlimite is not None and usados >= item.qtlimite and not cortesia_pendente:
+            continue
         oferta = _campanha_out(item, resgates=usados)
         if item.tipo == "CORTESIA":
-            cortesia_pendente = cliente_id is not None and _tem_cortesia_pendente(
-                db,
-                cliente_id=cliente_id,
-                produto_id=int(item.produto_id),
-            )
             oferta["disponivel_para_cliente"] = not cortesia_pendente
             if cortesia_pendente:
                 oferta["motivo_indisponibilidade"] = (

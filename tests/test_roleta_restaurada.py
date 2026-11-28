@@ -18,6 +18,24 @@ def test_campanha_roleta_coexiste_com_percentual_sem_prazo_final():
     assert campanha.percentual_desconto is None
 
 
+@pytest.mark.parametrize('possui_cortesia', [True, False])
+def test_oferta_esgotada_permanece_visivel_para_quem_tem_cortesia(possui_cortesia):
+    campanha = SimpleNamespace(beneficioprodutocampanha_id=1, produto_id=3,
+                               tipo='CORTESIA', qtlimite=1)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.all.return_value = [campanha]
+    with patch.object(router, 'exigir_cliente_autenticado'), \
+         patch.object(router, '_total_resgates_validos', return_value=1), \
+         patch.object(router, '_tem_cortesia_pendente', return_value=possui_cortesia), \
+         patch.object(router, '_campanha_out', return_value={'produto_id': 3, 'restantes': 0}):
+        ofertas = router.ofertas_ativas(loja_id=2, cliente_id=4, usuario={'role': 'cliente'}, db=db)
+    if possui_cortesia:
+        assert ofertas == [{'produto_id': 3, 'restantes': 0, 'disponivel_para_cliente': False,
+            'motivo_indisponibilidade': 'Você já possui uma cortesia válida deste produto aguardando retirada.'}]
+    else:
+        assert ofertas == []
+
+
 def test_roleta_do_carrinho_desativada_sem_alterar_carrinho():
     with patch.object(router, "exigir_cliente_autenticado"):
         with pytest.raises(HTTPException) as erro:
