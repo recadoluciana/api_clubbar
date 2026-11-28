@@ -603,7 +603,7 @@ CREATE TABLE titularfinanceiro (
   dtultatu DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_titularfinanceiro_organizacao (organizacao_id),
   INDEX ix_titularfinanceiro_sittitular (sittitular),
-  UNIQUE KEY uk_titularfinanceiro_cpfcnpj (cpfcnpj),
+  UNIQUE KEY uk_titularfinanceiro_org_cpfcnpj (organizacao_id, cpfcnpj),
   UNIQUE KEY uk_titularfinanceiro_asaas_account (asaas_account_id),
   UNIQUE KEY uk_titularfinanceiro_asaas_wallet (asaas_wallet_id),
   UNIQUE KEY uk_titularfinanceiro_org_id (organizacao_id, titularfinanceiro_id),

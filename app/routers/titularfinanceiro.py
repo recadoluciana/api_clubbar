@@ -207,9 +207,10 @@ def criar_titular(
     if dados.tipotitular == "PF" and dados.dtnascimento is None:
         raise HTTPException(status_code=422, detail="Data de nascimento é obrigatória para PF")
     if db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.organizacao_id == organizacao_id,
         TitularFinanceiro.cpfcnpj == dados.cpfcnpj
     ).first():
-        raise HTTPException(409, "Este CPF/CNPJ já possui um titular financeiro no Clubbar")
+        raise HTTPException(409, "Este CPF/CNPJ já possui um titular financeiro nesta organização")
     titular = TitularFinanceiro(**dados.model_dump())
     db.add(titular)
     try:
@@ -376,10 +377,9 @@ async def salvar(
         obrigatorio=False,
     )
     por_documento = db.query(TitularFinanceiro).filter(
+        TitularFinanceiro.organizacao_id == organizacao_id,
         TitularFinanceiro.cpfcnpj == dados.cpfcnpj
     ).first()
-    if por_documento and por_documento.organizacao_id != organizacao_id:
-        raise HTTPException(409, "Este CPF/CNPJ já pertence a outra organização no Clubbar")
     if titular and titular.asaas_account_id and titular.cpfcnpj != dados.cpfcnpj:
         raise HTTPException(409, "O CPF/CNPJ não pode ser alterado após a criação da subconta Asaas")
     if titular and titular.asaas_account_id and titular.tipotitular != dados.tipotitular:
