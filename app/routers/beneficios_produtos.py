@@ -83,6 +83,10 @@ class GiroProdutoIn(GiroIn):
     cardapioitem_id: int
 
 
+class ConfirmacaoGiroIn(GiroProdutoIn):
+    preco_confirmado: Decimal = Field(ge=0, decimal_places=2)
+
+
 def _status_periodo(item: BeneficioProdutoCampanha, agora: datetime | None = None) -> str:
     agora = agora or _agora()
     if item.situacao != "ATIVA":
@@ -381,35 +385,75 @@ def ofertas_ativas(
 @router.post("/{campanha_id}/girar")
 def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, dados.cliente_id)
-    raise HTTPException(410, "Atualize o aplicativo para girar e adicionar o produto.")
+    raise HTTPException(410, "Atualize o aplicativo para girar e confirmar o produto.")
 
 
 @router.post("/{campanha_id}/girar-e-adicionar")
 def girar_e_adicionar(campanha_id: int, dados: GiroProdutoIn,
-                      usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+                      usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, dados.cliente_id)
+    raise HTTPException(410, "Atualize o aplicativo para confirmar o produto depois do giro.")
+
+
+def _campanha_do_giro(db: Session, campanha_id: int, dados: GiroProdutoIn):
     campanha = db.query(BeneficioProdutoCampanha).filter(
         BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id,
         BeneficioProdutoCampanha.tipo == "ROLETA",
         BeneficioProdutoCampanha.loja_id == dados.loja_id,
         BeneficioProdutoCampanha.produto_id == dados.produto_id,
     ).with_for_update().first()
-    if not campanha or not _periodo_ativo(campanha):
+    if not campanha:
         raise HTTPException(409, "Esta roleta não está disponível.")
-    if campanha.qtlimite is not None and _total_resgates_validos(db, campanha_id) >= campanha.qtlimite:
+    return campanha
+
+
+def _validar_giro_disponivel(db: Session, campanha: BeneficioProdutoCampanha):
+    if not _periodo_ativo(campanha):
+        raise HTTPException(409, "Esta roleta não está disponível.")
+    if campanha.qtlimite is not None and _total_resgates_validos(db, campanha.beneficioprodutocampanha_id) >= campanha.qtlimite:
         raise HTTPException(409, "Esta campanha atingiu o limite de participações.")
+
+
+@router.post("/{campanha_id}/sortear")
+def sortear_produto(campanha_id: int, dados: GiroProdutoIn,
+                    usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    exigir_cliente_autenticado(usuario, dados.cliente_id)
+    campanha = _campanha_do_giro(db, campanha_id, dados)
+    _validar_giro_disponivel(db, campanha)
+    db.query(BeneficioProdutoResgate).filter_by(
+        campanha_id=campanha_id, cliente_id=dados.cliente_id, situacao="SORTEADO",
+    ).update({"situacao": "CANCELADO"}, synchronize_session=False)
     percentual = secrets.choice((0, 10, 20))
     premio = BeneficioProdutoResgate(
         campanha_id=campanha_id, cliente_id=dados.cliente_id, produto_id=dados.produto_id,
-        percentual_desconto=percentual, situacao="DISPONIVEL",
+        percentual_desconto=percentual, situacao="SORTEADO",
     )
     db.add(premio)
-    db.flush()
+    db.commit()
+    return {"resgate_id": premio.beneficioprodutoresgate_id, "percentual_desconto": percentual}
+
+
+@router.post("/{campanha_id}/premios/{resgate_id}/confirmar")
+def confirmar_giro(campanha_id: int, resgate_id: int, dados: ConfirmacaoGiroIn,
+                   usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+    exigir_cliente_autenticado(usuario, dados.cliente_id)
+    campanha = _campanha_do_giro(db, campanha_id, dados)
+    premio = db.query(BeneficioProdutoResgate).filter_by(
+        beneficioprodutoresgate_id=resgate_id, campanha_id=campanha_id,
+        cliente_id=dados.cliente_id, produto_id=dados.produto_id,
+    ).with_for_update().first()
+    if premio is not None and premio.carrinho_id is not None:
+        return {"ok": True}
+    if premio is None or premio.situacao != "SORTEADO":
+        raise HTTPException(409, "Este giro não está mais disponível.")
+    _validar_giro_disponivel(db, campanha)
     inclusao = AddItemIn(cliente_id=dados.cliente_id, organizacao_id=campanha.organizacao_id,
                          loja_id=dados.loja_id, idtipoproduto="P", produto_id=dados.produto_id,
                          cardapioitem_id=dados.cardapioitem_id, beneficio_resgate_id=premio.beneficioprodutoresgate_id)
-    item = _adicionar_item(inclusao, db, premio_do_giro=premio)
-    return {**item.model_dump(), "percentual_desconto": percentual}
+    premio.situacao = "DISPONIVEL"
+    db.flush()
+    _adicionar_item(inclusao, db, premio_do_giro=premio, preco_confirmado=dados.preco_confirmado)
+    return {"ok": True}
 
 
 @router.post("/{campanha_id}/premios/{resgate_id}/dispensar")
@@ -426,6 +470,10 @@ def dispensar_premio_roleta(campanha_id: int, resgate_id: int, dados: GiroIn,
     if not resgate:
         raise HTTPException(404, "Prêmio não encontrado.")
     if resgate.situacao == "CANCELADO":
+        return {"ok": True}
+    if resgate.situacao == "SORTEADO":
+        resgate.situacao = "CANCELADO"
+        db.commit()
         return {"ok": True}
     if resgate.situacao != "DISPONIVEL":
         raise HTTPException(409, "Este prêmio já foi utilizado.")
