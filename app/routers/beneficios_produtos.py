@@ -439,7 +439,8 @@ def roletas_do_carrinho(carrinho_id: int, cliente_id: int,
         produto_id = int(campanha.produto_id)
         premio = db.query(BeneficioProdutoResgate).filter(
             BeneficioProdutoResgate.carrinho_id == carrinho_id,
-            BeneficioProdutoResgate.produto_id == produto_id).first()
+            BeneficioProdutoResgate.produto_id == produto_id,
+            BeneficioProdutoResgate.origem_giro == "CARRINHO").first()
         if premio is not None and premio.campanha_id != campanha.beneficioprodutocampanha_id:
             continue
         if not premio and (not _periodo_ativo(campanha, agora) or
@@ -479,7 +480,8 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
         raise HTTPException(409, "Adicione o produto ao carrinho antes de girar.")
     premio = (db.query(BeneficioProdutoResgate).filter(
         BeneficioProdutoResgate.carrinho_id == carrinho.carrinho_id,
-        BeneficioProdutoResgate.produto_id == campanha.produto_id).with_for_update().first())
+        BeneficioProdutoResgate.produto_id == campanha.produto_id,
+        BeneficioProdutoResgate.origem_giro == "CARRINHO").with_for_update().first())
     if not _periodo_ativo(campanha, _agora()):
         raise HTTPException(409, "Esta roleta não está disponível agora.")
     if premio is not None and (premio.campanha_id != campanha_id or premio.situacao != "DISPONIVEL"):
@@ -488,7 +490,7 @@ def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_us
     if premio is None:
         premio = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id,
             produto_id=campanha.produto_id, carrinho_id=carrinho.carrinho_id,
-            percentual_desconto=desconto, situacao="DISPONIVEL", dtexpiracao=None)
+            origem_giro="CARRINHO", percentual_desconto=desconto, situacao="DISPONIVEL", dtexpiracao=None)
         db.add(premio)
         db.flush()
     else:

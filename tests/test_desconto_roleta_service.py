@@ -28,3 +28,17 @@ def test_desconto_zero_nao_altera_preco():
 
 def test_dez_por_cento_e_arredondado_em_centavos():
     assert melhor_preco_roleta("19.90", "19.90", 10) == (Decimal("17.91"), True)
+def test_indice_preserva_giros_antigos_e_limita_giro_de_carrinho():
+    import sqlite3
+
+    db = sqlite3.connect(':memory:')
+    db.execute('CREATE TABLE premios (carrinho_id INTEGER, produto_id INTEGER, origem_giro TEXT)')
+    db.execute('CREATE UNIQUE INDEX uk ON premios (carrinho_id, produto_id, origem_giro)')
+    db.executemany('INSERT INTO premios VALUES (?, ?, ?)', [(5, 3, None), (5, 3, None)])
+    db.execute('INSERT INTO premios VALUES (?, ?, ?)', (5, 3, 'CARRINHO'))
+    try:
+        db.execute('INSERT INTO premios VALUES (?, ?, ?)', (5, 3, 'CARRINHO'))
+        assert False, 'Um segundo giro de carrinho não deve criar outro registro'
+    except sqlite3.IntegrityError:
+        pass
+

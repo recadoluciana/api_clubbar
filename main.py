@@ -784,9 +784,11 @@ def garantir_cardapios_compartilhados() -> None:
                 colunas_resgate = {coluna["name"] for coluna in inspector.get_columns("beneficioprodutoresgate")}
                 if "carrinho_id" not in colunas_resgate:
                     conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD COLUMN carrinho_id BIGINT NULL"))
+                if "origem_giro" not in colunas_resgate:
+                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD COLUMN origem_giro VARCHAR(20) NULL"))
                 indices_resgate = {indice["name"] for indice in inspect(conexao).get_indexes("beneficioprodutoresgate")}
-                if "uk_roleta_carrinho_produto" not in indices_resgate:
-                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD UNIQUE KEY uk_roleta_carrinho_produto (carrinho_id, produto_id)"))
+                if "uk_roleta_carrinho_produto_origem" not in indices_resgate:
+                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD UNIQUE KEY uk_roleta_carrinho_produto_origem (carrinho_id, produto_id, origem_giro)"))
             if "checkout_asaas_item" in tabelas:
                 colunas_checkout_item = {coluna["name"] for coluna in inspector.get_columns("checkout_asaas_item")}
                 if "beneficioprodutoresgate_id" not in colunas_checkout_item:

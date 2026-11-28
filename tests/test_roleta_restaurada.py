@@ -30,7 +30,7 @@ def test_giradas_sao_por_produto_no_carrinho_e_mantem_melhor_preco():
     premios = []
     real = router.BeneficioProdutoResgate
     fake = MagicMock(side_effect=lambda **dados: SimpleNamespace(**dados))
-    for campo in ("carrinho_id", "produto_id", "campanha_id"):
+    for campo in ("carrinho_id", "produto_id", "campanha_id", "origem_giro"):
         setattr(fake, campo, getattr(real, campo))
     db = MagicMock()
     def consulta(model):
@@ -134,7 +134,7 @@ def test_roleta_permite_giros_sucessivos_com_zero_dez_e_vinte():
     premios = []
     real = router.BeneficioProdutoResgate
     fake = MagicMock(side_effect=lambda **dados: SimpleNamespace(**dados))
-    for campo in ("carrinho_id", "produto_id", "campanha_id"):
+    for campo in ("carrinho_id", "produto_id", "campanha_id", "origem_giro"):
         setattr(fake, campo, getattr(real, campo))
     db = MagicMock()
     def consulta(model):
