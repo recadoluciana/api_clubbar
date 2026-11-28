@@ -100,8 +100,22 @@ def _gerar_conteudo(
         "{{TAXA_IMPLANTACAO}}": f"{float(modelo.vrimplantacao):.2f}",
     }
     conteudo = modelo.conteudomodelo
-    if "{{CONDICOES_COMERCIAIS}}" in conteudo and modalidade_comercial:
-        valores["{{CONDICOES_COMERCIAIS}}"] = condicoes_comerciais(modalidade_comercial, mensalidade_acordada)[0]
+    if "{{CONDICOES_COMERCIAIS}}" in conteudo:
+        # Os modelos comerciais já cadastrados trazem a regra padrão por extenso.
+        conteudo = conteudo.replace(
+            "8% sobre o preço do ingresso, sem valor mínimo.",
+            "{{REGRA_TAXA_INGRESSOS}}",
+        )
+        percentual = f"{taxa_ingressos:.2f}".rstrip("0").rstrip(".").replace(".", ",")
+        regra = f"{percentual}% sobre o preço do ingresso"
+        if taxa_minima_ingresso:
+            minimo = f"{taxa_minima_ingresso:.2f}".replace(".", ",")
+            regra += f" ou o mínimo de R$ {minimo} por ingresso, prevalecendo o maior valor."
+        else:
+            regra += ", sem valor mínimo."
+        valores["{{REGRA_TAXA_INGRESSOS}}"] = regra
+        if modalidade_comercial:
+            valores["{{CONDICOES_COMERCIAIS}}"] = condicoes_comerciais(modalidade_comercial, mensalidade_acordada)[0]
     if "{{TAXA_MINIMA_INGRESSO}}" not in conteudo and "{{CONDICOES_COMERCIAIS}}" not in conteudo:
         conteudo += (
             "\n- Regra da taxa de conveniência: {{TAXA_INGRESSOS}}% por ingresso "

@@ -88,7 +88,7 @@ Não há cobrança de taxa de implantação.
 
 3. CONDIÇÕES COMERCIAIS
 {{CONDICOES_COMERCIAIS}}
-Não há cobrança de taxa Clubbar sobre vendas de produtos. Nas vendas de ingressos, será cobrada do cliente uma taxa de conveniência de 8% sobre o preço do ingresso, sem valor mínimo.
+Não há cobrança de taxa Clubbar sobre vendas de produtos. Nas vendas de ingressos, será cobrada do cliente uma taxa de conveniência de {{REGRA_TAXA_INGRESSOS}}
 
 """
     return conteudo[:inicio] + condicoes + conteudo[fim:]
