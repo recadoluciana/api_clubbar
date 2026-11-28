@@ -24,7 +24,6 @@ from app.models.pagvenda import PagVenda
 from app.routers.carrinho import _adicionar_item
 from app.schemas.carrinho import AddItemIn
 from app.services.venda_service import gerar_token_qr
-from app.services.desconto_roleta_service import melhor_preco_roleta
 from app.services.pagamento_status_service import set_venda_como_paga
 from app.utils.datetime_utils import FUSO_BRASIL
 
@@ -429,108 +428,15 @@ def ofertas_ativas(
 
 @router.get("/carrinhos/{carrinho_id}/roletas")
 def roletas_do_carrinho(carrinho_id: int, cliente_id: int,
-                        usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+                        usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, cliente_id)
-    carrinho = db.query(Carrinho).filter(Carrinho.carrinho_id == carrinho_id,
-        Carrinho.cliente_id == cliente_id, Carrinho.sitcarrinho == "ABERTO").first()
-    if not carrinho:
-        raise HTTPException(404, "Carrinho não encontrado ou já finalizado.")
-    produtos = {int(item.produto_id) for item in db.query(ItCarrinho).filter(
-        ItCarrinho.carrinho_id == carrinho_id).all()}
-    if not produtos:
-        return []
-    campanhas = db.query(BeneficioProdutoCampanha).filter(
-        BeneficioProdutoCampanha.loja_id == carrinho.loja_id,
-        BeneficioProdutoCampanha.organizacao_id == carrinho.organizacao_id,
-        BeneficioProdutoCampanha.tipo == "ROLETA",
-        BeneficioProdutoCampanha.produto_id.in_(produtos)).all()
-    agora = _agora()
-    resultado = []
-    vistos = set()
-    for campanha in campanhas:
-        produto_id = int(campanha.produto_id)
-        premio = db.query(BeneficioProdutoResgate).filter(
-            BeneficioProdutoResgate.carrinho_id == carrinho_id,
-            BeneficioProdutoResgate.produto_id == produto_id,
-            BeneficioProdutoResgate.origem_giro == "CARRINHO").first()
-        if premio is not None and premio.campanha_id != campanha.beneficioprodutocampanha_id:
-            continue
-        if not premio and (not _periodo_ativo(campanha, agora) or
-            (campanha.qtlimite is not None and _total_roletas_utilizadas(db, int(campanha.beneficioprodutocampanha_id)) >= campanha.qtlimite)):
-            continue
-        if produto_id in vistos:
-            continue
-        produto = db.query(Produto).filter(Produto.produto_id == produto_id).first()
-        resultado.append({"campanha_id": int(campanha.beneficioprodutocampanha_id),
-            "produto_id": produto_id, "nome_produto": produto.nmproduto if produto else "Produto",
-            "ja_girou": premio is not None,
-            "percentual_desconto": float(premio.percentual_desconto) if premio else None})
-        vistos.add(produto_id)
-    return resultado
+    raise HTTPException(410, "A roleta do carrinho foi descontinuada. Gire a roleta do produto no cardápio.")
 
 
 @router.post("/{campanha_id}/girar")
-def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_usuario_logado), db: Session = Depends(get_db)):
+def girar_roleta(campanha_id: int, dados: GiroIn, usuario: dict = Depends(get_usuario_logado)):
     exigir_cliente_autenticado(usuario, dados.cliente_id)
-    if dados.carrinho_id is None:
-        raise HTTPException(409, "A roleta agora é girada no carrinho. Atualize o aplicativo.")
-    carrinho = (db.query(Carrinho).filter(Carrinho.carrinho_id == dados.carrinho_id,
-        Carrinho.cliente_id == dados.cliente_id, Carrinho.sitcarrinho == "ABERTO")
-        .with_for_update().first())
-    if not carrinho:
-        raise HTTPException(404, "Carrinho não encontrado ou já finalizado.")
-    campanha = (db.query(BeneficioProdutoCampanha).filter(
-        BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_id,
-        BeneficioProdutoCampanha.loja_id == carrinho.loja_id,
-        BeneficioProdutoCampanha.organizacao_id == carrinho.organizacao_id,
-        BeneficioProdutoCampanha.tipo == "ROLETA").with_for_update().first())
-    if not campanha:
-        raise HTTPException(409, "Esta roleta não está disponível agora.")
-    itens = (db.query(ItCarrinho).filter(ItCarrinho.carrinho_id == carrinho.carrinho_id,
-        ItCarrinho.produto_id == campanha.produto_id).with_for_update().all())
-    if not itens:
-        raise HTTPException(409, "Adicione o produto ao carrinho antes de girar.")
-    premio = (db.query(BeneficioProdutoResgate).filter(
-        BeneficioProdutoResgate.carrinho_id == carrinho.carrinho_id,
-        BeneficioProdutoResgate.produto_id == campanha.produto_id,
-        BeneficioProdutoResgate.origem_giro == "CARRINHO").with_for_update().first())
-    if not _periodo_ativo(campanha, _agora()):
-        raise HTTPException(409, "Esta roleta não está disponível agora.")
-    if premio is not None and (premio.campanha_id != campanha_id or premio.situacao != "DISPONIVEL"):
-        raise HTTPException(409, "Este desconto não está disponível neste carrinho.")
-    desconto = secrets.choice(PERCENTUAIS_ROLETA)
-    if premio is None:
-        premio = BeneficioProdutoResgate(campanha_id=campanha_id, cliente_id=dados.cliente_id,
-            produto_id=campanha.produto_id, carrinho_id=carrinho.carrinho_id,
-            origem_giro="CARRINHO", percentual_desconto=desconto, situacao="DISPONIVEL", dtexpiracao=None)
-        db.add(premio)
-        db.flush()
-    else:
-        premio.percentual_desconto = desconto
-    economia = 0.0
-    aplicou = False
-    for item in itens:
-        if item.beneficioprodutoresgate_id not in (None, premio.beneficioprodutoresgate_id):
-            raise HTTPException(409, "Este produto possui outro benefício no carrinho.")
-        base = item.vrpreco_original if item.vrpreco_original is not None else item.vrunitario
-        preco_oferta = item.vrunitario if item.beneficioprodutoresgate_id is None else base
-        campanha_promocional_id = getattr(item, "beneficioprodutocampanha_id", None)
-        if campanha_promocional_id:
-            promocao = db.query(BeneficioProdutoCampanha).filter(
-                BeneficioProdutoCampanha.beneficioprodutocampanha_id == campanha_promocional_id).first()
-            if promocao and promocao.tipo == "PACOTE":
-                preco_oferta = promocao.vrpacote
-            elif promocao and promocao.tipo == "PERCENTUAL":
-                preco_oferta, _ = melhor_preco_roleta(base, base, promocao.percentual_desconto)
-        escolhido, usar = melhor_preco_roleta(base, preco_oferta, desconto)
-        item.vrpreco_original = base
-        item.vrunitario = escolhido
-        item.beneficioprodutoresgate_id = premio.beneficioprodutoresgate_id if usar else None
-        economia += float(preco_oferta) - float(escolhido)
-        aplicou = aplicou or usar
-    db.commit()
-    return {"resgate_id": int(premio.beneficioprodutoresgate_id), "percentual_desconto": desconto,
-            "aplicado": aplicou, "economia_adicional": round(economia, 2), "ja_girou": False}
+    raise HTTPException(410, "A roleta do carrinho foi descontinuada. Gire a roleta do produto no cardápio.")
 
 
 @router.post("/{campanha_id}/girar-e-adicionar")
