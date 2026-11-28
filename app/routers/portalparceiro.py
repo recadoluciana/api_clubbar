@@ -129,7 +129,7 @@ def solicitar_codigo_portal(dados: PortalSolicitarCodigo, db: Session = Depends(
         return {"mensagem": mensagem}
     db.query(LeadCodigoAcesso).filter(LeadCodigoAcesso.leadparceiro_id == lead.leadparceiro_id,
         LeadCodigoAcesso.usado == "N").update({"usado": "S"}, synchronize_session=False)
-    codigo = f"{randbelow(100_000_000):08d}"
+    codigo = f"{randbelow(1_000_000):06d}"
     db.add(LeadCodigoAcesso(leadparceiro_id=lead.leadparceiro_id, documento=documento,
         codigo_hash=hash_senha(codigo), expiracao=agora + timedelta(minutes=10), dtcriacao=agora))
     db.flush()
