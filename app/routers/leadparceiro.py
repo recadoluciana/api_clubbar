@@ -888,6 +888,17 @@ async def converter_lead_em_parceiro(
     usuario_existente = (
         db.query(Usuario).filter(Usuario.emailuser == email_responsavel).first()
     )
+    if dados.organizacao_id_destino is not None:
+        if organizacao_existente and organizacao_existente.organizacao_id != dados.organizacao_id_destino:
+            raise HTTPException(409, "Este lead já possui outra organização vinculada.")
+        if (not usuario_existente
+            or usuario_existente.organizacao_id != dados.organizacao_id_destino
+            or usuario_existente.dscargo != "SUPERADMIN"
+            or usuario_existente.situsuario != "ATIVO"):
+            raise HTTPException(409, "O responsável precisa ter acesso ativo de superadmin à organização selecionada.")
+        organizacao_existente = db.get(Organizacao, dados.organizacao_id_destino)
+        if not organizacao_existente or organizacao_existente.sitorganizacao != "ATIVA":
+            raise HTTPException(409, "Organização de destino não encontrada ou inativa.")
     if usuario_existente and not organizacao_existente:
         raise EmailResponsavelJaCadastrado()
 

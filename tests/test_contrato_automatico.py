@@ -123,6 +123,32 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertTrue(resultado["ativacao_pendente"])
         self.assertEqual(2, self.db.get(Usuario, 5).organizacao_id)
         self.assertEqual(0, self.db.query(Loja).count())
+        from app.models.cardapio import CategoriaPadrao
+        from app.models.categoria import Categoria
+        from app.models.cobrancaimplantacao import CobrancaImplantacao
+        from app.routers.leadparceiro import converter_lead_em_parceiro
+        from app.schemas.leadparceiro import ConverterLeadParceiroIn
+        for model in (CategoriaPadrao, Categoria, CobrancaImplantacao):
+            model.__table__.create(self.engine, checkfirst=True)
+        dados = ConverterLeadParceiroIn(
+            leadestabelecimento_id=1, tipo_loja="BAR",
+            email_responsavel="teste@example.com", organizacao_id_destino=2,
+        )
+        destino_incorreto = dados.model_copy(update={"organizacao_id_destino": 999})
+        with self.assertRaises(HTTPException) as erro:
+            asyncio.run(converter_lead_em_parceiro(1, destino_incorreto, {}, self.db))
+        self.assertEqual(409, erro.exception.status_code)
+        self.assertEqual(0, self.db.query(Loja).count())
+        resultado = asyncio.run(converter_lead_em_parceiro(1, dados, {}, self.db))
+        loja = self.db.query(Loja).filter_by(leadestabelecimento_id=1).one()
+        self.assertEqual(2, loja.organizacao_id)
+        self.assertEqual(5, resultado["superadmin"]["usuario_id"])
+        self.assertEqual("hash", self.db.get(Usuario, 5).senhahashuser)
+        self.assertEqual("CONVERTIDO", getattr(self.est.status, "value", self.est.status))
+        self.assertEqual(Decimal("2.99"), loja.vrtaxaminimaingresso)
+        with self.assertRaises(HTTPException):
+            asyncio.run(converter_lead_em_parceiro(1, dados, {}, self.db))
+        self.assertEqual(1, self.db.query(Loja).filter_by(leadestabelecimento_id=1).count())
 
     def test_assinatura_cria_parceiro_automaticamente(self):
         from app.models.cardapio import CategoriaPadrao
