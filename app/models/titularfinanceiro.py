@@ -35,7 +35,7 @@ class TitularFinanceiro(Base):
     dtultatu = Column(DateTime, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
     __table_args__ = (
-        UniqueConstraint("cpfcnpj", name="uk_titularfinanceiro_cpfcnpj"),
+        UniqueConstraint("organizacao_id", "cpfcnpj", name="uk_titularfinanceiro_org_cpfcnpj"),
         UniqueConstraint("asaas_account_id", name="uk_titularfinanceiro_asaas_account"),
         UniqueConstraint("asaas_wallet_id", name="uk_titularfinanceiro_asaas_wallet"),
         UniqueConstraint(
