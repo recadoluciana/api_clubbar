@@ -12,6 +12,7 @@ class CashbackMovimento(Base):
     venda_origem_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
     venda_uso_id = Column(BigInteger, ForeignKey("venda.venda_id"), nullable=True)
     checkout_asaas_id = Column(BigInteger, ForeignKey("checkout_asaas.checkout_asaas_id"), nullable=True)
+    checkout_mercadopago_id = Column(BigInteger, ForeignKey("checkout_mercadopago.checkout_mercadopago_id"), nullable=True)
     cashback_movimento_origem_id = Column(BigInteger, ForeignKey("cashback_movimento.cashback_movimento_id"), nullable=True)
     tipomovimento = Column(String(15), nullable=False)
     sitcashback = Column(String(15), nullable=False)

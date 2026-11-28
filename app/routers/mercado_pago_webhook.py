@@ -17,6 +17,7 @@ from app.models.reserva_ingresso import ReservaIngresso
 from app.services.mercado_pago_service import buscar_pagamento_por_id, obter_token_loja
 from app.services.venda_gateway_service import criar_venda_paga_por_carrinho_gateway
 from app.services.reserva_mercado_pago_service import confirmar_pagamento_reserva_mp
+from app.services.cashback_service import cancelar_uso_pendente
 from app.routers.pagamentos import _notificar_confirmacao_mercado_pago
 
 
@@ -132,7 +133,16 @@ async def receber_webhook_mercado_pago(request: Request):
         status_checkout = str(checkout.status or '').upper()
         if status_checkout == 'REFUNDED':
             return {'ok': True, 'ignorado': True, 'motivo': 'checkout_encerrado'}
-        if str(pagamento.get('status') or '').lower() != 'approved':
+        status_pagamento = str(pagamento.get('status') or '').lower()
+        if status_pagamento in {'rejected', 'cancelled', 'canceled', 'expired'} and not checkout.venda_id:
+            if checkout.payment_id and str(checkout.payment_id) != payment_id:
+                raise HTTPException(409, 'Identificador Mercado Pago divergente.')
+            checkout.payment_id = payment_id
+            checkout.status = status_pagamento.upper()
+            cancelar_uso_pendente(db, checkout)
+            db.commit()
+            return {'ok': True, 'status': checkout.status}
+        if status_pagamento != 'approved':
             return {'ok': True, 'pendente': True}
         recebido = Decimal(str(pagamento.get('transaction_amount') or 0)).quantize(Decimal('0.01'))
         esperado = Decimal(str(checkout.valor or 0)).quantize(Decimal('0.01'))

@@ -752,12 +752,7 @@ async def pagar_mercado_pago_cliente(
     db: Session = Depends(get_db),
     usuario: dict = Depends(get_usuario_logado),
 ):
-    """Cria Checkout Pro no Mercado Pago para produtos.
-
-    É paralelo ao endpoint Asaas: não altera a cobrança, o histórico ou os
-    webhooks atuais desse provedor. Cashback permanece indisponível aqui até
-    sua reserva ganhar uma chave de checkout independente do Asaas.
-    """
+    """Cria uma cobrança de produtos com reserva de cashback vinculada ao checkout."""
     exigir_cliente_autenticado(usuario, payload.cliente_id)
     if payload.usuario_id is not None or payload.origem_checkout != 'CLIENT':
         raise HTTPException(403, detail='Origem de pagamento inválida')
@@ -771,15 +766,14 @@ async def pagar_mercado_pago_cliente(
         or not (payload.payment_method_id or '').strip()
     ):
         raise HTTPException(422, 'Token e método do cartão são obrigatórios. Atualize o aplicativo e tente novamente.')
-    if payload.usar_cashback:
-        raise HTTPException(
-            409,
-            'Cashback ainda não está disponível para Mercado Pago. Escolha Asaas ou prossiga sem usar cashback.',
-        )
+    checkout = None
+    reserva_registrada = False
     try:
         loja = db.query(Loja).filter(Loja.loja_id == payload.loja_id).first()
         if not loja:
             raise HTTPException(404, 'Estabelecimento não encontrado.')
+        if int(loja.organizacao_id) != payload.organizacao_id:
+            raise HTTPException(409, 'Organização e estabelecimento divergentes.')
         if str(getattr(loja, 'provedor_pagamento', 'ASAAS')).upper() != 'MERCADO_PAGO':
             raise HTTPException(409, 'Este estabelecimento está configurado para receber pelo Asaas.')
         if payload.entrega and loja.permiteentrega != 'S':
@@ -800,13 +794,18 @@ async def pagar_mercado_pago_cliente(
             db, carrinho['itens'], payload.loja_id, payload.organizacao_id
         )
         itens_checkout, valor_total, _ = _montar_itens_asaas(itens)
-        # O comprador continua pagando exatamente o total do carrinho. A
-        # comissão é separada do recebimento do parceiro pelo marketplace_fee.
-        valor_taxa_clubbar = _calcular_comissao_produtos_mercado_pago(
-            valor_total,
-            loja.vrtaxaprod,
-        )
         _exigir_valor_positivo(valor_total)
+
+        # Serializa as tentativas do mesmo carrinho. Um Pix anterior pode
+        # continuar pagável no provedor mesmo se cancelado apenas no Clubbar.
+        db.query(Carrinho).filter(Carrinho.carrinho_id == carrinho_id).with_for_update().one()
+        pendentes = db.query(CheckoutMercadoPago).filter(
+            CheckoutMercadoPago.carrinho_id == carrinho_id,
+            CheckoutMercadoPago.venda_id.is_(None),
+            CheckoutMercadoPago.status.in_(['CREATING', 'PENDING', 'IN_PROCESS', 'ACTIVE', 'APPROVED']),
+        ).with_for_update().all()
+        if any(payload.usar_cashback or Decimal(str(c.vrcashbackusado or 0)) > 0 for c in pendentes):
+            raise HTTPException(409, 'Há um pagamento pendente para este carrinho. Aguarde a confirmação ou o cancelamento no Mercado Pago.')
 
         # Tentações antigas do próprio Mercado Pago são invalidadas no Clubbar.
         # A preferência anterior não é reaproveitada nem pode confirmar uma
@@ -818,10 +817,33 @@ async def pagar_mercado_pago_cliente(
         ).update({'status': 'CANCELLED'}, synchronize_session=False)
         # A tentativa anterior não pode continuar elegível enquanto o novo
         # método é criado. O webhook também ignora checkouts cancelados.
-        db.commit()
-
         token, conta_mp = await obter_token_mercado_pago_loja(db, payload.loja_id)
         referencia = f'MP-{APP_ENV.upper()}-CLIENT-{carrinho_id}-{uuid.uuid4().hex[:12]}'
+        valor_cashback, debitos = reservar_uso(
+            db, cliente_id=payload.cliente_id, organizacao_id=payload.organizacao_id,
+            loja_id=payload.loja_id, total_produtos=valor_total,
+            valor_solicitado=payload.valor_cashback,
+        ) if payload.usar_cashback else (Decimal('0'), [])
+        if payload.usar_cashback and (payload.valor_cashback is None or valor_cashback != Decimal(str(payload.valor_cashback)).quantize(Decimal('0.01'))):
+            raise HTTPException(409, 'O saldo de cashback mudou. Atualize o resumo antes de pagar.')
+        valor_cobrado = Decimal(str(valor_total)).quantize(Decimal('0.01')) - valor_cashback
+        _exigir_valor_positivo(valor_cobrado)
+        valor_taxa_clubbar = _calcular_comissao_produtos_mercado_pago(valor_cobrado, loja.vrtaxaprod)
+        checkout = CheckoutMercadoPago(
+            lojamercadopago_id=conta_mp.lojamercadopago_id, carrinho_id=carrinho_id,
+            cliente_id=payload.cliente_id, loja_id=payload.loja_id,
+            preference_id=referencia, external_reference=referencia, status='CREATING',
+            metodo_solicitado=payload.dsmetodopag, valor=valor_cobrado,
+            vrcashbackusado=valor_cashback, vrtaxaclubbar=valor_taxa_clubbar,
+            dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
+        )
+        db.add(checkout)
+        db.flush()
+        vincular_uso_ao_checkout(db, debitos, checkout)
+        # A reserva e a referência devem existir antes de chamar o provedor:
+        # uma resposta perdida pode corresponder a um pagamento real.
+        db.commit()
+        reserva_registrada = True
         # Pix direto preserva o split via application_fee no token OAuth da loja.
         if metodo == 'PIX':
             pagamento_pix = await criar_pagamento_pix_mercado_pago(
@@ -829,7 +851,7 @@ async def pagar_mercado_pago_cliente(
                 external_reference=referencia,
                 titulo='PRODUTOS',
                 nome_loja=loja.nmloja,
-                valor=Decimal(str(valor_total)),
+                valor=valor_cobrado,
                 valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
                 email_pagador=cliente.emailcliente,
                 documento_pagador=cliente.nrcpfcliente,
@@ -840,24 +862,12 @@ async def pagar_mercado_pago_cliente(
                 .get('transaction_data')
                 or {}
             )
-            checkout = CheckoutMercadoPago(
-                lojamercadopago_id=conta_mp.lojamercadopago_id,
-                carrinho_id=carrinho_id,
-                cliente_id=payload.cliente_id,
-                loja_id=payload.loja_id,
-                # Para o Pix transparente não há preferência: este campo
-                # continua sendo a chave pública de consulta do checkout.
-                preference_id=str(pagamento_pix['id']),
-                payment_id=str(pagamento_pix['id']),
-                external_reference=referencia,
-                status='PENDING',
-                checkout_url=dados_pix.get('ticket_url'),
-                metodo_solicitado=payload.dsmetodopag,
-                valor=valor_total,
-                vrtaxaclubbar=valor_taxa_clubbar,
-                dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
-            )
-            db.add(checkout)
+            db.refresh(checkout, with_for_update=True)
+            checkout.preference_id = str(pagamento_pix['id'])
+            checkout.payment_id = str(pagamento_pix['id'])
+            if not checkout.venda_id:
+                checkout.status = 'PENDING'
+            checkout.checkout_url = dados_pix.get('ticket_url')
             db.commit()
             return {
                 'ok': True,
@@ -875,29 +885,33 @@ async def pagar_mercado_pago_cliente(
         if metodo in {'CREDIT_CARD', 'CREDITO'} and payload.card_token:
             pagamento_cartao = await criar_pagamento_cartao_mercado_pago(
                 access_token=token, external_reference=referencia, titulo='PRODUTOS', nome_loja=loja.nmloja,
-                valor=Decimal(str(valor_total)), valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
+                valor=valor_cobrado, valor_taxa_clubbar=Decimal(str(valor_taxa_clubbar)),
                 card_token=payload.card_token, payment_method_id=payload.payment_method_id or '',
                 installments=payload.installments or 1, issuer_id=payload.issuer_id,
                 payer_email=payload.payer_email or cliente.emailcliente,
                 payer_document=payload.payer_document or cliente.nrcpfcliente,
                 device_id=payload.device_id, chave_idempotencia=payload.idempotency_key or str(uuid.uuid4()),
             )
-            checkout = CheckoutMercadoPago(
-                lojamercadopago_id=conta_mp.lojamercadopago_id, carrinho_id=carrinho_id,
-                cliente_id=payload.cliente_id, loja_id=payload.loja_id,
-                preference_id=str(pagamento_cartao['id']), payment_id=str(pagamento_cartao['id']),
-                external_reference=referencia, status=str(pagamento_cartao.get('status') or 'PENDING').upper(),
-                metodo_solicitado=payload.dsmetodopag, valor=valor_total,
-                vrtaxaclubbar=valor_taxa_clubbar,
-                dadosentrega=json.dumps(payload.entrega) if payload.entrega else None,
-            )
-            db.add(checkout); db.commit()
+            db.refresh(checkout, with_for_update=True)
+            checkout.preference_id = str(pagamento_cartao['id'])
+            checkout.payment_id = str(pagamento_cartao['id'])
+            if not checkout.venda_id:
+                checkout.status = str(pagamento_cartao.get('status') or 'PENDING').upper()
+            if checkout.status in {'REJECTED', 'CANCELLED', 'CANCELED', 'EXPIRED'}:
+                cancelar_uso_pendente(db, checkout)
+            db.commit()
             return {'ok': True, 'gateway': 'MERCADO_PAGO', 'pagamento_id': checkout.payment_id,
                     'status': checkout.status, 'valor_cobrado': float(checkout.valor),
                     'external_reference': checkout.external_reference}
 
-    except HTTPException:
+    except HTTPException as erro:
         db.rollback()
+        if reserva_registrada and checkout is not None and erro.status_code in (409, 422):
+            db.refresh(checkout, with_for_update=True)
+            if not checkout.venda_id:
+                checkout.status = 'REJECTED'
+                cancelar_uso_pendente(db, checkout)
+                db.commit()
         raise
     except Exception as erro:
         db.rollback()
@@ -931,9 +945,20 @@ async def _consultar_status_checkout_mercado_pago(
         )
     else:
         pagamento = await buscar_pagamento_mercado_pago(
-            access_token=token, external_reference=checkout.external_reference
+            access_token=token, external_reference=checkout.external_reference, incluir_pendentes=True
         )
-    if not pagamento or str(pagamento.get('status') or '').lower() != 'approved':
+    status_pagamento = str((pagamento or {}).get('status') or '').lower()
+    if status_pagamento in {'rejected', 'cancelled', 'canceled', 'expired'}:
+        if (checkout.payment_id and str(pagamento.get('id') or '') != str(checkout.payment_id)) or str(pagamento.get('external_reference') or '') != str(checkout.external_reference):
+            raise HTTPException(409, 'Identificação Mercado Pago divergente.')
+        db.refresh(checkout, with_for_update=True)
+        if not checkout.venda_id:
+            checkout.status = status_pagamento.upper()
+            checkout.payment_id = str(pagamento.get('id') or '') or checkout.payment_id
+            cancelar_uso_pendente(db, checkout)
+            db.commit()
+        return {'pagamento_id': preference_id, 'status': 'CANCELADO'}
+    if not pagamento or status_pagamento != 'approved':
         return {'pagamento_id': preference_id, 'status': 'PENDENTE'}
     if checkout.payment_id and str(pagamento.get('id') or '') != str(checkout.payment_id):
         raise HTTPException(409, 'Identificador Mercado Pago divergente.')

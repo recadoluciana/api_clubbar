@@ -29,6 +29,7 @@ class CheckoutMercadoPago(Base):
     metodo_solicitado = Column(String(30), nullable=True)
 
     valor = Column(Numeric(10, 2), nullable=False)
+    vrcashbackusado = Column(Numeric(10, 2), nullable=False, server_default="0")
     vrtaxaclubbar = Column(Numeric(10, 2), nullable=False, server_default="0")
     dadosentrega = Column(Text, nullable=True)
     dsorigemconfirmacao = Column(String(20), nullable=True)
