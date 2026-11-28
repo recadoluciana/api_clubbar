@@ -696,6 +696,7 @@ def _salvar_snapshot_checkout(
             produto_id=int(item['produto_id']),
             cardapioitem_id=item.get('cardapioitem_id'),
             beneficioprodutocampanha_id=item.get('campanha_id'),
+            beneficioprodutoresgate_id=item.get('beneficio_resgate_id'),
             lote_id=item.get('lote_id'),
             idtipoproduto=str(item.get('idtipoproduto') or 'P'),
             nmproduto=str(item.get('nmproduto') or 'Produto'),
