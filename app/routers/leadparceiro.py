@@ -81,6 +81,14 @@ CATEGORIAS_PADRAO = (
 )
 
 
+class EmailResponsavelJaCadastrado(HTTPException):
+    def __init__(self):
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um usuário cadastrado com este e-mail.",
+        )
+
+
 router = APIRouter(
     prefix="/parceiros",
     tags=["Parceiros"],
@@ -881,10 +889,7 @@ async def converter_lead_em_parceiro(
         db.query(Usuario).filter(Usuario.emailuser == email_responsavel).first()
     )
     if usuario_existente and not organizacao_existente:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Já existe um usuário cadastrado com este e-mail.",
-        )
+        raise EmailResponsavelJaCadastrado()
 
     if status_estabelecimento != "ACEITOU_PARCERIA":
         raise HTTPException(

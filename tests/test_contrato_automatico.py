@@ -83,6 +83,47 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.db.refresh(contrato)
         self.assertNotEqual("ACEITO", contrato.status)
 
+    def test_email_existente_permite_assinar_sem_conceder_acesso(self):
+        from app.routers.leadparceiro import EmailResponsavelJaCadastrado
+        contrato = garantir_contrato(self.db, self.est)
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa")
+        self.completar_endereco(contrato.leadestabelecimentocontrato_id)
+        self.db.autoflush = False
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        with patch("app.routers.contratolead._converter_apos_assinatura", side_effect=EmailResponsavelJaCadastrado()):
+            resposta = asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, self.db.get(LeadParceiro, 1), self.db))
+            self.db.expire_all()
+            self.assertEqual("ACEITO", self.db.get(LeadEstabelecimentoContrato, contrato.leadestabelecimentocontrato_id).status)
+            self.assertEqual("ACEITOU_PARCERIA", self.db.get(LeadEstabelecimento, 1).status.value)
+            self.assertTrue(resposta["ativacao_pendente"])
+            self.assertEqual(0, self.db.query(Organizacao).count())
+            resposta = asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, self.db.get(LeadParceiro, 1), self.db))
+            self.assertTrue(resposta["ativacao_pendente"])
+
+    def test_email_existente_na_conversao_real_registra_assinatura(self):
+        from app.models.usuario import Usuario
+        Usuario.__table__.create(self.engine, checkfirst=True)
+        self.db.add(Organizacao(organizacao_id=2, nmorganizacao="Empresa existente",
+                                emailorganizacao="teste@example.com", telorganizacao="11999999999"))
+        self.db.add(Usuario(usuario_id=5, organizacao_id=2, nmusuario="Responsável",
+                            emailuser="teste@example.com", senhahashuser="hash",
+                            dscargo="SUPERADMIN", situsuario="ATIVO"))
+        self.est.documento_conferido = self.est.cpfcnpj
+        self.est.nome_titular_conferido = "Titular"
+        self.db.get(LeadParceiro, 1).nmorganizacao = "Empresa nova"
+        self.db.commit()
+        contrato = garantir_contrato(self.db, self.est)
+        preencher_contrato_portal(self.db, 1, contrato.leadestabelecimentocontrato_id, "12345678901", "Minha empresa")
+        self.completar_endereco(contrato.leadestabelecimentocontrato_id)
+        self.conversao_patch.stop()
+        self.db.autoflush = False
+        req = Request({"type": "http", "client": ("127.0.0.1", 123)})
+        resultado = asyncio.run(aceitar_contrato(contrato.leadestabelecimentocontrato_id, req, self.db.get(LeadParceiro, 1), self.db))
+        self.assertEqual("ACEITO", resultado["status"])
+        self.assertTrue(resultado["ativacao_pendente"])
+        self.assertEqual(2, self.db.get(Usuario, 5).organizacao_id)
+        self.assertEqual(0, self.db.query(Loja).count())
+
     def test_assinatura_cria_parceiro_automaticamente(self):
         from app.models.cardapio import CategoriaPadrao
         from app.models.categoria import Categoria
