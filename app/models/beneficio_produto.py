@@ -37,6 +37,7 @@ class BeneficioProdutoResgate(Base):
     cliente_id = Column(BigInteger, ForeignKey("cliente.cliente_id"), nullable=False, index=True)
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=False, index=True)
     percentual_desconto = Column(Numeric(5, 2), nullable=False, default=0)
+    carrinho_id = Column(BigInteger, nullable=True)
     situacao = Column(String(20), nullable=False, default="DISPONIVEL")
     dtresgate = Column(DateTime, nullable=False, server_default=func.current_timestamp())
     dtexpiracao = Column(DateTime, nullable=True)

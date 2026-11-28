@@ -180,6 +180,7 @@ def adicionar_itens_produto_venda(
                 if premio else None)
             if (not venda or not premio or premio.cliente_id != venda.cliente_id
                 or premio.produto_id != produto_id or premio.situacao != "DISPONIVEL"
+                or (premio.carrinho_id is not None and premio.carrinho_id != venda.carrinho_id)
                 or (premio.dtexpiracao is not None and premio.dtexpiracao < agora
                     and (not campanha_premio or campanha_premio.tipo != "ROLETA"))
                 or quantidade_linhas != 1 or campanha_id is not None):

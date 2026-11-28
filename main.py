@@ -780,6 +780,14 @@ def garantir_cardapios_compartilhados() -> None:
                         "ALTER TABLE beneficioprodutocampanha "
                         "ADD COLUMN vrpacote DECIMAL(10,2) NULL AFTER qtitenspacote"
                     ))
+            if "beneficioprodutoresgate" in tabelas:
+                colunas = {c["name"] for c in inspector.get_columns("beneficioprodutoresgate")}
+                if "carrinho_id" not in colunas:
+                    conexao.execute(text("ALTER TABLE beneficioprodutoresgate ADD COLUMN carrinho_id BIGINT NULL"))
+            if "checkout_asaas_item" in tabelas:
+                colunas = {c["name"] for c in inspector.get_columns("checkout_asaas_item")}
+                if "beneficioprodutoresgate_id" not in colunas:
+                    conexao.execute(text("ALTER TABLE checkout_asaas_item ADD COLUMN beneficioprodutoresgate_id BIGINT NULL"))
             if "itcarrinho" in tabelas:
                 colunas_itcarrinho = {
                     coluna["name"] for coluna in inspector.get_columns("itcarrinho")

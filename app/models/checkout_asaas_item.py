@@ -14,6 +14,7 @@ class CheckoutAsaasItem(Base):
         index=True,
     )
     produto_id = Column(BigInteger, ForeignKey("produto.produto_id"), nullable=True)
+    beneficioprodutoresgate_id = Column(BigInteger, nullable=True)
     cardapioitem_id = Column(BigInteger, ForeignKey("cardapioitem.cardapioitem_id", ondelete="SET NULL"), nullable=True)
     beneficioprodutocampanha_id = Column(
         BigInteger,
