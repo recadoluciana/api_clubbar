@@ -550,6 +550,7 @@ def atualizar_estabelecimento(
             == leadestabelecimento_id,
             LeadEstabelecimento.leadparceiro_id == leadparceiro_id,
         )
+        .with_for_update()
         .first()
     )
     if not item:
@@ -589,12 +590,15 @@ def atualizar_estabelecimento(
         raise HTTPException(409, "CPF ou CNPJ já cadastrado em outro estabelecimento.")
     taxa_produtos = dados.pop("vrtaxaprod", None)
     taxa_ingressos = dados.pop("vrtaxaing", None)
+    minimo_ingresso = dados.pop("vrtaxaminimaingresso", None)
     for campo, valor in dados.items():
         setattr(item, campo, valor)
     if taxa_produtos is not None:
         item.vrtaxaprod = taxa_produtos
     if taxa_ingressos is not None:
         item.vrtaxaing = taxa_ingressos
+    if minimo_ingresso is not None:
+        item.vrtaxaminimaingresso = minimo_ingresso
     try:
         atualizar_contrato_pendente(db, item)
         db.commit()

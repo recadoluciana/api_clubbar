@@ -134,6 +134,39 @@ class ContratoAutomaticoTest(unittest.TestCase):
         self.assertIn("R$ 49,90", contrato.conteudocontrato)
         self.assertIn("8%", contrato.conteudocontrato)
 
+    def test_admin_edita_minimo_do_ingresso_no_contrato_pendente(self):
+        from app.routers.leadparceiro import atualizar_estabelecimento
+        from app.schemas.leadparceiro import LeadEstabelecimentoOut, LeadEstabelecimentoUpdate
+
+        # Modelo comercial já cadastrado antes de o mínimo ser editável no Admin.
+        modelo = self.db.get(ContratoPadrao, 1)
+        modelo.conteudomodelo = (
+            "{{CONDICOES_COMERCIAIS}}\nTaxa de conveniência de "
+            "8% sobre o preço do ingresso, sem valor mínimo."
+        )
+        contrato = garantir_contrato(self.db, self.est)
+        cadastro = dict(nmestabelecimento="Clubbar", tipo="BAR", cpfcnpj=self.est.cpfcnpj,
+                        estado_id=1, cidade_id=1)
+
+        def salvar(**condicoes):
+            dados = LeadEstabelecimentoUpdate(**cadastro, **condicoes)
+            resposta = atualizar_estabelecimento(1, 1, dados, {}, self.db)
+            return LeadEstabelecimentoOut.model_validate(resposta).vrtaxaminimaingresso
+
+        self.assertEqual(salvar(vrtaxaminimaingresso="125.49"), 125.49)
+        self.assertEqual(salvar(), 125.49)
+        self.assertEqual(contrato.vrtaxaminimaingresso, Decimal("125.49"))
+        self.assertIn("mínimo de R$ 125,49 por ingresso", contrato.conteudocontrato)
+        self.assertNotIn("sem valor mínimo", contrato.conteudocontrato)
+        self.assertEqual(salvar(vrtaxaminimaingresso="0.00"), 0)
+        self.assertIn("sem valor mínimo", contrato.conteudocontrato)
+        contrato.status = "ACEITO"
+        self.db.commit()
+        with self.assertRaises(HTTPException) as bloqueio:
+            salvar(vrtaxaminimaingresso="3.00")
+        self.assertEqual(bloqueio.exception.status_code, 409)
+        self.assertEqual(contrato.vrtaxaminimaingresso, Decimal("0.00"))
+
     def test_contrato_exige_escolha_e_registra_experiencia(self):
         from scripts.database.seed.seed_contrato_padrao import CONTRATO_V1, gerar_modelo_comercial
         self.db.get(ContratoPadrao, 1).conteudomodelo = gerar_modelo_comercial(CONTRATO_V1)
